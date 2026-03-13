@@ -1,0 +1,691 @@
+Title: LLM-WikiRace: Benchmarking Long-term Planning and Reasoning over Real-World Knowledge Graphs
+
+URL Source: https://arxiv.org/pdf/2602.16902v1
+
+Published Time: Fri, 20 Feb 2026 01:15:55 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# LLM-WikiRace: Benchmarking Long-term Planning and Reasoning over Real-World Knowledge Graphs 
+
+Juliusz Ziomek * 1 William Bankes * 2 Lorenz Wolf 2 Shyam Sundhar Ramesh 2 Xiaohang Tang 2
+
+Ilija Bogunovic 3 2 
+
+# Abstract 
+
+We introduce LLM-Wikirace , a benchmark for evaluating planning, reasoning, and world knowledge in large language models (LLMs). In LLM-Wikirace, models must efficiently navigate Wikipedia hyperlinks step by step to reach a target page from a given source, requiring look-ahead planning and the ability to reason about how concepts are connected in the real world. We evaluate a broad set of open- and closed-source models, including Gemini-3, GPT-5, and Claude Opus 4.5, which achieve the strongest results on the easy level of the task and demonstrate superhuman performance. Despite this, performance drops sharply on hard difficulty: the best-performing model, Gemini-3, succeeds in only 23% of hard games, highlighting substantial remaining challenges for frontier mod-els. Our analysis shows that world knowledge is a necessary ingredient for success, but only up to a point, beyond this threshold, planning and long-horizon reasoning capabilities become the dominant factors. Trajectory-level analysis further reveals that even the strongest models struggle to replan after failure, frequently entering loops rather than recovering. LLM-Wikirace is a simple benchmark that reveals clear limitations in current reasoning systems, offering an open arena where planning-capable LLMs still have much to prove. Our code and leaderboard available at 
+
+https:/llmwikirace.github.io .
+
+# 1. Introduction 
+
+Large Language Models (LLMs) have shown strong perfor-mance on a range of planning benchmarks, including struc-
+
+> *
+
+Equal contribution 1University of Oxford, UK 2University College London (Centre for AI), UK 3University of Basel, Switzer-land. Correspondence to: Juliusz Ziomek <juliusz (at) robots [dot] ox <dot> ac.uk>. 
+
+Preprint. February 20, 2026. 0.30 0.35 0.40 0.45 0.50 0.55 
+
+> World Knowledge (F1 Score)
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> Average Success Rate (%)
+
+Planning Gap 
+
+> Model
+> Llama-3-1B
+> Llama-3-3B
+> Llama-3-8B
+> Llama-3-70B
+> Gemma-3-4B
+> Gemma-3-12B
+> Gemma-3-27B
+> GPT-5
+> GPT-5-Mini
+> Gemini-3-Pro
+> DeepSeek-R1
+> Claude-Opus-4.5
+
+Figure 1. LLM-WikiRace evaluates both World Knowledge and Reasoning, we identify a clear performance gap between reasoning models and Instruct tuned models despite both showing similar levels of world knowledge. Further details in Section 5.1. 
+
+tured puzzles (Seely et al., 2025; Valmeekam et al., 2023), agentic coding (Deng et al., 2025; Jimenez et al., 2023), and interactive decision-making tasks (Yao et al., 2022). This progress is driven in part by large-scale pretraining on diverse textual corpora (Gao et al., 2020), including encyclopedic sources such as Wikipedia, which endows LLMs with substantial world knowledge. However, most existing evaluations focus on highly structured or synthetic environments with limited state and action spaces (Kambhampati et al., 2024). Such settings do not capture the semantic richness and uncertainty of real-world information spaces that LLMs are deployed in, leaving open a key question: to what extent can LLMs leverage pretrained world knowledge to reason, plan, and adapt in large, real-world knowledge environments? 
+
+We introduce LLM-WikiRace , a benchmark that evaluates LLMs in an interactive, goal-directed navigation task based on the WikiRace game. Given a source and a target Wikipedia page, an agent must traverse the hyperlink graph 1           
+
+> arXiv:2602.16902v1 [cs.AI] 18 Feb 2026 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? Gemini 3
+> Grok 4.1-F
+> Opus 4.5
+> GPT-5
+> R1
+> Kimi K2
+> 0
+> 25
+> 50
+> 75
+> 100
+> Success Rate on Easy
+> 95.0 90.0 91.5 92.5 91.0 87.5 Gemini 3
+> Grok 4.1-F
+> Opus 4.5
+> GPT-5
+> R1
+> Kimi K2
+> 0
+> 25
+> 50
+> 75
+> 100
+> Success Rate on Medium
+> 66.0
+> 44.7
+> 56.0 60.0 54.7 45.3 Gemini 3
+> Grok 4.1-F
+> Opus 4.5
+> GPT-5
+> R1
+> Kimi K2
+> 0
+> 25
+> 50
+> 75
+> 100
+> Success Rate on Hard
+> 23.0
+> 5.0
+> 18.0 15.0 17.0
+> 7.0
+> Figure 2. The Success Rates for the best performing models across all three difficulties of the LLM-WikiRace benchmark.
+
+step by step, selecting links until it reaches the target or exhausts a fixed step budget. The environment enforces 
+
+multi-step reasoning : the agent only observes the current page at each step and does not have access to the full hyperlink graph or future states, requiring decisions to be made under partial information. Solving this task therefore requires coordinating long-horizon planning, semantic reasoning over real-world concepts, and the operational use of world knowledge. At the same time, the environment is partially observable and unforgiving, early mistakes can push the agent far from the target, making recovery and strategy revision essential. We design LLM-WikiRace with three difficulty levels de-fined by the length of the shortest path between the start and target pages, and evaluate over 20 state-of-the-art LLMs, including Gemini 3 (Luong et al., 2025), GPT-5 (Singh et al., 2025), and Claude Opus 4.5, see Figure 2. This strat-ification clearly differentiates model performance: while the strongest models achieve over 90% success on easy instances, completion rates on the hardest split remain be-low 25%. Even when models succeed, they often follow highly suboptimal paths, indicating persistent challenges in near-optimal planning over long horizons. Beyond aggregated success rates, our analysis reveals a more fundamental phenomenon, the benefits of targeted reasoning training on planning benchmarks and tasks. In Figure 1 we show that despite showing similar levels of world knowledge reasoning models achieve higher success rates on LLM-WikiRace, we attribute this to differences in planning ability and label this phenomenon the ’planning gap’. Trajectory-level analysis further supports this interpretation with the strongest models often adopting sensible high-level strategies, such as navigating toward highly connected hub pages. Despite the notable differences in planning ability compared to other models, top models are far from perfect, specifically we note they struggle to revise strategies after setbacks, fre-quently become trapped in loops or repeatedly exploring unproductive regions of the graph. These behaviors point to limitations in re-planning and adaptive control that per-sist even when world knowledge is strong. This highlights the diagnostic value of LLM-WikiRace: a setting where strong overall performance can coexist with systematic and interpretable failures. Finally, we compare the performance of top frontier models against non-expert humans and observe that LLMs make fewer suboptimal moves, outperforming the human baseline. Overall, LLM-WikiRace provides a realistic evaluation of planning, reasoning, and adaptability in LLMs over a large, real-world knowledge environment. By exposing where world knowledge ceases to be the primary bottleneck and adaptive planning becomes critical, the benchmark offers a new lens on the strengths and limitations of LLMs as agents navigating information spaces. To summarise, this paper makes the following contributions: • An open-domain planning benchmark. We intro-duce LLM-WikiRace, an interactive benchmark that evaluates planning, reasoning, and world knowledge through step-by-step navigation through Wikipedia. • Large-scale evaluation of frontier LLMs. We evalu-ate over 20 models, including Gemini 3, GPT-5, and Claude Opus 4.5, and show that the hardest difficulty remains largely unsolved. • Behavioral analysis of planning and replanning. 
+
+Trajectory-level analysis reveals that models adopt sen-sible high-level strategies but struggle to replan after failure, often becoming trapped in loops. • Identification of a planning gap. We show a transi-tion from a knowledge-limited to a planning-limited regime, where models with comparable world knowl-edge diverge due to failures in replanning and adaptive control. • Comparison to a human reference. We provide a human baseline and show that top-performing models exceed this reference while still exhibiting systematic failure modes. 2LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? LLM  Agent     
+
+> (Planning & Selection)
+> Selects Link Returns Next Page
+> and Outgoing Links
+> Source Page
+> Banana
+> Southeast
+> Asia Eurasia
+> Italian
+> Peninsula
+> Italy Target Page
+> Ferrari
+
+Game  Engine  
+
+> (Stores Graph, Validates Steps) Logger
+> Status: In Progress
+> Steps: 2
+> Token Usage: 6702
+> Time Taken: 45s
+
+Figure 3. In the LLM-WikiRace task, an LLM agent is instructed to navigate the Wikipedia hyperlink graph from a source page (e.g., Banana) to a target page (e.g., Ferrari). At each step, the game engine provides the agent with the current page, the titles of its outgoing links, the target page name, and the history of previously visited pages. The agent selects one outgoing link to follow and transitions to that page. Throughout the episode, a logger records success or failure, the number of steps taken, token usage, and elapsed time. 
+
+# 2. What Type of Task Is WikiRace? 
+
+WikiRace is a task defined over the Wikipedia hyperlink graph in which an agent must navigate from a start page A to a target page B by selecting hyperlinks step by step. At each step, the agent observes the current page and its outgoing links, chooses a single link to follow, and transitions to a new page. The episode terminates when the target is reached or when a fixed step budget is exhausted. The objective is to reach the target in as few steps as possible. We illustrate the task structure in Figure 3. The task poses a challenging planning problem over a large, real-world knowledge graph, requiring agents to combine planning and world knowledge in a partially observable, in-teractive setting. At inference time, the agent has no access to global graph information such as shortest paths, node dis-tances, or future link availability, and must act based only on locally observed information while leveraging general world knowledge acquired during pretraining to judge which pages may be relevant. Each step presents many locally plausible actions whose long-term consequences are uncertain, and early choices can strongly constrain future options. As a result, poor initial decisions may move the agent far from the target, making effective replanning—rather than merely good initial planning—essential for avoiding failure. In par-ticular, LLM-WikiRace probes the following capabilities of a reasoning system: 
+
+Long-horizon planning. Reaching the target often requires selecting intermediate pages that are not directly related to the goal, testing the ability to plan coherent action sequences rather than rely on myopic heuristics. 
+
+Semantic reasoning over open-domain knowledge. Ef-fective navigation depends on reasoning about relationships between concepts encoded in Wikipedia’s hyperlinks. 
+
+Operational use of world knowledge. Rather than answer-ing questions, agents must translate world knowledge into concrete action choices that guide navigation. 
+
+Replanning and adaptive control. When an initial strategy proves ineffective, successful agents must revise their ap-proach, avoid repeated states, and explore alternative paths under a limited action budget. 
+
+2.1. What the Benchmark Is Not Measuring 
+
+LLM-WikiRace is not equivalent to shortest-path graph search. Agents are not given access to the global graph structure and each step consumes the limited step budget. As such, the model cannot just algorithmically perform standard graph search procedures (such as BFS). 
+
+# 3. How does the LLM play WikiRace? 
+
+We introduce several simplifications to adapt WikiRace for evaluation with LLM agents. Rather than requiring models to parse raw HTML, we provide a structured prompt that explicitly specifies the current page, target page, traversal history, and the set of outgoing links available at each step (see Figure 4). To control prompt length and computational cost, we restrict the action space at each step to the 50 outgoing links with the shortest shortest-path distance to the target in the Wikipedia graph, presented in random order. This filtering relies on oracle shortest-path information available only to the environment and is never revealed to the model; it serves solely to bound the prompt size 3LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+rather than to guide the agent’s reasoning. We additionally cap each episode to a fixed number of steps. Together, these design choices substantially reduce evaluation cost, particularly on harder instances, while preserving the need for planning and world knowledge. The game environment is derived from a fixed snapshot of the Wikipedia hyperlink graph taken on 23 June 2025. We retain the largest strongly connected component, consist-ing of 549,232 pages, ensuring that every page is reachable from every other page and that comparisons between mod-els remain stable over time. The benchmark defines three difficulty levels : easy , medium , and hard , based on the length of the shortest path between the source and target pages. Easy comprises 200 pairs with optimal path lengths of 3 or 4, medium comprises 150 pairs with lengths of 5 or 6, and hard comprises 100 pairs with lengths of 7 or 8, with each split evenly balanced across its two path lengths. An LLM agent interacts with the environment as follows: starting from the source page, it repeatedly selects one outgoing link based on the prompt and transitions to the corresponding page until either the target is reached or a maximum of 30 steps is exceeded. Episodes that reach the target within the step limit are counted as successes; all others are failures. We set the step limit to 30, as completion rates plateau beyond this point (further details in Appendix A). Since the longest optimal path in the bench-mark is 8, this provides a budget of at least three times the optimal path length in all cases. Algorithm 1 (Appendix B) provides a detailed algorithm for LLM-WikiRace. 
+
+# 4. Evaluation 
+
+Models. We evaluate a diverse set of models on our benchmark, spanning both open- and closed-source systems across a wide range of scales and modalities. Our closed-source evaluations include the GPT-5 family (Singh et al., 2025), Gemini 2.0–3 (Comanici et al., 2025), Claude Sonnet 4.5 and Opus 4.5 (Anthropic, 2024), and Grok 4.1-Fast. For open-source models, we evaluate DeepSeek R1 (Gao et al., 2023a), Kimi K2 (Team et al., 2025), LLaMA 3 at scales ranging from 1B to 70B parameters (Grattafiori et al., 2024), and Gemma 3 models from 4B to 27B parameters (Team et al., 2024). For all open source models we test the Instruct finetuned version. 
+
+Metrics. We report several complementary metrics to char-acterise model performance. First, we measure the fraction of games successfully completed on each split, referred to as the success rate . Second, to assess solution quality among successful runs, we compute the number of subop-timal steps , defined as the excess number of steps taken beyond the shortest possible path. This metric captures how efficiently a model navigates once it succeeds, separating WikiRace Game Prompt   
+
+> System Prompt:
+> You are a helpful assistant helping play the Wikipedia link game.
+> User Prompt:
+> You are playing a game where you start at Wikipedia page “{current_page}” and want to reach page “{target_page}” by clicking links. So far, you have visited the following pages in order: {history} You see the following possible links from the current page: 0. {Neighbor 0 Title} 1. {Neighbor 1 Title} ...49. {Neighbor 49 Title} Which link should you click to get closer to the tar-get? Reply with the number of your choice (0 to {max_choice_num}).
+> Figure 4. The LLM-WikiRace prompt, at each step of the game an LLM is prompted with the current page, the target page, a history of previously visited states and 50 possible next states.
+
+path quality from binary success. Finally, we report the av-erage cost per game, computed over all evaluated episodes, including the total number of tokens generated and, for closed-source models, the corresponding monetary cost. 
+
+# 5. Results 
+
+We present full results in Table 1 and summarise the perfor-mance of the strongest models in Figure 2. Performance is clearly differentiated by difficulty: leading models achieve over 90% success on the easy split, approximately 50–70% on medium, and below 25% on hard. This confirms that shortest-path length provides a meaningful stratification of task difficulty. Among the evaluated models, Gemini 3 performs best across all difficulty levels and is the only model to exceed a 20% success rate on the hard split. GPT-5 and Claude Opus 4.5 follow closely, with performance varying by dif-ficulty. DeepSeek R1 is competitive with these models de-spite being open source, typically trailing by a small margin, while Kimi K2 ranks second among open-source models with a more pronounced performance gap. Despite strong performance on the easy split, both the medium and hard difficulties remain largely unsolved. Even the best-performing model completes fewer than 25% of 4LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+hard instances, indicating substantial headroom for improve-ment. Models from the LLaMA and Gemma families achieve near-zero success on the hard split, with the ex-ception of LLaMA 3 70B, which reaches a 7% success rate. For these models, improving medium-difficulty perfor-mance—currently below 40% across the board—represents a more attainable near-term target. Overall, results across model families suggest that all three difficulty levels remain relevant at present, with each split providing a distinct and informative benchmark for models at different scales. 
+
+5.1. Does Graph Knowledge Affect Model Performance? 
+
+A key aspect of the W IKI RACE benchmark is its evaluation of the ability of an LLM to leverage world knowledge alongside planning to navigate the underlying Wikipedia hyperlink graph. To do this, we investigate the extent to which models encode knowledge of the graph structure itself. Wikipedia data is almost certainly included in pre-training corpora (Gao et al., 2020), a model with near-perfect knowledge of the graph would render the benchmark primarily a test of its planning ability. Conversely, if a model has limited knowledge of the graph, it is unlikely to be able to effectively plan and succeed at LLM-WikiRace. To isolate graph knowledge from planning, we design an experiment that removes planning from the equation en-tirely and directly probes the model’s understanding of Wikipedia’s connectivity. We construct a dataset consisting of 1k pairs of source and target nodes. Pairs are labeled as 
+
+connected if there exists a direct hyperlink from the source node to the target node, and as unconnected otherwise, for further details see Section C. We run this experiment across a range of open- and closed-source models. In Figure 1, we plot the F1 Score on this world-knowledge classification task against the average success rate of each model on all LLM-WikiRace splits (reported in Table 1). To isolate the role of world knowledge, we fit a linear trend on the open source Instruct fine-tuned models. Within this regime, increases in model scale are associated with improvements in both world knowledge and game performance. However, Figure 1 also shows a clear differentiation between models with reasoning capabilities and those with simple Instruct fine-tuning, we label this the ’planning gap’ . Despite showing similar capabilities when classifying graph connections L LAMA 3 70B under performs the best model Gemini 3 in terms of success rate on the benchmark. In general, these results suggest that while world knowledge is necessary for success in LLM-WikiRace, it is planning and the ability to effectively deploy that knowledge through sequential decision-making that ultimately distinguishes the strongest models. 0.3 0.4 0.5 0.6 0.7 0.8 0.9  
+
+> Loop Frequency
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Success Rate
+> Model family
+> LLaMA
+> Gemini
+> GPT
+> Gemma
+> Claude
+> DeepSeek
+> Figure 5. Success rate vs loop frequency for different models. We say that a game contains a loop if model visited any page more than once. Each model family is displayed with different colors on the scatter plot and the best model in each family is shown with an X mark. Dashed gray line shows linear regression fitted to points.
+
+5.2. Qualitative analysis and examples 
+
+To better understand the behavioural differences underlying model performance, we analyse reasoning traces from the two strongest models that expose intermediate reasoning, Gemini 3 and Claude Opus 4.5 (GPT-5 does not provide explicit reasoning traces). For each model, we randomly sample three successful and three unsuccessful trajectories at each difficulty level, yielding 18 trajectories per model. 
+
+Planning strategies and forward reasoning. Across in-spected trajectories, both models frequently employ sensible high-level strategies. In particular, they often navigate from narrow topics toward broader, highly connected pages early in the episode, a behaviour reminiscent of common human WikiRace strategies. Gemini 3 explicitly frames this “hub-seeking” strategy in 72% of inspected games, while Claude Opus 4.5 does so in 94%. Representative examples of this behaviour are shown in Figure 6. In addition, both models frequently produce forward-looking reasoning, speculating about which pages may be encountered in future steps and outlining tentative multi-step plans toward the target. 
+
+Replanning failures and looping behaviour. Despite ex-hibiting forward planning, both models frequently revisit the same pages multiple times, entering loops from which they fail to escape. Gemini 3 encounters loops in 66% of the inspected trajectories, and Claude Opus 4.5 in 61%. In nearly all such cases, the models explicitly acknowledge the repeated state in their reasoning traces, indicating aware-ness of being stuck. However, awareness does not reliably translate into effective strategy revision. In many cases, the 5LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Table 1. Performance of different models across Easy, Medium, and Hard datasets. Success Rate is the percentage of games completed within the allowed 30 steps. Suboptimal Steps is the average number of suboptimal steps made in the successfully completed games. If no games were successfully completed for a given model and difficulty, we set Suboptimal Steps to "N/A". 
+
+FAMILY MODEL SUCCESS RATE (%) SUBOPTIMAL STEPS USAGE PER STEP 
+
+EASY MEDIUM HARD EASY MEDIUM HARD TOKENS COST (CENTS )
+
+GPT GPT-5 N ANO 71.5 24.7 4.0 3.4 7.6 9.2 2170 0.07 GPT-5 M INI 85.5 46.0 11.0 2.2 3.9 4.6 874 0.11 GPT-5 92.5 60.0 15.0 1.8 2.7 6.3 1826 1.51 GEMINI 
+
+GEMINI 2.0 F LASH 88.0 41.3 6.0 4.1 6.0 14.7 501 0.01 GEMINI 2.5 F LASH 91.0 53.0 10.2 2.7 4.5 8.1 547 0.05 GEMINI 2.5 91.0 56.7 15.2 2.1 3.5 6.9 527 0.19 GEMINI 3 95.0 66.0 23.0 0.8 1.9 4.7 1848 1.76 CLAUDE SONNET 4.5 88.5 43.3 10.1 2.3 4.9 10.1 1242 1.31 OPUS 4.5 91.5 56.0 18.0 1.3 2.3 8.1 1906 3.73 GROK GROK 4.1-F AST 90.0 44.7 5.0 1.6 4.3 6.4 4458 0.21 DEEP SEEK R1 91.0 54.7 17.0 1.4 4.0 6.4 2598 -KIMI KIMI K2 87.5 45.3 7.0 2.3 5.0 4.9 8105 -LL AMA LL AMA 3 1B 16.5 0.0 0.0 12.9 - - 511 -LL AMA 3 3B 47.0 3.3 0.0 11.4 13.2 - 783 -LL AMA 3 8B 64.5 9.3 0.0 7.3 7.8 - 641 -LL AMA 3 70B 84.5 39.3 7.0 2.5 4.2 5.1 651 -GEMMA 
+
+GEMMA 3 4B 48.0 2.7 0.0 5.2 11.5 - 555 -GEMMA 3 12B 72.5 22.7 1.0 3.4 6.8 4.0 651 -GEMMA 3 27B 80.0 30.0 0.0 2.8 6.4 - 684 -APERTUS APERTUS 8B 42.0 4.0 0.0 10.2 16.5 - 805 -APERTUS 70B 65.0 10.7 0.0 8.2 13.9 - 1832 -MISTRAL MISTRAL 7B 59.0 10.0 1.0 7.9 8.7 12.0 664 -MINISTRAL 8B 65.5 8.7 0.0 7.4 9.8 - 624 -QWEN QWEN 2.5-7B 22.5 1.3 0.0 13.2 16.5 - 2597 -DIFFUSION DREAM -V0-I NST . 7B 53.0 3.3 1.0 8.7 11.2 12.0 1549 -LL ADA-I NST . 8B 40.5 4.7 0.0 7.6 12.4 - 1669 -
+
+models continue alternating between neighbouring pages until the step limit is reached. This failure mode is espe-cially pronounced on the hard split. Gemini 3 encounters loops in 86% of hard tasks, of which only 10% are solved successfully; by contrast, all hard tasks without loops are solved. Claude Opus 4.5 exhibits a similar pattern, encoun-tering loops in 92% of hard tasks, with a success rate of only 1% among those trajectories. In Figure 5 we plot the relationship between looping fre-quency and success rate for different model families. We see a strong and consistent linear trend, showing a clear negative correlation between the two quantities (regression coeffi-cient −1.02 , with 95% CI (−1.13 , −0.91) ). This provides a strong quantitative evidence for the general replanning failure trend we observed during qualitative analysis. 
+
+Illustrative examples. Representative trajectories illustrat-ing both successful and unsuccessful reasoning traces are provided in the Appendices E, F and G, and are consistent with the aggregate patterns described above. 
+
+Summary. Together, these qualitative findings show that frontier models can plan, reason about semantics, and monitor their own behaviour, but struggle with replan-ning—adjusting their strategy after observing that an ex-isting approach is ineffective. Importantly, these replanning failures persist among the strongest models, highlighting remaining limitations that are not captured by aggregate success rates alone. 
+
+5.3. Does Fine-Tuning Help? 
+
+We conduct a preliminary study to examine whether fine-tuning with Decoupled clip and Dynamic sAmpling Policy Optimization (DAPO) (Shao et al., 2024; Guo et al., 2025; Yu et al., 2025) improves performance on the WikiRace benchmark. We construct a training set of 1,000 source– target page pairs with shortest-path distances ranging from 2 to 6 that do not overlap with the benchmark evaluation set. Each training example consists of a game prompt in-stantiated at the source page, a set of candidate links, and the optimal link choice corresponding to the shortest path 6LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 1: Gemini 3 pro, Herstory → Warth  
+
+> UNDERSTANDING TARGET AND CURRENT PAGE
+
+The target page "Warth" most likely refers to a location (e.g., Warth, Vorarlberg in Austria; Warth, Thurgau in Switzerland) or a disambiguation page leading there. The current page "Herstory" is a sociological and linguistic concept regarding the perspective of history. 
+
+> STRATEGY
+
+To reach a specific geographical location from a sociological page, the best strategy is to move to the broadest possible topic that encompasses geography or nations. 
+
+> CONSIDER OPTIONS
+
+Among the options: • Link 25 (History) is the parent concept of "Herstory". The page "History" is a vital, top-level article that links to broad categories like "Geography", "World", "Europe", and specific countries. This is the most efficient hub to transition from a specific feminist term to general locations. • Link 37 (Latin) is a language. While it connects to European history, "History" is a more direct path to general knowledge and geography. • Other links (Feminism, Neologism, etc.) keep the context too narrow. 
+
+> COMMIT TO DECISION
+
+Therefore, "History" is the best link to widen the scope and eventually navigate to Austria, Switzerland, or lists of municipalities where "Warth" can be found. 25 
+
+[Solves the game succesfully by following path Herstory → History → Geography → Berlin → Bregenz → Warth] 
+
+Figure 6. Raw response of Gemini 3 pro for the game instance Herstory → Warth (optimal path length = 4 ), first step. The response highlights the model’s knowledge of the start and target page as well as the overall strategy of moving towards a broad topic initially. 
+
+to the target, which is used to define the training reward. During training, we sample batches of prompts and generate 16 rollouts per prompt. Rewards are assigned based on cor-rectness with respect to the optimal choice and adherence to the required output format. We compute advantages within each group of rollouts and update the policy accordingly. Starting from the Qwen-2.5-7B base model, we fine-tune for up to 300 steps and evaluate checkpoints at 50, 100, and 300 steps on the easy, medium, and hard splits of the benchmark. As shown in Table 2, fine-tuning leads to substantial im-provements on the easy split, with success rates increasing from 22.5% for the base model to 67.5% after 300 fine-tuning steps. Performance on the medium split improves more modestly, from 1.3% to 4.6%, while performance on the hard split remains at 0 across all evaluated checkpoints. Taken together, these results indicate that, while DAPO-based fine-tuning can meaningfully improve performance on simpler instances, it does not, in this preliminary setting, address the challenges posed by harder LLM-WikiRace tasks. More targeted approaches that explicitly account for long-horizon planning and replanning may be required to make progress on these cases. 
+
+5.4. Comparison with Human Performance 
+
+To provide a coarse reference for human gameplay, we use publicly released statistics from The WikiGame Daily 1,
+
+> 1
+
+https://www.thewikigamedaily.com 
+
+Table 2. Success rate across difficulty levels for the base model and DAPO-finetuned checkpoints. Number after F ineT uned −
+
+is the number of epochs model was finetuned for. MODEL EASY MEDIUM HARD 
+
+QWEN -2.5-7B B ASE 22.5 1.3 0.0 QWEN -2.5-7B F INE TUNED -50 24.0 1.3 0.0 QWEN -2.5-7B F INE TUNED -100 41.0 4.0 0.0 QWEN -2.5-7B F INE TUNED -300 67.5 4.6 0.0 
+
+collected from daily WikiRace games announced on the platform’s X account 2. We identify the corresponding start–target page pairs in our Wikipedia graph and refer to this set as the Human Gameplay Corpus . We then eval-uate the three strongest models—Gemini 3, GPT-5, and Claude Opus 4.5—on this corpus. All three models achieve a success rate of 100% on the Hu-man Gameplay Corpus, while the reported human success rate is 98.5%. This indicates that the corpus is easier than the easiest split of our benchmark. As success rates are sat-urated, we instead compare the number of suboptimal steps taken by models and human players. Results are shown in Figure 7. On average, human players take at least one more suboptimal step than any of the evaluated models. We emphasise that this corpus should be interpreted as a coarse reference rather than a precise estimate of human performance, due to heterogeneous player skill and 
+
+> 2
+
+https://x.com/dailywikigame 
+
+7LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? Gemini 3 GPT-5 Opus 4.5 Human   
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> Suboptimal Steps on Human Gameplay Corpus
+> 0.9
+> 1.2 1.1
+> 2.3
+> Figure 7. Comparison of suboptimal steps made by the most pow-erful models and by Human players, across the Human Gameplay Corpus games. The success rate on this corpus for was 98.5% for humans and 100% for all tested models.
+
+potential graph reconstruction effects, human players are presented with all the links on a specific page whilst we limit the number of links in LLM-WikiRace. Nevertheless, the evaluated models consistently exceed this reference in terms of path optimality. 
+
+# 6. Related Work 
+
+Many LLM benchmarks require planning either as a pri-mary objective or as a subtask for success (Li et al., 2025). Prior work has focused on classical planning settings, in-cluding benchmarks such as PlanBench (Valmeekam et al., 2023) and structured games like Blockworld (Gupta and Nau, 1992), Sudoku (Seely et al., 2025), and related en-vironments (Wu et al., 2023; Huang et al., 2024; Dagan et al., 2024; Duan et al., 2024). Analyses of these tasks (Valmeekam et al., 2024; 2025; Kambhampati et al., 2024) report mixed planning performance and question whether LLMs perform genuine planning or rely on pattern retrieval. Planning is also central to multimodal, embodied bench-marks (Shridhar et al., 2020a;b; Chen et al., 2023; Su et al., 2024; Chang et al., 2024; Yang et al., 2025; Yin et al., 2024). In contrast, LLM-WikiRace isolates long-horizon planning and world knowledge within a single textual modality. 
+
+Realistic and open-domain planning. Recent benchmarks have moved toward more realistic settings by embedding planning within naturalistic tasks, including travel itinerary construction (Xie et al., 2024), personal scheduling (Zheng et al., 2024), agentic frameworks where planning is required to solve coding problems (Liu et al., 2023; Jimenez et al., 2023; Deng et al., 2025; Xu et al., 2024), and web-based assistant environments (Yoran et al., 2024; Zhou et al., 2023; Koh et al., 2024; Deng et al., 2023). While these benchmarks introduce real-world constraints and complex-ity, they are typically limited to specific domains. In con-trast, LLM-WikiRace evaluates planning over a large, open-domain knowledge graph, requiring models to integrate long-horizon planning with broad, general world knowledge across a wide range of topics. 
+
+Game-based benchmarks. BALROG (Paglieri et al., 2024) evaluates planning and reasoning across a collection of game environments with varying horizons. LLM-WikiRace com-plements this line of work by emphasizing open-domain knowledge: success depends on understanding and exploit-ing relationships across a wide range of real-world concepts encoded in the Wikipedia hyperlink graph. Concurrent work (Margiotta et al., 2025) uses the WikiRace game to contrast LLM and human reasoning capacities and (Ebrahimi et al., 2025) explores planning algorithms on a similar setting. Our work is an LLM focused benchmark and conducting a broader analysis of available models. Furthermore, we specify our benchmark independent of a human notion of difficulty and do not allow models to follow an algorithmic framework forcing the LLM to reason unaided on the graph. 
+
+# 7. Future Work and Conclusion 
+
+LLM-WikiRace is built on the Wikipedia hyperlink graph, yielding a diverse set of verifiable tasks that probe planning and reasoning over varying horizon lengths. Our analysis ex-poses several promising directions for future work. In partic-ular, our initial fine-tuning experiments reduce the game to a one-step reasoning problem during training, which could naturally be extended to multi-step reinforcement learning approaches. More broadly, understanding how planning frequency (Paglieri et al., 2025), retrieval-augmented gen-eration (Gao et al., 2023b), and other agentic frameworks influence long-horizon reasoning remains an open and fer-tile area of study. LLM-WikiRace evaluates an LLM’s ability to integrate world knowledge into planning and decision-making. While frontier models perform well on the easiest split, none achieve a success rate above 25% on the hardest split. We highlighted how strong reasoning capabilities differentiate the best models despite showing similar levels of knowl-edge about the underlying graph the game is based on. Even these models exhibit systematic planning failures on diffi-cult tasks, including looping behavior, reluctance to adapt initial strategy, and insufficient exploration. Overall, LLM-WikiRace is easy for models to understand yet difficult to master, exposing persistent limitations in long-horizon rea-soning and planning when models must act on their world knowledge. 8LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+# References 
+
+Anthropic. The Claude 3 model family: Opus, sonnet, haiku. https://www-cdn.anthropic.com/ de8ba9b01c9ab7cbabf5c33b80b7bbc618857627/ Model_Card_Claude_3.pdf, 2024. Accessed: 2024-03-04. Matthew Chang, Gunjan Chhablani, Alexander Clegg, Mikael Dallaire Cote, Ruta Desai, Michal Hlavac, Vladimir Karashchuk, Jacob Krantz, Roozbeh Mottaghi, Priyam Parashar, et al. Partnr: A benchmark for plan-ning and reasoning in embodied multi-agent tasks. arXiv preprint arXiv:2411.00081 , 2024. Yi Chen, Yuying Ge, Yixiao Ge, Mingyu Ding, Bohao Li, Rui Wang, Ruifeng Xu, Ying Shan, and Xihui Liu. Egoplan-bench: Benchmarking multimodal large lan-guage models for human-level planning. arXiv preprint arXiv:2312.06722 , 2023. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blis-tein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gem-ini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. Gautier Dagan, Frank Keller, and Alex Lascarides. Plancraft: an evaluation dataset for planning with llm agents. arXiv preprint arXiv:2412.21033 , 2024. Xiang Deng, Yu Gu, Boyuan Zheng, Shijie Chen, Sam Stevens, Boshi Wang, Huan Sun, and Yu Su. Mind2web: Towards a generalist agent for the web. Advances in Neu-ral Information Processing Systems , 36:28091–28114, 2023. Xiang Deng, Jeff Da, Edwin Pan, Yannis Yiming He, Charles Ide, Kanak Garg, Niklas Lauffer, Andrew Park, Nitin Pasari, Chetan Rane, et al. Swe-bench pro: Can ai agents solve long-horizon software engineering tasks? 
+
+arXiv preprint arXiv:2509.16941 , 2025. Jinhao Duan, Renming Zhang, James Diffenderfer, Bhavya Kailkhura, Lichao Sun, Elias Stengel-Eskin, Mohit Bansal, Tianlong Chen, and Kaidi Xu. Gtbench: Un-covering the strategic reasoning capabilities of llms via game-theoretic evaluations. Advances in Neural Informa-tion Processing Systems , 37:28219–28253, 2024. Raman Ebrahimi, Sean Fuhrman, Kendrick Nguyen, Harini Gurusankar, and Massimo Franceschetti. Textual un-derstanding boost in the wikirace. arXiv preprint arXiv:2511.10585 , 2025. Leo Gao, Stella Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, et al. The pile: An 800gb dataset of diverse text for language modeling. arXiv preprint arXiv:2101.00027 , 2020. Leo Gao, John Schulman, and Jacob Hilton. Scaling laws for reward model overoptimization. In International Confer-ence on Machine Learning , pages 10835–10866. PMLR, 2023a. Yunfan Gao, Yun Xiong, Xinyu Gao, Kangxiang Jia, Jin-liu Pan, Yuxi Bi, Yixin Dai, Jiawei Sun, Haofen Wang, and Haofen Wang. Retrieval-augmented generation for large language models: A survey. arXiv preprint arXiv:2312.10997 , 2(1), 2023b. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhi-nav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reason-ing capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. Naresh Gupta and Dana S Nau. On the complexity of blocks-world planning. Artificial intelligence , 56(2-3):223–254, 1992. Jen-tse Huang, Eric John Li, Man Ho Lam, Tian Liang, Wenxuan Wang, Youliang Yuan, Wenxiang Jiao, Xing Wang, Zhaopeng Tu, and Michael R Lyu. How far are we on the decision-making of llms? evaluating llms’ gam-ing ability in multi-agent environments. arXiv preprint arXiv:2403.11807 , 2024. Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. Swe-bench: Can language models resolve real-world github issues? arXiv preprint arXiv:2310.06770 , 2023. Subbarao Kambhampati, Karthik Valmeekam, Lin Guan, Mudit Verma, Kaya Stechly, Siddhant Bhambri, Lucas Saldyt, and Anil Murthy. Llms can’t plan, but can help planning in llm-modulo frameworks. arXiv preprint arXiv:2402.01817 , 2024. 9LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Jing Yu Koh, Robert Lo, Lawrence Jang, Vikram Duvvur, Ming Lim, Po-Yu Huang, Graham Neubig, Shuyan Zhou, Russ Salakhutdinov, and Daniel Fried. Visualwebarena: Evaluating multimodal agents on realistic visual web tasks. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 881–905, 2024. Haoming Li, Zhaoliang Chen, Jonathan Zhang, and Fei Liu. Planet: A collection of benchmarks for evaluating llms’ planning capabilities. arXiv preprint arXiv:2504.14773 ,2025. Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, et al. Agentbench: Evaluating llms as agents. arXiv preprint arXiv:2308.03688 , 2023. Thang Luong, Edward Lockhart, and Google Deep-Mind Team. Advanced version of gemini with deep think officially achieves gold-medal stan-dard at the international mathematical olympiad. https://deepmind.google/discover/blog/advanced-version-of-gemini-with-deep-think-officially-achieves-gold-medal-standard-at-the-international-mathematical-olympiad/, Jul 2025. Accessed: February 20, 2026. Daniele Margiotta, Danilo Croce, and Roberto Basili. Eval-uating large language models on wikipedia graph naviga-tion: Insights from the wikigame. In Proceedings of the Eleventh Italian Conference on Computational Linguis-tics (CLiC-it 2025) , pages 659–669, 2025. Davide Paglieri, Bartłomiej Cupiał, Samuel Coward, Ulyana Piterbarg, Maciej Wolczyk, Akbir Khan, Eduardo Pig-natelli, Łukasz Kuci´ nski, Lerrel Pinto, Rob Fergus, et al. Balrog: Benchmarking agentic llm and vlm reasoning on games. arXiv preprint arXiv:2411.13543 , 2024. Davide Paglieri, Bartłomiej Cupiał, Jonathan Cook, Ulyana Piterbarg, Jens Tuyls, Edward Grefenstette, Jakob Nico-laus Foerster, Jack Parker-Holder, and Tim Rocktäschel. Learning when to plan: Efficiently allocating test-time compute for llm agents. arXiv preprint arXiv:2509.03581 ,2025. Jeffrey Seely, Yuki Imajuku, Tianyu Zhao, Edoardo Cetin, and Llion Jones. Sudoku-bench: Evaluating cre-ative reasoning with sudoku variants. arXiv preprint arXiv:2505.16135 , 2025. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junx-iao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Y Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Mohit Shridhar, Jesse Thomason, Daniel Gordon, Yonatan Bisk, Winson Han, Roozbeh Mottaghi, Luke Zettlemoyer, and Dieter Fox. Alfred: A benchmark for interpreting grounded instructions for everyday tasks. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10740–10749, 2020a. Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Côté, Yonatan Bisk, Adam Trischler, and Matthew Hausknecht. Alfworld: Aligning text and embodied environments for interactive learning. arXiv preprint arXiv:2010.03768 ,2020b. Aaditya Singh, Adam Fry, Adam Perelman, Adam Tart, Adi Ganesh, Ahmed El-Kishky, Aidan McLaughlin, Aiden Low, AJ Ostrow, Akhila Ananthram, et al. Openai gpt-5 system card. arXiv preprint arXiv:2601.03267 , 2025. Ying Su, Zhan Ling, Haochen Shi, Cheng Jiayang, Yauwai Yim, and Yangqiu Song. Actplan-1k: Benchmarking the procedural planning ability of visual language mod-els in household activities. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 14953–14965, 2024. Gemma Team, Thomas Mesnard, Cassidy Hardin, Robert Dadashi, Surya Bhupatiraju, Shreya Pathak, Laurent Sifre, Morgane Rivière, Mihir Sanjay Kale, Juliette Love, et al. Gemma: Open models based on gemini research and technology. arXiv preprint arXiv:2403.08295 , 2024. Kimi Team, Yifan Bai, Yiping Bao, Guanduo Chen, Jiahao Chen, Ningxin Chen, Ruijue Chen, Yanru Chen, Yuankun Chen, Yutian Chen, et al. Kimi k2: Open agentic intelli-gence. arXiv preprint arXiv:2507.20534 , 2025. Karthik Valmeekam, Matthew Marquez, Alberto Olmo, Sarath Sreedharan, and Subbarao Kambhampati. Plan-bench: An extensible benchmark for evaluating large lan-guage models on planning and reasoning about change. 
+
+Advances in Neural Information Processing Systems , 36: 38975–38987, 2023. Karthik Valmeekam, Kaya Stechly, and Subbarao Kamb-hampati. Llms still can’t plan; can lrms? a preliminary evaluation of openai’s o1 on planbench. arXiv preprint arXiv:2409.13373 , 2024. Karthik Valmeekam, Kaya Stechly, Atharva Gundawar, and Subbarao Kambhampati. A systematic evaluation of the planning and scheduling abilities of the reasoning model o1. Transactions on Machine Learning Research , 2025. Yue Wu, Xuan Tang, Tom M Mitchell, and Yuanzhi Li. Smartplay: A benchmark for llms as intelligent agents. 
+
+arXiv preprint arXiv:2310.01557 , 2023. 10 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Jian Xie, Kai Zhang, Jiangjie Chen, Tinghui Zhu, Renze Lou, Yuandong Tian, Yanghua Xiao, and Yu Su. Trav-elplanner: A benchmark for real-world planning with language agents. arXiv preprint arXiv:2402.01622 , 2024. Frank F Xu, Yufan Song, Boxuan Li, Yuxuan Tang, Kri-tanjali Jain, Mengxue Bao, Zora Z Wang, Xuhui Zhou, Zhitong Guo, Murong Cao, et al. Theagentcompany: benchmarking llm agents on consequential real world tasks. arXiv preprint arXiv:2412.14161 , 2024. Rui Yang, Hanyang Chen, Junyu Zhang, Mark Zhao, Cheng Qian, Kangrui Wang, Qineng Wang, Teja Venkat Ko-ripella, Marziyeh Movahedi, Manling Li, et al. Embod-iedbench: Comprehensive benchmarking multi-modal large language models for vision-driven embodied agents. 
+
+arXiv preprint arXiv:2502.09560 , 2025. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R Narasimhan, and Yuan Cao. React: Syner-gizing reasoning and acting in language models. In The eleventh international conference on learning representa-tions , 2022. Sheng Yin, Xianghe Pang, Yuanzhuo Ding, Menglan Chen, Yutong Bi, Yichen Xiong, Wenhao Huang, Zhen Xiang, Jing Shao, and Siheng Chen. Safeagentbench: A bench-mark for safe task planning of embodied llm agents. arXiv preprint arXiv:2412.13178 , 2024. Ori Yoran, Samuel Joseph Amouyal, Chaitanya Malaviya, Ben Bogin, Ofir Press, and Jonathan Berant. Assis-tantbench: Can web agents solve realistic and time-consuming tasks? arXiv preprint arXiv:2407.15711 ,2024. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xi-aochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, et al. Dapo: An open-source llm re-inforcement learning system at scale. arXiv preprint arXiv:2503.14476 , 2025. Huaixiu Steven Zheng, Swaroop Mishra, Hugh Zhang, Xinyun Chen, Minmin Chen, Azade Nova, Le Hou, Heng-Tze Cheng, Quoc V Le, Ed H Chi, et al. Natural plan: Benchmarking llms on natural language planning. arXiv preprint arXiv:2406.04520 , 2024. Shuyan Zhou, Frank F Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Tianyue Ou, Yonatan Bisk, Daniel Fried, et al. Webarena: A realistic web envi-ronment for building autonomous agents. arXiv preprint arXiv:2307.13854 , 2023. 11 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# Appendix 
+
+# Table of Contents 
+
+A How was the difficulty split decided? 13 B Technical details of the implementation 14 C World Model Knowledge Testing Details 15 D Additional Analysis of Loops and Recovery 16 
+
+D.1 Loop awareness and adaptive resilience . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 
+
+E Example traces - Gemini 3 17 F Example traces - Claude Opus 4.5 21 G Example traces - Contrasting Gemini 3 and Claude Opus 4.5 24 
+
+12 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# A. How was the difficulty split decided? 
+
+To better understand how large language models approach the task, we analyse the performance of L LAMA -3.3-70B-INSTRUCT across a range of experimental settings. In Figure 8 a), we plot the average completion rate, whether the LLMs successfully reaches the target page within T steps, over 50 games as a function of the maximum number of allowed steps T, stratified by the minimum path length, O, between the source and target pages. We observe a clear relationship between task difficulty—as measured by the shortest-path distance, and model performance: completion rates decrease as the minimum path length increases. Increasing the number of allowed steps initially improves performance, as it enables the model to recover from early suboptimal decisions. However, the benefits of additional planning steps diminish beyond a certain point, and performance eventually plateauing despite increasing compute. In Figure 8 b), we analyse how the number of options presented to the LLM affects performance at step 30 on paths with lengths 3 & 4. We found, as one might expect, that more options makes the task harder. Based off this experiment we set the number of options to be 50 at each timestep, we did not pick 70 to reduce the number of tokens in each prompt and further reduce the cost of running LLM-WikiRace. In Figure 8 c), we further analyze the number of steps taken in excess of the minimum path length. This metric captures the extent to which the model deviates from optimal play. We find that suboptimality increases with the optimal path length, suggesting that small errors compound over longer trajectories. Based on these exploratory results, we fix the maximum number of allowed steps to T = 30 for all subsequent experiments. Based on this initial exploration, we formulate three LLM-WikiRace difficulty splits: EASY , MEDIUM , and HARD . These splits are created by sampling source pages at random from the graph and selecting a target pages at minimum O pages away. For the easy split we select 200 nodes with the shortest possible path equally split between 3 and 4 pages, the medium baseline consists of 150 nodes with an equal split between 5 and 6 pages, finally the hard baseline consists of 100 pairs equally split between lengths 7 and 8. For the harder baselines models often require more steps, to reduce the cost of running the baseline we reduce the number of points to be evaluated as the difficulty of the splits increases. 0 5 10 15 20 25 30 
+
+> Number of Steps
+> 0
+> 20
+> 40
+> 60
+> 80
+> Completion Rate
+> Path Len
+> 3 steps
+> 4 steps
+> 5 steps
+> 6 steps
+> 7 steps
+> 8 steps
+
+(a) Completion rate 30 40 50 60 70  
+
+> Number of Options
+> 77.5
+> 80.0
+> 82.5
+> 85.0
+> 87.5
+> 90.0
+> Success Rate
+
+(b) Options vs. success 3 4 5 6 7 8 
+
+> Optimal Path Length
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Extra Steps Taken
+
+(c) Extra steps 
+
+Figure 8. We create easy, medium, and hard difficulty splits using the length of the shortest path between the start and target concept to determine difficulty. a) The completion rate is plotted against the number of game steps for L LAMA -3.3-70B-I NSTRUCT ,over a variety different optimal path lengths. Across different path lengths most models consistently pass or fail by step 30. b) We analyse the performance of the easy split, when the model is provided with {30 , 50 , 70 } next node options, we settle on 50 options at each step to ensure the easy split is not saturated. c) The extra steps taken for successful runs increases as the optimal path length increases, we hypothesize this is because more sub-optimal moves accumulate over longer tasks and require more steps to correct. 
+
+13 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# B. Technical details of the implementation 
+
+Algorithm 1 WikiRace Game Procedure  
+
+> 1:
+
+Input: Source page s, target page g, maximum steps T , maximum links N 
+
+> 2:
+
+Initialize current page p ← s 
+
+> 3:
+
+for t = 1 to T do  
+
+> 4:
+
+Construct a prompt containing the current page p, target page g, traversal history, and outgoing links  
+
+> 5:
+
+Retrieve outgoing pages N (p) from the WikiGraph  
+
+> 6:
+
+if |N (p)| > N then  
+
+> 7:
+
+Select up to N outgoing links with the shortest precomputed distance to g 
+
+> 8:
+
+end if  
+
+> 9:
+
+Prompt the LLM to select one link  
+
+> 10:
+
+Update p ← selected link  
+
+> 11:
+
+if p = g then  
+
+> 12:
+
+Success  
+
+> 13:
+
+break  
+
+> 14:
+
+end if  
+
+> 15:
+
+end for  
+
+> 16:
+
+Failure WikiGraph Structure. We represent the Wikipedia hyperlink graph as a sparse, directed graph in compressed sparse row (CSR) format. Each node corresponds to a Wikipedia page (mapped from page ID to title), and each directed edge represents an outgoing hyperlink. Formally, the graph is encoded as an adjacency matrix A ∈ { 0, 1}N ×N , stored using two arrays: (i) row_ptr of length N +1 , and (ii) col_indices of length nnz = |{ (i, j ) : Aij = 1 }| .For each node i ∈ { 0, . . . , N −1}, the slice 
+
+col_indices[row_ptr[i] : row_ptr[i+1]] 
+
+returns the indices of all out-neighbours of i, corresponding to the targets of outgoing hyperlinks from page i. This representation enables O(1) access to a node’s neighbour list boundaries and requires O(N + nnz) memory, with good cache locality for row-wise traversal. 
+
+Shortest-Path Computation. To compute shortest-path distances between pages, we use the 
+
+scipy.sparse.csgraph.shortest_path function over the sparse WikiGraph. Shortest-path distances from each target page are precomputed once and cached prior to gameplay. These distances are used exclusively by the environment to determine task difficulty and to filter outgoing links, and are never exposed to the model during inference. Finally, a detailed algorithm of how the LLM-WikiRace game is played can be found in Algorithm 1. 
+
+Compute Resources. The open source models with ≤ 70 B parameters were run locally on 2 H200 GPUs. Larger models were run through the open router API. 14 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# C. World Model Knowledge Testing Details 
+
+WikiRace World Model Experiment Prompt      
+
+> User Prompt:
+> We are playing a game where you navigate Wikipedia from a starting page to a target page solely by clicking links on each page. Can you tell us if {source_page }contains a link to {target_page }?Reply with either ’yes’ or ’no’ in the following for-mat: \boxed {} .
+> Figure 9. A schematic of the prompt provided to the LLM, when asking it to select the link to follow
+
+We now provide further details on the world knowledge experiment. To disentangle planning and world-knowledge we construct a classification task to probe the model’s understanding of the underlying Wiki-graph. We ask the model to differentiate between pairs of connected and unconnected nodes. To better characterize different types of non-connectivity, we include several classes of unconnected pairs. Specifically, we sample target nodes that are i steps away from the source node for i ∈ { 2, 3, 4}, with 200 samples included for each distance, and 200 samples of directly connected nodes. In addition, we include a reversed connection category, designed to be particularly challenging, in which the target node links to the source node but not visa-versa. For each source–target pair, we prompt the model using the prompt in Figure 9 to predict whether the two nodes are connected, and parse the resulting binary yes/no response in a \boxed {} format. In the smaller models if a response is not parsed we disregard the sample. 15 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# D. Additional Analysis of Loops and Recovery 
+
+To disentangle navigational precision from agentic adaptability / replanning abilities, we analyze the agent’s behaviour regarding state revisitation. We define a loop as any instance where an agent visits a specific page more than once within a single trajectory. We utilize three metrics to capture different aspects of this behaviour: • Loop Frequency (Precision): The proportion of tasks where a loop occurred. This measures the agent’s ability to navigate the graph linearly without errors. • Recovery Rate (Adaptability): Conditioned on a loop occurring, this measures the proportion of tasks where the agent eventually solves the task. This serves as a proxy for the agent’s capacity to recognize it is in a cycle and adapt its strategy successfully to escape and solve the task. • Average Maximum Visitation (Stagnation): The average maximum number of times a single page is visited. High values here indicate "blind" looping, where the agent fails to realize it is repeating actions. This correlation persists in the Medium split but shifts along the diagonal as task complexity increases. In the Hard split, all models are clustered in the bottom-right corner. Here, the difficulty of the tasks forces nearly all models into frequent looping behaviours ( > 80% loop frequency) with correspondingly low success rates ( < 25% ). This suggests that in complex environments, once an agent loses its linear path, it rarely recovers. 
+
+D.1. Loop awareness and adaptive resilience 
+
+While Loop Frequency measures error quantity, the Recovery Rate and Maximum Visitation (Figure 10) reveal the model’s response to those errors. This allows us to distinguish between agents that get "stuck" versus those that adapt. 
+
+Adaptive Behavior in Easy Tasks. On the Easy split, we observe strong evidence of loop awareness in capable models. For example, Gemini 3 Pro loops in 13% of tasks but achieves a remarkable recovery rate of 62% . This indicates that , a loop is often a temporary detour rather than a failure. As highlighted by the qualitative analysis, the agent frequently recognizes the revisited state and successfully pivots to a new path. 
+
+The "Blind Loop" in Complex Tasks. As difficulty increases, this adaptive capacity degrades. For instance on the Medium split, both Kimi K2 and Llama 3.3 70B loop at the exact same rate (0.73). However, Kimi K2 recovers nearly twice as often (0.29 vs. 0.17), suggesting it retains some ability to break cycles, whereas the Llama model is more prone to repetitive failure. By the Hard split, "blind looping" becomes dominant. Recovery rates decrease to near 0.0 for most models, with the highest recovery rates of 12% and 10% being achieved by Claude Opus 4.5 and Gemini 3 Pro, respectively. The Average Maximum Visitation increases significantly for most models (e.g., GPT-5 Nano: 7.1, Kimi K2: 6.2). These high visitation counts confirm that in the hardest scenarios, agents lose their ability to adapt: they are looping and continue to revisit the same states 6+ times without managing to solve the task. 16 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Figure 10. Recovery and max visitation 
+
+# E. Example traces - Gemini 3 
+
+We now present several example traces from games played by the Gemini 3 model across different optimal path lengths. These traces are raw answers provided by the model and have only been cropped where indicated to reduce length and improve readability. Example 2 shown in Figure 11 shows how Gemini 3 plans ahead by reasoning through expected future connections. Similarly, in Example 3 in Figure 12 we observe that the model explicitly states possible paths it may encounter for a given choice. Example 4 (Figure 13) presents a recovery, where the model notices a loop in its path and successfully corrects its decision to complete the task. Conversely, Example 5 (Figure 14) highlights a clear limitation in terms of the replanning ability. Despite repeating the same decision at multiple steps the model fails to escape the loop. Example 2: Gemini 3, Luminogram → Ionides, optimal path length = 3, first step 
+
+Based on the current page "Luminogram", [...], the best strategy is to move to the broadest category available to find links related to art history, museums, or biography. 
+
+> PLANNING AHEAD
+
+"Photography" is the main parent topic. From "Photography", one can navigate to "History of photography", "Art", or specific museums like the "Victoria and Albert Museum" (which holds the Ionides bequest and an extensive photography collection), or to famous photographers (like Julia Margaret Cameron, who was close friends with the Ionides family). None of the other links (specific techniques, equipment, or chemical processes) are likely to provide a direct path to a specific family surname or art history topic as efficiently as the main subject article. 37 
+
+Figure 11. Raw answer of Gemini 3 highlighting the model’s ability to plan ahead. 
+
+17 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 3: Gemini 3, Pierrefitte-sur-Aire → Fibrin, first step 
+
+{thinking tokens} 
+
+Analyzing the Path from Pierrefitte-sur-Aire to Fibrin 
+
+Okay, here’s what I’m thinking. I’ve got this page on Pierrefitte-sur-Aire, a small commune in France, and the target concept is "Fibrin," the blood clotting protein. I need to figure out the best way to get from one to the other. [..] The obvious "hub" to get out of this local geographical area is the link to "France" itself. It’s a major page with sections on demographics, economy, science, and education, all of which could potentially branch out towards relevant biological concepts.   
+
+> MAPPING OUT POTENTIAL PATHS
+
+I can see paths like "Health in France" leading to "Medicine" and then "Blood," eventually pointing towards "Fibrin." Or I could go through "Science and technology in France" and then Biology. I’m also considering the possibility of something like "Louis Pasteur," a famous French biologist, as another potential route, although that’s more of a gamble. I’m pretty confident that "France" offers the broadest and most promising set of potential links. I’m envisioning paths like: "France" -> "Developed country" -> "Health care/Life expectancy" -> "Medicine" -> "Blood" -> "Fibrin." or "France" -> "French Academy of Sciences" -> Biology. [. . . ] So, yeah, I’m sticking with "France" as the best option, the safest bet to get out of this geographic loop and find that biological connection. This hub strategy is the best way to escape a cluster of obscure articles. I’m pretty sure about this. 
+
+Figure 12. Raw answer reveals the model is explicitly stating possibly future paths when reasoning about the decision. 
+
+18 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 4: Gemini 3, Luminogram → Ionides, optimal path length = 3 
+
+Step 9: Current page "Parthenon", Gemini chooses "Athens": 
+
+[...] Looking at the links: Most links (Enna, Poseidon, Paestum, Centaur, etc.) keep you deep in Ancient Mythology or Geography.   
+
+> SUPPORTING ARGUMENT FOR ATHENS
+
+Athens (48) is the modern capital and the location of the Parthenon. The article on Athens will almost certainly link to London, the British Museum (in the context of the marbles), or United Kingdom, which are the necessary bridges to reach the Anglo-Greek Ionides family and their collections. [...] 
+
+Step 15: Current page "Parthenon", Gemini chooses "Athens": 
+
+The goal is to reach the page "Ionides" (referring to the prominent Ionides family of art collectors, [. . . ] to British museums. To reach "Ionides", the most logical path is to navigate toward London, the British Museum, or the Victoria and Albert Museum.     
+
+> SUPPORTING ARGUMENT FOR ATHENS (FAILS TO RECOGNIZE REPETITION )
+
+From the "Parthenon" page, the best link to bridge the gap between Ancient Greece and Modern London/Museums is Athens. The "Athens" article is a major hub that discusses the Elgin Marbles (Parthenon Sculptures), which provides a direct link to the British Museum and mentions London. From the British Museum or London pages, it is much easier to find the Victoria and Albert Museum or the Ionides family. [...] 
+
+Step 26: Current page "Parthenon", Gemini chooses "Ephesus": 
+
+[...] 
+
+> RECOGNIZES LOOP
+
+The user has been stuck in a loop around Athens and the Acropolis. To break this loop and move towards the British art world or the British Museum (which holds the Parthenon/ Elgin marbles and links to other UK collections): 1. Athens (20) is a hub, but the user has visited it multiple times, leading to loops. 2. Ephesus (44) is a major ancient site (Temple of Artemis). [...] Clicking Ephesus offers a strong path to the British Museum, which is a key node to reach specific British collectors or the Victoria and Albert Museum (where the Ionides collection resides).[...] 
+
+> CHOICE TO BREAK LOOP
+
+Ephesus is the best option to break the geographical loop of Athens while maintaining a thematic connection to antiquities that reside in London museums. 
+
+[Solves the game within 30 steps] 
+
+Figure 13. The model is initially stuck in a loop repeating actions in steps 9 and 15 without realising the repetition. However, in step 26 the model shows awareness and chooses an alternative options to break out of the loop. This leads to a successful completion of the task. 
+
+19 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 5: Gemini 3, Megalocaria → Rojhuwas, optimal path length = 8 
+
+Initial Progress (Steps 1–7): 
+
+Megalocaria → Coccinellidae → Shellac → Mahabharata → India → Haryana → Dharuhera → Bawal → Rewari 
+
+Loop Pattern (Steps 8–30): 
+
+The model then oscillated between Bawal and Rewari for the remainder of the task, with the exception of visiting Haryana, Dharuhera, and Nikhri before returning to the loop. 
+
+Some of the steps illustrating the loop: Step 8: Rewari → Bawal 
+
+“Rojhuwas is a village located in the Bawal tehsil of the Rewari district in Haryana. . . Wikipedia pages for Tehsils often contain lists or templates of the villages contained within them. Bawal is the specific Tehsil where Rojhuwas is located. . . clicking Bawal is the most direct route to find the village Rojhuwas.” 
+
+Step 9: Bawal → Rewari 
+
+“Since ‘Rojhuwas’ is not listed in the available links (0–26), you need to navigate to a page that is likely to list villages in the Rewari district or Bawal tehsil. Rewari is the district headquarters. Wikipedia pages for districts or district headquarters often contain lists of tehsils, blocks, and sometimes significant villages. . . ” 
+
+Step 14: Rewari → Bawal 
+
+“Rojhuwas is a village in the Rewari district. . . Since I didn’t find ‘Rojhuwas’ or a ‘Villages in Bawal’ list, I will reassess the potential to navigate to the ‘Rewari district’ page. . . My strategy involves prioritizing direct administrative links. . . ” 
+
+Step 21: Bawal → Rewari 
+
+“Rojhuwas is not listed in the direct links from Bawal (0–26). . . Since ‘Rojhuwas’ is administratively part of the Bawal tehsil of the Rewari district, and it is not explicitly listed. . . you must navigate to a page that functions as a parent or hub. Rewari is the district headquarters. . . The other links like Alaska, Birds, or distant cities are unlikely to lead to a specific village in Haryana.” 
+
+[Fails to solve task within the step limit] 
+
+Figure 14. Gemini 3 fails to escape the loop and ultimately fails to complete the task, which highlights a critical limitation in terms of replanning ability. 
+
+20 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# F. Example traces - Claude Opus 4.5 
+
+As shown in Examples 6-9 (Figures 15–18), Claude 4.5 Opus exhibits a high-level strategy and response pattern consistent with Gemini 3. It performs explicit planning and deliberate navigation through hub pages to cover multiple topics. The traces also reveal limitations: despite recognising a loop in its path (Example 9 in Figure 18), the model remains stuck for several steps and only adapts after repeated failures. Example 6: Claude Opus 4.5, Herstory → Warth  
+
+> UNDERSTANDING TARGET AND CURRENT PAGE
+
+I need to find a path from "Herstory" to "Warth". Let me think about what "Warth" might be - it could be a place name, perhaps a village or town somewhere. 
+
+> STARTEGY
+
+Looking at the available links, I need to find one that might lead me toward "Warth". Since Warth seems like it could be a geographical location (possibly in Austria, Switzerland, or Germany based on the name), I should look for links that might lead to geography-related topics.  
+
+> CONSIDER OPTIONS
+
+From the current options, most are related to feminism and gender studies. Let me consider which might be most likely to lead to a geographical location: 1. "History" (#25) - This is a broad topic that could link to many things, including historical places 2. "Latin" (#2) - Language topic, might link to European geography [...] The path from feminism-related topics to a small Austrian town is not obvious. Let me think about the best strategy: 1. "History" is very broad and could link to many geographic and historical topics 2. "Latin" might connect to European history/geography 
+
+> COMMIT TO DECISION
+
+I think "History" (#25) is probably the best choice as it’s the most general topic that could eventually lead to geographical articles. Let me reconsider - from History, I might find links to European history, then to specific countries, then to specific places. Actually, let me think more carefully. The most efficient path would be through broader topics. "History" seems like a reasonable choice as it’s a very general topic that connects to many other articles. My choice is #25 (History). 
+
+Figure 15. Claude Opus 4.5 follows the same response pattern and overall strategy as Gemini 3 Pro. 
+
+21 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 7: Claude Opus 4.5, Luminogram → Ionides, optimal path length = 3, first step 
+
+Looking at the options: - Photography (1) is a broad topic that could lead to many other articles - Angiography (21) is medical imaging - could potentially lead to scientific/medical terms - The other options are mostly specific photography techniques [...] 
+
+> PLANNING AHEAD
+
+To get to the Ionides family, I might need to go through: - Art-related pages - British history - Greek diaspora - Patronage of arts From the current options, "Photography" (1) seems like the broadest option that could lead to more general topics, potentially including art history or notable collectors. Alternatively, "Pictorialism" (16) is an art movement in photography that might connect to art history. [...] I think Photography (1) is probably the best choice as it’s a very broad article that could link to many other topics including art, history, technology, and potentially to people and families involved in the art world. 37 
+
+Figure 16. This example trace showcases Claude Opus 4.5 planning ahead. 
+
+Example 8: Claude Opus 4.5 Pierrefitte-sur-Aire → Fibrin, first step 
+
+I need to find a path from "Pierrefitte-sur-Aire" to "Fibrin". Fibrin is a protein involved in blood clotting. Looking at the current page, I’m on a page about a French commune. The links are mostly to other French communes and locations. To get to "Fibrin", I need to find a path that leads me to more general/scientific topics. 
+
+> NAVIGATING TO A HUB
+
+The best strategy would be to click on a link that leads to a larger, more general article that might have links to broader topics like biology, medicine, or science. Looking at the options: - Most are small French communes - "France" (27) is a major country article that would have many links to various topics - "Verdun" (20) is a notable city known for WWI battle - "Bar-le-Duc" (45) is a larger city I think "France" would be the best choice as it’s a major country article with links to many diverse topics including science, medicine, and biology which could eventually lead to Fibrin. Let me go with France (27) as it’s the most likely to have diverse links that could eventually lead to medical/biological topics. 
+
+Figure 17. Claude Opus 4.5 also navigates to hub pages to traverse different topics. 
+
+22 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 9: Claude Opus 4.5, Megalocaria → Rojhuwas, optimal path length = 8 
+
+Step 15 (Jhajjar → Beri): 
+
+Beri is my best bet since it’s a local town in Jhajjar district that could connect to smaller surrounding villages like Rojhuwas. 
+
+Step 16 (Beri → Beri): 
+
+The options given are: 0: Berry - This would be about the fruit, which would take me away from Indian geography 1: Beri - This would be a link to the same or similar page about Beri (possibly a disambiguation or the actual town page) "Beri" would keep me in the right geographical area, while "Berry" would take me to an unrelated topic about fruit. I should click on "Beri" (option 1) to continue exploring links related to Beri, Haryana, which might have connections to Rojhuwas. 
+
+Step 17 (Beri → Beri): 
+
+However, clicking "Beri" when I’m already on "Beri" seems like it would just keep me on the same page or go to a disambiguation. "Berry" would take me completely off track. Given the limited options, I should try "Beri" (option 1) to see if it leads to a disambiguation or related page that might have more useful links to navigate toward Rojhuwas. Actually, looking at this more carefully - both options seem problematic. "Berry" is clearly wrong. "Beri" might just loop back. But I have to choose one, and "Beri" is the only reasonable option to stay in the geographic context I need. 
+
+Step 18 (Beri → Beri): 
+
+Since Berry (the fruit) is unlikely to lead me to an Indian village called Rojhuwas, I should try Beri (option 1) again, hoping it might be a disambiguation page with more options. Wait, I’ve already been to Beri 3 times according to the history. This seems like a loop. But between Berry (a fruit) and Beri (possibly a place in Haryana), Beri is more likely to have connections to Rojhuwas, which appears to be in the same region. 
+
+Step 19 (Beri → Berry ): 
+
+The only other option is "Berry" which would take me to the fruit/botanical topic, which is unlikely to help reach Rojhuwas. However, since clicking "Beri" has kept me in a loop, I might as well try "Berry" to see if it leads somewhere different, even though it’s unlikely to be helpful. 
+
+[Fails to solve task within the step limit] 
+
+Figure 18. The model is stuck on the page Beri for several steps, despite recognising the loop. After looping three times, it adapts its decision but still fails to complete the task within in the step limit. 
+
+23 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+# G. Example traces - Contrasting Gemini 3 and Claude Opus 4.5 
+
+To gain further insights into the performance gap between Gemini 3 and the second best Claude Opus 4.5 we now contrast the two models on a task solved by Gemini and failed by Claude. Comparing Gemini 3 in Example 10 (Figure 19) with Claude 4.5 Opus in Example 11 (Figure 20) shows that a lack of accurate world knowledge (in this case the location of a town in Croatia), which Claude mistakes to be in Serbia, causes it to not solve the task. Example 10: Gemini 3, Vielsalm → Sjeˇ cevac 
+
+Initial Progress (Step 1): Vielsalm → Belgium 
+
+Step 2 (Belgium → Croatia): 
+
+answer: 20 thinking: The Logical Path to Sjeˇ cevac Okay, here’s the deal. I’m starting at "Belgium" and need to get to "Sjeˇ cevac." First things first, "Sjeˇ cevac" sounds Slavic, probably Balkan. A quick search confirms it’s a village in Croatia, specifically in Karlovac County. So, the optimal path is Belgium to something related to Croatia, then to Croatia, and ultimately to Sjeˇ cevac. Let’s see what’s on the table. Looking at the links available, "Croatia" (option 20) jumps out. That’s the obvious choice. Serbia, Montenegro, and Slovenia are nearby, but they’re not Croatia. "Europe" is far too broad. Since Sjeˇ cevac is a village in Croatia, the "Croatia" page is definitely my best bet. It will likely contain information on administrative divisions, like counties and municipalities, which will get me closer to my target. Therefore, my choice is 20 - Croatia. 
+
+Remaining steps to completion: 
+
+Croatia → Zagreb → Samobor → Sjeˇ cevac 
+
+Figure 19. Gemini 3 successfully navigates this tasks. 
+
+24 LLM-WikiRace Benchmark: How Far Can LLMs Plan over Real-World Knowledge Graphs? 
+
+Example 11: Claude Opus 4.5, Vielsalm → Sjeˇ cevac 
+
+Initial Progress (Step 1): Vielsalm → Belgium 
+
+Step 2 (Belgium → Serbia): Looking at the target "Sjeˇ cevac," this is a village in Serbia. The most direct path would be to click on Serbia, which will give me access to Serbian geography and locations. 31: Serbia reasoning: I need to find a path from "Belgium" to "Sjeˇ cevac". Let me think about what Sjeˇ cevac is. Sjeˇ cevac is a village in Serbia. It’s located in the Brus municipality, in the Rasina District of Serbia. Looking at the available links, I should click on a link that would eventually lead me to Sjeˇ cevac. Since Sjeˇ cevac is in Serbia, the most direct path would be to click on "Serbia" (link 31). From Serbia, I should be able to find links to Serbian villages, municipalities, or geographic regions that would eventually lead to Sjeˇ cevac. Let me choose Serbia (31) as the next step. 
+
+Steps 3-14: 
+
+Serbia → Kragujevac → Kraljevo → Sjenica → Prokuplje → Kruševac → Lajkovac → Trstenik → ... → Croatia 
+
+Step 15 (Croatia → Serbia): 
+
+Looking at the target "Sjeˇ cevac," this is a village in Serbia. I need to get back to Serbia to navigate toward this destination. From the available options, the most direct path would be: **1** This will take me to Serbia, from where I can navigate to the specific region where Sjeˇ cevac is located. reasoning: I need to get from "Croatia" to "Sjeˇ cevac". Let me think about what Sjeˇ cevac is and how to get there. Sjeˇ cevac is a village in Serbia. Looking at my previous path, I was visiting various Serbian cities like Kragujevac, Kraljevo, Sjenica, Prokuplje, Kruševac, Lajkovac, Trstenik before somehow ending up at Korˇ cula and Croatia. To get to Sjeˇ cevac, I should probably go back to Serbia. Looking at the options: - 1: Serbia - This would take me directly to Serbia, which makes sense since Sjeˇ cevac is in Serbia. Let me check if there are any more direct options... Sjeˇ cevac is in Serbia, specifically I believe it’s associated with the Trstenik municipality or nearby areas in central Serbia. Given the available options, going to Serbia (option 1) seems like the most logical choice to get closer to Sjeˇ cevac. Actually, let me reconsider. From Serbia, I would need to navigate to a more specific location. Sjeˇ cevac might be in the Kruševac or Trstenik area. But I don’t see those specific options here. The best choice from the current options appears to be: 1: Serbia - as Sjeˇ cevac is a village in Serbia This would get me back to Serbia where I can then try to navigate to the specific region where Sjeˇ cevac is located. 
+
+[Fails to solve task within the step limit] 
+
+Figure 20. Claude 4.5 Opus fails due to incorrect world knowledge and the inability to adapt. 
+
+25

@@ -1,0 +1,1355 @@
+Title: PhGPO: Pheromone-Guided Policy Optimization for Long-Horizon Tool Planning
+
+URL Source: https://arxiv.org/pdf/2602.13691v1
+
+Published Time: Tue, 17 Feb 2026 01:32:51 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# PhGPO: Pheromone-Guided Policy Optimization for Long-Horizon Tool Planning 
+
+## Yu Li 1, Guangfeng Cai 1, Shengtian Yang 1, Han Luo 1, Shuo Han 2, Xu He 2, Dong Li 2, Lei Feng 1* ,
+
+> 1
+
+School of Computer Science and Engineering, Southeast University, Nanjing, China 
+
+> 2
+
+Huawei Noah’s Ark Lab, China yuli11@seu.edu.cn, fenglei@seu.edu.cn 
+
+Abstract 
+
+Recent advancements in Large Language Model (LLM) agents have demonstrated strong capabilities in executing complex tasks through tool use. However, long-horizon multi-step tool planning is challenging, because the ex-ploration space suffers from a combinatorial explosion. In this scenario, even when a correct tool-use path is found, it is usually considered an immediate reward for current training, which would not provide any reusable informa-tion for subsequent training. In this paper, we argue that 
+
+historically successful trajectories contain reusable tool-transition patterns , which can be leveraged throughout the whole training process. Inspired by ant colony optimiza-tion where historically successful paths can be reflected by the pheromone , we propose Pheromone-Guided Policy Op-timization (PhGPO), which learns a trajectory-based transi-tion pattern (i.e., pheromone) from historical trajectories and then uses the learned pheromone to guide policy optimiza-tion. This learned pheromone provides explicit and reusable guidance that steers policy optimization toward historically successful tool transitions, thereby improving long-horizon tool planning. Comprehensive experimental results demon-strate the effectiveness of our proposed PhGPO. 
+
+## Introduction 
+
+Large Language Model (LLM) agents have demonstrated strong capabilities in executing complex tasks through tool use (Zhang et al. 2025; Luo et al. 2025; Schick et al. 2023; Yang et al. 2025b). By invoking external tools such as web search (Zhou et al. 2024), computer operation (Qiu et al. 2025b), and code execution (Yang et al. 2025a), agents can access up-to-date information and take actions beyond static parametric knowledge. As the tool space expands, many real-world tasks require a tool-use trajectory, where early choices constrain later reachable states and determine whether the entire trajectory succeeds (Yao et al. 2022; Liu et al. 2025). When tool-use trajectories extend to ten to twenty steps, as in Toolathlon (Li et al. 2025b), long-horizon tool planning becomes difficult: agents must choose from hundreds of tools, yet even when a successful trajectory is discovered, its transition patterns are hard to explicitly store and reliably reuse, which hinders effective learning in such a large tool space (Xu et al. 2025; He et al. 2025). 
+
+> *
+
+Corresponding author. 
+
+Reinforcement learning (RL) offers a natural way to lever-age interaction experiences and feedback to update the pol-icy for long-horizon tool planning (Yu et al. 2025; Li, Zou, and Liu 2025; Hou et al. 2025). However, interaction ex-periences are typically absorbed implicitly into the policy parameters, leaving no explicit record of historically suc-cessful tool transitions. As a result, even after a successful tool-use trajectory is discovered, its transition patterns re-main implicit in the policy parameters and cannot be directly reused as guiding information. When successful trajectories are rare, the exploration of RL becomes inefficient because the agent must search again for similar long-horizon trajec-tories (Lu et al. 2025; Li et al. 2025a). In this paper, we argue that an explicit transition prior can be distilled from historically successful trajectories, which would be helpful to policy optimization. We validate our viewpoint with a two-stage pilot experiment (Figure 1): Firstly, we collect verified successful tool-use trajectories and distill their transition patterns into an explicit transition prior. Secondly, we use this prior to reweight the policy’s next-tool distribution in accord with verified transitions. As shown in Figure 1, the explicit transition prior improves both sample efficiency and final success, with larger gains as tra-jectory length increases. Motivated by the above analysis, we would like to seek an explicit transition prior that can be learned from histor-ical trajectories and reused during policy optimization. To realize such a prior, we draw inspiration from Ant Colony Optimization (ACO), where the pheromone summarizes his-torically successful paths and encourages them to be taken again (Dorigo, Maniezzo, and Colorni 1996; Chari et al. 2025). Based on this inspiration, we propose Pheromone-Guided Policy Optimization (PhGPO) , which learns an explicit transition prior from historical trajectories, and this transition prior acts as the pheromone in ACO. Concretely, PhGPO organizes tools into a tool-transition graph based on the Model Context Protocol (MCP) (Luo et al. 2025) and associates each transition with a pheromone value. During policy optimization, we integrate the pheromone values into next-step tool selection, making historically successful tool transitions more likely to be reproduced. It is noteworthy that the pheromone is reinforced by verified successful tool-use trajectories and decays over time, which keeps the tran-sition pattern reusable and up to date. We further construct a          
+
+> arXiv:2602.13691v1 [cs.AI] 14 Feb 2026 500 1000 1500 2000
+> Interactions
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> Avg. Return
+> (a) Learning Curve
+> GRPO
+> GRPO + Prior
+> 500 1000 1500 2000
+> Interactions
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success Rate
+> (b) Success Rate
+> GRPO
+> GRPO + Prior
+> GRPO GRPO+Prior
+> Method
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Steps
+> 26%
+> (c) Path Discovery
+> 357
+> Sequence Length
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Success Rate  +16%
+> +55%
+> +278%
+> (d) Length Scaling
+> GRPO
+> GRPO + Prior
+
+Figure 1: Two-stage pilot experiment illustrating the benefit of an explicit transition prior for long-horizon tool planning .We first distill an explicit cross-trajectory transition memory from verified successful tool-use trajectories in an easier stage, and then reuse it as a prior signal during GRPO-based policy optimization. Panels (a) and (b) show higher average return and success rate under matched interaction budgets, panel (c) shows fewer steps to discover the first successful tool-use trajectory, and panel (d) shows that the relative gain increases with trajectory length, indicating stronger benefits over longer horizons. set of frequent argument invocations for each tool, enabling the agents to learn not only which tool to call but also how to invoke it effectively. Based on the pheromone mechanism as described above, our PhGPO adopts a progressive training pipeline to equip an agent with long-horizon tool planning abilities. Firstly, PhGPO begins with supervised warm-up using a next-tool prediction objective to provide a stable initialization. Sec-ondly, PhGPO performs pheromone-guided reinforcement learning with a progressive schedule: it injects the cor-rect next tool with a decaying probability and progres-sively cedes control to the policy, which enables pheromone to be continually updated from accumulated policy-driven successes. As the accumulated pheromone becomes more reliable, it fully leverages pheromone guidance for tra-jectory generation to optimize long-horizon performance. We empirically evaluate PhGPO on three long-horizon tool-planning benchmarks, including Toolathlon (Li et al. 2025b), TOUCAN (Xu et al. 2025) and TRAJECT-Bench (He et al. 2025), which cover diverse real-world tool-use scenarios with long multi-step tool-use trajectories. Across these benchmarks, PhGPO consistently produces tool-use trajectories that more closely match the reference trajecto-ries on complex tasks, demonstrating that pheromone en-ables effective reuse of historical successes and improves long-horizon tool planning performance. Our main contributions can be summarized as follows: • Explicit reuse in long-horizon tool planning. We show that transition patterns in successful tool-use trajectories are typically absorbed implicitly into the policy param-eters, making them hard to reuse and slowing learning when verified successes are rare. • PhGPO with pheromone as an explicit transition prior. We propose PhGPO, which distills successful trajectories into an explicit transition prior working as pheromone, and uses it to guide policy optimization to-ward historically successful tool transitions. • MCP-grounded graph and progressive training. We build an MCP-grounded tool-transition graph to main-tain pheromone and introduce a progressive training pipeline to accumulate and exploit it over long tool-use trajectories, achieving consistent gains on Toolathlon, TOUCAN, and TRAJECT-Bench. 
+
+## Related Work 
+
+Retrieval-augmented tool use. Tool selection at scale is a central challenge for tool-using agents, and many meth-ods use retrieval to narrow the candidate set by fetching relevant documentation, schemas, or demonstrations (Yao et al. 2022; Shinn et al. 2023; Min et al. 2025b,a). Early prompting-based agents interleave reasoning and action se-lection over retrieved evidence (Yao et al. 2022; Shinn et al. 2023). More recent systems further train retrievers or tightly couple retrieval with tool-calling models to improve robust-ness under large and evolving tool pools (Patil et al. 2024; Schick et al. 2023; Qin et al. 2023; Guo et al. 2024; Li et al. 2023), and dedicated benchmarks and pipelines increas-ingly treat tool selection as an information retrieval problem (Chen et al. 2024; Braunschweiler, Doddipatla, and Zorila 2025; Wang et al. 2025a; Pan, Li, and Wang 2025). While retrieval strengthens per-step grounding, long-horizon tool-use trajectories still depend on correct multi-step transition patterns learned across decisions. 
+
+Graph-structured tool planning and search. Beyond re-trieval, many methods exploit explicit structure among tools by organizing APIs and dependencies into graphs or trees, and then planning through graph traversal, heuristic search, or learned graph representations (Liu et al. 2024a,b; Jiang et al. 2025; Chen et al. 2025b; Zhuang et al. 2024). Some ap-proaches search or expand over tool graphs to produce multi-step tool-use trajectories (Liu et al. 2024a,b; Jiang et al. 2025), while others generate executable tool graphs or DAG-like plans (Chen et al. 2025b). Robustness to evolving tool interfaces can also be improved through interactive search and self-updating mechanisms (Chen et al. 2025a). While structured representations can reduce the effective search space, these methods typically rely on heuristics or super-vised planning signals and do not maintain an explicit, adap-tive transition prior distilled from accumulated successes to guide policy optimization. 
+
+Reinforcement learning for tool use. Reinforcement learn-ing methods have been increasingly used to improve multi-step tool use under sparse outcomes (Yu et al. 2025; Li, Zou, and Liu 2025). Recent work studies tool-integrated op-timization with verifiable or execution-based rewards (Wei et al. 2025b), and explores hierarchical agent designs that separate high-level planning from tool execution (Zhang 2025). Related settings also investigate agents that interleave language with executable code and learn tool-use strategies from outcomes (Feng et al. 2025b; Dong et al. 2025). De-spite these advances, successful experience is still often ab-sorbed implicitly into the policy parameters, which can slow learning in long-horizon settings when verified successful trajectories are rare. 
+
+Experience reuse and agent memory. Explicit experience reuse has been studied through storing and replaying suc-cessful behaviors rather than relying solely on implicit pa-rameter updates (Tang et al. 2025; Wang et al. 2025b). Record-and-replay paradigms cache trajectories or routines to accelerate future problem solving (Qiu et al. 2025a; Feng et al. 2025a). However, these approaches rarely maintain structured transition statistics distilled from accumulated successes as an explicit transition prior, especially for long-horizon tool-use trajectories on large tool-transition graphs. 
+
+## Methodology 
+
+In this section, we present Pheromone-Guided Policy Opti-mization ( PhGPO ) for long-horizon tool planning. PhGPO is built around a simple principle: long-horizon tool use should explicitly accumulate and reuse historically suc-cessful tool transitions from verified tool-use trajecto-ries. Inspired by Ant Colony Optimization (ACO) (Dorigo, Maniezzo, and Colorni 1996), PhGPO instantiates the ex-plicit transition prior as pheromone on a tool-transition graph. Pheromone is reinforced by verified successful tra-jectories and decays over time, yielding an adaptive super-vision signal that can be incorporated into next-step tool se-lection for policy optimization. In this way, PhGPO converts trajectory-level success into transition-level pheromone on the graph, which steers policy optimization toward histor-ically successful tool transitions while avoiding stale bias through decay. 
+
+Tool-Transition Graph from MCP 
+
+The goal of long-horizon tool use is to first select the next tool and then specify an executable invocation. To this end, we build a tool-transition graph from MCP that captures tool transitions from verified trajectories and explicitly rep-resents tools and their transitions, providing a structured space for modeling multi-step tool-use trajectories and their transition patterns. We also construct a set of frequent ar-gument invocations for each tool, which captures how tool arguments are frequently invoked. 
+
+Tool-transition graph. Let VTool = {v1, . . . , v N } be the base tools exposed by MCP. We view a tool-use trajectory as a path over VTool and define a directed edge (vi, v j ) ∈ E 
+
+when vj follows vi in a trajectory. This graph captures tool-to-tool dependencies and provides the substrate for accumu-lating transition experience on edges. 
+
+Argument-invocation set. The invocation of each tool vi ∈VTool also depends on the specific structure of tool argu-ments. For each tool vi ∈ VTool , we construct a set of frequent executable argument invocations VArg that cap-tures how tool arguments are frequently invoked, denoted by VArg (vi) = {v(1)  
+
+> i
+
+, . . . , v (Ki) 
+
+> i
+
+} where v(j) 
+
+> i
+
+denotes the j-th argument-invocation pattern among Ki key patterns of the tool vi. To make the mapping explicit, we define tool-to-invocation association edges Earg = SNi=1 {(vi, v (k) 
+
+> i
+
+) |
+
+v(k) 
+
+> i
+
+∈ V Arg }. An edge (vi, v (k) 
+
+> i
+
+) ∈ E arg indicates that v(k) 
+
+> i
+
+is an argument-invocation associated with tool vi.Based on both the tool-transition graph and the argument-invocation set, we can have a factorized decision at step t:the agent first selects the next tool at ∈ V Tool , then selects an argument invocation ut ∈ V Arg (at) to instantiate an exe-cutable invocation template. 
+
+Pheromone as an Explicit Transition Prior 
+
+Our PhGPO integrates both task-agnostic pheromones with 
+
+task-dependent pheromones from verified successful tool-use trajectories. 
+
+Task-agnostic pheromones. We maintain two task-agnostic pheromones, including τ agn Tool (vi, v j ) extracted from the tool-transition graph VTool and τ agn Arg (vi, v (k) 
+
+> i
+
+) extracted from the argument-invocation set VArg respectively. After executing a trajectory ξ, we compute a quality score q(ξ) ∈ [0 , 1] , in terms of the match ratio to the reference tool-use trajectory. For each traversed tool and each selected argument invoca-tion in ξ, we apply ACO-style deposition and evaporation: 
+
+τ agn ← clip  (1 − ρ)τ agn + α q (ξ), [τmin , τ max ]. (1) Here, ρ ∈ (0 , 1) is the evaporation rate that denotes the de-cayed degree of outdated statistics, α > 0 is the deposi-tion rate, and q(ξ) scales the reinforcement for transitions in the tool-use trajectory ξ, with higher-quality tool-use tra-jectories contributing more to the pheromone updates. We clip pheromones to [τmin , τ max ] to make better utilization of pheromones and limit excessive concentration on a small subset of tools. It is noteworthy that the construction of both 
+
+τ agn Tool and τ agn Arg follows the same way as shown in Eq. (1). 
+
+Task-dependent pheromones. For each transition (vi, v j ),we maintain an edge memory bank Mij that stores tuples 
+
+(e, q ), where e is a task embedding and q is the quality score of a verified successful tool-use trajectory that in-cludes this transition. Given a task description x, we com-pute ex = ϕ(x) using a sentence encoder ϕ and retrieve memories whose cosine similarity exceeds a threshold: 
+
+Mij (x) = {(e, q ) ∈ M ij | sim( ex, e) ≥ θsim , ∀e}. (2) Then, we estimate task-dependent pheromone by similarity-weighted averaging: 
+
+τ dep (vi, v j | x) = τ0 +
+
+P  
+
+> (e,q )∈M ij (x)
+
+sim( ex, e) q
+
+P  
+
+> (e,q )∈M ij (x)
+
+sim( ex, e) + ϵ
+
+· (τmax − τ0), (3) where τ0 is a base value, ϵ is a small constant for numerical stability, and the scaling (τmax − τ0) keeps τ dep in a com-parable range. It is noteworthy that the construction of both Standard RL: The Exploration Dilemma     
+
+> Search Calculate
+> Read
+> Read
+> Code
+> Calculate
+> Read
+> Code
+> Search
+> query; top_k
+> source; URL
+> language; args
+> query; sort source; file_id
+> source; page
+> query; top_k; sort query; domains
+> source;
+> URL
+> language;
+> entry
+> language; task
+> language;
+> work_dir
+> source; pages
+> expression ; precision
+> expression ; format
+> Progressive Pheromone Guided Training
+> Supervised warm-up
+> Basic tool-
+> selection
+> capabilities
+> Pheromone-guided RL
+> Initializes basic tool selection via supervised pre-training
+> Progressively update s pheromone priors via
+> decaying oracle guidance and exploration
+> Optimizes the policy with GRPO under full
+> pheromone guidance
+
+PhGPO: Pheromone-Guided 
+
+Policy Optimization 
+
+> Search
+> Calculate
+> Read
+> Code
+> Code
+> Read
+> Feedback
+> Plan
+> source; page
+> source; extract
+
+Figure 2: Overview of PhGPO. Existing RL-based tool planners often absorb experience implicitly, making successful long-horizon transition patterns difficult to explicitly distill and reuse. PhGPO introduces an ACO-inspired pheromone-based explicit transition prior over tool-transition edges and tool-to-invocation edges. Pheromone is updated via deposition and evaporation. During rollout generation, the updated pheromone serves as an explicit transition prior during trajectory generation, encouraging the policy to reproduce historically successful tool transitions and argument invocations. Training follows a progressive pipeline: supervised next-tool warm-up for stable initialization, followed by pheromone-guided reinforcement learning with a progressive schedule that accumulates pheromone statistics from verified successful trajectories and ultimately applies full pheromone guidance for trajectory generation and policy optimization. 
+
+τ dep Tool (vi, v j | x) and τ dep Arg (vi, v (k) 
+
+> i
+
+| x) follows the same way as shown in Eq. (3). Nevertheless, as shown in Eq. (3), if the edge memory bank Mij contains very few memories (e, q ), the estimated task-dependent pheromone could be unreliable. Therefore, we need to assign a corresponding confidence cij (x) ∈ [0 , 1] 
+
+to each task-dependent pheromone for representing their re-liability: 
+
+cij (x) = min(1 , n act /n min ) · smax · ¯q, (4) where nact is the number of memories in Mij , nmin is a pre-defined minimum number of elements in Mij , smax is the maximum similarity observed, and ¯q is the mean qual-ity score of the retrieved memories. In this way, the fi-nal pheromone can be fused by simultaneously considering task-agnostic pheromones and task-dependent pheromones: 
+
+τTool (vi, v j | x) = (1 − w · cij (x)) · τ agn Tool (vi, v j )+ w · cij (x) · τ dep Tool (vi, v j | x), (5) where w controls the maximum contribution of task depen-dence. We apply the same fusion way as shown in Eq. (5) for calculating τArg .
+
+Pheromone-Guided Policy Optimization Training 
+
+Learning long-horizon tool planning from scratch is dif-ficult because early training lacks reliable successes to build an explicit transition prior. We adopt a progressive pipeline that stabilizes basic behavior, gradually accumu-lates pheromone from verified tool-use trajectories, and then performs pheromone-guided policy optimization. 
+
+Supervised warm-up. We first pre-train the policy with a next-tool prediction objective: 
+
+LSL = − log πθ (a∗ 
+
+> t
+
+| st), (6) where a∗ 
+
+> t
+
+is the reference next tool. This stage ignores pheromone guidance and moves the policy away from ran-dom tool selection. By establishing tool-selection capabili-ties, the model can generate plausible initial tool-use trajec-tories that facilitate future success. 
+
+Pheromone as guidance. Building on this initialization, we introduce a pheromone-guided exploration strategy to navi-gate long-horizon tool-ues task completion. Specifically, we incorporate pheromone as an explicit transition prior dur-ing trajectory generation, increasing the likelihood of col-lecting informative tool-use trajectories for policy learning. This pheromone-guided trajectory generation aligns well with group-based policy optimization (Anschel et al. 2025; Feng et al. 2025c), where learning signals depend on the quality of multiple rollouts per prompt. We adopt Group Relative Policy Optimization (GRPO) (Shao et al. 2024) as the optimization backbone, since GRPO computes rela-tive advantages within a rollout group. In long-horizon tool planning with a large tool space, unguided sampling can yield groups dominated by uniformly low-quality trajec-tories, weakening the relative learning signal. Pheromone-guided sampling increases the likelihood that each group contains higher-potential trajectories and meaningful con-trasts, enabling GRPO to better leverage its group-based ad-vantage to update the policy. We now present the sampling rule used for pheromone-guided sampling and the objective used to update the policy. 
+
+Pheromone-guided sampling. At each step t, the policy network generates πθ (at | st) given the current state st.To incorporate historical experience, we integrate the pol-icy with pheromone as an explicit transition prior. Specif-ically, we first select the top-K candidates from πθ as the sampling support, and then sample the next tool according to the pheromone-guided policy: 
+
+p(at | st, a t−1) ∝ exp   log πθ (at | st)+ β log τTool (at−1, a t | x), (7) Once the base tool at is selected, the agent selects an argu-ment invocation ut ∈ V Arg (at) according to τArg (at, u t | x).This argument choice is not parameterized by πθ and is not updated during policy optimization. Here (at, u t) follows the tool-to-invocation association defined in Sec. . 
+
+Policy optimization. For each training instance, we sample 
+
+M tool-use trajectories using the pheromone-guided distri-bution in Eq. (7), obtaining returns {Rm}Mm=1 . We compute group-relative advantages: 
+
+Am = Rm − ¯RσR + ϵ , where ¯R = 1
+
+M
+
+> M
+
+X
+
+> m=1
+
+Rm, (8) where ϵ is a small constant for numerical stability. The pol-icy πθ is updated by minimizing the following objective: 
+
+LPG = −E [min ( rt(θ)Am, clip (rt(θ), 1 − ε, 1 + ε)Am)] ,
+
+where rt(θ) = πθ (at | st)/π θold (at | st) denotes the proba-bility ratio at step t, and ε is the clipping threshold. 
+
+Progressive pheromone updates. Having introduced pheromone-guided sampling and the policy optimization ob-jective, we apply them through a progressive training sched-ule that blends supervision and exploration to accumulate pheromone as an explicit transition prior. We introduce a learning curriculum over horizon lengths, starting from short horizons and gradually increasing to longer ones, and em-ploy an oracle probability ptf decaying over time. Specifi-cally, at each step t, the action at is determined as: 
+
+at =
+
+a∗ 
+
+> t
+
+, with prob. ptf ,
+
+sampled from Eq. (7) , with prob. 1 − ptf , (9) where a∗ 
+
+> t
+
+is the reference action. This keeps rollouts close to reference trajectories in the early phase, increasing the chance of collecting verified successful tool-use trajectories for pheromone updates in longer horizons. We employ a mixed objective that shifts from imitation learning to policy optimization: 
+
+Lmixed = λLSL + (1 − λ)LPG − γH[πθ ], (10) where λ is annealed downwards and H[πθ ] denotes the entropy of πθ . Accordingly, the explicit transition prior (pheromone) is updated from partially autonomous veri-fied successful trajectories, making it increasingly reflect policy-selected transitions, instead of being dominated by purely teacher-forced ones. We concurrently increase the pheromone-controlling hyperparameter β in Eq. (7) and the task-dependence weight w in Eq. (5) as the number of ac-cumulated trajectories grows, turning the initial pheromone values into a reliable transition signal. 
+
+Full-pheromone rollouts. As ptf decays and λ is annealed downwards, training transitions to fully autonomous rollouts with full pheromone influence: 
+
+˜π(a | st) ∝ exp  log πθ (a | st) + βmax log τat−1,a 
+
+, (11) where βmax is the maximum pheromone influence sched-uled to be reached, and τat−1,a is a shorthand for the fused tool-transition pheromone τTool (at−1, a t | x). Sim-ilarly, argument-invocation ut is selected using the same pheromone-guided rule with τArg (at, u t | x). The up-dated pheromone serves as an explicit transition prior dur-ing trajectory generation, encouraging the policy to repro-duce historically successful transitions and argument invo-cations. Policy optimization is performed on tool-use tra-jectories collected under pheromone guidance. In parallel, pheromone updates follow the deposition and evaporation rule defined in Eq. (1), where evaporation reduces the influ-ence of outdated statistics over time. Collectively, training begins with supervised warm-up that provides a stable initialization for next-tool selection. It then proceeds with pheromone-guided reinforcement learn-ing that uses pheromone as an explicit transition prior during trajectory generation and optimizes the policy with GRPO on tool-use trajectories collected under pheromone guid-ance. The training schedule gradually reduces oracle guid-ance via the decayed ptf and anneals λ downward, and the horizon curriculum increases task difficulty from short to long. This progression supports progressive pheromone ac-cumulation from partially guided verified successes and later enables fully pheromone-guided trajectory generation for complex long-horizon tool-use trajectories. 
+
+## Experiments 
+
+Experiment Setup 
+
+Dataset. We conduct experiments on three long-horizon tool-use benchmarks: Toolathlon (Li et al. 2025b), abenchmark built on MCP servers with hundreds of tools across diverse domains; TRAJECT-Bench (He et al. 2025), grounded in executable production-style APIs; and TOU-CAN (Xu et al. 2025), a large-scale tool-agent dataset syn-thesized from MCP environments. Each instance is con-verted into an episode containing a task description, a ref-erence tool-use trajectory, and the corresponding execution outputs. We filter episodes with verified successful trajecto-ries and map each recorded tool call to our action represen-tation by separating the base tool from its argument invo-cation. We construct fixed-seed training, validation, and test splits and report results on the test set. 
+
+Comparing Methods. We compare with a diverse set of representative tool-use baselines. Standard Prompt-ing and Planning methods include the reasoning-action Table 1: Main Results on Long-Horizon Tool-Use Benchmarks. We report Match Ratio (Match R., %) and Next-tool Accu-racy (Tool Acc., %) on Toolathlon, TRAJECT-Bench, and TOUCAN across two backbone models. Higher values ( ↑) indicate better performance.                                                                                                                                                                                           
+
+> Method Toolathlon TRAJECT-Bench TOUCAN Qwen2.5-7B Llama3.1-8B Qwen2.5-7B Llama3.1-8B Qwen2.5-7B Llama3.1-8B
+> Match R. TAcc Match R. TAcc Match R. TAcc Match R. TAcc Match R. TAcc Match R. TAcc
+> Standard Prompting & Planning Strategies
+> ReAct 5.31 12.98 5.15 9.54 15.32 16.12 9.16 8.39 11.64 20.75 7.03 14.15 Plan-and-Solve 6.42 14.67 4.27 11.44 12.44 11.84 9.05 9.04 12.71 21.70 7.42 11.32 Beyond ReAct 3.85 -5.23 -11.33 -15.61 -12.92 -7.35 -
+> Retrieval-Augmented Generation (RAG)
+> Gorilla 6.60 11.39 5.78 11.86 29.04 27.80 19.38 15.79 22.32 27.04 18.99 22.01 ToolReAGt 4.05 6.81 3.45 5.47 26.69 22.04 26.84 21.05 23.49 19.50 15.79 16.04 Tool Graph Retriever 5.09 11.23 4.80 11.02 12.72 13.16 11.54 9.21 1.50 8.18 1.50 7.23
+> Reinforcement Learning
+> ToRL 10.23 14.57 9.41 12.91 28.15 31.51 20.18 23.35 19.32 28.16 14.35 19.11 StepTool 14.33 17.60 11.58 16.32 35.22 37.15 26.31 31.08 19.75 38.34 14.46 23.78 TreeRL 21.26 22.81 18.78 18.96 35.45 37.12 26.33 33.20 30.65 43.55 20.20 32.87
+> Graph-based Navigation Models
+> ToolNet 9.01 16.03 7.30 14.57 20.65 28.10 18.52 23.33 16.15 27.96 13.53 18.55 GAP 13.50 19.22 12.17 16.67 27.60 30.30 21.01 26.40 23.80 37.15 15.43 21.42 NaviAgent 15.28 22.43 11.60 20.56 25.33 36.12 19.40 27.00 23.10 40.10 16.20 30.51 GTool 20.60 24.33 16.50 19.28 32.50 38.66 26.20 38.10 27.56 40.08 19.50 33.12
+> PhGPO (Ours) 25.25 27.16 22.83 23.09 41.62 43.31 31.84 38.83 35.17 52.85 24.67 38.76
+
+interleaving ReAct (Yao et al. 2022) and global-oriented Plan-and-Solve (Wang et al. 2023), alongside the Beyond-ReAct (Wei et al. 2025a) planner-executor architecture. 
+
+Retrieval-Augmented Selection baselines comprise Go-rilla (Patil et al. 2024), ToolReAGt (Braunschweiler, Dod-dipatla, and Zorila 2025), and the GCN-based Tool Graph Retriever (Gao et al. 2025). RL-based Optimization base-lines consist of search-driven TreeRL (Hou et al. 2025), outcome-oriented ToRL (Li, Zou, and Liu 2025), and process-level StepTool (Yu et al. 2025). Finally, Graph-based Frameworks include GAP (Wu et al. 2025) as well as GTool (Chen et al. 2025b), NaviAgent (Jiang et al. 2025), and ToolNet (Liu et al. 2024a), which leverage explicit tool-dependency structures for navigation or representation learning. All experiments are conducted using Qwen2.5-7B 
+
+(Yang et al. 2024) and Llama3.1-8B (Grattafiori et al. 2024) as backbones. All baselines operate in the same tool-and-invocation decision space and share the same execution in-terface. 
+
+Evaluation Metrics. We evaluate performance using two metrics: (1) Match Ratio ( M ∈ [0 , 1] ), a trajectory-level measure quantifying the similarity between generated tool-use trajectories and reference trajectories in tool identity and ordering; and (2) Next-tool Accuracy ( A ∈ [0 , 1] ), a step-level metric measuring the correctness of the immedi-ate next-tool selection. 
+
+Implementation Details. We fine-tune the backbones using LoRA (Hu et al. 2022) ( r = 64 , α = 128 ) to adapt the pol-icy for long-horizon tool planning. Each state consists of the task description and a fixed-length truncated history of re-cent tool interactions. For decoding, we employ temperature (0.7), top-K sampling ( K = 20 ), and ϵ-greedy exploration (ϵ = 0 .05 ). The pheromone influence β is linearly sched-uled to a maximum of 0.8. We set the maximum trajectory length to 20 and sample M = 5 rollouts for optimization. Complete experimental details are in Appendix . 
+
+Experimental Results 
+
+Overall performance compared with prior methods. 
+
+Table 1 shows that PhGPO achieves the best perfor-mance on Toolathlon, TRAJECT-Bench, and TOUCAN un-der both Qwen2.5-7B and Llama3.1-8B. Compared with the strongest baselines across categories, PhGPO improves both Match Ratio and Next-tool Accuracy consistently, suggest-ing that the improvements are not limited to a single evalua-tion setting. The improvements appear on benchmarks with different task compositions and tool-use patterns, which in-dicates that the method generalizes across long-horizon tool-use scenarios. The fact that PhGPO maintains the lead under both backbones also suggests that the performance improve-ments are not driven by specific backbone. 
+
+Compared with prompting and retrieval-augmented baselines. Prompting and planning baselines remain sub-stantially below learning-based methods, reflecting that long-horizon tool use requires sustained multi-step tool tran-sitions that are difficult to maintain through in-context rea-soning alone. These strategies can produce locally reason-able steps, but they lack an explicit mechanism to preserve transition consistency across a long sequence, making them susceptible to compounding errors. RAG methods often im-WebSearch 
+
+> FetchHTML
+> WriteFile
+> ReadFile
+> RunCmd
+> WebSearch
+> FetchHTML
+> WriteFile
+> ReadFile
+> RunCmd
+> From Tool
+
+(a) Epoch 1 (b) Epoch 8 (c) Epoch 16 
+
+> WebSearch
+> FetchHTML
+> WriteFile
+> ReadFile
+> RunCmd
+
+(d) Epoch 25 
+
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> Pheromone
+> WebSearch
+> FetchHTML
+> FetchHTML
+> WriteFile
+> WriteFile
+> ReadFile
+> ReadFile
+> RunCmd
+
+Golden-Path Tool Transitions Reinforced by Verified Successful Tool-Use Trajectories      
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> Pheromone  15.9 15.1
+> 19.1 18.2
+> Epoch 1 Epoch 8 Epoch 16 Epoch 25
+> Next Tool Selected by Pheromone-Guided Sampling
+
+Figure 3: Emergence of the reference chain in pheromone transitions. As training proceeds, the transition matrix becomes in-creasingly concentrated on reference edges (marked in red), while unrelated transitions fade due to evaporation, and pheromone values on the reference chain increase steadily. prove Next-tool Accuracy by narrowing plausible choices at each step, yet their Match Ratio remains limited on long-horizon episodes. This suggests that locally relevant retrieval does not reliably translate into globally consistent tool-use trajectories, because later tool transitions must remain com-patible with earlier decisions, intermediate states, and previ-ously chosen arguments as the horizon grows. 
+
+Compared with graph-based and RL-based optimiza-tion baselines. Graph-based navigation models consistently improve over prompting baselines and often achieve com-petitive Next-tool Accuracy, indicating that explicit struc-tural constraints can regularize tool selection. RL-based op-timization methods further improve long-horizon perfor-mance by learning from execution outcomes, with TreeRL as the strongest baseline overall. PhGPO advances beyond these approaches by incorporating pheromone as an explicit transition prior during rollout generation and policy opti-mization. In particular, this prior biases sampling toward tool-transition edges and argument invocation patterns that recur in verified successful trajectories, which reduces cas-cading errors from early missteps and improves multi-step consistency over long horizons. As a result, the agent more reliably maintains globally consistent tool-use trajectories that align with the reference. 
+
+Ablation Studies 
+
+We conduct ablation studies on Qwen2.5-7B using the same Toolathlon split, training budget, and evaluation protocol as the main experiment. All variants share the same backbone, optimizer, and policy optimization hyperparameters, and we Table 2: Ablation studies on Toolathlon. We report Match Ratio (Match R., %) and Next-tool Accuracy (TAcc, %) on the test set. 
+
+Variant Match R. TAcc 
+
+w/o Pheromone ( β=0 throughout) 21.23 19.86 w/o Mixed Curriculum (no curriculum) 19.34 18.86 Static Prior (freeze pheromone) 23.93 22.05 w/o Evaporation ( ρ=0 ; no decay) 21.72 20.64 w/o Task-dependent Pheromones 22.45 21.22 
+
+PhGPO (Full) 25.25 27.16 
+
+only modify the specified component. We evaluate the full model and five ablated variants: (1) w/o Pheromone sets 
+
+β=0 throughout training; (2) w/o Mixed Curriculum re-moves the Mixed Curriculum phase that uses oracle guid-ance to progressively shape early rollouts. This variant still uses pheromones, and pheromone statistics are accumu-lated only from fully policy-driven rollouts; (3) Static Prior 
+
+freezes the pheromone after the progressive training pipeline and disables subsequent updates; (4) w/o Evaporation sets 
+
+ρ=0 during fully pheromone-guided rollouts so pheromones only accumulate; and (5) w/o Task-dependent Pheromones 
+
+disables task-dependent pheromones and fusion, using task-agnostic pheromones. Table 2 shows that every component contributes to long-horizon alignment with the reference tool-use trajectories. The largest drop comes from removing the Mixed Curricu-lum phase, indicating that early oracle-guided rollouts help accumulate more reliable pheromone statistics before train-ing becomes fully policy driven. Disabling pheromone guid-ance ( β=0 ) produces the second-largest degradation, with a larger drop in Next-tool Accuracy than in Match Ra-tio, suggesting that the explicit transition prior mainly im-proves stepwise tool-transition choices, which then com-pounds over long horizons into better trajectory-level align-ment. Disabling task-dependent pheromones also degrades performance, indicating that retrieval helps activate task-matched transition evidence for the current instance. Finally, freezing pheromones after the Mixed Curriculum phase or disabling evaporation underperforms the full method, sup-porting the need for online updates and decay to keep the explicit transition prior aligned with the evolving policy dis-tribution. 
+
+Visualization of transition structure 
+
+To qualitatively examine the transition structure learned by PhGPO, we present a representative long-horizon task in-volving sequential web retrieval and file manipulation. Fig-ure 3 visualizes the evolution of the pheromone transition matrix between tools over training, together with the growth of pheromone values along a reference trajectory. At the beginning of training, the heatmap is diffuse, in-dicating that pheromone values stay close to initialization and no transition pattern is strongly emphasized. As train-ing proceeds (Epochs 8 and 16), pheromone concentrates on a small subset of transitions. Notably, transitions along the reference tool-use trajectory ( WebSearch → FetchHTML →
+
+WriteFile → ReadFile → RunCmd ) receive repeated rein-forcement from verified successful trajectories, while many off-trajectory transitions fade as evaporation reduces the in-fluence of older or less supported statistics. By Epoch 25, these reference transitions become clearly highlighted, illus-trating how PhGPO accumulates and reuses validated tran-sition patterns over training. 
+
+## Conclusion 
+
+We proposed PhGPO, a pheromone-guided policy opti-mization framework that enables explicit reuse of verified successful tool-use trajectories for long-horizon tool plan-ning. PhGPO maintains a pheromone-based explicit tran-sition prior over tool-transition edges and argument invo-cation, updates it through deposition and evaporation, and incorporates it into rollout sampling to promote histori-cally successful tool transitions over time. Experiments on long-horizon tool-use benchmarks, including Toolathlon, TRAJECT-Bench, and TOUCAN, show that PhGPO consis-tently improves Match Ratio and Next-tool Accuracy. These results support the role of pheromone as an explicit transi-tion prior for long-horizon tool planning. 
+
+## References 
+
+Anschel, O.; Shoshan, A.; Botach, A.; Hakimi, S. H.; Gendler, A.; Baruch, E. B.; Bhonker, N.; Kviatkovsky, I.; Aggarwal, M.; and Medioni, G. 2025. Group-aware rein-forcement learning for output diversity in large language models. In Proceedings of the 2025 Conference on Em-pirical Methods in Natural Language Processing , 32382– 32403. Braunschweiler, N.; Doddipatla, R.; and Zorila, T.-C. 2025. Toolreagt: Tool retrieval for llm-based complex task solu-tion via retrieval augmented generation. In Proceedings of the 3rd Workshop on Towards Knowledgeable Foundation Models , 75–83. Chari, A.; Tiwari, A.; Lian, R.; Reddy, S.; and Zhou, B. 2025. Pheromone-based Learning of Optimal Reasoning Paths. arXiv preprint arXiv:2501.19278 .Chen, G.; Zhang, Z.; Cong, X.; Guo, F.; Wu, Y.; Lin, Y.; Feng, W.; and Wang, Y. 2025a. Learning Evolving Tools for Large Language Models. In Proceedings of The Thirteenth International Conference on Learning Representations .Chen, J.; Lin, H.; Han, X.; and Sun, L. 2024. Benchmark-ing large language models in retrieval-augmented genera-tion. In Proceedings of the AAAI Conference on Artificial Intelligence , 17754–17762. Chen, W.; Li, W.; Yao, D.; Meng, X.; Gong, C.; and Bi, J. 2025b. GTool: Graph Enhanced Tool Planning with Large Language Model. arXiv preprint arXiv:2508.12725 .Dong, G.; Chen, Y.; Li, X.; Jin, J.; Qian, H.; Zhu, Y.; Mao, H.; Zhou, G.; Dou, Z.; and Wen, J.-R. 2025. Tool-Star: Em-powering LLM-Brained Multi-Tool Reasoner via Reinforce-ment Learning. arXiv preprint arXiv:2505.16410 .Dorigo, M.; Maniezzo, V.; and Colorni, A. 1996. Ant sys-tem: optimization by a colony of cooperating agents. IEEE Transactions on Systems, Man, and Cybernetics , 26(1): 29– 41. Feng, E.; Zhou, W.; Liu, Z.; Chen, L.; Dong, Y.; Zhang, C.; Zhao, Y.; Du, D.; Hua, Z.; Xia, Y.; et al. 2025a. Get Expe-rience from Practice: LLM Agents with Record & Replay. 
+
+arXiv preprint arXiv:2505.17716 .Feng, J.; Huang, S.; Qu, X.; Zhang, G.; Qin, Y.; Zhong, B.; Jiang, C.; Chi, J.; and Zhong, W. 2025b. Retool: Reinforce-ment learning for strategic tool use in llms. arXiv preprint arXiv:2504.11536 .Feng, L.; Xue, Z.; Liu, T.; and An, B. 2025c. Group-in-group policy optimization for llm agent training. arXiv preprint arXiv:2505.10978 .Gao, L.; Wang, Y.; Peng, M.; Tang, J.; Shang, Y.; Sun, M.; and Su, J. 2025. Tool Graph Retriever: Exploring Depen-dency Graph-based Tool Retrieval for Large Language Mod-els. arXiv preprint arXiv:2508.05152 .Grattafiori, A.; Dubey, A.; Jauhri, A.; Pandey, A.; Kadian, A.; Al-Dahle, A.; Letman, A.; Mathur, A.; Schelten, A.; Vaughan, A.; et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Guo, Z.; Cheng, S.; Wang, H.; Liang, S.; Qin, Y.; Li, P.; Liu, Z.; Sun, M.; and Liu, Y. 2024. Stabletoolbench: Towards sta-ble large-scale benchmarking on tool learning of large lan-guage models. arXiv preprint arXiv:2403.07714 .He, P.; Dai, Z.; He, B.; Liu, H.; Tang, X.; Lu, H.; Li, J.; Ding, J.; Mukherjee, S.; Wang, S.; et al. 2025. TRAJECT-Bench: A Trajectory-Aware Benchmark for Evaluating Agentic Tool Use. arXiv preprint arXiv:2510.04550 .Hou, Z.; Hu, Z.; Li, Y.; Lu, R.; Tang, J.; and Dong, Y. 2025. TreeRL: LLM Reinforcement Learning with On-Policy Tree Search. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics , 12355–12369. Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.; Wang, L.; Chen, W.; et al. 2022. Lora: Low-rank adapta-tion of large language models. In Proceedings of the Inter-national Conference on Learning Representations .Jiang, Y.; Zhou, H.; GU, L.; Han, A.; and Li, T. 2025. Navi-Agent: Bilevel Planning on Tool Dependency Graphs for Function Calling. arXiv preprint arXiv:2506.19500 .Li, J.; Wang, Y.; Yan, D.; Tian, Y.; Xu, Z.; Song, H.; Xu, P.; and Cheong, L. L. 2025a. SALT: Step-level Advantage Assignment for Long-horizon Agents via Trajectory Graph. 
+
+arXiv preprint arXiv:2510.20022 .Li, J.; Zhao, W.; Zhao, J.; Zeng, W.; Wu, H.; Wang, X.; Ge, R.; Cao, Y.; Huang, Y.; Liu, W.; et al. 2025b. The Tool De-cathlon: Benchmarking Language Agents for Diverse, Re-alistic, and Long-Horizon Task Execution. arXiv preprint arXiv:2510.25726 .Li, M.; Zhao, Y.; Yu, B.; Song, F.; Li, H.; Yu, H.; Li, Z.; Huang, F.; and Li, Y. 2023. Api-bank: A comprehen-sive benchmark for tool-augmented llms. arXiv preprint arXiv:2304.08244 .Li, X.; Zou, H.; and Liu, P. 2025. Torl: Scaling tool-integrated rl. arXiv preprint arXiv:2503.23383 .Liu, X.; Peng, Z.; Yi, X.; Xie, X.; Xiang, L.; Liu, Y.; and Xu, D. 2024a. Toolnet: Connecting large language models with massive tools via tool graph. arXiv preprint arXiv:2403.00839 .Liu, Y.; Peng, X.; Cao, J.; Bo, S.; Zhang, Y.; Zhang, X.; Cheng, S.; Wang, X.; Yin, J.; and Du, T. 2025. Tool-Planner: Task Planning with Clusters across Multiple Tools. In Proceedings of The Thirteenth International Conference on Learning Representations .Liu, Z.; Lai, Z.; Gao, Z.; Cui, E.; Li, Z.; Zhu, X.; Lu, L.; Chen, Q.; Qiao, Y.; Dai, J.; et al. 2024b. Controlllm: Aug-ment language models with tools by searching on graphs. In 
+
+European Conference on Computer Vision , 89–105. Lu, F.; Zhong, Z.; Liu, S.; Fu, C.-W.; and Jia, J. 2025. ARPO: End-to-End Policy Optimization for GUI Agents with Experience Replay. arXiv preprint arXiv:2505.16282 .Luo, Z.; Shen, Z.; Yang, W.; Zhao, Z.; Jwalapuram, P.; Saha, A.; Sahoo, D.; Savarese, S.; Xiong, C.; and Li, J. 2025. MCP-Universe: Benchmarking Large Language Mod-els with Real-World Model Context Protocol Servers. arXiv preprint arXiv:2508.14704 .Min, D.; Xu, Z.; Qi, G.; Huang, L.; and You, C. 2025a. Uni-HGKR: unified instruction-aware heterogeneous knowledge retrievers. In Proceedings of the 2025 Conference of the Na-tions of the Americas Chapter of the Association for Com-putational Linguistics: Human Language Technologies (Vol-ume 1: Long Papers) , 4577–4594. Min, D.; Zhang, K.; Wu, T.; and Cheng, L. 2025b. QuCo-RAG: Quantifying Uncertainty from the Pre-training Cor-pus for Dynamic Retrieval-Augmented Generation. arXiv preprint arXiv:2512.19134 .Pan, Y.; Li, X.; and Wang, H. 2025. Online-Optimized RAG for Tool Use and Function Calling. arXiv preprint arXiv:2509.20415 .Patil, S. G.; Zhang, T.; Wang, X.; and Gonzalez, J. E. 2024. Gorilla: large language model connected with massive APIs. In Proceedings of the 38th International Conference on Neu-ral Information Processing Systems , 126544–126565. Qin, Y.; Liang, S.; Ye, Y.; Zhu, K.; Yan, L.; Lu, Y.; Lin, Y.; Cong, X.; Tang, X.; Qian, B.; et al. 2023. Toolllm: Facil-itating large language models to master 16000+ real-world apis. arXiv preprint arXiv:2307.16789 .Qiu, J.; Juan, X.; Wang, Y.; Yang, L.; Qi, X.; Zhang, T.; Guo, J.; Lu, Y.; Yao, Z.; Wang, H.; et al. 2025a. Agent-Distill: Training-Free Agent Distillation with Generalizable MCP Boxes. arXiv preprint arXiv:2506.14728 .Qiu, J.; Qi, X.; Zhang, T.; Juan, X.; Guo, J.; Lu, Y.; Wang, Y.; Yao, Z.; Ren, Q.; Jiang, X.; et al. 2025b. Alita: General-ist agent enabling scalable agentic reasoning with minimal predefinition and maximal self-evolution. arXiv preprint arXiv:2505.20286 .Schick, T.; Dwivedi-Yu, J.; Dess` ı, R.; Raileanu, R.; Lomeli, M.; Hambro, E.; Zettlemoyer, L.; Cancedda, N.; and Scialom, T. 2023. Toolformer: Language models can teach themselves to use tools. Proceedings of Advances in Neural Information Processing Systems , 68539–68551. Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y.; Wu, Y.; et al. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open lan-guage models. arXiv preprint arXiv:2402.03300 .Shinn, N.; Cassano, F.; Gopinath, A.; Narasimhan, K.; and Yao, S. 2023. Reflexion: language agents with verbal rein-forcement learning. In Proceedings of Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems .Tang, X.; Qin, T.; Peng, T.; Zhou, Z.; Shao, D.; Du, T.; Wei, X.; Xia, P.; Wu, F.; Zhu, H.; et al. 2025. Agent kb: Lever-aging cross-domain experience for agentic problem solving. 
+
+arXiv preprint arXiv:2507.06229 .Wang, L.; Xu, W.; Lan, Y.; Hu, Z.; Lan, Y.; Lee, R. K.; and Lim, E. 2023. Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics , 2609–2634. Wang, R.; Han, X.; Ji, L.; Wang, S.; Baldwin, T.; and Li, H. 2025a. ToolGen: Unified Tool Retrieval and Calling via Generation. In Proceedings of The Thirteenth International Conference on Learning Representations .Wang, Z. Z.; Mao, J.; Fried, D.; and Neubig, G. 2025b. Agent Workflow Memory. In Proceedings of Forty-second International Conference on Machine Learning .Wei, X.; Dong, Y.; Wang, X.; Zhang, X.; Zhao, Z.; Shen, D.; Xia, L.; and Yin, D. 2025a. Beyond ReAct: A Planner-Centric Framework for Complex Tool-Augmented LLM Reasoning. arXiv preprint arXiv:2511.10037 .Wei, Y.; Yu, X.; Weng, Y.; Pan, T.; Li, A.; and Du, L. 2025b. Autotir: Autonomous tools integrated reasoning via rein-forcement learning. arXiv preprint arXiv:2507.21836 .Wu, J.; Zhao, Q.; Chen, Z.; Qin, K.; Zhao, Y.; Wang, X.; and Yao, Y. 2025. GAP: Graph-Based Agent Planning with Par-allel Tool Use and Reinforcement Learning. arXiv preprint arXiv:2510.25320 .Xu, Z.; Soria, A. M.; Tan, S.; Roy, A.; Agrawal, A. S.; Poovendran, R.; and Panda, R. 2025. Toucan: Synthesizing 1.5 m tool-agentic data from real-world mcp environments. 
+
+arXiv preprint arXiv:2510.01179 .Yang, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Li, C.; Liu, D.; Huang, F.; Wei, H.; Lin, H.; Yang, J.; Tu, J.; Zhang, J.; Yang, J.; Yang, J.; Zhou, J.; Lin, J.; Dang, K.; Lu, K.; Bao, K.; Yang, K.; Yu, L.; Li, M.; Xue, M.; Zhang, P.; Zhu, Q.; Men, R.; Lin, R.; Li, T.; Xia, T.; Ren, X.; Ren, X.; Fan, Y.; Su, Y.; Zhang, Y.; Wan, Y.; Liu, Y.; Cui, Z.; Zhang, Z.; and Qiu, Z. 2024. Qwen2.5 Technical Report. arXiv preprint arXiv:2412.15115 .Yang, J.; Zhang, W.; Liu, S.; Wu, J.; Guo, S.; and Li, Y. 2025a. From code foundation models to agents and applica-tions: A practical guide to code intelligence. arXiv preprint arXiv:2511.18538 .Yang, S.; Feng, Y.; Liu, Y.; Zhang, J.; and Qin, J. 2025b. MoniTor: Exploiting Large Language Models with Instruc-tion for Online Video Anomaly Detection. In Proceedings of the Thirty-ninth Annual Conference on Neural Information Processing Systems .Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan, K. R.; and Cao, Y. 2022. React: Synergizing reasoning and acting in language models. In Proceedings of The eleventh international conference on learning representations .Yu, Y.; Wang, Z.; Ma, W.; Wang, S.; Wu, C.; Guo, Z.; and Zhang, M. 2025. StepTool: Enhancing Multi-Step Tool Us-age in LLMs via Step-Grained Reinforcement Learning. In 
+
+Proceedings of the 34th ACM International Conference on Information and Knowledge Management , 3952–3962. Zhang, W.; Cui, C.; Zhao, Y.; Hu, R.; Liu, Y.; Zhou, Y.; and An, B. 2025. AgentOrchestra: A Hierarchical Multi-Agent Framework for General-Purpose Task Solving. arXiv preprint arXiv:2506.12508 .Zhang, Y. 2025. Agent-as-Tool: A Study on the Hierarchi-cal Decision Making with Reinforcement Learning. arXiv preprint arXiv:2507.01489 .Zhou, S.; Xu, F. F.; Zhu, H.; Zhou, X.; Lo, R.; Sridhar, A.; Cheng, X.; Ou, T.; Bisk, Y.; Fried, D.; Alon, U.; and Neu-big, G. 2024. WebArena: A Realistic Web Environment for Building Autonomous Agents. In Proceedings of The Twelfth International Conference on Learning Representa-tions .Zhuang, Y.; Chen, X.; Yu, T.; Mitra, S.; Bursztyn, V. S.; Rossi, R. A.; Sarkhel, S.; and Zhang, C. 2024. ToolChain*: Efficient Action Space Navigation in Large Language Mod-els with A* Search. In Proceedings of The Twelfth Interna-tional Conference on Learning Representations .A: Theoretical Motivation of Pheromone-guided Sampling 
+
+This appendix provides a principled view of the pheromone-guided sampling distribution in Eq. (7). The key idea is that the sampling rule can be derived as the closed-form solution of an entropy-regularized consensus problem that combines the neural policy with an explicit transition prior induced by pheromone. 
+
+Setup 
+
+At decision step t, the policy produces a distribution πθ (a | st) over tools. Following Sec. , we restrict sampling to a finite support At constructed from the Top-K candidates under πθ (· | st). We use pheromone as an explicit transition prior through the fused tool-transition pheromone τTool (at−1, a | x) defined in Sec. , which already incorporates task-agnostic and task-dependent evidence via Eq. (5). To ensure log τTool is well-defined, we clip pheromone values: 
+
+¯τ (at−1, a | x) = clip  τTool (at−1, a | x), [τmin , τ max ], τmin > 0. (12) We define the pheromone-induced explicit transition prior over the candidate set as 
+
+pτ (a | at−1, x ) ∝ ¯τ (at−1, a | x)β , a ∈ A t, (13) where β ≥ 0 controls the strength of the explicit transition prior. The pheromone-guided sampling distribution used in our rollouts is 
+
+˜π(a | st, a t−1, x ) ∝ exp 
+
+
+
+log πθ (a | st) + β log ¯ τ (at−1, a | x)
+
+
+
+, a ∈ A t, (14) which is equivalent to the multiplicative form ˜π ∝ πθ (· | st) pτ (· | at−1, x ) on the support At.
+
+Entropy-regularized consensus objective 
+
+We derive ˜π by solving for a distribution q over the candidate set At that agrees with both the neural policy and the explicit transition prior, while retaining entropy: 
+
+max  
+
+> q
+
+Ea∼q
+
+h
+
+log πθ (a | st) + β log ¯ τ (at−1, a | x)
+
+i
+
++ η H(q), s.t. X
+
+> a∈A t
+
+q(a) = 1 , q (a) ≥ 0, (15) where H(q) = − P 
+
+> a∈A t
+
+q(a) log q(a) is Shannon entropy and η > 0 is an entropy weight. 
+
+Closed-form solution via Lagrange multipliers 
+
+Introduce a Lagrange multiplier γ for the normalization constraint and write the Lagrangian 
+
+L(q, γ ) = X
+
+> a∈A t
+
+q(a)
+
+
+
+log πθ (a | st) + β log ¯ τ (at−1, a | x)
+
+
+
++ η
+
+
+
+− X
+
+> a∈A t
+
+q(a) log q(a)
+
+
+
++ γ
+
+ X 
+
+> a∈A t
+
+q(a) − 1
+
+
+
+. (16) Taking partial derivatives with respect to q(a) and setting them to zero gives 
+
+log πθ (a | st) + β log ¯ τ (at−1, a | x) − η 1 + log q(a) + γ = 0 . (17) Rearranging yields 
+
+log q(a) = 1
+
+η
+
+
+
+log πθ (a | st) + β log ¯ τ (at−1, a | x)
+
+
+
++ γη − 1, (18) which implies the optimal solution 
+
+q∗(a) ∝ exp 
+
+ 1
+
+> η
+
+ log πθ (a | st) + β log ¯ τ (at−1, a | x)
+
+, a ∈ A t. (19) Setting η = 1 recovers Eq. (14), which matches our implementation in Eq. (7). 
+
+Equivalent KL projection view 
+
+The same objective admits an information-geometric interpretation. Let 
+
+r(a) ∝ exp 
+
+
+
+log πθ (a | st) + β log ¯ τ (at−1, a | x)
+
+
+
+, a ∈ A t. (20) Expanding KL( q∥r) = P 
+
+> a∈A t
+
+q(a) log q(a) 
+
+> r(a)
+
+gives 
+
+−KL( q∥r) = Ea∼q
+
+ log πθ (a | st) + β log ¯ τ (at−1, a | x) + H(q) + const . (21) For η = 1 , maximizing Eq. (15) is equivalent, up to constants, to the KL projection 
+
+min  
+
+> q
+
+KL  q 1 
+
+> Z
+
+exp   log πθ (· | st) + β log ¯ τ (at−1, · | x) , (22) where Z is the normalizer over At. This view clarifies the role of pheromone as an explicit transition prior in log space: actions must be supported by the neural policy and by the accumulated transition statistics encoded in ¯τ , which increases the probability of historically successful tool-transition edges under the current task context. Algorithm 1: PhGPO Training Loop with Task-dependent Pheromone Fusion 
+
+1: Input: dataset D with task x and reference trajectory {a∗ 
+
+> t
+
+}; horizon curriculum {Ls}Ss=1 ; schedules ptf (s), λ (s), β (s), w (s);group size M ; tool graph G=( VTool , E) and invocation edges Earg ; sentence encoder ϕ(·); ACO parameters 
+
+(ρ, α, τ min , τ max , τ 0); θsim , n min , ϵ .
+
+2: Output: policy πθ ; pheromones τ agn Tool , τ agn Arg ; memory banks {M} .
+
+3: Initialize πθ ; set τ agn Tool , τ agn Arg ← τ0; initialize all memory banks as empty. 
+
+4: Subroutine ComputeFusedPheromone( τ agn , M, ex, w ):5: Retrieve M(x) = {(e, q ) ∈ M | sim( ex, e) ≥ θsim }.6: Compute τ dep (· | x) by Eq. (3) and confidence c(x) by Eq. (4). 7: Return fused τ (· | x) by Eq. (5), clipped to [τmin , τ max ].8: for epochs do 
+
+9: Update πθ by minimizing LSL in Eq. (6). 
+
+10: end for 
+
+11: for s = 1 to S do 
+
+12: L ← Ls; ptf ← ptf (s); λ ← λ(s); β ← β(s); w ← w(s).
+
+13: for each (x, {a∗ 
+
+> t
+
+}) ∈ D do 
+
+14: ex ← ϕ(x).
+
+15: for m = 1 to M do 
+
+16: a0 ← ⟨ START ⟩; initialize ξm.
+
+17: for t = 1 to L do 
+
+18: Build state st from (x, ξ m).
+
+19: if rand() < p tf then 
+
+20: at ← a∗ 
+
+> t
+
+{Eq. (9) }
+
+21: else 
+
+22: Form candidate set At as Top-K under πθ (· | st).
+
+23: for each a ∈ A t do 
+
+24: τTool (at−1, a | x) ← ComputeFusedPheromone  τ agn Tool (at−1, a ), Mat−1,a , ex, w .
+
+25: end for 
+
+26: Sample at using Eq. (7) with β on support At.
+
+27: end if 
+
+28: Let Ut ← V Arg (at).
+
+29: for each u ∈ U t do 
+
+30: τArg (at, u | x) ← ComputeFusedPheromone  τ agn Arg (at, u ), Mat,u , ex, w .
+
+31: end for 
+
+32: Sample ut by the analogous pheromone-guided rule; execute (at, u t) and append to ξm.
+
+33: end for 
+
+34: Compute return Rm and quality score q(ξm) ∈ [0 , 1] (match ratio). 
+
+35: end for 
+
+36: Compute advantages by Eq. (8). 
+
+37: Update πθ using the mixed objective in Eq. (10). 
+
+38: for each rollout ξm that is verified successful do 
+
+39: for each traversed tool-transition edge (vi, v j ) in ξm do 
+
+40: Update τ agn Tool (vi, v j ) by Eq. (1). 
+
+41: Store (ex, q (ξm)) into Mij .
+
+42: end for 
+
+43: for each traversed invocation edge (vi, u ) in ξm do 
+
+44: Update τ agn Arg (vi, u ) by Eq. (1). 
+
+45: Store (ex, q (ξm)) into Mi,u .
+
+46: end for 
+
+47: end for 
+
+48: end for 
+
+49: end for B: Algorithm Implementation Details and Training Mechanisms 
+
+Base model adaptation 
+
+We instantiate PhGPO on instruction-tuned backbones used in our main experiments, including Qwen2.5-7B and Llama3.1-8B. We apply LoRA for parameter-efficient adaptation by freezing backbone weights and inserting low-rank adapters with rank 
+
+r=64 and scaling α=128 into standard projection modules. All stages use the tokenizer and chat template of the corresponding backbone, and tool planning is trained as a generative decision process over the same two-layer action space described in Sec. . Our code is available at https://anonymous.4open.science/r/PhGPO-Pheromone-Guided-Policy-Optimization-for-Long-Horizon-Tool-Planning-CB1C. 
+
+Progressive training pipeline 
+
+Training follows the progressive pipeline described in Sec. . It begins with supervised warm-up using the next-tool prediction objective in Eq. (6), which provides a stable initialization for tool selection. After warm-up, training uses a progressive schedule that mixes oracle guidance with pheromone-guided sampling. At each decision step, the agent takes the reference action with probability ptf ; otherwise it samples actions from the pheromone-guided distribution in Eq. (7), as specified in Eq. (9). Policy updates use the mixed objective in Eq. (10), where λ is annealed downward to shift learning from imitation toward policy optimization. In parallel, a horizon curriculum increases the rollout horizon from shorter to longer trajectories. We also schedule 
+
+β in Eq. (7) and w in Eq. (5) upward as more verified trajectories are accumulated, which increases the influence of the explicit transition prior and task-dependent evidence. When ptf approaches zero and λ becomes small, rollouts become fully policy-driven under pheromone guidance, and optimization follows the policy objective described in Sec. . For group-based learning, we use M =5 rollouts per instance, consistent with Sec. . 
+
+Mixed training objective under teacher forcing 
+
+During progressive training pipeline, rollouts are generated under a mixed behavior rule that combines oracle actions and pheromone-guided sampling. Let a∗ 
+
+> t
+
+denote the reference action provided by the benchmark instance, and let ˜π denote the pheromone-guided sampling distribution in Eq. (7). The behavior distribution used for rollout generation is 
+
+πmix (at | st) = ptf · δ(at = a∗ 
+
+> t
+
+) + (1 − ptf ) · ˜π(at | st), (23) where δ(·) is a point mass on the oracle action. We record the executed action at at every step, together with its log-probability under the current policy at rollout time, log πθold (at | st).Policy optimization uses GRPO with a PPO-style clipped surrogate. For each training instance, we sample a group of M
+
+tool-use trajectories and compute their returns {Rm}Mm=1 (Sec. ). We normalize returns within the group to obtain advantages 
+
+Am as in Eq. (8). The policy-gradient loss is computed on executed actions under πmix :
+
+LPG = −Em,t 
+
+h
+
+min 
+
+
+
+rm,t (θ)Am, clip( rm,t (θ), 1 − ϵ, 1 + ϵ)Am
+
+i 
+
+, rm,t (θ) = πθ (am,t | sm,t )
+
+πθold (am,t | sm,t ) . (24) When an action is oracle-selected, Eq. (24) still evaluates its probability under πθ , since that action is the one executed in the environment under πmix . In parallel, the supervised term in Eq. (10) is computed as a next-action cross-entropy against a∗ 
+
+> t
+
+. As 
+
+ptf is annealed toward zero, the rollout distribution approaches fully policy-driven pheromone-guided sampling, and updates become dominated by autonomous decisions. 
+
+Pheromone and memory 
+
+PhGPO maintains pheromone on two types of edges: tool-transition edges (vi, v j ) ∈ E and tool-to-invocation edges (vi, v (k) 
+
+> i
+
+) ∈Earg defined in Sec. . We maintain task-agnostic pheromones τ agn Tool and τ agn Arg , and we clip pheromone values to [τmin , τ max ] as described in Sec. . 
+
+Task embeddings and sentence encoder. Task-dependent pheromones use a fixed sentence encoder ϕ to em-bed the task text x into a dense vector e = ϕ(x). In our reference implementation, ϕ is instantiated with 
+
+SentenceTransformer(all-MiniLM-L6-v2) . Edge memory banks store tuples (e, q ) for each edge, where q is the quality score of the corresponding tool-use trajectory (Sec. ). We additionally maintain edge-indexed memory banks for task-dependent pheromones. For a tool-transition edge (vi, v j ),its memory bank Mij stores tuples (e, q ), where e=ϕ(x) is the task embedding and q is the quality score associated with a verified tool-use trajectory that contains this edge. Given a task x, we compute task-dependent pheromones by retrieval and similarity-weighted aggregation as in Eq. (3), estimate confidence by Eq. (4), and then combine task-agnostic and task-dependent pheromones using Eq. (5). We apply the same mechanism to tool-to-invocation edges for τArg .Rationale and locality of the confidence score. The confidence score in Eq. (4) is computed locally from the retrieved set 
+
+Mij (x) for the queried task x. In particular, nact counts the number of retrieved memories that pass activation thresholds, 
+
+smax is the maximum similarity among activated memories, and ¯q is the mean quality score over the same activated subset. We incorporate ¯q in confidence to gate task-dependent pheromones when retrieval returns semantically similar but consistently low-quality memories. This design keeps the fused explicit transition prior conservative, assigning higher weight to context-aware pheromones only when retrieved evidence is both relevant (high similarity) and reliable (high average quality), and otherwise falling back to task-agnostic pheromones. 
+
+Reward signals and trajectory quality score 
+
+We distinguish two quantities computed per rollout: the episode return R used for policy optimization, and the trajectory quality score q(ξ) used for pheromone deposition and memory writing. They are computed together during rollout generation but serve different roles in training. 
+
+Reward structure and episode return. For each rollout, we compute an episode return R as the sum of step-level rewards and an outcome-level bonus. At each step t, the step reward decomposes into an intent component and an execution component, 
+
+rt = rintent  
+
+> t
+
++ rexec  
+
+> t
+
+. (25) The intent reward rintent  
+
+> t
+
+encourages selecting the correct next base tool. Concretely, we assign +0 .5 for an exact match to the reference next base tool, and +0 .2 for a category-consistent selection (i.e., the predicted tool belongs to the same predefined tool category as the reference). To mitigate error propagation, we additionally provide a recovery bonus of +0 .1 when the previous step is incorrect but the current step returns to the reference tool. 1 Otherwise, rintent  
+
+> t
+
+= 0 . The execution reward rexec  
+
+> t
+
+is assigned after simulating the selected tool invocation (Sec. ). We assign +0 .5 when the simulator returns a valid execution without triggering an error pattern, and −0.5 when an execution error or timeout is detected. We treat invalid argument formatting as an execution failure and apply the same penalty. After the rollout terminates, we add an outcome-level bonus that rewards completed episodes and, when completion is not achieved, provides graded bonuses based on the final Match Ratio. The episode return used by GRPO is 
+
+R =
+
+> T
+
+X
+
+> t=1
+
+rt + routcome . (26) 
+
+Trajectory quality score for pheromone updates. The pheromone deposition mechanism in Eq. (1) relies on a trajectory quality score q(ξ) ∈ [0 , 1] . In our benchmark setting, each instance provides a reference tool-use trajectory ξ∗ = ( a∗
+
+> 1
+
+, . . . , a ∗ 
+
+> T
+
+).Given a rollout trajectory ξ = ( a1, . . . , a T ), we define 
+
+q(ξ) = Match( ξ, ξ ∗) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+I[tool( at) = tool( a∗ 
+
+> t
+
+)] , (27) where tool( ·) extracts the base tool identity from the two-layer action, and the indicator compares step-aligned tool identities. This definition uses the reference tool-use trajectory, and it is computed independently from the environmental return R in Eq. (26). We maintain both quantities since R provides the learning signal for policy optimization, while q(ξ) provides a stable and interpretable score for updating the explicit transition prior. 
+
+Teacher forcing and model-driven quality. During mixed rollouts with oracle guidance, we record a per-step teacher-forcing mask indicating whether at was oracle-selected. We additionally report a model-driven Match Ratio computed on the subset of steps not teacher-forced: 
+
+qmodel (ξ) = 1
+
+|T model |
+
+X
+
+> t∈T model
+
+I[tool( at) = tool( a∗ 
+
+> t
+
+)] , Tmodel = {t : at is not oracle-selected }. (28) This quantity diagnoses how much alignment is attributable to autonomous decisions. In addition, we only collect elite replay trajectories after ptf decays below a threshold, which limits the impact of heavily teacher-forced trajectories on subsequent pheromone reinforcement. 
+
+Tool execution simulation 
+
+Our training environment executes tool calls through a simulator, not by invoking external APIs. This design keeps rollouts reproducible, avoids network variability, and prevents unintended side effects. Given the selected tool and its argument invo-cation, the simulator produces a tool output and a completion signal that indicates whether the episode has reached a terminal success state. The simulator can replay cached outputs from an offline database, and it also supports a pluggable LLM-based simulator backend that generates tool outputs via an OpenAI-compatible interface. The execution reward in Sec. is computed from this simulated output, assigning positive reward to valid executions and penalizing execution errors or malformed outputs.         
+
+> 1This recovery term is only applied when at−1̸=a∗
+> t−1and at=a∗
+> t.
+
+Fairness of comparisons. To ensure fair comparisons, all methods share the same backbones, tool set, decoding configu-ration, rollout horizon limits, and evaluation protocol, and they are trained under the same computational budget whenever applicable. For baseline methods that require tool-format awareness (e.g., producing valid tool names or argument fields), we apply the same lightweight tool-format fine-tuning procedure used in our approach (e.g., the same LoRA setup on identical tool-call supervision) to calibrate tool syntax and reduce avoidable execution failures. This control isolates the effect of the learning algorithm and sampling strategy, and it prevents differences in tool-call formatting from dominating the reported performance. 
+
+## C: Datasets 
+
+We evaluate on three long-horizon tool-use benchmarks: Toolathlon, TRAJECT-Bench, and TOUCAN. Each benchmark pro-vides (i) executable tools or tool interfaces, and (ii) a reference tool-use sequence, which enables fine-grained comparison between predicted tool-use sequences and the reference. Following our main experimental protocol, we use the official splits when available, and we only keep episodes whose reference tool-use sequences are verifiably successful. To align with our Tool-Transition Graph action space (Sec. ), we report dataset-scale statistics in terms of: L1 Tools , the number of base tools in VTool ; L2 Tools , the number of argument-invocation patterns aggregated across tools in VArg ; and Avg Steps , the average number of tool calls per verifiably successful reference tool-use sequence in the retained episodes. 
+
+Toolathlon. Toolathlon is a long-horizon benchmark designed for realistic, execution-based evaluation across diverse soft-ware applications. After mapping tool calls into our Tool-Transition Graph action representation, Toolathlon contains 618 L1 tools and 1,250 L2 argument-invocation patterns. Among the retained verifiably successful reference sequences, the average tool-call length is 13.48 steps. 
+
+TRAJECT-Bench. TRAJECT-Bench is a trajectory-aware benchmark that emphasizes correctness of tool selection, tool ar-guments, and dependency or ordering constraints along the full tool-use trajectory. In our Tool-Transition Graph representation, TRAJECT-Bench contains 381 L1 tools and 715 L2 argument-invocation patterns. Among the retained verifiably successful reference sequences, the average tool-call length is 6.36 steps. 
+
+TOUCAN (Multi-step only). TOUCAN is a large-scale tool-agent dataset synthesized from real-world Model Context Pro-tocol (MCP) environments. We only consider the Multi-step subset, defined as instances with at least two tool calls in the reference sequence. In our Tool-Transition Graph representation, the Multi-step subset contains 850 L1 tools and 15,294 L2 argument-invocation patterns. Among the retained verifiably successful reference sequences, the average tool-call length is 3.16 steps. Table 3: Dataset Statistics. We summarize the scale of the three benchmarks under our Tool-Transition Graph action repre-sentation. L1 Tools denotes the number of base tools, and L2 Tools denotes the number of argument-invocation patterns. Avg Steps reports the average number of tool calls per verifiably successful reference tool-use sequence in the retained episodes. For TOUCAN, we only consider Multi-step instances.                     
+
+> Dataset Tool source L1 Tools L2 Tools #Instances Avg Steps Toolathlon MCP apps 618 1,250 108 tasks 13.48 TRAJECT-Bench executable APIs 381 715 5,870 queries 6.36 TOUCAN (Multi-step) MCP servers 850 15,294 1,646,546 traj. 3.16
+
+## D: Ablation Study on Pheromone Influence Parameter β
+
+This appendix studies the pheromone influence parameter β in Eq. (7), which scales the explicit transition prior during pheromone-guided sampling. β controls how strongly historically verified tool-transition patterns bias the next tool choice, shaping the exploration exploitation trade-off in long-horizon planning. Specifically, we sample tools from 
+
+p(at | st, a t−1) ∝ exp 
+
+
+
+log πθ (at | st) + β log τTool (at−1, a t | x)
+
+
+
+, (29) where β ≥ 0 determines the strength of pheromone guidance. β = 0 removes pheromone, while larger β increasingly favors transitions with higher pheromone, which can reduce exploration if set too aggressively. 
+
+Experimental Setup 
+
+We ablate β on Toolathlon with Qwen2.5-7B. We compare: (i) β = 0 (no pheromone), (ii) β = 1 (fixed moderate), (iii) β = 5 
+
+(strong over-guidance), and (iv) our dynamic schedule, where β is linearly increased from 0 to 0.8 over the first 30% of epochs and then kept at 0.8. All variants share the same backbone, optimizer, learning rate schedule, rollout group size ( M = 5 ), 0 10 20 
+
+Training Epoch 
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Match Ratio (%)  Target
+
+## (a) Learning Curves   
+
+> 010 20
+
+Training Epoch 
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> Tool Accuracy (%)
+
+## (b) Next-Tool Accuracy   
+
+> 010 20
+
+Training Epoch 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Exploration Diversity
+
+## (c) Exploration Diversity        
+
+> Dynamic (Ours) = 1 (Fixed) = 0 (No Pheromone) = 5 (Over-guidance)
+
+Figure 4: Ablation study of pheromone influence parameter β on Toolathlon benchmark. (a) Learning curves show that dynamic β annealing achieves the highest Match Ratio (25.25%), significantly outperforming fixed strategies. β = 0 (no pheromone) exhibits slow, noisy convergence, while β = 5 (over-guidance) becomes trapped in local optima. (b) Next-tool accuracy mirrors learning trends, with dynamic β reaching 27.16% through effective balance of exploration and exploitation. (c) Exploration diversity exhibits natural fluctuations due to finite-sample estimation from rollouts, but reveals clear trends: 
+
+β = 0 maintains excessively high diversity (unfocused exploration), β = 5 shows extremely low diversity (trapped exploita-tion), while dynamic β demonstrates an optimal trajectory—starting with high exploration (0.75) and smoothly transitioning into the optimal range (0.55-0.65) that balances verified pattern reuse with adaptive exploration. and evaluation protocol. We train for 25 epochs and report Match Ratio (Match R.) and Next-tool Accuracy (TAcc). We also measure Exploration Diversity as the normalized entropy of the action distribution over tools: Diversity = H(π)log |A| ∈ [0 , 1] . (30) 
+
+Results 
+
+Table 4 shows that pheromone guidance improves performance over β = 0 , while excessive guidance ( β = 5 ) harms both Match R. and TAcc. Our dynamic schedule achieves the best results, indicating that gradually increasing pheromone influence matches the increasing reliability of accumulated pheromone statistics. Table 4: Ablation on β for Toolathlon (Qwen2.5-7B). We report Match Ratio (Match R., %), Next-tool Accuracy (TAcc, %), and final Exploration Diversity.                        
+
+> Setting Match R. TAcc Final Diversity
+> β= 0 (No pheromone) 21.23 19.86 0.76
+> β= 1 (Fixed) 23.93 22.05 0.53
+> β= 5 (Over-guidance) 17.80 16.50 0.25
+> Dynamic β(Ours) 25.25 27.16 0.58
+
+Interpretation. With β = 0 , the policy remains highly diverse but learns slowly, suggesting unfocused exploration. With 
+
+β = 5 , the policy becomes nearly deterministic and underperforms, consistent with premature over-exploitation of early transi-tion patterns. Fixed β = 1 provides a stable improvement over β = 0 , but it cannot adapt to the evolving quality of pheromone statistics. Dynamic β preserves early diversity for discovery and then reduces diversity to a stable mid-range as training pro-gresses, aligning improved Match R. with higher TAcc. Variance in the diversity curve is expected because it is estimated from a small number of rollouts per epoch ( M = 5 ), while Match R. and TAcc average across trajectories and evaluation instances. Pheromone guidance benefits long-horizon tool planning, but its strength must be calibrated. Extreme settings either remove reusable transition information ( β = 0 ) or suppress exploration ( β = 5 ). A progressive schedule for β yields the best balance, improving both sequence-level Match R. and step-level TAcc. E: Training Dynamics and Pheromone Evolution 
+
+Training dynamics. To assess optimization stability, we visualize the evolution of policy performance together with the evo-lution of the pheromone structure in Figure 5. We report the average return measured over training rollouts for each backbone. Figure 5(a) shows a consistent upward trend across all four backbone models, indicating that PhGPO steadily improves the rollout-level objective. The smallest backbone, Qwen2.5-1.5B, reaches competitive returns compared with larger models, which suggests that the reusable tool-transition patterns reduces the difficulty of long-horizon exploration for lower-capacity policies. The curves exhibit sustained improvement without abrupt collapses, which is consistent with stable optimization under our training configuration. 
+
+Pheromone graph growth. Figure 5(b) tracks the growth of the pheromone graph, measured by the number of discovered edges that receive pheromone statistics. These edges correspond to tool-transition edges, and they can also include argument-invocation edges when tool invocations are represented at the argument level. We observe rapid edge discovery during early epochs, followed by a clear saturation. This trend indicates that the agent quickly identifies a broad set of feasible tool transitions and then concentrates updates on a more stable subset. Under pheromone evaporation, older statistics gradually lose influence, which keeps the explicit transition prior responsive to recent verified tool-use trajectories while preventing unbounded accumu-lation. 
+
+Relationship between returns and pheromone. The increase in average return coincides with the period where the pheromone graph expands and then stabilizes. This alignment suggests that improving performance is accompanied by accumulating transi-tion evidence on the pheromone graph. Once most frequently used transitions have been identified, performance improvements continue primarily through adjusting the relative strengths of already discovered edges and improving the policy probabilities on those transitions. 0 5 10 15 20 
+
+> Training Epochs
+> 8
+> 9
+> 10
+> 11
+> 12
+> 13
+> Average Return
+
+(a) Average Return     
+
+> 0510 15 20
+> Training Epochs
+> 0
+> 20k
+> 40k
+> 60k
+> 80k
+> Pheromone Edges
+
+(b) Pheromone Growth    
+
+> Qwen2.5-1.5B LLaMA3.1-8B Qwen2.5-7B LLaMA3.2-3B
+
+Figure 5: Training Dynamics of PhGPO. (a) Average Return : All backbone models show a consistent upward trend in average return, indicating stable policy improvement during training. (b) Pheromone Graph Growth : The number of discovered edges grows rapidly in early epochs and stabilizes later, reflecting fast discovery of feasible tool transitions followed by refinement on a stable set of edges. 
+
+## F: Hyperparameter Sensitivity Analysis 
+
+This appendix reports a sensitivity analysis of eight key hyperparameters in PhGPO on Toolathlon. We vary one hyperparameter at a time while keeping all others fixed to the default values in Table 5. We train with Qwen2.5-7B and report Match Ratio on the test set. Each configuration is evaluated with 3 random seeds, and Figure 6 shows the mean with ±1 standard deviation. Red stars and dashed lines indicate our chosen values. 
+
+Hyperparameters. We group the parameters into pheromone guidance and policy optimization. Pheromone guidance includes the pheromone influence β Eq. (7), evaporation rate ρ and deposition rate α Eq. (1), and the context weight w Eq. (5). Policy optimization includes GRPO group size M , RL fine-tuning learning rate η, final teacher forcing probability ptf , and entropy regularization coefficient γ.
+
+Overall observations. Figure 6 shows that our defaults fall within, or very close to, the best-performing regions across all eight parameters. Among pheromone parameters, β and ρ are the most sensitive: under-guidance with small β reduces the benefit of the explicit transition prior, while overly large β can suppress exploration. ρ exhibits a narrow optimum around 0.01 , where older statistics decay slowly enough to remain useful but not so slowly that early transitions dominate indefinitely. In contrast, 
+
+α is comparatively robust, with a broad near-optimal region around 1.0. The context weight w peaks around 0.5, indicating 0.0 0.5 1.0 1.5 2.0                                                   
+
+> Pheromone Weight
+> 18
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> Under-
+> guided
+> Over-
+> guided
+> (a) (Pheromone Influence)
+> 0.00 0.02 0.04 0.06 0.08
+> Evaporation Rate
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> (b) (Pheromone Decay)
+> 0.0 0.5 1.0 1.5 2.0 2.5 3.0
+> Deposition Rate
+> 18
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> (c) (Pheromone Update)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Context Weight w
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> (d) w(Task-Dependent Weight)
+> 1510 15 20
+> Group Size M
+> 18
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> (e) M(GRPO Group Size)
+> 10 810 710 610 5
+> Learning Rate
+> 16
+> 18
+> 20
+> 22
+> 24
+> 26
+> 28
+> Match Ratio (%)
+> (f) (RL Learning Rate)
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6
+> Teacher Forcing Prob. ptf
+> 18
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> (g) ptf (Oracle Guidance)
+> 0.000 0.005 0.010 0.015 0.020
+> Entropy Coefficient
+> 18
+> 19
+> 20
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> 27
+> Match Ratio (%)
+> Ours: 0.005
+> (h) (Entropy Regularization)
+
+Figure 6: Hyperparameter sensitivity analysis on Toolathlon. We evaluate 8 hyperparameters for pheromone guidance and policy optimization. Red stars indicate our selected values; shaded regions show ±1 standard deviation across 3 seeds. Row 1: 
+
+(a) β; (b) ρ; (c) α; (d) w. Row 2: (e) M ; (f) η; (g) ptf ; (h) γ.Table 5: Key hyperparameters in PhGPO and selected values. 
+
+Category Parameter Value Description Pheromone 
+
+β 0.7 Pheromone influence weight Eq. (7) 
+
+ρ 0.01 Evaporation rate Eq. (1) 
+
+α 1.0 Deposition rate Eq. (1) 
+
+w 0.5 Context pheromone weight Eq. (5) 
+
+Optimization 
+
+M 5 GRPO group size (rollouts/instance) 
+
+η 10 −7 Learning rate (RL fine-tuning) 
+
+ptf 0.15 Teacher forcing final probability 
+
+γ 0.005 Entropy regularization coefficient 
+
+that combining task-dependent and task-agnostic pheromone improves performance, while extreme values over-emphasize one source. For optimization parameters, M shows diminishing returns: performance improves rapidly from M = 1 and saturates around 
+
+M = 5 . The RL learning rate η exhibits a narrow optimum on a log scale, consistent with conservative fine-tuning require-ments in the final stage. The final teacher forcing probability ptf follows a U-shaped pattern, where too little oracle guidance destabilizes early learning and pheromone initialization, and too much oracle guidance limits autonomous improvement. The entropy coefficient γ has a broad plateau around 0.005 , maintaining sufficient exploration without preventing convergence. 
+
+Experimental Guide. When adapting PhGPO, tuning ρ and β is most important due to their sharper sensitivity. The remaining parameters admit wider plateaus, and our defaults provide a strong starting point. Progressive schedules for β, w, and ptf are consistent with these curves because they avoid committing to aggressive guidance before the corresponding statistics become reliable. 
+
+## G: Generality Across Policy Optimization Backbones 
+
+This appendix shows that PhGPO is not tied to a specific policy optimization backbone. PhGPO defines (i) pheromone as an explicit transition prior on tool-transition edges and tool-to-invocation edges (Sec. ), (ii) pheromone-guided sampling during rollout generation (Eq. (7)), and (iii) pheromone updates via deposition and evaporation (Eq. (1) and Eq. (5)). These components are independent of the choice of the policy-gradient optimizer used to update πθ . In practice, we can replace GRPO with other on-policy optimizers, while keeping the same pheromone-guided rollout distribution and pheromone bookkeeping. GRPO, PPO, and RLOO backbones 
+
+We describe three interchangeable optimization backbones under the same rollout protocol. For each task instance, we sample 
+
+M tool-use trajectories from the pheromone-guided distribution in Eq. (7), obtain sequence-level returns {Rm}Mm=1 , and update the policy using a clipped policy-gradient objective. Across all three backbones, pheromone-guided sampling and pheromone updates remain unchanged. 
+
+GRPO (Group Relative Policy Optimization). GRPO uses group-relative normalization to construct a sequence-level advan-tage for each rollout: 
+
+Am = Rm − ¯RσR + ϵ , ¯R = 1
+
+M
+
+> M
+
+X
+
+> m=1
+
+Rm, (31) and applies a PPO-style clipped ratio objective with Am (Sec. ). This backbone does not require an explicit value function and leverages within-group contrasts. 
+
+PPO (Proximal Policy Optimization). PPO constructs an advantage using a baseline b(·), which can be implemented as a learned value head or a running baseline. In our setting, we use a sequence-level advantage 
+
+Am = Rm − b(x), (32) and optimize the standard clipped surrogate objective: 
+
+LPPO = −E
+
+h
+
+min  rt(θ)Am, clip( rt(θ), 1 − ε, 1 + ε)Am
+
+i
+
+, (33) where rt(θ) = πθ (at | st)/π θold (at | st) is the probability ratio at tool-decision steps. 
+
+RLOO (Leave-one-out baseline). RLOO avoids learning a value function and uses a leave-one-out baseline computed from the other rollouts in the same group: 
+
+b−m = 1
+
+M − 1
+
+X 
+
+> j̸=m
+
+Rj , Am = Rm − b−m. (34) The policy is then updated using the same clipped objective as Eq. (33), with Am replaced by the leave-one-out advantage. 
+
+Experimental protocol on Toolathlon 
+
+We evaluate optimizer-agnosticity on Toolathlon using Qwen2.5-7B and Llama3.1-8B. All runs use the same action space, pheromone-guided sampling rule (Eq. (7)), pheromone update rule (Eq. (1)), and the same progressive pipeline in Sec. . The only change is the policy optimization backbone used to update πθ . We report sequence-level Match Ratio (Match R., %) and Next-tool Accuracy (TAcc, %). Table 6: PhGPO with different policy optimization backbones on Toolathlon. For each backbone optimizer, we report results with pheromone-guided sampling (Eq. (7)) and without pheromone guidance by setting β=0 in sampling. Higher is better ( ↑).                                  
+
+> Optimizer variant Qwen2.5-7B Llama3.1-8B
+> Match R. ↑TAcc ↑Match R. ↑TAcc ↑
+> PhGPO + GRPO 25.25 27.16 22.83 23.09 w/o pheromone guidance ( β=0 )21.23 19.86 18.75 16.45
+> PhGPO + PPO 23.27 25.03 18.21 24.05 w/o pheromone guidance ( β=0 )20.78 23.31 15.72 21.22
+> PhGPO + RLOO 20.21 24.47 18.51 22.69 w/o pheromone guidance ( β=0 )18.61 23.26 17.39 21.51
+
+## H: Extended Visualization on Longer Tool-use Trajectories 
+
+This appendix provides an extended visualization showing that the pheromone-based explicit transition prior remains infor-mative on longer tool-use trajectories. For readability, we visualize a 10-tool subset of the tool-transition space, while the underlying episode involves a longer reference tool-use trajectory in the same MCP execution environment. All visualizations report the fused tool-transition pheromone τTool (· | x) defined in Eq. (5), where task-dependent evidence is retrieved by Eq. (3) and confidence is computed by Eq. (4). Pheromone updates follow deposition and evaporation in Eq. (1). QueryWandB 
+
+> WriteFile
+> ReadFile
+> PyExecute
+> WriteFile
+> ReadFile
+> RunCmd
+> ListDir
+> ReadFile
+> ClaimDone
+> QueryWandB
+> WriteFile
+> ReadFile
+> PyExecute
+> WriteFile
+> ReadFile
+> RunCmd
+> ListDir
+> ReadFile
+> ClaimDone
+> From Tool
+
+(a) Epoch 1 (b) Epoch 8 (c) Epoch 16 
+
+> QueryWandB
+> WriteFile
+> ReadFile
+> PyExecute
+> WriteFile
+> ReadFile
+> RunCmd
+> ListDir
+> ReadFile
+> ClaimDone
+
+(d) Epoch 25 
+
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> Pheromone
+> QueryWandB
+> WriteFile
+> WriteFile
+> ReadFile
+> ReadFile
+> PyExecute
+> PyExecute
+> WriteFile
+> WriteFile
+> ReadFile
+> ReadFile
+> RunCmd
+> RunCmd
+> ListDir
+> ListDir
+> ReadFile
+> ReadFile
+> ClaimDone
+
+Golden-Path Tool Transitions Reinforced by Verified Successful Tool-Use Trajectories      
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> Pheromone
+> 19.1 19.1
+> 10.3
+> 2.9
+> 19.1 18.2
+> 5.5
+> 19.3
+> 17.4
+> Epoch 1 Epoch 8 Epoch 16 Epoch 25
+> Next Tool Selected by Pheromone-Guided Sampling
+
+Figure 7: Pheromone evolution on a longer tool-use trajectory, visualized on a 10-tool subset. Top: fused tool-transition pheromone τTool (· | x) restricted to ten tools at checkpoint, with reference-chain edges highlighted in red. Bottom: pheromone values on the highlighted reference-chain transitions at the same checkpoint. The visualization shows that pheromone concen-trates on reference-chain transitions while off-chain transitions fade under evaporation, indicating that the explicit transition prior remains selective on longer tool-use trajectories. 
+
+10-tool subset visualization Figure 7 visualizes pheromone evolution on a representative long-horizon instance using the following 10 tools: 
+
+QueryWandB → WriteFile → ReadFile → PyExecute → WriteFile → ReadFile → RunCmd → ListDir 
+
+→ ReadFile → ClaimDone 
+
+The heatmaps (top row) show the fused pheromone matrix restricted to these tools at several training checkpoints. Reference-chain transitions that appear in this instance are highlighted in red. As training proceeds, pheromone mass becomes increasingly concentrated on the reference-chain transitions within this 10-tool subset, while many off-chain transitions fade as evaporation reduces the influence of older or weakly supported statistics. This pattern indicates that the explicit transition prior becomes more selective over time, amplifying transitions that recur in verified successful tool-use trajectories. The bar plot (bottom row) reports pheromone values along the reference-chain transitions within the same 10-tool subset at the corresponding checkpoints. Earlier transitions often exhibit stronger reinforcement because they are visited more frequently across verified successful trajectories and because early tool choices constrain later reachable states in long tool-use trajectories. Later transitions remain distinguishable from the background, which indicates that the pheromone signal is not limited to prefix segments and can provide guidance throughout the chain. 
+
+## I: Time Efficiency: Path Discovery Speed 
+
+This appendix provides a qualitative analysis of training-time efficiency. We compare PhGPO against an ablation that removes the pheromone prior, and examine how quickly each method discovers the first high-quality tool-use trajectory on Toolathlon episodes. A trajectory is considered high-quality when its match quality satisfies q(ξ) ≥ 0.6.
+
+Experimental protocol We evaluate two configurations on Toolathlon with Qwen2.5-7B: • PhGPO (Full) : rollouts are sampled from the fused distribution that incorporates pheromone as an explicit transition prior (Eq. (7)), with the progressive schedule described in Sec. . 0 500 1000 1500 2000 2500           
+
+> Training Steps
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> High-Quality Match Rate
+> 1173 steps
+> 2500 steps
+> (a) Episode Coverage Over Time
+> PhGPO (Full)
+> GRPO w/o Pheromone
+> 246810 12 14 16 18
+> Average Trajectory Length
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Relative Speedup (%)
+> +25%
+> +21% +20% +21%
+> +23%
+> (b) Speedup Scales with Horizon
+> Linear trend
+> Speedup (% faster)
+
+Figure 8: Time efficiency analysis on Toolathlon. We track the earliest training step at which a high-quality trajectory ( q(ξ) ≥
+
+0.6) is first generated for each episode. PhGPO reaches broad coverage earlier than the ablation without pheromone, and the relative improvement remains broadly consistent across trajectory-length bins. • GRPO w/o pheromone : we set β = 0 throughout training, removing pheromone guidance during rollout generation while keeping the remaining pipeline identical (same curriculum, the same oracle-mixing rule via ptf , and the same mixed objec-tive). For each Toolathlon episode, we record the earliest training step at which at least one generated trajectory reaches q(ξ) ≥ 0.6,and summarize the trend across episodes and trajectory-length bins. 
+
+Results. Figure 8 summarizes the path discovery speed measured by the first occurrence of a high-quality trajectory ( q(ξ) ≥
+
+0.6). In panel (a), PhGPO maintains a higher high-quality match rate than the ablation without pheromone at matched training steps, and it reaches the same coverage level with fewer training steps. The gap remains visible across the training range shown in the figure, indicating more efficient discovery of high-quality trajectories under the same budget. Panel (b) reports the relative speedup across trajectory-length bins. The speedup stays positive across bins and varies within a narrow range, and the fitted linear trend is close to flat. This pattern suggests that the efficiency gain is not restricted to a specific horizon, and it remains broadly stable as the average trajectory length increases. 
+
+Interpretation The trend is consistent with the role of pheromone as an explicit transition prior during trajectory generation. Without pheromone ( β = 0 ), rollout groups sampled only from the policy can be dominated by uniformly low-quality tra-jectories in a large tool space, which weakens group-relative learning signals. With pheromone guidance, historically verified tool-transition edges receive higher sampling probability, which reduces wasted exploration on low-potential transitions and increases the likelihood that each rollout group contains informative contrasts for group-based policy optimization. This mech-anism can benefit from partial matches: any trajectory that reaches q(ξ) ≥ 0.6 can contribute transition statistics, even when it is not an exact match to the reference. 
+
+Implications These results indicate that PhGPO not only improves final performance, but also improves training-time efficiency by accelerating the discovery of high-quality tool-use trajectories. This property is particularly relevant in execution-based environments where tool calls are costly. 
+
+## J: Simulated Tool Execution 
+
+Our training and evaluation use a simulated tool environment. Tool calls are not executed against real external APIs or services. Instead, each tool invocation is routed to a tool-output simulator that returns a plausible response conditioned on the current context. This design provides a controlled and reproducible feedback channel for learning tool-use trajectories, while avoiding external side effects and service availability issues. 
+
+LLM-based tool-output simulator 
+
+We implement an LLM-based simulator that generates tool outputs from structured context. Given a tool variant name, its argu-ments, the task name, the user request, and a truncated history of recent tool interactions, the simulator constructs a prompt that includes: (i) the task and user request, (ii) the recent tool-call history (with any completion markers removed), (iii) the current tool name, its original tool name, and its natural-language description, (iv) the provided arguments (or expected keys when arguments are absent). The simulator then queries an instruction-following model to produce a short response that resembles a real tool return value (for example, a JSON snippet, a status string, or a concise result summary). In our experiments, we use qwen3-235b-a22b-thinking-2507 as the simulator model through an OpenAI-compatible chat-completions endpoint. We fix the simulator system prompt to enforce output-only behavior, and we strip common explanatory prefixes and markdown formatting during post-processing to keep outputs consistent with a tool API style. 
+
+Completion detection via an explicit marker 
+
+The simulator also provides a lightweight termination signal. After generating a tool output, the simulator decides whether the current interaction history already completes the user request. If it judges the task complete, it appends a dedicated marker 
+
+<<END>> on a separate final line. We remove this marker from the returned tool output and store the completion flag separately. This enables consistent stopping behavior during rollout generation without requiring an additional model call. 
+
+Caching and fallback behavior 
+
+To reduce simulator calls and stabilize training, we cache simulator outputs using a content hash over the tool variant, task name, user request, truncated history, and arguments. When the LLM simulator is unavailable or fails, we optionally fall back to a pool-based simulator that samples from pre-defined outputs, and we use a simple default template as a final fallback. These mechanisms preserve the tool-use interface while keeping the environment feedback stable under large-scale training.

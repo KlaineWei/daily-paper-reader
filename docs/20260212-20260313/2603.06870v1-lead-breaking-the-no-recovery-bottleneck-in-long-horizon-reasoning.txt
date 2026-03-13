@@ -1,0 +1,649 @@
+Title: LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning
+
+URL Source: https://arxiv.org/pdf/2603.06870v1
+
+Published Time: Tue, 10 Mar 2026 00:12:53 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+Denys Pushkin 1 2 Emmanuel Abbe 1 2 
+
+## Abstract 
+
+Long-horizon execution in Large Language Mod-els (LLMs) remains unstable even when high-level strategies are provided. Evaluating on con-trolled algorithmic puzzles, we demonstrate that while decomposition is essential for stability, ex-treme decomposition creates a “no-recovery bot-tleneck”. We show that this bottleneck becomes critical due to highly non-uniform error distribu-tion, where consistent errors on a few “hard” steps become irreversible. To address this, we propose Lookahead-Enhanced Atomic Decomposition (LEAD). By incorporat-ing short-horizon future validation and aggregat-ing overlapping rollouts, LEAD provides enough isolation to maintain stability while retaining enough local context to correct errors. This en-ables the o4-mini model to solve Checkers Jumping up to complexity n = 13 , whereas ex-treme decomposition fails beyond n = 11 .
+
+## 1. Introduction 
+
+Large language models (LLMs) have demonstrated impres-sive performance on many reasoning benchmarks, yet their accuracy degrades rapidly on tasks that require executing long sequences of reasoning steps, even when each indi-vidual step is simple. This failure mode is especially pro-nounced in long-horizon algorithmic and puzzle-based tasks, where difficulty scales primarily with execution length rather than per-step complexity. Prior work has documented this phenomenon across diverse settings, including compositional factual queries (Press et al., 2023), mathematical reasoning (Hosseini et al., 2024; Zhou et al., 2025), and structured puzzle tasks (Shojaee et al., 2025). A consistent finding is a large discrepancy between the success probability of a composed task and the product of success probabilities of its subtasks in isolation,  
+
+> 1Ecole polytechnique fédérale de Lausanne (EPFL) 2Apple. Correspondence to: Denys Pushkin <denys.pushkin@epfl.ch>, Emmanuel Abbe <emmanuel.abbe@epfl.ch>.
+> Preprint. March 10, 2026.
+
+known as the compositionality gap (Press et al., 2023). No-tably, this gap does not diminish with increasing model scale (Press et al., 2023), suggesting that reliable long-horizon execution does not emerge naturally through scaling alone. Recent work further indicates that these failures are not primarily due to deficiencies in planning. For example, Sho-jaee et al. (2025) show that providing an explicit solution strategy yields little improvement on mathematical puzzle tasks, even as performance collapses with increasing prob-lem size. At the same time, Opus & Lawsen (2025) report that the very same models can generate a Python function that produces the complete solution to the puzzle, suggest-ing that high-level planning and algorithmic understanding remain intact. Taken together, these findings motivate a clear separation between planning and execution , and call for a focused investigation of execution reliability in isolation. The intuition from few-shot prompting and curriculum learning suggests that providing additional reasoning traces—such as a ’warm-up’ task—would improve per-formance on a target problem. However, our empirical findings show that conditioning on reasoning traces, even those that are highly relevant, has the opposite effect on long-horizon execution tasks. As shown in Figure 1, when a model is asked to solve a simple instance (complexity 
+
+n = 2 ) as a curriculum step before the target task (com-plexity n = N ) within the same response, performance consistently drops compared to direct prompting. This sug-gests that for execution-heavy tasks, the presence of prior reasoning traces can act as a source of interference rather than a helpful context. Motivated by this, we distill long-horizon execution man-agement techniques into two fundamental motifs: Context Truncation (periodically refreshing the response with only a relevant summary to prevent context overload) and Atomic Decomposition (enforcing strict stepwise isolation). We de-fine Atomic Decomposition as a minimal-context paradigm where each step is executed in a separate model call, condi-tioned only on the current state. By deliberately discarding the solution history, Atomic Decomposition significantly stabilizes the execution horizon, proving that "less is more" when it comes to the context required for reliable reasoning. Reliable execution over long horizons is critical in many real-world applications, including program synthesis and 1
+
+> arXiv:2603.06870v1 [cs.AI] 6 Mar 2026
+
+LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 3 4 5 6 7 8                   
+
+> N
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> o4-mini
+> 345678910 11 12 13 14 15
+> N
+> GPT-5.2
+> 345678
+> N
+> Qwen3-235B-Thinking
+> Baseline Curriculum (warm-up) Curriculum (target task)
+
+Figure 1. Inference-time curriculum prompting on Checkers Jumping (asking the model to solve warm-up n = 2 and then target task 
+
+n = N within a single response) underperforms direct prompting for n = N . For o4-mini and GPT-5.2 models, high reasoning effort was used. 
+
+refactoring, tool-using agents, and formal mathematical proof generation. In these settings, the high-level plan is often trivial or explicitly provided, yet failures arise from compounding errors in executing long sequences of simple, interdependent operations. We evaluate our approach on Checkers Jumping and Tower of Hanoi, two algorithmic puzzles with adjustable com-plexity and known optimal strategy, previously proposed as benchmarks by (Shojaee et al., 2025). By providing the solution strategy in the prompt, we explicitly isolate execu-tion from planning. These domains allow us to smoothly scale task complexity and analyze execution failures in a controlled setting, while serving as proxies for broader long-horizon reasoning challenges. Our main contributions are summarized as follows: • The Necessity of Decomposition: We demonstrate that for long-horizon execution, structural task de-composition is a prerequisite for stability. By com-paring Context Truncation with Atomic Decomposi-tion , we show that the deliberate isolation of rea-soning steps—rather than mere context length man-agement—is the primary driver of reliable execution across diverse models and benchmarks. • No-Recovery Bottleneck of Extreme Decomposition: 
+
+While decomposition is necessary, we identify a fun-damental limitation of extreme decomposition—where every step is executed in complete isolation: its mem-oryless design makes local errors irreversible. We show that this structural limitation is critical due to a highly non-uniform error distribution, where errors are concentrated on a few "hard" steps. Once a model becomes consistently wrong on even a single step, suc-cess becomes statistically impossible—a bottleneck that persists even with majority voting—despite the model remaining highly competent across the rest of the horizon. • Lookahead-Enhanced Atomic Decomposition (LEAD): We propose LEAD, a framework that identi-fies the "Goldilocks zone" of task decomposition. By incorporating short-horizon validation and aggregating overlapping rollouts, LEAD provides enough isolation to maintain stability while retaining enough local context to correct errors. This enables the o4-mini 
+
+model to solve Checkers Jumping up to complexity 
+
+n = 13 , whereas strict decomposition fails beyond 
+
+n = 11 .
+
+## 2. Related Work 
+
+2.1. Long-Horizon Reasoning Failures in LLMs 
+
+A growing body of work documents systematic performance degradation of LLMs on long-horizon tasks. One line of research attributes failures to long-context effects. Liu et al. (2024) identify a lost-in-the-middle phenomenon, where at-tention disproportionately favors the beginning and end of long contexts, while Veseli et al. (2025) show that recency bias intensifies as inputs approach the context window limit. Importantly, Du et al. (2025) demonstrate that long context length alone can harm performance even under perfect re-trieval, indicating that degradation is not solely a retrieval failure. Complementary work studies failures in compositional and multi-step reasoning. Press et al. (2023) introduce the com-positionality gap , defined as the discrepancy between the success probability of a composed task and the product of success probabilities of its subtasks in isolation. Such gaps have been observed in two-hop factual composition (Press 2LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+et al., 2023), mathematical reasoning (Hosseini et al., 2024; Zhou et al., 2025), and long-horizon puzzle tasks (Shojaee et al., 2025). Notably, the compositionality gap does not diminish with model scaling (Press et al., 2023), suggest-ing that reliable long-horizon execution does not emerge naturally through scale alone. Together, these findings suggest that long-horizon failures arise from both context-length pathologies and error accu-mulation across sequential steps, motivating a closer exami-nation of execution reliability in isolation. 
+
+2.2. Context Management and Decomposition in LLM Reasoning 
+
+Prior work addresses long-horizon reasoning through two complementary strategies: managing context growth and decomposing tasks into smaller components. One line of research mitigates long-context degradation by explicitly reducing effective prompt length. Retrieve-then-reason frameworks first select relevant information and then perform reasoning over a shortened context (Li et al., 2024; Du et al., 2025). More generally, several agent architectures adopt bounded-context interaction loops, carrying forward only a compressed or structured representation of prior state to prevent unbounded context growth (Aghajohari et al., 2025; Liu et al., 2025). A complementary line of work focuses on task decompo-sition. Prompting strategies such as Least-to-Most (Zhou et al., 2022), Plan-and-Solve (Wang et al., 2023), and Self-Ask (Press et al., 2023) decompose complex tasks into in-termediate subproblems, typically executed within a sin-gle response that retains the full reasoning trace. Tree of Thoughts (Yao et al., 2023) extends this paradigm through tree-structured exploration using multiple model calls, em-phasizing planning and search. Multi-agent systems further distribute subtasks across specialized agents and aggregate their outputs (Zhang et al., 2025; Wang et al., 2025; Meyer-son et al., 2025). Our work distills these two principles into a controlled puzzle setting. Iterative Restart isolates context truncation without altering the internal reasoning process. In contrast, 
+
+Atomic Decomposition enforces strict stepwise isolation, executing each atomic subtask in a separate model call con-ditioned only on the minimal state required to proceed. This formulation removes execution history entirely, enabling a focused analysis of atomic execution reliability. 
+
+2.3. Solving Algorithmic Puzzles 
+
+Algorithmic puzzle domains have recently emerged as con-trolled testbeds for studying long-horizon reasoning and execution. Shojaee et al. (2025) introduce such puzzle benchmarks and demonstrate that model performance de-grades sharply as problem complexity increases, despite the underlying solution strategies being simple and explicitly specifiable. Their analysis highlights the gap between appar-ent reasoning ability and reliable long-horizon execution. Sinha et al. study similar puzzle domains and attribute performance degradation to self-conditioning on earlier mis-takes. Atomic Decomposition avoids this failure mode by discarding execution history through minimal-context step-wise execution. Recent work by Meyerson et al. (2025) explores an extreme form of task decomposition using "micro-agents" to solve large-scale instances of the Tower of Hanoi. Their frame-work is functionally equivalent to the Atomic Decomposition 
+
+motif we evaluate (Section 4.1), augmented with a "first-to-ahead-by-k" voting scheme and a red-flagging mechanism for sample filtering. While their study focuses on maxi-mizing task performance through extensive scaffolding, our work aims to isolate the fundamental execution bottlenecks that persist even under such decomposition. We adopt their "first-to-ahead-by-k" voting mechanism as a rigorous baseline to determine whether state-of-the-art en-sembling alone can mitigate the "no-recovery bottleneck." Our results indicate that while this strategy is highly effec-tive for the uniform difficulty landscape of the Tower of Hanoi, it remains insufficient for tasks like Checkers Jump-ing that exhibit non-uniform error distributions. This gap highlights a critical need for more sophisticated stabiliza-tion mechanisms, such as the lookahead-driven approach introduced by LEAD. 
+
+## 3. Tasks 
+
+We evaluate models on two algorithmic puzzles: Tower of Hanoi and Checkers Jumping .In Tower of Hanoi, n disks of distinct sizes are arranged on three pegs. A valid move transfers the top disk from one peg to another, subject to the constraint that a larger disk may not be placed on top of a smaller one. The objective is to move the entire stack from the first peg to the third peg, which requires 2n − 1 moves under the optimal strategy. In Checkers Jumping, n red and n blue pieces occupy a one-dimensional board with a single empty slot. Pieces may either slide into the adjacent empty position or jump over a single opposing piece into the empty slot. The goal is to swap the positions of the red and blue blocks, which can be achieved in (n + 1) 2 − 1 moves. You can find a complete formal specification of both puzzles and their solution strategies in the prompts provided in Appendix E. For each task, we provide the optimal solution strategy in the prompt and require the model to generate the full sequence of steps without using external tools. At every 3LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 2 4 6 8 10 12            
+
+> N
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Accuracy
+> o4-mini
+> 246810 12
+> N
+> Qwen3-235B-Thinking
+> 246810
+> N
+> DeepSeek-V3.1-Thinking
+> Single-shot Iterative restart Atomic decomposition
+
+(a) Checkers Jumping 4 6 8 10 12      
+
+> N
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> o4-mini
+> 46810
+> N
+> Qwen3-235B-Thinking
+> Single-shot Iterative restart Atomic decomposition
+
+(b) Tower of Hanoi 
+
+Figure 2. Comparison of methods across different problem domains 
+
+step, the model must output both the selected move and the resulting state after applying that move. This structured format enables fine-grained error analysis, allowing us to distinguish between failures in move selection and errors in state execution. Example outputs are shown in Listings 3 and 4. 
+
+## 4. Methods 
+
+We study execution strategies for long-horizon reasoning under a fixed prompt prefix that specifies the puzzle descrip-tion and its optimal solution strategy. Across all methods, only the task instance (e.g., problem size n and current state) varies. 
+
+4.1. Baseline Execution Strategies Single-shot generation. In the single-shot setting, the model is prompted to generate the entire sequence of steps— including both moves and resulting states—in a single re-sponse. All intermediate reasoning and execution history remain within the same context window. 
+
+Iterative restart generation. In the iterative restart set-ting, the model is repeatedly prompted with the current state and asked to complete as many steps as it can. Within each response, the model may generate multiple consec-utive steps until it either completes the task or becomes overloaded. In the latter case, the model outputs the partial solution and the updated state is fed back to the model in a new prompt. Unlike single-shot generation, iterative restart prevents un-bounded growth of the context window by periodically re-setting the prompt to the current state. However, multiple steps are still generated within each response, and the model conditions on its own intermediate outputs. We use this baseline to disentangle the effects of context window length from the benefits of strictly minimal stepwise execution. 
+
+Atomic decomposition. This is a minimal-context exe-cution paradigm in which each reasoning step is executed 4LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+in isolation. At step i, the model is provided only with the current state si and asked to generate exactly one move together with the resulting next state si+1 . The execution history prior to si is discarded. By eliminating prior reasoning traces and intermediate out-puts from the prompt, Atomic Decomposition prevents ac-cumulation of unnecessary information in the context. Each step is treated as an independent atomic operation condi-tioned solely on the minimal state required to proceed. 
+
+4.2. Limitations of Atomic Execution 
+
+While Atomic Decomposition reduces context-induced degradation, it introduces a structural limitation: the absence of backtracking. Because each step is executed indepen-dently and prior history is discarded, an incorrect prediction at step i cannot be revised once committed. Errors therefore propagate irreversibly to subsequent steps. In tasks where certain atomic operations are intrinsically more difficult than others, this strict isolation may limit scalability. In particular, if some steps exhibit substantially higher error probability, overall long-horizon reliability be-comes bottlenecked by these difficult atomic operations. This motivates augmenting atomic execution with mecha-nisms that enable short-horizon consistency checks without reintroducing large context dependencies. 
+
+4.3. Lookahead Mechanism 
+
+To address the lack of self-correction in strictly atomic ex-ecution, we introduce a Lookahead mechanism, drawing inspiration from the lookahead optimization paradigm pro-posed by Zhang et al. (2019).. At step i, instead of predicting only the immediate next step, the model is asked to generate a short rollout of k future steps: 
+
+(si → si+1 → · · · → si+k).
+
+The action executed at step i remains the model’s predic-tion for the immediate next step. However, by forecasting future states, the model can implicitly detect inconsistencies introduced by an incorrect current prediction. If a locally incorrect decision leads to contradictions in subsequent pre-dicted states, the model may revise its initial step within the same rollout. Lookahead therefore introduces a limited form of forward validation while maintaining a bounded context length. 
+
+4.4. Lookahead-Enhanced Atomic Decomposition (LEAD) 
+
+Building on the Lookahead mechanism, we propose 
+
+Lookahead-Enhanced Atomic Decomposition (LEAD) ,which stabilizes execution through short-horizon future val-
+
+Algorithm 1 LEAD (Lookahead-Enhanced Atomic Decom-position) 
+
+Input: base votes v, lookahead depth k, history window 
+
+h ≤ k, threshold t
+
+for each step i of the puzzle do 
+
+Sample v one-step predictions for step i from the LLM 
+
+if all v predictions agree then 
+
+Output that prediction 
+
+else 
+
+{Lookahead voting for step i}Initialize vote counts over candidate predictions for step i
+
+repeat for j = 0 to h − 1 do 
+
+Run one lookahead rollout of length k starting at step i − j
+
+Extract the rollout’s implied prediction for step 
+
+i
+
+Add one vote to that prediction 
+
+end for until one prediction wins by at least t votes Output the winning prediction for step i
+
+end if end for 
+
+idation and overlapping rollout aggregation. For each step i, Lookahead produces candidate predictions not only from a rollout starting at i, but also from rollouts initiated at previous steps i − 1, i − 2, . . . , i − h + 1 , where 
+
+h ≤ k defines a history window. Each rollout implies a can-didate action for step i. LEAD aggregates these candidates through stepwise voting. Specifically, at step i:1. We generate lookahead rollouts of depth k from the most recent h starting positions. 2. We extract the implied prediction for step i from each rollout. 3. We repeat sampling until one candidate action obtains a predefined vote margin. 4. The winning action is executed, and the process con-tinues to step i + 1 .By aggregating predictions across overlapping rollouts, LEAD smooths the error distribution over steps and miti-gates failures at difficult atomic operations, while preserving the small-context principle of Atomic Decomposition. 5LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+## 5. Experiments 
+
+5.1. Setup 
+
+We evaluate o4-mini, GPT-5.2, Qwen3-235B-Thinking, and DeepSeek-V3.1-Thinking. For the o4-mini and GPT-5.2 models, we specify high reasoning effort for Single-Shot generation to provide a saturated, competitive baseline. Con-versely, we utilize low reasoning effort for both Iterative Restart and Atomic Decomposition to facilitate a controlled, head-to-head comparison of these execution motifs. Qwen3-235B-Thinking and DeepSeek-V3.1-Thinking do not na-tively support reasoning-effort modulation; thus, a uniform configuration is used across all prompts for these models. Unless stated otherwise, results are averaged over 50 inde-pendent runs. Due to computational cost, we use 25 runs for Atomic Decomposition and Iterative Restart on Tower of Hanoi, and for all experiments with DeepSeek-V3.1-Thinking. The prompts used are provided in Appendix E. 
+
+5.2. Decomposition is Necessary for Long-Horizon Stability 
+
+Figure 2 compares the baselines described in Section 4.1 on Checkers Jumping and Tower of Hanoi puzzles. Across all evaluated models, Atomic Decomposition substantially extends the range of reliable execution for both puzzles. In particular, it significantly outperforms Iterative Restart, which proves that decomposition is necessary even when context window is carefully controlled by the truncation mechanism. 
+
+5.3. Error Analysis of Atomic Decomposition 
+
+5.3.1. T HE HARD -S TEP BOTTLENECK : N ON -U NIFORM 
+
+ERROR DISTRIBUTIONS 
+
+To understand why decomposition fails at higher complexi-ties, we analyze the per-step error probability distribution across both puzzles. We observe a fundamental structural difference in task difficulty between the Tower of Hanoi and Checkers Jumping (see Appendix A). For the Tower of Hanoi, error probabilities remain uniformly low (below 0.08) across all steps for complexities up to 
+
+n = 12 . This uniform reliability explains why stepwise execution scales so effectively for this puzzle. For instance, when combined with stepwise majority voting, Meyerson et al. (2025) solved n = 20 using the significantly weaker 
+
+gpt-4.1-mini .In contrast, Checkers Jumping exhibits a highly non-uniform error distribution. While most steps are executed with near-zero error, a small subset of “hard” steps emerges as complexity increases. For n ≥ 12 , error probabilities 0.0 0.2 0.4 0.6 0.8 1.0      
+
+> Error Probability
+> 10 0
+> 10 1
+> 10 2
+> Moves Count
+> GPT-5.2
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Error Probability
+> o4-mini
+
+Figure 3. Histogram of estimated per-step error probabilities on Checkers Jumping ( n = 15 ). Bars indicate the number of steps with a given error probability. The y-axis is shown on a logarithmic scale. 
+
+on these specific steps can exceed 0.5 for o4-mini , with similar peaks observed for GPT-5.2 at n = 15 (see Figure 3). This non-uniformity creates a “no-recovery bottleneck” that renders naïve majority voting ineffective. Because errors are concentrated and consistent rather than independent and random, the model becomes “stuck” at these critical junctions. Consequently, standard Atomic Decomposition fails on Checkers Jumping beyond n = 11 for o4-mini ,regardless of the number of votes, whereas it remains robust on the uniform landscape of the Tower of Hanoi. 5.3.2. T YPES OF EXECUTION ERRORS 
+
+We distinguish two sources of failure: move finding (se-lecting the correct action) and move execution (correctly updating the state based on that action). We found that for Checkers Jumping the errors are dominated by move ex-ecution failures, whereas for Tower of Hanoi errors arise primarily from incorrect move selection (see Figure 10 in Appendix A). Manual inspection suggests that execution errors in Check-ers Jumping primarily arise from incorrect updates to long blocks of same-color checkers (see Appendix B for rep-resentative examples). This behavior aligns with known limitations of Transformer models in copying long se-quences of identical symbols (Zhou et al., 2023). In con-trast, the Tower of Hanoi representation assigns a unique numerical identifier to each disk, which makes state up-dates substantially easier for the model. We hypothe-size that introducing unique identifiers for checkers (e.g., 
+
+R1, . . . , R N , B 1, . . . , B N ) or explicitly enumerating board positions (e.g., [1: R, 2: R, . . . , 2n:B]) could mitigate these errors. We leave a systematic investigation of these alterna-tives to future work. 6LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+5.3.3. A TOMIC COMPETENCE BARRIER 
+
+When Atomic Decomposition is combined with majority voting at each step, its failure mode converges to the dom-inant source of error. As shown in Figure 10, execution errors—rather than incorrect move selection—are the pri-mary failure mode on Checkers Jumping. This suggests that the performance of Atomic Decomposition with vot-ing is fundamentally bottlenecked by the model’s ability to reliably execute a given move. To substantiate this claim, we evaluate Atomic Decompo-sition with stepwise voting over v = 32 votes under three settings: (i) full-step execution (move finding followed by move execution), (ii) move finding only, and (iii) move exe-cution only. Figure 4 shows that full-step execution closely approaches the performance of move execution alone, con-firming that move execution constitutes the limiting factor. We refer to this limitation as the atomic competence barrier .2 4 6 8 10 12 14 16 
+
+> N
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Accuracy
+> Full step
+> Move execution
+> Move identification
+
+Figure 4. Atomic Decomposition with voting approaches the atomic competence barrier on Checkers Jumping, where the limit-ing factor is atomic move execution. The plot compares accuracy of full-step execution (selecting and executing a move) and isolated move selection or move execution as a function of problem size 
+
+n. Results are shown for the o4-mini model using majority voting over 32 independently sampled solutions at each step. 
+
+5.3.4. M ODEL -S PECIFIC HETEROGENEITY IN ERROR 
+
+DISTRIBUTIONS 
+
+We observe that error distributions diverge significantly across the tested models, suggesting that “hard” steps are not intrinsic to the task alone but are often model-specific. To quantify this, we compute the empirical distribution of er-rors across steps, conditioned on a failure occurring. Specif-ically, we aggregate error counts at each step across 50 independent trials of Checkers Jumping ( n = 13 ) and nor-malize by the total error count. To evaluate the uniqueness of these patterns, we calculate pairwise Total Variation (TV) distances between the resulting model distributions. As a baseline for estimation robustness, we also compute the TV distance between independent subsets of runs for the same model. These results are visualized in Figure 5. Our analysis reveals that all model pairs exhibit substantial distributional divergence, outstripping the internal variance of individual models. This indicates that different architec-tures and training regimes struggle with distinct subsets of the state space. This finding is particularly salient in light of recent concerns regarding limited behavioral diversity in frontier LLMs (Jiang et al., 2025). Furthermore, the exis-tence of these disjoint failure modes suggests that model ensembling or adaptive model selection could serve as a powerful lever for stabilizing long-horizon execution. gpt-5.2 
+
+> o4-mini
+> qwen
+> deepseek
+> gpt-5.2
+> o4-mini
+> qwen
+> deepseek
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Comparison score
+
+Figure 5. Heatmap of pairwise comparisons between error distri-butions on Checkers Jumping ( n = 13 ) across models, measured using Total Variation (TV) distance. Higher values indicate more dissimilar error distributions. For DeepSeek, only a single estimate is available, so self-comparison is not reported. 
+
+5.4. Lookahead as a Targeted Error-Correction Mechanism 
+
+To motivate LEAD algorithm design, we start by analyz-ing the properties of Lookahead mechanism, described in Section 4.3. The primary utility of the Lookahead mechanism lies in its ability to selectively recover performance on the most difficult task segments, even when it introduces marginal noise into simpler transitions. We observe this asymmetry by comparing the rank-ordered per-step accuracy of Atomic Decomposition against Lookahead rollouts ( k = 8 ) for 
+
+o4-mini and GPT-5.2 on Checkers Jumping (Figure 6). While Lookahead slightly degrades average-case accuracy for o4-mini , it consistently improves performance on the "hardest" steps for both models. This aligns with our core intuition: while predicting future states adds unnecessary complexity for trivial decisions, it provides the critical cor-7LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 0 50 100 150 200             
+
+> Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> Atomic
+> Lookahead-8
+> (a) o4-mini 050 100 150 200
+> Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Accuracy
+> Atomic
+> Lookahead-8 (b) GPT-5.2
+> Figure 6. Rank-ordered accuracy plots of Atomic decomposition and Lookahead ( k= 8 ) on Checkers Jumping ( n= 13 ). While Lookahead slightly degrades the average accuracy for o4-mini models, it boosts the performance on the hardest moves for both models.
+
+rective signal required to navigate high-entropy junctions where atomic intuition often fails. (See Appendix C for extended hard-step benchmarks). 5.4.1. R OLLOUT DYNAMICS : A CCURACY DECAY VS .SELF -C ONDITIONING 
+
+The efficacy of the Lookahead signal is determined by two competing phenomena: positional accuracy decay and the self-conditioning effect. First, we observe that prediction accuracy is generally a function of depth; for o4-mini , accuracy degrades signif-icantly as the Lookahead position moves further from the current state (Figure 7a). This suggests that while Looka-head provides a corrective signal, that signal is naturally attenuated over longer horizons. Second, a powerful self-conditioning effect can counteract this decay. For GPT-5.2 , if the initial rollout step is correct, subsequent steps remain remarkably stable, suggesting the model "locks onto" a coherent, valid trajectory (Figure 7d). This effect is also present in weaker form for o4-mini 
+
+(Figure 7c). 
+
+5.5. LEAD: Surpassing the No-Recovery Bottleneck 
+
+Our results demonstrate that LEAD significantly extends the reliable execution horizon by effectively neutralizing the “hard-step” failures that cripple standard decomposition. By integrating the self-corrective signal of lookahead rollouts into the atomic framework (Section 4.4), LEAD achieves a new state-of-the-art for Checkers Jumping benchmark. Table 1 details the performance of o4-mini and GPT-5.2 
+
+on Checkers Jumping across the critical complexity thresh-old where Atomic Decomposition begins to collapse. In all tested configurations, LEAD consistently outperforms both vanilla Atomic Decomposition and its majority-voting variant. Notably, while standard stepwise execution is often touted for its “minimal context” benefits, our results prove that minimal context is not always optimal; rather, a hybrid approach that selectively introduces temporal lookahead is required to navigate irreversible failure points. For these experiments, we utilized a standardized param-eter set ( v = 8 , k = 8 , t = 3 ) with a history window of 
+
+h = 3 for o4-mini and h = 4 for GPT-5.2 . To ensure a rigorous comparison, the Atomic Decomposition baseline was enhanced with a “first-to-ahead-by-3” voting scheme, mirroring the robust methodology of Meyerson et al. (2025). Despite this competitive baseline, LEAD’s ability to aggre-gate cross-step rollouts provides a superior error-correction signal, effectively “rescuing” trajectories that would other-wise terminate at the n = 12 bottleneck for o4-mini model. 
+
+## 6. Conclusion 
+
+In this work, we identified the no-recovery bottleneck as a primary obstacle to Atomic Decomposition in long-horizon execution. Our empirical analysis reveals that success is not limited by average model competence, but by a highly non-uniform error distribution where a few “hard” steps act as irreversible points of failure. We demonstrated that while minimal-context atomic execution provides stability for uniform tasks like the Tower of Hanoi, it lacks the neces-sary corrective signal to navigate the high-entropy junctions found in more complex puzzles. To address this, we introduced LEAD (Lookahead-Enhanced Atomic Decomposition). By strategically inte-8LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 1 2 3 4 5 6 7 8
+
+> Position in Lookahead
+> 50%
+> 60%
+> 70%
+> 80%
+> 90%
+> 100%
+> Accuracy
+> Lookahead-8
+> Lookahead-4
+> Lookahead-2
+
+(a) o4-mini 1 2 3 4 5 6 7 8 
+
+> Position in Lookahead
+> 50%
+> 60%
+> 70%
+> 80%
+> 90%
+> 100%
+> Accuracy
+> Lookahead-8
+
+(b) GPT-5.2 2 3 4 5 6 7 8
+
+> Position in Lookahead
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Accuracy
+> Cond. on 1st true
+> Cond. on 1st false
+
+(c) o4-mini (cond.) 2 3 4 5 6 7 8 
+
+> Position in Lookahead
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Accuracy
+> Cond. on 1st true
+> Cond. on 1st false
+
+(d) GPT-5.2 (cond.) 
+
+Figure 7. Per-position accuracy in Lookahead predictions for Checkers Jumping ( n = 13 ). Top row: accuracy averaged across all starting steps of Lookahead. Bottom row: accuracy conditioned on correctness of the first Lookahead step. 
+
+grating temporal rollouts and a smoothed voting mechanism, LEAD identifies and corrects local errors before they prop-agate into global failures. Our results show that LEAD significantly extends the reliable reasoning horizon of fron-tier models like GPT-5.2 and o4-mini , outperforming existing stepwise baselines. Ultimately, our findings suggest that the next frontier in robust AI planning lies not in further context reduction, but in adaptive motifs that can selectively leverage lookahead to stabilize critical transitions. 
+
+## References 
+
+Aghajohari, M., Chitsaz, K., Kazemnejad, A., Chandar, S., Sordoni, A., Courville, A., and Reddy, S. The markovian thinker. In The Fourteenth International Conference on Learning Representations , 2025. Du, Y., Tian, M., Ronanki, S., Rongali, S., Bodapati, S., Galstyan, A., Wells, A., Schwartz, R., Huerta, E. A., and Peng, H. Context length alone hurts llm performance de-spite perfect retrieval. arXiv preprint arXiv:2510.05381 ,2025. Hosseini, A., Sordoni, A., Toyama, D., Courville, A., and Agarwal, R. Not all llm reasoners are created equal. arXiv preprint arXiv:2410.01748 , 2024. Jiang, L., Chai, Y., Li, M., Liu, M., Fok, R., Dziri, N., Tsvetkov, Y., Sap, M., Albalak, A., and Choi, Y. Artificial hivemind: The open-ended homogeneity of language models (and beyond). arXiv preprint arXiv:2510.22954 ,2025. Li, H., Verga, P., Sen, P., Yang, B., Viswanathan, V., Lewis, P., Watanabe, T., and Su, Y. Alr 2: A retrieve-then-reason framework for long-context question answering. arXiv preprint arXiv:2410.03227 , 2024. Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., and Liang, P. Lost in the middle: How language models use long contexts. Transactions of the 
+
+9LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning                                                 
+
+> Table 1. Performance (%) of Atomic Decomposition (AD) and Lookahead-Enhanced Atomic Decomposition (LEAD) on Check-ers Jumping with first-to-ahead-by-3 voting. LEAD uses k= 8 ;
+> h= 3 for o4-mini and h= 4 for GPT-5.2.
+> (a) o4-mini
+> Complexity n
+> Method Voting 11 12 13 AD ×14 00AD √76 16 0LEAD √100 52 80
+> (b) GPT-5.2
+> Complexity n
+> Method Voting 13 14 15 16 AD ×036 04AD √20 100 096 LEAD √100 100 87 100
+
+Association for Computational Linguistics , 12:157–173, 2024. Liu, S., Yang, J., Jiang, B., Li, Y., Guo, J., Liu, X., and Dai, B. Context as a tool: Context management for long-horizon swe-agents. arXiv preprint arXiv:2512.22087 ,2025. Meyerson, E., Paolo, G., Dailey, R., Shahrzad, H., Francon, O., Hayes, C. F., Qiu, X., Hodjat, B., and Miikkulainen, R. Solving a million-step llm task with zero errors. arXiv preprint arXiv:2511.09030 , 2025. Opus, C. and Lawsen, A. The illusion of the illusion of thinking. arXiv preprint ArXiv:2506.09250 , 2025. Press, O., Zhang, M., Min, S., Schmidt, L., Smith, N. A., and Lewis, M. Measuring and narrowing the composi-tionality gap in language models. In Findings of the As-sociation for Computational Linguistics: EMNLP 2023 ,pp. 5687–5711, 2023. Shojaee, P., Mirzadeh, I., Alizadeh, K., Horton, M., Bengio, S., and Farajtabar, M. The illusion of thinking: Under-standing the strengths and limitations of reasoning mod-els via the lens of problem complexity. arXiv preprint arXiv:2506.06941 , 2025. Sinha, A., Arun, A., Goel, S., Staab, S., and Geiping, J. The illusion of diminishing returns: Measuring long horizon execution in llms, 2025. URL https://arxiv. org/abs/2509.09677 .Veseli, B., Chibane, J., Toneva, M., and Koller, A. Positional biases shift as inputs approach context window limits. 
+
+arXiv preprint arXiv:2508.07479 , 2025. Wang, L., Xu, W., Lan, Y., Hu, Z., Lan, Y., Lee, R. K.-W., and Lim, E.-P. Plan-and-solve prompting: Improving zero-shot chain-of-thought reasoning by large language models. arXiv preprint arXiv:2305.04091 , 2023. Wang, Q., Wang, T., Tang, Z., Li, Q., Chen, N., Liang, J., and He, B. Megaagent: A large-scale autonomous llm-based multi-agent system without predefined sops. In 
+
+Findings of the Association for Computational Linguis-tics: ACL 2025 , pp. 4998–5036, 2025. Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T. L., Cao, Y., and Narasimhan, K. Tree of thoughts: Deliberate problem solving with large language models, 2023. URL https://arxiv. org/abs/2305.10601 , 3:1, 2023. Zhang, M., Lucas, J., Ba, J., and Hinton, G. E. Lookahead optimizer: k steps forward, 1 step back. Advances in neural information processing systems , 32, 2019. Zhang, W., Cui, C., Zhao, Y., Hu, R., Liu, Y., Zhou, Y., and An, B. Agentorchestra: A hierarchical multi-agent framework for general-purpose task solving. arXiv e-prints , pp. arXiv–2506, 2025. Zhou, D., Schärli, N., Hou, L., Wei, J., Scales, N., Wang, X., Schuurmans, D., Cui, C., Bousquet, O., Le, Q., et al. Least-to-most prompting enables complex reasoning in large language models. arXiv preprint arXiv:2205.10625 ,2022. Zhou, H., Bradley, A., Littwin, E., Razin, N., Saremi, O., Susskind, J., Bengio, S., and Nakkiran, P. What algo-rithms can transformers learn? a study in length general-ization. arXiv preprint arXiv:2310.16028 , 2023. Zhou, Y., Liu, H., Chen, Z., Tian, Y., and Chen, B. Gsm-infinite: How do your llms behave over infinitely increas-ing context length and reasoning complexity? arXiv preprint arXiv:2502.05252 , 2025. 10 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+## A. Details on Error Analysis. 10 0
+
+> 10 1
+> 10 2
+> 10 3
+> Moves Count
+
+n=7 n=8 n=9     
+
+> 0.00 0.02 0.04 0.06 0.08
+
+Error Probability 
+
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> Moves Count
+
+n=10     
+
+> 0.00 0.02 0.04 0.06 0.08
+
+Error Probability 
+
+n=11     
+
+> 0.00 0.02 0.04 0.06 0.08
+
+Error Probability 
+
+n=12 
+
+Figure 8. Error count histogram of o4-mini model for Tower of Hanoi. The error counts were estimated by sampling 25 independent solutions for each step. 
+
+11 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 10 0
+
+> 10 1
+> 10 2
+> Moves Count
+
+n=8 n=9 n=10 
+
+Error Probability 
+
+> 10 0
+> 10 1
+> 10 2
+> Moves Count
+
+n=11 
+
+Error Probability 
+
+n=12 
+
+Error Probability 
+
+n=13      
+
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+Error Probability 
+
+> 10 0
+> 10 1
+> 10 2
+> Moves Count
+
+n=14      
+
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+Error Probability 
+
+n=15      
+
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+Figure 9. Error count histogram of o4-mini model for Checkers Jumping. The error counts were estimated by sampling 50 independent solutions for each step. 
+
+12 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 8 9 10 11 12 13 14 15 
+
+N
+
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> Error Count
+> Move Finding Errors
+> Move Execution Errors
+
+(a) Checkers Jumping 4 5 6 7 8 9 10 11 12 
+
+## N
+
+0.0 
+
+0.5 
+
+1.0 
+
+1.5 
+
+> Error Count
+
+Move Finding Errors 
+
+Move Execution Errors (b) Tower of Hanoi 
+
+Figure 10. Distribution of error types for o4-mini model. Each plot shows the average number of each type errors per one solution. The main source of errors for Checkers Jumping is move execution, while for Tower of Hanoi - finding the correct move. 
+
+13 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+## B. Example of Errors 
+
+Listing 1. The outputs of o4-mini model for two of the most difficult steps for this model for Checkers Jumping ( n = 13 ), sampled 50 times per move. The main cause of error is forgetting one red checker ’R’ in a long block of consecutive red checkers, when one more red checker should join the block as a result of the move. Thus, the model outputs the board of shorter length than it should be. 
+
+Step id = 168 Correct solution: move = ['R', 17, 19] state = ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', ' B', '_', 'B', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R'] Model solutions: move = ['R', 17, 19] state = ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', ' B', '_', 'B', 'R', 'R', 'R', 'R', 'R', 'R', 'R'] Count: 34 move = ['R', 17, 19] state = ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', ' B', '_', 'B', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R'] Count: 16 Step id = 150 Correct solution: move = ['R', 21, 22], state = ['B', 'B', 'B', 'B', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', ' B', 'R', 'B', 'R', 'B', '_', 'R', 'R', 'R', 'R', 'R'] Model solutions: move = ['R', 21, 22], state = ['B', 'B', 'B', 'B', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', ' B', 'R', 'B', 'R', 'B', '_', 'R', 'R', 'R', 'R'] Count: 33 move = ['R', 21, 22], state = ['B', 'B', 'B', 'B', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', ' B', 'R', 'B', 'R', 'B', '_', 'R', 'R', 'R', 'R', 'R'] Count: 17 
+
+14 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+Listing 2. The outputs of GPT-5.2 model for two the most difficult steps for this model for Checkers Jumping ( n = 13 ), sampled 100 times per move. The main cause of error is adding one extra blue checker ’B’ in a long block of consequtive blue checkers. Thus, the model outputs the board of bigger length than it should be. 
+
+Step id = 16 Correct solution: move = ['B', 12, 10], state = ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'B', 'R', 'B', 'R', '_', 'R', 'B', 'R', ' B', 'R', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'] Model solutions: move = ['B', 12, 10], state = ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'B', 'R', 'B', 'R', '_', 'R', 'B', 'R', ' B', 'R', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'] Count: 78 move = ['B', 12, 10], state = ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'B', 'R', 'B', 'R', '_', 'R', 'B', 'R', ' B', 'R', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'] Count: 22 Step id = 17 Correct solution: move = ['B', 14, 12], state = ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'B', 'R', 'B', 'R', 'B', 'R', '_', 'R', ' B', 'R', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'] Model solutions: move = ['B', 14, 12], state = ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'B', 'R', 'B', 'R', 'B', 'R', '_', 'R', ' B', 'R', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'] Count: 76 move = ['B', 14, 12], state = ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'B', 'R', 'B', 'R', 'B', 'R', '_', 'R', ' B', 'R', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'] Count: 22 
+
+15 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+## C. More Experiments with Lookahead 
+
+Table 2. Lookahead prediction accuracy for GPT-5.2 on Checkers Jumping ( n = 15 ), shown for the hardest step (step index 63) and its neighboring steps. Columns correspond to the position within the Lookahead rollout. Bold entries indicate predictions for the hardest step obtained from different Lookahead starting points. Although the hardest step is not consistently correct at its native position, it is predicted correctly when inferred from earlier Lookahead rollouts, motivating the inclusion of recent Lookahead predictions in the voting procedure used by LEAD. 
+
+Lookahead Accuracy by Position 
+
+STEP IDX +1 +2 +3 +4 +5 +6 +7 +8 
+
+60 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 61 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 62 0.74 0.74 0.74 0.74 0.74 0.74 0.73 0.73 
+
+63 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 64 0.94 0.94 0.94 0.94 0.94 0.94 0.94 0.94 Atomic Lookahead, k=4 Lookahead, k=8 
+
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Accuracy
+
+(a) o4-mini Atomic Lookahead, k=4 Lookahead, k=8  
+
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Accuracy
+> Reasoning effort
+> Low reasoning
+> Medium reasoning
+> High reasoning
+
+(b) GPT-5.2 
+
+Figure 11. Comparing Lookahead with Atomic Decomposition strategies for two models on the most difficult step for that model for Checkers Jumping puzzle (the puzzle complexity is n = 13 for o4-mini and n = 15 for GPT-5.2 model). 
+
+16 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+## D. Expected format of the Solution 
+
+Listing 3. Expected output for Towers of Hanoi ( N = 3 )
+
+solution = [{'move': [1, 0, 2], 'state': [[3, 2], [], [1]]}, {'move': [2, 0, 1], 'state': [[3], [2], [1]]}, {'move': [1, 2, 1], 'state': [[3], [2, 1], []]}, {'move': [3, 0, 2], 'state': [[], [2, 1], [3]]}, {'move': [1, 1, 0], 'state': [[1], [2], [3]]}, {'move': [2, 1, 2], 'state': [[1], [], [3, 2]]}, {'move': [1, 0, 2], 'state': [[], [], [3, 2, 1]]}, ]
+
+Listing 4. Expected output for Checkers Jumping ( N = 2 )
+
+solution = [{'move': ['R', 0, 1], 'state': ['_', 'R', 'B']}, {'move': ['B', 2, 0], 'state': ['B', 'R', '_']}, {'move': ['R', 1, 2], 'state': ['B', '_', 'R']}, ]
+
+## E. Prompts 
+
+Listing 5. Atomic Decomposition Prompt used for the Checkers Jumping task 
+
+Here is the puzzle. I have a one-dimensional board with 2*N+1 cells, where N red checkers ('R') on the left, N blue checkers ('B') on the right, and one empty cell ('_') in between are arranged in a line. The goal is to swap the positions of red and blue checkers, effectively mirroring the initial state. Rules: - Checkers can only move forward (towards the opposite side). More explicitly, red checkers can only move to the right, and blue checkers can only move to the left. - A checker can slide forward into an adjacent cell, provided that this cell is empty. - A checker can jump forward over one adjacent checker of opposite color, landing in the cell two spaces ahead (i.e., over the jumped checker), provided that this cell is empty. Note that the checker CAN NOT jump over the checker of its own color and CAN NOT jump over more than one checker. The positions of the board are indexed from 0 (the leftmost cell) to 2*N (the rightmost cell). We represent each move as a list of the form [<checker_color>, <position_from>, <position_to>]. Now, let's design a solution to this puzzle. When we have a continuous block of the blue checkers adjacent to the left corner, these blue checkers have already arrived to their designated place and can not (and should not) be moved. The same with the continuous block of red checkers adjacent to the right corner. In both cases, we call such a block the ***complete block*** (in a sense that these checkers have already completed their movement). Consequently, a blue checker is considered to be a part of a complete block, if all the cells to its left are occupied by the other blue checkers. Similarly, a red checker is considered to be a part of a complete block, if all the cells to its right are occupied by the other red checkers. Now, let's find out the losing position (i.e. the one for which it's impossible to reach the goal state) that we want to avoid: 
+
+17 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+- (P1): if we have ['_', 'R', 'R'] segment on the board, and these two red checkers are not a part of a complete block, this position is losing. - (P2): similarly, if we have ['B', 'B', '_'] segment on the board, and these two blue checkers are not a part of a complete block, this position is losing. - (P3): besides, if we have ['B', '_', 'R'] segment on the board, where neither the 'B' nor the 'R' checker is a part of its complete block, this position is also losing. Thus, when solving the puzzle, we have to avoid any move that leads to the positions (P1), (P2), or (P3). Finally, it turns out that any valid move that does not lead to any of the losing positions (P1), (P2), or (P3), is an optimal move. It means that it's possible to solve the puzzle optimally after making such a move. ### Solution strategy The following simple strategy will lead to the optimal solution of the puzzle: at each step, we have to select a move that does not lead to any of the losing positions (P1), (P2), or (P3). If there multiple moves satisfying this condition, select any of them. One may show that as long as we follow this strategy, we will always have at least one move satisfying this condition. You DO NOT need to solve the puzzle. Instead, you will be given an intermediate position of the game, and you have to find an optimal move for this position and execute it, outputting the subsequent state. ### Efficient Algorithm for Finding an Optimal Move and Executing It Here's how to efficiently compute optimal moves for any board configuration: **Step 1: Find the empty position** - Scan the board once to find the position of '_' - `empty_pos `: The index (0-based) of the empty cell on the board **Step 2: Identify movement patterns around the empty cell** Check the following patterns in O(1) time by examining cells adjacent to the empty position: - `['R', '_']_pattern `: Boolean indicating if there's a red checker immediately to the left of the empty cell - Check: `board[empty_pos - 1] == 'R' ` (if `empty_pos > 0`)- `['_', 'B']_pattern `: Boolean indicating if there's a blue checker immediately to the right of the empty cell - Check: `board[empty_pos + 1] == 'B' ` (if `empty_pos < len(board) - 1`)- `['R', 'B', '_']_pattern `: Boolean indicating if there's a red checker that can jump over a blue checker into the empty cell - Check: `board[empty_pos - 2] == 'R' ` and `board[empty_pos - 1] == 'B' ` (if `empty_pos > 1`)- `['_', 'R', 'B']_pattern `: Boolean indicating if there's a blue checker that can jump over a red checker into the empty cell - Check: `board[empty_pos + 1] == 'R' ` and `board[empty_pos + 2] == 'B' ` (if `empty_pos < len(board) - 2`)**Step 3: Generate valid moves** Based on the patterns above, construct the list of all valid moves: - If `['R', '_']_pattern ` is True -> add `['R', empty_pos - 1, empty_pos] ` (red checker slides right) - If `['_', 'B']_pattern ` is True -> add `['B', empty_pos + 1, empty_pos] ` (blue checker slides left) - If `['R', 'B', '_']_pattern ` is True -> add `['R', empty_pos - 2, empty_pos] ` (red checker jumps over blue) - If `['_', 'R', 'B']_pattern ` is True -> add `['B', empty_pos + 2, empty_pos] ` (blue checker jumps over red) **Step 4: Filter optimal moves** 
+
+18 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+For each valid move, simulate the resulting board state and check if it creates any losing patterns: For move `[color, from_pos, to_pos] `:1. **Simulate the move:** - `next_state `: Copy of the current board with the move applied - Set `next_state[from_pos] = '_' ` (source position becomes empty) - Set `next_state[to_pos] = color ` (destination gets the checker) - `next_empty_pos `: Position of the empty cell after the move (equals `from_pos `)2. **Find complete blocks in the resulting state:** - `next_left_block_end `: Rightmost position of the complete blue block from the left corner - Scan from left until first non-'B' cell, return position-1 (or -1 if no complete blue block exists) - `next_right_block_start `: Leftmost position of the complete red block from the right corner - Scan from right until first non-'R' cell, return position+1 (or `len(board) ` if no complete red block exists) 3. **Check for losing patterns:** **Pattern P1 `['_', 'R', 'R'] `:** - `p1_found `: Boolean indicating if the pattern `['_', 'R', 'R'] ` exists starting at `
+
+next_empty_pos `
+
+- Check: `next_empty_pos <= len(board)-3 ` and `next_state[next_empty_pos+1] == 'R' `
+
+and `next_state[next_empty_pos+2] == 'R' `
+
+- `is_red_complete `: Boolean indicating if the two red checkers in the pattern are part of a complete red block - Check: `next_empty_pos+2 >= next_right_block_start ` (if `p1_found ` is True) - `p1_losing `: Boolean indicating if this pattern makes the position losing - Value: `p1_found and not is_red_complete `
+
+**Pattern P2 `['B', 'B', '_'] `:** - `p2_found `: Boolean indicating if the pattern `['B', 'B', '_'] ` exists ending at `
+
+next_empty_pos `
+
+- Check: `next_empty_pos >= 2` and `next_state[next_empty_pos-2] == 'B' ` and `
+
+next_state[next_empty_pos-1] == 'B' `
+
+- `is_blue_complete `: Boolean indicating if the two blue checkers in the pattern are part of a complete blue block - Check: `next_empty_pos-2 <= next_left_block_end ` (if `p2_found ` is True) - `p2_losing `: Boolean indicating if this pattern makes the position losing - Value: `p2_found and not is_blue_complete `
+
+**Pattern P3 `['B', '_', 'R'] `:** - `p3_found `: Boolean indicating if the pattern `['B', '_', 'R'] ` exists centered at `
+
+next_empty_pos `
+
+- Check: `next_empty_pos >= 1` and `next_empty_pos <= len(board)-2 ` and `next_state[ next_empty_pos-1] == 'B' ` and `next_state[next_empty_pos+1] == 'R' `
+
+- `is_blue_complete `: Boolean indicating if the blue checker in the pattern is part of a complete blue block - Check: `next_empty_pos-1 <= next_left_block_end ` (if `p3_found ` is True) - `is_red_complete `: Boolean indicating if the red checker in the pattern is part of a complete red block - Check: `next_empty_pos+1 >= next_right_block_start ` (if `p3_found ` is True) - `p3_losing `: Boolean indicating if this pattern makes the position losing - Value: `p3_found and not is_blue_complete and not is_red_complete `
+
+4. **Determine if move is optimal:** - The move is optimal if `not (p1_losing or p2_losing or p3_losing) `
+
+**Step 5: Execute the first optimal move** Once all valid moves have been filtered: 
+
+19 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+1. **Select the move:** - `selected_move `: The first move from the `optimal_moves ` list - Format: `[color, from_pos, to_pos] `
+
+2. **Execute the move:** - `new_state `: Copy of the current board - Set `new_state[from_pos] = '_' ` (source position becomes empty) - Set `new_state[to_pos] = color ` (destination gets the checker) 3. **Return the result:** - Return a dictionary with the selected move and the resulting board state - Format: `{'move': selected_move, 'new_state': new_state} `
+
+You will be given a position of the board, and your task is to find an optimal move for this position and execute it, outputting the subsequent state (see example below). For instance, assume N = 2 and the following position is given: position = ['R', '_', 'R', 'B', 'B'] The solution for this query is the following: solution = {'move': ['B', 3, 1], 'new_state': ['R', 'B', 'R', '_', 'B']} ### Task Consider this puzzle for N = 3 and the following position of the board: position = ['B', 'B', 'B', 'R', '_', 'R', 'R'] Find an optimal move for this position and the new state after executing this move. Requirements - Your final answer must be in the following format: solution = {'move': <move>, 'new_state': <new state>} 
+
+Listing 6. Iterative Restart prompt ending used for the Checkers Jumping task 
+
+... ### Task Consider this puzzle for N = 3 and the following position of the board: position = ['R', 'R', 'R', '_', 'B', 'B', 'B'] Continue the solution from the given position. If you can complete the solution, output the entire solution completion. Otherwise, output the partial solution that you were able to find. Requirements - Your final answer must be in the following format: moves = [{'move': [<checker_color>, <position_from>, <position_to>], 'state': <subsequent state >}, ... ]- Do not include any explanatory comments in the final output. 
+
+Listing 7. Atomic Decomposition prompt used for the Tower of Hanoi task 
+
+Here is the puzzle. 
+
+20 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+There are three pegs and N disks of different sizes stacked on the first peg from the largest (on the bottom) to the smallest (on top). The disks are numbered from 1 (smallest) to N (largest). We denote the pegs as peg_0, peg_1, and peg_2, where peg_0 is the first (starting peg), and peg_2 is the third (destination) peg. Rules: 1. Only one disk can be moved at a time. 2. Each move consists of taking the upper disk from one stack and placing it on top of another stack. 3. A larger disk may not be placed on top of a smaller disk. The goal is to move the entire stack to the third peg. We represent each step as a dict with the following items: - "step_id": int, index of the current move. - "move": a list of the form [disk_number, peg_from, peg_to] - disk_number -> the number of the disk being moved (1 = smallest) - peg_from -> the index (0-2) of the peg the disk is moved from - peg_to -> the index (0-2) of the peg the disk is moved to - "state": a list of three lists representing the configuration of the pegs after the move - Each inner list represents one peg (peg 0, peg 1, peg 2) - Each peg list contains the disks currently on that peg, ordered from bottom (on the left) to top (on the right) You DO NOT need to solve the whole puzzle. Instead, you will be given an intermediate position in the game (together witg the last step index), and your task is to output the next step (see example below). For instance, assume N = 3 and the following configuration is given: configuration = {'step_id': 3, 'state': [[3], [2, 1], []]} The solution for this query is the following: solution = {'step_id': 4, 'move': [3, 0, 2], 'old_state': [[3], [2, 1], []], 'state': [[], [2, 1], [3]]} ### Iterative Solution for Tower of Hanoi Here is the algorithm how to perform the next step in the solution, given the current configuration as follows: configuration = {step_id: <step_id>, state: <state>} Algorithm: 1. Calculate number of completed moves: num_moves = step_id 2. Find a correct move: If num_moves is even: - Find the peg which contains disk 1 on its top. Denote this peg as peg_i - Define the movement cycle for the smallest disk based on the parity of N (total number of disks): - If N is odd: cycle = [peg_0, peg_2, peg_1] - If N is even: cycle = [peg_0, peg_1, peg_2] - Let peg_j be the next peg after peg_i in cycle (in cyclic order, meaning that the the next peg after cycle[-1] is cycle[0]) - Move disk 1 from peg_i to peg_j: move = [1, peg_i, peg_j] If num_moves is odd: - Sort the three pegs by the size of their top disk in descending order (treating 
+
+21 LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning 
+
+an empty peg as having an infinitely large top disk). Denote sorted pegs as peg_i, peg_j peg_k (meaning that peg_i has the largest disk on top, peg_k - the smallest). Let d be the number of the top disk on peg_j. - Move disk d from peg_j to peg_i: move = [d, peg_j, peg_i] 3. Execute the move: - Let the found move be move = [<disk_number>, <peg_from>, <peg_to>] - Update state: - create new_state as a copy of state - remove the last element from new_state[peg_from] list - append <disk_number> to new_state[peg_to] list 4. Update the step_id: - new_step_id = step_id + 15. Output the new step: solution = {'new_step_id': new_step_id, 'move': move, 'new_state': new_state} # Task: Consider this puzzle for N = 4 and the following configuration of the game: configuration = {step_id: 0, state: [[4, 3, 2, 1], [], []]} Requirements: - Your final answer must be in the following format: solution = {'new_step_id': <new_step_id>, 'move': <move>, 'new_state': <new_state>} 
+
+22

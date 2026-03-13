@@ -1,0 +1,639 @@
+Title: Towards Fair and Comprehensive Evaluation of Routers in Collaborative LLM Systems
+
+URL Source: https://arxiv.org/pdf/2602.11877v1
+
+Published Time: Fri, 13 Feb 2026 01:56:56 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Towards Fair and Comprehensive Evaluation of Routers in Collaborative LLM Systems 
+
+Wanxing Wu 1,2∗, He Zhu 3∗, Yixia Li 1*, Lei Yang 4, Jiehui Zhao 4
+
+Hongru Wang 5, Jian Yang 6, Benyou Wang 7, Bingyi Jing 7, Guanhua Chen 1†
+
+> 1
+
+Southern University of Science and Technology, 2Institut Polytechnique de Paris 
+
+> 3
+
+Peking University, 4Deepexi Technology Co. Ltd., 5University of Edinburgh 
+
+> 6
+
+Beihang University, 7Chinese University of Hong Kong (Shenzhen) 
+
+Abstract 
+
+Large language models (LLMs) have achieved success, but cost and privacy constraints neces-sitate deploying smaller models locally while offloading complex queries to cloud-based models. Existing router evaluations are unsys-tematic, overlooking scenario-specific require-ments and out-of-distribution robustness. We propose RouterXBench , a principled evalua-tion framework with three dimensions: router ability, scenario alignment, and cross-domain robustness. Unlike prior work that relies on output probabilities or external embeddings, we utilize internal hidden states that capture model uncertainty before answer generation. We introduce ProbeDirichlet , a lightweight router that aggregates cross-layer hidden states via learnable Dirichlet distributions with proba-bilistic training. Trained on multi-domain data, it generalizes robustly across in-domain and out-of-distribution scenarios. Our results show ProbeDirichlet achieves 16.68% and 18.86% relative improvements over the best baselines in router ability and high-accuracy scenarios, with consistent performance across model fam-ilies, model scales, heterogeneous tasks, and agentic workflows. 
+
+1 Introduction 
+
+Large Language Models (LLMs) achieve remark-able performance across diverse tasks such as lan-guage understanding, creative writing, and code generation(Zhao et al., 2023; Matarazzo and Tor-lone, 2025), but balancing cost and accuracy under varying deployment constraints remains a key chal-lenge. Routers address this by dynamically direct-ing queries to different models: routing complex queries to powerful cloud models while process-ing simpler ones on local edge devices(Ding et al., 2024a; Zhang et al., 2025a; Barrak et al., 2025). This reduces computational cost, but may sacrifice   
+
+> *Equal Contributions.
+> †Corresponding author.
+
+some accuracy(Kassem et al., 2025; Shafran et al., 2025; Lin et al., 2025). However, this trade-off is not equally accept-able across domains. Different domains have dif-ferent tolerances: safety-critical applications like healthcare require high reliability (Busch et al., 2025), while customer support may tolerate accu-racy drops for cost savings (Yu et al., 2025). Be-yond domain-specific requirements, routers must also handle queries from unfamiliar distributions (out-of-distribution, OOD). Given these diverse re-quirements, a single metric cannot capture router quality. Fair evaluation requires assessing both de-ployment scenarios and cross-domain robustness. Existing benchmarks fail to achieve this com-prehensive assessment. Current evaluations rely on single metrics such as static thresholds (Chen et al., 2024b; Ding et al., 2024b; Stripelis et al., 2024; Aggarwal et al., 2024) or curve-based aggre-gate scores(Ramírez et al., 2024; Hu et al., 2024; Ong et al., 2025), which cannot capture the multi-faceted trade-offs required across diverse applica-tion scenarios (Subsection 3.2). Beyond metric lim-itations, many studies evaluate routing performance solely on in-distribution data without systematic out-of-distribution (OOD) assessment. However, real-world deployments face diverse, shifting query distributions, requiring comprehensive evaluation of both scenario-specific performance and cross-domain robustness. Motivated by these gaps, we propose 
+
+RouterXBench a systematic evaluation framework spanning three key dimensions: (i) Router Ability ,measured by AUROC to capture a router’s funda-mental discrimination capability independent of deployment thresholds; (ii) Scenario Alignment ,quantified by metrics tailored to low-cost, balanced, and high-accuracy deployment regimes (detailed in Section 3.3); and (iii) Cross-Domain Robustness ,assessed across diverse in-distribution (ID) and out-of-distribution (OOD) tasks. By disentangling 1
+
+> arXiv:2602.11877v1 [cs.CL] 12 Feb 2026
+
+intrinsic routing ability from scenario-specific requirements, our framework enables more principled router comparison and guides our exploration of effective routing design. We then focus on the core challenge: How to construct routing that is both effective and gen-eralizable? We explore router design and train-ing data composition, validated on our evalua-tion framework and agentic applications. Inter-nal hidden states directly capture model uncer-tainty before answer generation, proving more re-liable than output probabilities that suffer from softmax overconfidence (Guo et al., 2017). To robustly aggregate cross-layer representations, we model layer importance using a Dirichlet distribu-tion with learned concentration parameters. This enables stochastic training with deterministic infer-ence, acting as layer dropout to prevent overfitting specific layers. We show that diverse data mix-tures improve cross-domain generalization while preserving in-distribution performance. Our ap-proach achieves 16.68% and 18.86% relative im-provements in router ability and HCR over state-of-the-art baselines, with strong generalization across model families, model scales, diverse scenarios, and agentic workflows. 1
+
+2 Related Work 
+
+LLM Routing. Prior work explores several tech-nical directions. Training-free approaches avoid labeled supervision by estimating model skill from relative performance (Zhao et al., 2024) or leverag-ing weak agreement signals (Guha et al., 2024; Ag-garwal et al., 2024). Learning-based routing meth-ods train models to predict which model should handle each query, including preference-based routers (Ong et al., 2025), contrastive query–model embedding alignment (Chen et al., 2024c), and instruction-level capability encoding (Zhang et al., 2025b). Adaptive routing formulates routing as sequential decision making, such as bandit-based selection (Li, 2025) or token-level deferral from small to large models (She et al., 2025). Quality-and compute-aware designs integrate routing with explicit test-time budget control, such as Hybrid LLM (Ding et al., 2024b) and BEST-Route (Ding et al., 2025). Beyond specific router designs, recent benchmarking efforts such as RouterEval (Huang et al., 2025) provide comprehensive frameworks  
+
+> 1Our code is publicly available at https://github.com/ zhuchichi56/RouterXBench .
+
+to evaluate routing performance and explore the scaling effects of integrating multiple models of varying capacities. 
+
+LLM Collaboration. Collaboration strategies complement routing by coordinating multiple mod-els or agents. Representative directions include speculative decoding, which accelerates inference using a draft–verifier pair (Chen et al., 2023; Cai et al., 2024; Li et al., 2024), and model cascades, which escalate queries through models of increas-ing capacity with calibrated deferral rules (Chen et al., 2024b; Gupta et al., 2024). More recent work explores multi-agent systems with special-ized roles and coordination protocols (Wu et al., 2024; Li et al., 2023; Wang et al., 2025). 
+
+LLM Uncertainty Estimation. Uncertainty esti-mation provides key signals for routing. Existing methods include information-based scores such as perplexity or entropy (Fomicheva et al., 2020; Duan et al., 2024; Fadeeva et al., 2024), consistency-based signals from agreement across generations (Kuhn et al., 2023a; Lin et al., 2024b; Qiu and Miikkulainen, 2024), and introspective probes us-ing hidden states or attention patterns (Chen et al., 2024a; Sriramanan et al., 2024; Lin et al., 2024a). These methods can be integrated into routers to improve decision reliability, though many were originally developed outside the routing context. 
+
+3 Evaluation Framework 
+
+3.1 Problem Setup 
+
+We consider routing between two models in an 
+
+edge–cloud collaboration setting: a small model 
+
+Msmall deployed locally on edge devices for low latency and privacy, and a large model Mlarge de-ployed in the cloud for higher accuracy at greater cost. Given a query q ∈ Q , the router decides which model to invoke. Let δsmall (q), δ large (q) ∈
+
+[0 , 1] denote the performance of the two models on 
+
+q. The router computes a score s(q) ∈ R, and the decision is made by thresholding: 
+
+r(q; θ) = 1{s(q) ≥ θ}, (1) where r(q; θ) = 1 routes to the large model and 
+
+r(q; θ) = 0 uses the small model. The resulting system performance under threshold θ is 
+
+δ(q; θ) = (1 − r(q; θ)) δsmall (q) + r(q; θ) δlarge (q).
+
+(2) 20 20 40 60 80 100            
+
+> d( )
+> Perf(  )
+> SLM
+> LLM :d()Perf( )020 40 60 80 100
+> Call Rate
+> Accuracy
+> SLM
+> LLM
+> small threshold
+> shifts lead to
+> reserved router ranking
+> Locally Adaptive Router
+> Robust Optimal Router
+> Conservative Baseline
+
+Figure 1: Left: Cost–performance mapping where d(θ)
+
+represents the call rate at threshold θ and Perf (θ) de-notes overall performance. By varying θ, this can be re-parameterized as call rate vs. performance (see §3.1). 
+
+Right: An illustrative limitation of existing metrics. 
+
+For a given threshold, the large-model call rate is 
+
+d(θ) = 1
+
+|Q| 
+
+X
+
+> q∈Q
+
+r(q; θ) ∈ [0 , 1] , (3) and the corresponding overall performance is 
+
+Perf( θ) = 1
+
+|Q| 
+
+X
+
+> q∈Q
+
+δ(q; θ). (4) Varying the threshold θ traces out the 
+
+cost–performance curve :
+
+Φ : d(θ) 7 → Perf( θ). (5) Since d(θ) is monotonic, we re-parameterize this curve as a continuous function Φ( x) of the call rate 
+
+x ∈ [0 , 1] via linear interpolation, which serves as the basis for our integral metrics. 
+
+3.2 Limitations of Current Metrics 
+
+As shown in Figure 1(left), the cost–performance curve introduced above provides a unified view of router behavior. Existing metrics can be seen as different ways of extracting information from this curve, which broadly fall into two categories. 
+
+Static Metrics. These methods evaluate routers at fixed thresholds or compress performance into few indicators. A common approach is the cost–accuracy trade-off: FrugalGPT (Chen et al., 2024b) fixes accuracy and reports cost savings, while HybridLLM (Ding et al., 2024b) fixes cost and measures accuracy drop. Others use single or composite indicators. TO-Router (Stripelis et al., 2024) reports total inference cost, throughput, se-mantic similarity, and negative log-likelihood. Au-toMix (Aggarwal et al., 2024) uses Incremental Benefit per Cost, normalizing accuracy improve-ment by cost into a single score. 
+
+Limitation. While static metrics are simple and interpretable, they provide only a fragmented view of router behavior. As illustrated in Figure 1 (right), router rankings can be highly sensitive to threshold choice: within the call-rate range 20% to 40% , even minor shifts can lead to opposite conclusions about the Locally Adaptive Router, indicating that static evaluations may capture incidental fluctua-tions rather than a router’s consistent behavior. 
+
+Curve-based Metrics. These methods integrate performance over the entire cost–performance curve to avoid thresholds. Examples include the AUC (area under the accuracy–cost curve) (Ramírez et al., 2024), Average Improvement in Quality (Hu et al., 2024), and Average Performance Gap Recovered (Ong et al., 2025). By summariz-ing global trends, these metrics provide threshold-independent evaluations of the trade-off surface. 
+
+Limitation. Aggregation, however, is scenario-blind. The Figure 1(right) also shows the limitation. Locally Adaptive Router performs poorly in low call-rate regions, but AUC scores conceal this dif-ference and limit interpretability. More fundamentally, cost–accuracy metrics en-tangle two factors: router ability , referring to the correctness of judgments relative to the small model’s capacity, and scenario alignment , concern-ing the leverage of the large model’s performance. Since end-to-end accuracy at a given cost reflects both, high scores may stem from the large model’s strength rather than the router’s skill, preventing faithful assessment of intrinsic routing capability. 
+
+3.3 Triple-Perspective Framework 
+
+To address this conflation, we propose a triple-perspective framework, RouterXBench (Figure 2), that independently evaluates three distinct dimen-sions of routing performance. AUROC captures intrinsic discriminative ability without consider-ing deployment costs. LPM, HCR, and MPM as-sess scenario alignment by quantifying how well routing matches specific cost-quality constraints. Cross-domain robustness examines performance stability across diverse task distributions to ensure reliable generalization. 
+
+1. Router Ability. Since the router’s primary role is to decide which model to invoke, end-to-end sys-tem accuracy may blur its individual contribution. To isolate the router’s discriminative power from the large model’s capabilities, we define ground 3Out-of-Domain Cross-Domain Robustness        
+
+> In-Domain Out-of-Domain
+> Alpaca BigMath MMLU Magpie Math MMLU Pro
+> Router Ability
+> prompt
+> Layer 1
+> Layer 2
+> Layer L
+> PROBE
+> �(1)
+> �(2)
+> �(�)
+> �(�) =
+> �=1
+> �
+> ���(�)(�)
+> �~퐷�  (�)
+> probe
+> score
+> Call LLM
+> Use SLM
+> (continue generati ng)
+> Scenario Alignment
+
+Figure 2: Overview of the ProbeDirichlet router and RouterXBench evaluation framework. Router ability is quantified using AUROC, measuring the router’s accuracy in predicting whether the SLM can answer correctly. Scenario alignment is evaluated across three call-rate regimes: low band (Low-band Performance Mean, LPM), mid band (Mid-band Performance Mean, MPM), and high band (High-band Call-Rate, HCR). 
+
+truth labels based on the small model’s perfor-mance. Varying the decision threshold traces an ROC curve, and the area under this curve (AUROC) provides a threshold-independent measure of dis-criminative ability. Unlike cost-accuracy metrics, it focuses solely on the router’s decision quality, and by aggregating over all thresholds, it avoids sensi-tivity to local fluctuations or opportunistic peaks. 
+
+2. Scenario Alignment. Routers with similar intrinsic ability can behave differently under de-ployment constraints. To reflect such differences, we partition the cost–performance curve into three regions: (i) low call-rate for budget-sensitive use, (ii) high accuracy for safety-critical domains, and (iii) a middle band for balanced deployment. For each region, we define a normalized mean metric: LPM, HCR, and MPM. As illustrated in Figure 2. 
+
+Low-band Performance Mean (LPM). For strict budget scenarios, let d1 ∈ (0 , 1] denote the maximum allowable call rate. The average perfor-mance in this region is defined as: 
+
+LPM = 1
+
+d1
+
+Z d1
+
+> 0
+
+Φ( x) dx. (6) 
+
+High-band Call Rate (HCR). For accuracy-critical applications, we target a specific Relative Performance (RP) range. Given an RP interval 
+
+[ρ1, ρ 2], we map these to absolute performance thresholds [τ1, τ 2] via: 
+
+τi = Perf S + ρi(Perf L − Perf S ), i ∈ { 1, 2}.
+
+(7) We then identify the feasible call-rate set D where the router’s performance curve Φ( x) falls within this absolute band: 
+
+D = {x ∈ [0 , 1] : τ1 ≤ Φ( x) ≤ τ2}. (8) The HCR metric computes the complement of the average call rate within this feasible set: 
+
+HCR = 1 − 1
+
+|D| 
+
+Z
+
+> x∈D
+
+x dx. (9) A higher HCR indicates the router maintains high accuracy while relying more on the small model. 
+
+Mid-band Performance Mean (MPM). This metric evaluates the trade-off efficiency in the tran-sition region between the strict budget constraint (d1) and the accuracy-critical zone. Let d2 be the minimum call rate required to satisfy the high-accuracy threshold τ1:
+
+d2 = min {x ∈ [0 , 1] : Φ( x) ≥ τ1}. (10) The mid-band interval is defined as (d1, d 2]. Pro-vided that a valid transition region exists, the mean performance is: 
+
+MPM = 1
+
+d2 − d1
+
+Z d2
+
+> d1
+
+Φ( x) dx. (11) 
+
+3. Cross-Domain Robustness We assess cross-domain robustness by evaluating Router Ability across multiple in-distribution (ID) and out-of-distribution (OOD) pairs. This presentation high-lights how routers generalize to diverse domains, with benchmarks fully described in Subsection 5.1. 
+
+4 Methodology 
+
+Guided by this framework, we explore three key aspects: routing on internal hidden states, cross-layer aggregation, and diverse training data. 4Motivation. A key challenge in router design is achieving robust performance across both in-distribution and out-of-distribution scenarios. Re-cent studies reveal that existing routing systems suffer from notable performance degradation under distribution shifts (Ong et al., 2025; Huang et al., 2025). These approaches primarily rely on output-based features (Aggarwal et al., 2024; Zhang et al., 2025a) or external embedding models(Feng et al., 2025) to assess query difficulty. We argue for a different approach: routing on 
+
+internal hidden states from the model itself. Un-like output signals or external embeddings, internal representations reflect uncertainty and intermediate reasoning before final answers. This enables ro-bust routing with lightweight linear classifiers and superior cross-domain generalization. 
+
+Cross-layer hidden states provide fine-grained discriminative information. External encoders lack model-internal access, while final output prob-abilities suffer from overconfidence due to softmax normalization (Guo et al., 2017). We instead route on cross-layer hidden states. Different layers capture complementary infor-mation: early layers encode surface patterns, while deeper layers represent semantic understanding (Sun et al., 2025). Relying solely on the final layer discards intermediate uncertainty. Moreover, in-ternal representations encode task difficulty before answer generation (Dong et al., 2025). We there-fore extract and aggregate hidden states directly after the query prefix, combining cross-layer rich-ness with computational efficiency. 
+
+Dirichlet Aggregation: Probabilistic Training, Deterministic Inference. As shown in Figure 2, we first extract sentence-level representations by mean pooling over token-wise hidden states at each layer l:
+
+z(l)(x) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+h(l) 
+
+> t
+
+. (12) The final representation aggregates across layers via a weighted combination: 
+
+ˆz(x) = 
+
+> L
+
+X
+
+> l=1
+
+αlz(l)(x). (13) 
+
+Why Dirichlet? Fixed layer weights (e.g., uniform averaging) cannot adapt to varying query complex-ity. Simple learned scalars αl risk overfitting spe-cific layers, especially under distribution shift. We instead introduce a probabilistic aggregation mech-anism that samples layer weights from a learned distribution during training while maintaining effi-cient deterministic inference. Concretely, we learn global concentration param-eters β = [ β1, . . . , β L] that are shared across all inputs. During training, layer weights are sampled from a Dirichlet distribution: 
+
+α ∼ Dir( β), (14) where larger βl indicates higher confidence in layer 
+
+l’s relevance. This stochastic sampling acts as a form of layer dropout , preventing the model from over-relying on a narrow subset of layers and en-couraging robust aggregation across the entire hid-den hierarchy. During inference, we use the deterministic ex-pected value: 
+
+¯αl = E[αl] = βl
+
+PLj=1 βj
+
+. (15) This yields a fixed set of layer weights independent of the input, eliminating both sampling overhead and network computation at test time. Intuitively, 
+
+βl encodes the learned importance of each layer, with the Dirichlet sampling during training provid-ing regularization that prevents over-reliance on any specific layer combination. The Mean Pool-ing variant emerges as a special case with uniform priors ( βl ≡ c for all l). 
+
+Diverse Training Data for Cross-Domain Ro-bustness. Beyond architecture design, training data composition critically impacts cross-domain robustness. Single-domain training encourages the router to exploit domain-specific patterns rather than generalizable difficulty signals, limiting trans-fer to unseen domains. We therefore adopt a multi-domain training strat-egy, training across multiple domains simultane-ously. This forces the router to learn cross-domain difficulty signals—such as reasoning depth or con-text length—rather than domain-specific artifacts, enabling robust transfer to unseen distributions. 
+
+5 Experiments 
+
+5.1 Experimental setup Benchmarks. We evaluate routers on six repre-sentative benchmarks. For training and in-domain evaluation, we use Alpaca (Taori et al., 2023) (general tasks), MMLU (Hendrycks et al., 2021a) 5Table 1: Router ability (AUROC) comparison of routing strategies across multiple benchmarks. 
+
+Method In-Domain Out-of-Domain 
+
+Alpaca Big Math MMLU AVG Magpie MATH STEM Human. Social Sci. Others AVG 
+
+SelfAsk 49.03 47.20 53.75 49.99 37.09 49.29 53.74 55.86 56.06 50.91 50.49 SemanticEntropy 62.02 55.81 53.93 57.25 58.82 55.25 56.27 51.72 52.90 53.95 54.82 ConfidenceMargin 53.38 56.18 46.56 52.04 43.08 50.05 54.42 46.97 54.37 49.52 49.73 Entropy 46.24 51.41 49.26 48.97 52.62 55.30 49.70 52.36 48.54 49.23 51.29 MaxLogits 57.96 47.39 43.82 49.72 60.86 47.00 50.03 50.53 41.14 46.43 49.33 EmbeddingMLP 67.31 56.18 54.89 59.46 68.97 56.97 52.97 53.77 48.16 50.45 55.22 ProbeDirichlet 72.02 66.18 67.88 68.70 74.08 73.90 65.32 57.84 58.82 62.77 65.46 
+
+Table 2: Scenario alignment ability of routing strategies across multiple benchmarks. 
+
+Method In-Domain Out-of-Domain 
+
+Alpaca Big Math MMLU AVG Magpie MATH STEM Human. Social Sci. Others AVG 
+
+LPM (Low Performance Mean) 
+
+SelfAsk 76.52 74.10 77.52 76.05 63.35 61.46 57.01 50.58 59.20 59.99 58.60 SemanticEntropy 76.49 74.82 75.90 75.74 63.08 61.63 57.15 49.42 57.40 59.85 58.09 ConfidenceMargin 76.37 76.18 75.70 76.08 62.60 62.72 56.64 49.50 58.81 58.60 58.15 Entropy 76.16 75.32 75.29 75.59 63.08 63.81 55.58 50.77 57.10 59.18 58.25 MaxLogits 75.99 74.88 75.03 75.30 63.13 61.16 56.07 51.19 55.24 58.48 57.55 EmbeddingMLP 76.16 75.25 75.90 75.77 62.66 63.95 56.78 50.26 56.38 59.01 58.17 ProbeDirichlet 76.50 78.82 78.51 77.95 63.53 69.24 59.20 51.74 59.12 62.42 60.88 
+
+MPM (Middle Performance Mean) 
+
+SelfAsk 82.04 81.40 83.92 82.45 71.91 75.34 69.47 62.94 69.66 70.41 69.95 SemanticEntropy 81.88 82.07 82.44 82.13 70.84 76.24 69.64 61.64 67.71 70.10 69.36 ConfidenceMargin 81.84 83.01 82.34 82.39 71.34 77.26 69.47 61.87 68.36 69.20 69.58 Entropy 81.74 82.04 82.25 82.01 71.65 77.84 68.79 63.01 67.69 69.81 69.80 MaxLogits 81.60 82.12 81.61 81.78 71.63 76.63 68.43 62.15 66.13 69.11 69.01 EmbeddingMLP 81.93 82.51 82.61 82.35 71.63 78.18 69.29 62.53 67.15 69.60 69.73 ProbeDirichlet 81.96 84.67 84.31 83.65 71.77 81.45 71.06 64.51 69.16 71.73 71.61 
+
+HCR (High-band Call Rate) 
+
+SelfAsk 10.50 6.00 12.50 9.67 13.50 11.50 13.64 10.75 11.00 11.83 12.04 SemanticEntropy 14.00 16.00 15.50 15.17 14.50 13.00 16.00 10.75 13.33 12.50 13.35 ConfidenceMargin 9.50 14.00 10.00 11.17 9.50 10.00 12.50 12.25 11.68 8.17 10.68 Entropy 11.50 8.50 9.00 9.67 11.00 12.50 8.83 9.23 10.50 10.50 10.43 MaxLogits 10.00 10.00 8.00 9.33 11.00 10.00 10.17 9.25 7.50 8.33 9.38 EmbeddingMLP 10.00 15.50 10.00 11.83 9.00 13.50 11.42 9.25 9.67 11.50 10.72 ProbeDirichlet 13.50 21.00 21.00 18.50 14.50 21.00 15.75 11.50 14.83 14.83 15.40 
+
+(knowledge), and Big-Math (Albalak et al., 2025) (math). For out-of-domain evaluation, we use 
+
+Magpie (Xu et al., 2025) (general tasks), MMLU Pro (Wang et al., 2024) (knowledge, covering STEM, Humanities, Social Sciences, and Others), and MATH (Hendrycks et al., 2021b) (math). The benchmark design is guided by three principles. Task coverage is ensured by including general, knowledge, and math domains. The difficulty gra-dient is reflected in the progression from simpler benchmarks such as Alpaca , Magpie , to more chal-lenging ones like MMLU , Big-Math , and MATH .Detailed data preparation and specific evaluation protocols are provided in Appendix B. For model selection, we use GPT-5 as the large model and Llama-3.1-8B-Instruct as the small model for evaluating router performance. 
+
+Baselines. We compare our hidden-state ap-proach against three alternative signal modalities: 
+
+(1) Verbose-based. Routers that depend on auxil-iary generations, such as self-evaluation (Kadavath et al., 2022; Ding et al., 2025) or semantic entropy (Kuhn et al., 2023b; Zhang et al., 2025a), which are informative but incur prompt sensitivity. (2) Logit-based. Routers that only use the final-layer logits, such as entropy (Su et al., 2025), margin (Ramírez et al., 2024). These are efficient but brittle across domains. (3) Embedding-based. These routers use fixed pretrained encoders with lightweight clas-sifiers for semantic representations (Feng et al., 2025). With comparable classifier sizes, this en-6ables direct comparison of different routing signals. By categorizing baselines via their signal sources, we can facilitate a systematic comparison of differ-ent signal modalities. 
+
+Training Setup. For all probe-based methods, we use a lightweight linear model with input dimen-sion 4096, corresponding to the small model’s hid-den state size. All models are trained with a fixed random seed. Training proceeds for 50 epochs with a learning rate of 1 × 10 −4. The training data con-sists of 12K examples, combining MMLU, Big Math, and Alpaca with 4K samples each. 
+
+5.2 Main Results Router Ability. Table 1 reports the overall rout-ing accuracy across multiple benchmarks. Our hidden-state–based strategies achieve 16.68% rel-ative improvement over the best baseline in both in-domain and out-of-distribution scenarios. Within our approaches, ProbeDirichlet achieves marginally higher performance than ProbeMean through learned distributional layer weights. How-ever, both variants perform competitively, indicat-ing that strong results stem primarily from the hidden-state signals themselves rather than the ag-gregation mechanism. These results demonstrate that signal provenance is crucial: internal represen-tations encode task-model interactions that external features cannot capture. 
+
+Scenario Alignment. Our framework enables flexible scenario definition based on deployment needs. Table 2 demonstrates router performance across three scenarios: cost-sensitive (LPM at 25-30% call rate), balanced (MPM), and accuracy-critical (HCR at 85-95% relative performance). Probe-based methods outperform all baselines, especially in accuracy-critical scenarios. In cost-sensitive and balanced regimes, performance dif-ferences remain modest because routers only need to escalate obviously difficult queries—a task most signal types handle adequately. However, accuracy-critical scenarios require precise identification of boundary cases where small models approach but do not meet requirements. Here, probe-based meth-ods achieve 18.86% relative improvement, demon-strating that fine-grained difficulty discrimination requires richer internal signals. 
+
+5.3 Ablation Study 
+
+Table 3 compares three probe aggregation strate-gies: Final uses only the last layer, Mean uniformly averages all layers, and Dirichlet is our proposed method. Results show that our method achieves the best AUROC across all datasets.                
+
+> Table 3: AUROC (%) of probe aggregation methods.
+> Alpaca BigMath MMLU Average
+> Final Layer 61.97 50.33 49.45 53.91 Mean Pool 71.34 65.69 67.10 68.04 Dirichlet 72.02 66.18 67.88 68.70
+
+Dirichlet achieves the best performance, and both aggregation methods significantly outperform the Final Layer baseline, confirming that cross-layer aggregation better captures task difficulty. 
+
+6 Analysis 
+
+Internal Hidden States Matter. To isolate the impact of signal source from model architecture, we compare three input representations using iden-tical linear models: Longformer embeddings, LLM embeddings, and LLM hidden states.                 
+
+> Table 4: Performance comparison across different input representations.
+> Source Alpaca BigMath Magpie MATH
+> Longformer 61.95 43.10 66.19 42.52 LLM Emb. 62.47 56.21 66.22 58.82 LLM Hidden 71.34 62.39 74.31 67.73
+
+Table 4 shows that LLM hidden states signifi-cantly outperform embedding-based methods, with particularly strong gains on mathematical reason-ing tasks. This indicates that intermediate repre-sentations preserve richer hierarchical information. While the embedding layer only provides raw lex-ical representations, hidden states encode multi-scale features from low-level syntax to high-level semantics through Transformer layers. Mathemat-ical reasoning depends on multi-level signals, in-cluding symbolic correctness and logical coher-ence, while instruction-following tasks rely mainly on surface-level semantic matching. Although LLM embeddings show a slight advantage over Longformer, likely due to vocabulary alignment, the improvement remains substantially smaller than that obtained from intermediate-layer representa-tions. These results suggest that quality prediction should prioritize internal hierarchical representa-tions rather than relying solely on input-layer fea-tures or external encoders. 7Impact of Probe Architecture. To verify that lightweight architectures suffice, we compare a lin-ear probe with a two-layer MLP under the mixed-dataset training setting. Figure 3 compares one-hidden-layer MLPs with the linear baseline (dashed line). Introducing hid-den layers provides almost no performance benefit but substantially increases overfitting, as evidenced by widening train-validation loss gaps. These re-sults indicate that increasing model complexity is unnecessary for effective routing: a linear probe already achieves comparable or better performance, and introducing non-linearity or extra layers does not provide additional benefit. 16 32 64 128     
+
+> Hidden Dimension
+> 76.0
+> 76.5
+> 77.0
+> 77.5
+> 78.0
+> AUROC
+> Validation AUROC (%)
+> Dropout = 0.1
+> Dropout = 0.5
+> Linear Model 16 32 64 128
+> Hidden Dimension
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> Final Loss Gap
+> Final Loss Gap (Val Train)
+> Dropout = 0.1
+> Dropout = 0.5
+> Linear Model
+
+Figure 3: Effect of probe complexity on performance and generalization. The horizontal line represents the 
+
+Linear Probe baseline , serving as a constant reference independent of the hidden dimension axis. 
+
+Scaling Provides Diminishing Returns. We ex-amine whether increasing training data improves probe performance by training on varying amounts of data from individual datasets. We split each dataset into fixed train/test sets, train probes on dif-ferent data scales, and evaluate all models on their respective held-out test sets. Low Mid High Low Mid High Low Mid High   
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Validation AUROC (%)
+> MMLU Big-Math Alpaca
+> Single vs Mixed Across All Scales
+> Low Single
+> Low Mixed
+> Mid Single
+> Mid Mixed
+> High Single
+> High Mixed
+> Validation AUROC by Dataset, Scale, and Training Strategy
+
+Figure 4: Validation AUROC (%) across training scales for single-dataset and mixed-dataset probes. Low/Mid/High denote 1K/4K/8K samples per dataset for single-dataset training, and 3K/12K/24K total sam-ples for mixed training. 
+
+Figure 4 shows that 1K samples are insufficient, with performance substantially lower across all set-tings. However, scaling from 4K to 8K yields min-imal gains, indicating that probes saturate quickly once they capture sufficient signal. The mixed-corpus probe matches single-dataset performance at high scale, demonstrating that data diversity com-pensates for domain-specific concentration.Given these results, we ask whether adding domains cre-ates interference or instead yields additive gains. 
+
+Data Diversity Yields Additive Gains Without Interference. We train on progressively larger data mixtures. As shown in Table 6, the re-sults show striking additive gains: existing perfor-mance is preserved (Alpaca: 71.85 →71.96) while new domains contribute independently (BigMath: 49.19 →66.18; MMLU: 49.35 →67.88). This pat-tern explains why lightweight probes suffice. If do-mains conflicted, adding BigMath would degrade Alpaca. However, we observe no such interfer-ence; domains coexist harmoniously, suggesting hidden states encode a shared notion of difficulty that simple models can generalize across diverse tasks. Data diversity is additive, not competitive; diverse training improves robustness while preserv-ing specialist capabilities. 
+
+Table 6: Generalization Behavior under Different Dataset Compositions 
+
+Benchmark Alpaca Alpaca + BigMath Mixed Training 
+
+In-domain 
+
+Alpaca 71.85 71.63 72.02 
+
+BigMath 49.19 66.49 66.18 MMLU 49.35 51.06 67.88 
+
+Out-of-domain 
+
+Magpie 72.80 74.32 74.08 MATH 57.97 72.64 73.90 
+
+MMLU-Pro 48.41 49.62 61.19 
+
+Generalization Across Model Families. To ver-ify that our approach is not specific to Llama-3.1, we train and evaluate ProbeDirichlet on the Qwen2.5-Instruct family. Table 5 demonstrates consistent effectiveness across architectures. ProbeDirichlet significantly outperforms the EmbeddingMLP baseline across all models, with an average improvement of 10.5% on in-domain tasks and 9.6% on out-of-domain tasks. Within the Qwen family, we observe dis-tinct scaling patterns. While in-domain accuracy 8Table 5: Comparison of EmbeddingMLP and ProbeDirichlet performance across model families and scales.                                                                                                               
+
+> Model Method In-Domain Out-of-Domain
+> Alpaca BigMath MMLU AVG Magpie MATH STEM Human. Social Sci. Others AVG
+> Llama-3.1-8B-Instruct EmbeddingMLP 67.31 56.18 54.89 59.46 68.97 56.97 52.97 53.77 48.16 50.45 55.22 ProbeDirichlet 72.02 66.18 67.88 68.70 74.08 73.90 65.32 57.84 58.82 62.77 65.46
+> Qwen2.5-0.5B-Instruct EmbeddingMLP 59.52 60.50 53.53 57.85 73.18 55.40 43.38 52.97 51.72 51.19 54.64 ProbeDirichlet 65.71 67.87 60.96 64.84 74.40 61.78 60.69 50.50 52.70 56.13 59.36
+> Qwen2.5-3B-Instruct EmbeddingMLP 59.51 62.14 52.53 58.06 76.38 55.35 45.55 48.32 54.61 46.80 54.50 ProbeDirichlet 67.90 70.72 68.88 69.17 82.99 77.18 66.43 55.83 58.78 61.62 67.14
+> Qwen2.5-7B-Instruct EmbeddingMLP 61.36 59.65 55.66 58.89 76.56 55.00 46.23 48.53 56.04 49.99 55.39 ProbeDirichlet 69.60 78.03 73.17 73.60 81.41 77.77 64.85 54.61 58.17 60.51 66.22 020 40 60 80 100
+> Call Rate (%)
+> 35
+> 40
+> 45
+> 50
+> 55
+> Accuracy (%)
+> Cost-Performance Curve
+> Probe
+> ConfidenceMargin
+> Entropy
+> MaxLogits
+> SelfAsk
+> SemanticEntropy
+> Random Selection
+
+Figure 5: Cost-Performance curve under the agent-based inference scenario on HotpotQA. 
+
+improves monotonically with model size, out-of-domain performance varies by task type: mathemat-ical reasoning plateaus at larger scales, instruction-following tasks show non-linear scaling effects, while knowledge-based tasks remain relatively sta-ble. Taken together, the consistent performance across architectures and varying scaling patterns across tasks demonstrate the broad applicability of our routing approach. 
+
+Agent-based Inference Scenario. Beyond model collaboration, our router generalizes to agent-based inference, deciding when tool-augmented reasoning is needed. We evaluate it in HotpotQA, which requires multi-hop reasoning and iterative evidence retrieval. Figure 5 demon-strates robust generalization to agent scenarios. Our router shows a clear advantage across the entire cost-accuracy frontier. 
+
+7 Conclusion 
+
+We present a principled evaluation framework that disentangles intrinsic routing ability from scenario-specific requirements across three dimen-sions: router ability (AUROC), scenario alignment (LPM, MPM, HCR), and cross-domain robustness, enabling fair comparison under diverse deployment constraints. We further introduce a hidden-state router trained across multiple domains, which con-sistently outperforms baselines on standard bench-marks and agentic workflows. Our analysis shows that robustness is driven by training data diversity rather than architectural complexity, offering prac-tical guidance for collaborative LLM systems. 
+
+Limitations 
+
+Our routing framework assumes the large model’s capability exceeds the small model’s; however, both models may perform similarly or converge on the same incorrect answer in certain domains (Appendix D.2), limiting routing effectiveness. Our experiments focus on a single small-large model pair and report single-run results due to computa-tional constraints; broader validation across diverse architectures, multiple seeds, and more complex OOD conditions would further strengthen the con-clusions. 
+
+References 
+
+Pranjal Aggarwal, Aman Madaan, Ankit Anand, Sriv-idya Pranavi Potharaju, Swaroop Mishra, Pei Zhou, Aditya Gupta, Dheeraj Rajagopal, Karthik Kappa-ganthu, Yiming Yang, Shyam Upadhyay, Manaal Faruqui, and Mausam. 2024. AutoMix: Automati-cally Mixing Language Models. Alon Albalak, Duy Phung, Nathan Lile, Rafael Rafailov, Kanishk Gandhi, Louis Castricato, Anikait Singh, Chase Blagden, Violet Xiang, Dakota Mahan, and Nick Haber. 2025. Big-math: A large-scale, high-quality math dataset for reinforcement learning in language models. Preprint , arXiv:2502.17387. Amine Barrak, Yosr Fourati, Michael Olchawa, Emna Ksontini, and Khalil Zoghlami. 2025. Cargo: A framework for confidence-aware routing of large lan-guage models. Preprint , arXiv:2509.14899. 
+
+9Felix Busch, Lena Hoffmann, Christopher Rueger, Elon H. C. van Dijk, Rawen Kader, Esteban Ortiz-Prado, Marcus R. Makowski, Luca Saba, Martin Hadamitzky, Jakob Nikolas Kather, Daniel Truhn, Re-nato Cuocolo, Lisa C. Adams, and Keno K. Bressem. 2025. Current applications and challenges in large language models for patient care: A systematic re-view. Communications Medicine , 5(1):26. Tianle Cai, Yuhong Li, Zhengyang Geng, Hongwu Peng, Jason D. Lee, Deming Chen, and Tri Dao. 2024. Medusa: Simple llm inference acceleration framework with multiple decoding heads. Preprint ,arXiv:2401.10774. Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping Ye. 2024a. INSIDE: LLMs’ internal states retain the power of hallucination detection. In The Twelfth International Conference on Learning Representations .Charlie Chen, Sebastian Borgeaud, Geoffrey Irving, Jean-Baptiste Lespiau, Laurent Sifre, and John Jumper. 2023. Accelerating large language model decoding with speculative sampling. Preprint ,arXiv:2302.01318. Lingjiao Chen, Matei Zaharia, and James Zou. 2024b. FrugalGPT: How to use large language models while reducing cost and improving performance. Transac-tions on Machine Learning Research .Shuhao Chen, Weisen Jiang, Baijiong Lin, James Kwok, and Yu Zhang. 2024c. RouterDC: Query-based router by dual contrastive learning for assembling large language models. In The Thirty-eighth Annual Conference on Neural Information Processing Sys-tems .Dujian Ding, Ankur Mallick, Chi Wang, Robert Sim, Subhabrata Mukherjee, Victor Ruhle, Laks V. S. Lak-shmanan, and Ahmed Hassan Awadallah. 2024a. Hy-brid LLM: Cost-Efficient and Quality-Aware Query Routing. Preprint , arXiv:2404.14618. Dujian Ding, Ankur Mallick, Chi Wang, Robert Sim, Subhabrata Mukherjee, Victor Ruhle, Laks V. S. Lak-shmanan, and Ahmed Hassan Awadallah. 2024b. Hy-brid llm: Cost-efficient and quality-aware query rout-ing. Preprint , arXiv:2404.14618. Dujian Ding, Ankur Mallick, Shaokun Zhang, Chi Wang, Daniel Madrigal, Mirian Del Carmen Hipolito Garcia, Menglin Xia, Laks V. S. Lakshmanan, Qingyun Wu, and Victor Rühle. 2025. BEST-route: Adaptive LLM routing with test-time optimal com-pute. In Forty-second International Conference on Machine Learning .Zhichen Dong, Zhanhui Zhou, Zhixuan Liu, Chao Yang, and Chaochao Lu. 2025. Emergent response plan-ning in LLMs. In Proceedings of the 42nd Interna-tional Conference on Machine Learning . PMLR. Jinhao Duan, Hao Cheng, Shiqi Wang, Alex Zavalny, Chenan Wang, Renjing Xu, Bhavya Kailkhura, and Kaidi Xu. 2024. Shifting attention to relevance: To-wards the uncertainty estimation of large language models. Ekaterina Fadeeva, Aleksandr Rubashevskii, Artem Shelmanov, Sergey Petrakov, Haonan Li, Hamdy Mubarak, Evgenii Tsymbalov, Gleb Kuzmin, Alexan-der Panchenko, Timothy Baldwin, Preslav Nakov, and Maxim Panov. 2024. Fact-checking the output of large language models via token-level uncertainty quantification. In Findings of the Association for Computational Linguistics: ACL 2024 , pages 9367– 9385, Bangkok, Thailand. Association for Computa-tional Linguistics. Tao Feng, Haozhen Zhang, Zijie Lei, Pengrui Han, Mostofa Patwary, Mohammad Shoeybi, Bryan Catan-zaro, and Jiaxuan You. 2025. Fusionfactory: Fusing LLM capabilities with multi-LLM log data. Preprint ,arXiv:2507.10540. Marina Fomicheva, Shuo Sun, Lisa Yankovskaya, Frédéric Blain, Francisco Guzmán, Mark Fishel, Nikolaos Aletras, Vishrav Chaudhary, and Lucia Spe-cia. 2020. Unsupervised quality estimation for neural machine translation. Transactions of the Association for Computational Linguistics , 8:539–555. Neel Guha, Mayee F Chen, Trevor Chow, Ishan S. Khare, and Christopher Re. 2024. Smoothie: Label free language model routing. In The Thirty-eighth Annual Conference on Neural Information Process-ing Systems .Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Wein-berger. 2017. On calibration of modern neural net-works. In Proceedings of the 34th International Con-ference on Machine Learning , volume 70 of Pro-ceedings of Machine Learning Research , pages 1321– 1330. PMLR. Neha Gupta, Harikrishna Narasimhan, Wittawat Jitkrit-tum, Ankit Singh Rawat, Aditya Krishna Menon, and Sanjiv Kumar. 2024. Language model cascades: Token-level uncertainty and beyond. In The Twelfth International Conference on Learning Representa-tions .Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2021a. Measuring massive multitask language under-standing. In International Conference on Learning Representations (ICLR) .Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021b. Measuring mathematical problem solving with the math dataset. In Advances in Neural Information Processing Systems (NeurIPS) .Qitian Jason Hu, Jacob Bieker, Xiuyu Li, Nan Jiang, Benjamin Keigwin, Gaurav Ranganath, Kurt Keutzer, and Shriyash Kaustubh Upadhyay. 2024. Router-bench: A benchmark for multi-LLM routing system. In Agentic Markets Workshop at ICML 2024 .
+
+10 Zhongzhan Huang, Guoming Ling, Yupei Lin, Yandong Chen, Shanshan Zhong, Hefeng Wu, and Liang Lin. 2025. Routereval: A comprehensive benchmark for routing llms to explore model-level scaling up in llms. In Findings of the Association for Computa-tional Linguistics: EMNLP 2025 . Association for Computational Linguistics. Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, Scott Johnston, Sheer El-Showk, Andy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort, and 17 others. 2022. Language models (mostly) know what they know. Preprint , arXiv:2207.05221. Aly M. Kassem, Bernhard Schölkopf, and Zhijing Jin. 2025. How robust are router-llms? analysis of the fragility of llm routing capabilities. Preprint ,arXiv:2504.07113. Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. 2023a. Semantic uncertainty: Linguistic invariances for un-certainty estimation in natural language generation. In The Eleventh International Conference on Learn-ing Representations .Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. 2023b. Semantic uncertainty: Linguistic invariances for un-certainty estimation in natural language generation. 
+
+Preprint , arXiv:2302.09664. Guohao Li, Hasan Abed Al Kader Hammoud, Hani Itani, Dmitrii Khizbullin, and Bernard Ghanem. 2023. CAMEL: Communicative agents for ”mind” explo-ration of large language model society. In Thirty-seventh Conference on Neural Information Process-ing Systems .Yang Li. 2025. LLM bandit: Cost-efficient LLM gener-ation via preference-conditioned dynamic routing. Yuhui Li, Fangyun Wei, Chao Zhang, and Hongyang Zhang. 2024. Eagle-2: Faster inference of lan-guage models with dynamic draft trees. Preprint ,arXiv:2406.16858. Qiqi Lin, Xiaoyang Ji, Shengfang Zhai, Qingni Shen, Zhi Zhang, Yuejian Fang, and Yansong Gao. 2025. Life-cycle routing vulnerabilities of llm router. 
+
+Preprint , arXiv:2503.08704. Zhen Lin, Shubhendu Trivedi, and Jimeng Sun. 2024a. Contextualized sequence likelihood: Enhanced confi-dence scores for natural language generation. In Pro-ceedings of the 2024 Conference on Empirical Meth-ods in Natural Language Processing , pages 10351– 10368, Miami, Florida, USA. Association for Com-putational Linguistics. Zhen Lin, Shubhendu Trivedi, and Jimeng Sun. 2024b. Generating with confidence: Uncertainty quantifica-tion for black-box large language models. Transac-tions on Machine Learning Research .Andrea Matarazzo and Riccardo Torlone. 2025. A sur-vey on large language models with some insights on their capabilities and limitations. arXiv preprint arXiv:2501.04040 . Version 2. Isaac Ong, Amjad Almahairi, Vincent Wu, Wei-Lin Chi-ang, Tianhao Wu, Joseph E. Gonzalez, M Waleed Kadous, and Ion Stoica. 2025. RouteLLM: Learning to route LLMs from preference data. In The Thir-teenth International Conference on Learning Repre-sentations .Xin Qiu and Risto Miikkulainen. 2024. Semantic den-sity: Uncertainty quantification for large language models through confidence measurement in semantic space. In The Thirty-eighth Annual Conference on Neural Information Processing Systems .Guillem Ramírez, Alexandra Birch, and Ivan Titov. 2024. Optimising calls to large language models with uncertainty-based two-tier selection. In First Conference on Language Modeling .Avital Shafran, Roei Schuster, Thomas Ristenpart, and Vitaly Shmatikov. 2025. Rerouting llm routers. 
+
+Preprint , arXiv:2501.01818. Jianshu She, Wenhao Zheng, Zhengzhong Liu, Hongyi Wang, Eric Xing, Huaxiu Yao, and Qirong Ho. 2025. Token level routing inference system for edge devices. 
+
+Preprint , arXiv:2504.07878. Gaurang Sriramanan, Siddhant Bharti, Vinu Sankar Sadasivan, Shoumik Saha, Priyatham Kattakinda, and Soheil Feizi. 2024. LLM-check: Investigating detection of hallucinations in large language models. In The Thirty-eighth Annual Conference on Neural Information Processing Systems .Dimitris Stripelis, Zijian Hu, Jipeng Zhang, Zhaozhuo Xu, Alay Dilipbhai Shah, Han Jin, Yuhang Yao, Salman Avestimehr, and Chaoyang He. 2024. Ten-soropera router: A multi-model router for efficient llm inference. Preprint , arXiv:2408.12320. Jiayuan Su, Fulin Lin, Zhaopeng Feng, Han Zheng, Teng Wang, Zhenyu Xiao, Xinlong Zhao, Zuozhu Liu, Lu Cheng, and Hongwei Wang. 2025. Cp-router: An uncertainty-aware router between llm and lrm. 
+
+Preprint , arXiv:2505.19970. Qi Sun, Marc Pickett, Ashish Kumar Nain, and Luke Jones. 2025. Transformer layers as painters. https: //arxiv.org/abs/2407.09298 .Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 2023. Stanford alpaca: An instruction-following llama model. https:// github.com/tatsu-lab/stanford_alpaca .Song Wang, Zhen Tan, Zihan Chen, Shuang Zhou, Tian-long Chen, and Jundong Li. 2025. Anymac: Cascad-ing flexible multi-agent collaboration via next-agent prediction. Preprint , arXiv:2506.17784. 
+
+11 Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni, Abhranil Chandra, Shiguang Guo, Weiming Ren, Aaran Arulraj, Xuan He, Ziyan Jiang, and 1 others. 2024. Mmlu-pro: A more robust and challenging multi-task language understanding benchmark. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) .Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Beibin Li, Erkang Zhu, Li Jiang, Xiaoyun Zhang, Shaokun Zhang, Jiale Liu, Ahmed Hassan Awadallah, Ryen W White, Doug Burger, and Chi Wang. 2024. Autogen: Enabling next-gen LLM applications via multi-agent conversations. In First Conference on Language Modeling .Zhangchen Xu, Fengqing Jiang, Luyao Niu, Yun-tian Deng, Radha Poovendran, Yejin Choi, and Bill Yuchen Lin. 2025. Magpie: Alignment data syn-thesis from scratch by prompting aligned llms with nothing. In International Conference on Learning Representations (ICLR) .Shibo Yu, Mohammad Goudarzi, and Adel Nadjaran Toosi. 2025. Efficient routing of inference re-quests across llm instances in cloud-edge computing. 
+
+Preprint , arXiv:2507.15553. Tuo Zhang, Asal Mehradfar, Dimitrios Dimitriadis, and Salman Avestimehr. 2025a. Leveraging uncer-tainty estimation for efficient llm routing. Preprint ,arXiv:2502.11021. Yi-Kai Zhang, De-Chuan Zhan, and Han-Jia Ye. 2025b. Capability instruction tuning: A new paradigm for dynamic llm routing. Preprint , arXiv:2502.17282. Wayne Xin Zhao, Kun Zhou, Junyi Li, Tianyi Tang, Xiaolei Wang, Yupeng Hou, Yingqian Min, Beichen Zhang, Junjie Zhang, Zican Dong, Yifan Du, Chen Yang, Yushuo Chen, Zhipeng Chen, Jinhao Jiang, Ruiyang Ren, Yifan Li, Xinyu Tang, Zikang Liu, and 3 others. 2023. A survey of large language models. 
+
+arXiv preprint arXiv:2303.18223 . Version 16, last revised March 2025. Zesen Zhao, Shuowei Jin, and Z. Morley Mao. 2024. Eagle: Efficient training-free router for multi-llm inference. Preprint , arXiv:2409.15518. 
+
+12 A Implementation Details 
+
+All experiments are conducted with a fixed ran-dom seed (seed=42) to ensure reproducibility. Due to computational constraints, we report single-run results for all experiments. 
+
+B Benchmark Datasets 
+
+We utilize six datasets spanning general instruction following, reasoning, and domain-specific knowl-edge. Table 7 summarizes the statistics of each dataset. • In-Domain: We use Alpaca (Taori et al., 2023) for general instruction tuning. For knowledge-intensive tasks, we incorporate 
+
+MMLU (Hendrycks et al., 2021a). Mathe-matical reasoning capabilities are represented by Big-Math (Albalak et al., 2025) . • Out-of-Domain: To evaluate generaliza-tion, we employ Magpie (Xu et al., 2025) for aligned dialogue scenarios. For com-plex knowledge evaluation, we use MMLU Pro (Wang et al., 2024), which extends MMLU with harder distractors and broader subject coverage. MATH (Hendrycks et al., 2021b) is used to assess advanced problem-solving skills not covered in the training dis-tribution. 
+
+Table 7: Benchmark statistics for router training and evaluation.                      
+
+> Dataset Domain Train/Val Test
+> Alpaca General 3.2K/0.8K 1K MMLU Knowledge 3.2K/0.8K 10K Big Math Math 3.2K/0.8K 1K Magpie General —10K MMLU-Pro Knowledge —12K MATH Math —5K
+
+B.1 Ground Truth Label Construction Exact Reasoning Tasks. For tasks requiring pre-cise reasoning or factual correctness, rule-based string matching is often brittle due to format vari-ations. To ensure robust evaluation, we leverage 
+
+xVerify ,2 a specialized open-source verification framework, specifically the xVerify-9B-C model. Given the query and the small model’s response, 
+
+> 2https://github.com/IAAR-Shanghai/xVerify
+
+xVerify performs semantic parsing and verification against the ground truth, outputting a hard binary correctness label: 
+
+y = xVerify (q, r small , a gold ), (16) where y = 1 indicates correctness (no routing needed) and y = 0 indicates failure (route to large model). 
+
+Open-ended Generation Tasks. For instruction-following tasks without unique answers, we use GPT-5 as an LLM-as-a-Judge evaluator 3 to score responses from 0 to 10. For each query q, we compare the small model’s score Ssmall against the SOTA score Ssota (prompt in Figure 6): 
+
+y = ⊮(Ssmall ≥ Ssota ). (17) This yields y = 1 (no routing needed) when the small model performs comparably, and y = 0 
+
+(route to large model) otherwise. Example Query   
+
+> System Prompt: You are a helpful assistant.
+> Instruction: Please act as an impartial judge and evaluate the quality of the response provided by an AI assistant to the user question displayed below. Your evaluation should consider factors such as the helpfulness, relevance, accu-racy, depth, creativity, and level of detail of the response. Begin your evaluation by providing a short explanation. Be as objective as possible. After providing your explana-tion, you must rate the response on a scale of 1 to 10 by strictly following this format: “[[rating]]”, for example: “Rating: [[5]]”.
+> [Question]
+> {question}
+> [The Start of Assistant’s Answer]
+> {answer}
+> [The End of Assistant’s Answer]
+
+Figure 6: The prompt template used for LLM-as-a-Judge evaluation on open-ended generation tasks (e.g., AlpacaEval, Magpie). Both the small model and the SOTA proxy model responses are scored using this tem-plate to construct the relative ground truth labels. 
+
+> 3As a proxy for SOTA performance. GPT-5 also serves as our large model; as judge, it blindly scores all responses without knowledge of their source.
+
+13 C Pseudocode for ProbeDirichlet 
+
+Algorithm 1 ProbeDirichlet  
+
+> 1:
+
+procedure FORWARD (H ∈ RB×L×D, re-turn_uncertainty)  
+
+> 2:
+
+if probe_type = "softmax" then  
+
+> 3:
+
+w = softmax (θw) ▷ Fixed layer weights  
+
+> 4:
+
+F = PLl=1 H[: , l, :] · w[l] 
+
+> 5:
+
+return Linear (F ), None  
+
+> 6:
+
+else if probe_type = "dirichlet" then  
+
+> 7:
+
+α = eβ0 · softmax (θα) ▷
+
+Concentration params  
+
+> 8:
+
+if training then  
+
+> 9:
+
+w ∼ Dirichlet (α) ▷ Sample weights  
+
+> 10:
+
+u = − P 
+
+> l
+
+wl log wl ▷ Entropy uncertainty  
+
+> 11:
+
+else  
+
+> 12:
+
+w = α/ P 
+
+> l
+
+αl ▷ Expected weights  
+
+> 13:
+
+u = log( P 
+
+> l
+
+αl) ▷ Total concentration  
+
+> 14:
+
+end if  
+
+> 15:
+
+F = PLl=1 H[: , l, :] · w[: , l, :]  
+
+> 16:
+
+return Linear (F ), u 
+
+> 17:
+
+end if  
+
+> 18:
+
+end procedure Mean Pooling: 
+
+ˆz(x) = 1
+
+L
+
+> L
+
+X
+
+> l=1
+
+z(l)(x)
+
+D Supplemental Experiments 
+
+D.1 Layer Importance Analysis 
+
+To understand how training data affects layer impor-tance, we visualize the normalized layer concentra-tion for Llama-3.1-8b-Instruct in Figure 7. Across all training datasets, deeper layers show higher con-centration, with the mixed dataset exhibiting the most pronounced pattern. Combined with our ear-lier analysis on data diversity, this suggests that deeper layers encode stronger signals about the model’s capability to answer a given query, making them particularly informative for routing decisions. 
+
+D.2 When Routing is Not Enough: A Case Study 
+
+To illustrate both the effectiveness and limitations of routing systems, we analyze queries where our 
+
+> Figure 7: Normalized layer concentration across differ-ent training datasets. Deeper layers show higher impor-tance, especially for mixed data.
+
+router correctly identified difficulty but the strong model still failed. Consider the following example: Example Query 
+
+Query: This biome has cold winters and is known for its pine forests. 
+
+Options: A. Tundra B. Rainforest C. Grassland D. Chaparral E. Savanna F. Alpine G. Wetland H. Deciduous forests I. Desert J. Taiga 
+
+Small Model: J
+
+Large Model: J
+
+Ground Truth: HIn such cases, routing becomes ineffective: both models converge on the same incorrect answer, making it futile whether the system routes to save cost or to seek quality.This reveals critical gaps in current routing frameworks. When both models fail on the same query, the system faces a fundamental choice: it can route to the small model to save cost, but this delivers incorrect results that may mislead users; or route to the large model, which wastes resources without improving quality. Addressing this requires two complementary strategies. The model pool should include more ca-pable or specialized alternatives to handle queries where current models fail. Equally important, routing frameworks must incorporate uncertainty-aware mechanisms to detect when no available model is confident in these cases, the system should explicitly communicate uncertainty to users, rather than defaulting to the small model to save cost while silently delivering incorrect results. 14

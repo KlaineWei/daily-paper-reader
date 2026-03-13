@@ -1,0 +1,757 @@
+Title: InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection
+
+URL Source: https://arxiv.org/pdf/2602.12013v1
+
+Published Time: Fri, 13 Feb 2026 02:23:09 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+Xiuping Wu * 1 Zhao Yu * 2 Yuxin Cheng * 3 Ngai Wong 3 Liangjun Ke 2 Tapas Mishra 1
+
+Konstantinos V.Katsikopoulos 1
+
+# Abstract 
+
+Reasoning can significantly enhance the perfor-mance of Large Language Models. While recent studies have exploited behavior-related prompts adjustment to enhance reasoning, these designs remain largely intuitive and lack a systematic anal-ysis of the underlying behavioral patterns. Mo-tivated by this, we investigate how models’ rea-soning behaviors shape reasoning from the per-spective of behavioral patterns. We observe that models exhibit adaptive distributions of reason-ing behaviors when responding to specific types of questions, and that structurally injecting these patterns can substantially influence the quality of the models’ reasoning processes and outcomes. Building on these findings, we propose two opti-mization methods that require no parameter up-dates: InjectCorrect and InjectRLOpt. InjectCor-rect guides the model by imitating behavioral pat-terns derived from its own past correct answers. InjectRLOpt learns a value function from histor-ical behavior-pattern data and, via our proposed 
+
+Reliability-Aware Softmax Policy , generates be-havioral injectant during inference to steer the rea-soning process. Our experiments demonstrate that both methods can improve model performance across various reasoning tasks without requiring any modifications to model parameters, achieving gains of up to 5.34% and 8.67%, respectively. 
+
+# 1. Introduction 
+
+Large language models (LLMs) have demonstrated strong performance on reasoning tasks such as mathematical problem-solving, knowledge Q&A, and coding (DeepSeek-AI, 2024; Guo et al., 2025; QwenTeam, 2025; OpenAI, 
+
+> *
+
+Equal contribution 1University of Southampton 2Xi’an Jiao-tong University 3University of Hongkong. Correspondence to: Konstantinos V. Katsikopoulos <K.Katsikopoulos@soton.ac.uk >,Tapas Mishra <T.K.Mishra@soton.ac.uk >.
+
+Preprint. February 13, 2026. 
+
+2025; Rein et al., 2024; Zhang & Math-AI, 2025; Lightman et al., 2023; Austin et al., 2021). Through prompting and post-training techniques, the model can perform extensive intermediate reasoning before generating the final response. These approaches further enhance the performance of LLMs on reasoning tasks (Kojima et al., 2022; Wei et al., 2022; Yao et al., 2023; Guo et al., 2025). Reasoning behaviors play a crucial role in eliciting the LLM’s reasoning, regulating the reasoning process, and ultimately improving the quality of the final answers. The Chain-of-thought (CoT) reasoning process is elicited by inserting phrases such as “Let’s think step by step” and “Wait” into the prompt, which, in turn, trigger the model’s reasoning and thereby lead to higher-quality final responses (Kojima et al., 2022). The “aha” moments observed dur-ing DeepSeek-R1 training provide evidence that LLMs can learn to use reasoning behaviors to actively shape their reasoning processes, thereby improving response quality through reinforcement learning (Guo et al., 2025). Due to the autoregressive nature of LLMs, the reasoning behavior could affect the subsequent reasoning content. By appro-priately modulating the model’s reasoning behavior, one can intervene in its reasoning process. Moreover, Yang et al. (2025a) presented a framework that alleviates redun-dant reasoning by dynamically guiding and controlling the model’s reasoning behaviours. Furthermore, they proposed a method that monitors model behavior and dynamically ter-minates the reasoning chain to reduce the cost of reasoning (Yang et al., 2025b). To improve the reasoning performance of LLMs, Wang et al. (2025) introduces a prejudge node into the reasoning behaviours. These studies influence the model’s reasoning process and its final responses by ma-nipulating the model’s behavior during reasoning. How-ever, these studies have predominantly proposed intuitive methods, lacking a systematic analysis of model reasoning behaviors. This paper systematically investigates how models’ reason-ing behaviors shape their final responses from the behavior pattern perspective. We first extract the reasoning behavior chain from the reasoning process. Then we conduct a com-parative statistical analysis of the behavior patterns across 1
+
+> arXiv:2602.12013v1 [cs.AI] 12 Feb 2026 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection
+
+multiple models and benchmarks, revealing that models exhibit adaptive reasoning behaviors when responding to specific types of questions. Next, by cross-injecting these behavior patterns across various tasks, we empirically show that injected patterns can substantially influence the quality of models’ reasoning processes and outcomes. Building on these findings, we design two behavior pattern improvement methods, InjectCorrect and InjectRLOpt, that deliberately steer models toward more effective reasoning patterns, im-proving the model performance across various reasoning tasks without requiring any parameter modifications. The main contribution of this paper is as follows: • We analyze the patterns of reasoning behavior of dif-ferent models from the perspective of behavior pattern, revealing that LLM models exhibit adaptive reasoning behaviors when answering different types of questions. • We cross-inject behavioral patterns across datasets and observe that such an injection could substantially affect the final response quality. • Building on the above findings, we design two meth-ods, InjectCorrect and InjectRLOpt, to improve the model’s reasoning behaviors, which achieve gains of up to 5.34% and 8.67% accuracy improvement without parameter modifications, respectively. 
+
+# 2. Related Work 
+
+Reasoning Process Analysis. Recent studies, such as Ope-nAI’s o1 (OpenAI, 2025) and DeepSeek-R1 (Guo et al., 2025), have introduced a new paradigm where models are incentivized to engage in extended thinking time through reinforcement learning. These models exhibit emergent behavioral patterns, such as the Aha moment—a sponta-neous re-evaluation and correction of previous steps (Guo et al., 2025). Other research on Tree of Thoughts (Yao et al., 2023) and Quiet-STaR (Zelikman et al., 2024) explores how searching and backtracking serve as structured behaviors for navigating complex logical spaces. Beyond simple prompting, researchers found that the qual-ity of these steps is paramount. Lightman et al. (2023) demonstrated that process supervision—rewarding correct intermediate steps rather than just the final answer—leads to more robust reasoning and higher accuracy in mathemati-cal domains. Inspired by this, Golovneva et al. (2022) and Prasad et al. (2023) propose to evaluate reasoning quality at the level of individual steps, focusing on both correctness and informational content. They show that such fine-grained evaluation can effectively improve performance on down-stream tasks. Our work examines the reasoning process through the lens of behavioral patterns, focusing on systematic patterns of reasoning behavior and their relationship to reasoning qual-ity. 
+
+Reasoning Behavior Improvement. Binz & Schulz (2024) demonstrated that LLMs extend beyond pure reasoning to accurately simulate human decision-making behaviors. Building on this, recent works enhance reasoning perfor-mance by explicitly reshaping these behavioral patterns. Pang et al. (2025) improved capabilities by training models to mimic human reasoning patterns, while Wang et al. (2025) introduces a prejudge strategy, adding a dedicated prejudge node before full reasoning and fine-tuning the model to per-form this prejudgment step. This approach leads to notable gains in reasoning quality by encouraging the model to first assess the problem before engaging in detailed reasoning. Conversely, to mitigate inefficient behaviors, Yang et al. (2025a) introduced a test-time prompt intervention frame-work that dynamically steers the reasoning process to mit-igate redundant reasoning chains, substantially shortening chains of thought while preserving performance. Muen-nighoff et al. (2025) showed that forcing extended thinking processes (”budget forcing”) improves outcomes, whereas Yang et al. (2025b) proposed a dynamic termination method that stops generation when the model becomes highly confi-dent in a candidate answer, thereby adaptively controlling reasoning depth. These methods modify the model’s reasoning behavior to influence the final responses. However, they primarily treat behavior patterns as levers for control rather than as objects of systematic study. In contrast, our work explicitly ana-lyzes the model’s reasoning behavior patterns, examines how these patterns affect models, and designs methods to improve models’ reasoning behaviors. 
+
+# 3. Preliminaries 
+
+3.1. Reasoning Language Model 
+
+A language model can be parameterized by θ and predicts the probability of a sequence x = ( x1, .., x t). The joint probability is decomposed into a product of conditional next-token probabilities: 
+
+Pθ (x) = 
+
+> T
+
+Y
+
+> t=1
+
+Pθ (xt | x<t ). (1) In this work, we focus on the reasoning process, where for a given query Q, the model is required to generate an intermediate reasoning trajectory R before producing the final answer A. The full generation (R, A ) conditioned on 2InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection (b) Six types of behavioral patterns (a) Long reasoning logistics       
+
+> <think>
+> Okay , so I need to figure out the
+> perimeter of a regular hexagon……
+> First ,a regular hexagon has all sides
+> equal and ……
+> Therefore , in a regular hexagon, the
+> length of the radius…….
+> Now ,the problem says that the
+> perimeter of one of these triangles is
+> 21 inches…….
+> Wait a moment, but let me double -
+> check …
+> ······
+> Alternatively ,sometimes people
+> divide a hexagon into other
+> triangles……
+> Therefore ,the answer is 42 inches.
+> </think>
+
+(c) Reasoning behavior patterns 
+
+& Structural injection     
+
+> 3-gram pattern
+> Reasoning
+> behavior chain
+> stitch
+> inject
+> Original behavior
+> distribution
+> Structural injection
+> distribution
+
+(d) Injectant generation 
+
+methods                               
+
+> 𝑄 "(𝑠 ,𝑎 )
+> 𝜋 (∙|𝑠 )
+> InjectCorrect
+> injectant
+> Dataset of reasoning chain
+> Correct
+> sample
+> 𝑃𝑟 𝑐𝑜𝑟𝑟 (𝑏 |𝑐 )
+> InjectRLOpt
+> injectant
+> filter estimate
+> sample sample
+> Objective —Define the goal
+> Progression —Move reasoning forward
+> Summary —Integrate key information
+> Exploration —Try alternative paths
+> Verification —Check correctness
+> Conclusion —Deliver final answer
+> Objective
+> content
+> Progression
+> content
+> Verification conten
+> t
+> Exploration
+> content
+> Summary
+> content
+> content
+> Verification
+> Conclusion
+> content
+
+Figure 1. The analysis process of reasoning behavior pattern, including how the reasoning processes are decomposed from reasoning text into a structured “Reasoning Behavior Chain” and “Reasoning DNA”, and how frequent n -gram behavior patterns are clipped and structurally injected into models to enhance their systematic reasoning ability. 
+
+Q is modeled as: 
+
+P (R, A | Q) = 
+
+> |R|
+
+Y
+
+> i=1
+
+Pθ (ri | Q, r <i )
+
+> |A|
+
+Y
+
+> j=1
+
+Pθ (aj | Q, R, a <j ),
+
+(2) where R = ( r1, r 2, ..., r |R|) represents the sequence of rea-soning tokens. In practice, the reasoning content R and the final answer A
+
+are typically separated by special delimiter tokens, such as ”< think > ” and ” < /think > ”. 
+
+3.2. Reasoning Behavior 
+
+Given a reasoning sequence R, we characterize the under-lying reasoning process as a structured sequence of behav-ioral units. Following the taxonomy established by (Yang et al., 2025a), we define the set of reasoning behaviors as 
+
+B = {O, P, S, E, V, C }, where each element represents a distinct functional role: • Objective ( O) clarifies the goal of the reasoning pro-cess and the desired final outcome. It is usually articu-lated at the beginning of the reasoning. • Progression ( P ) denotes pushing forward along the current line of thought by applying known facts and inference rules, often signaled by discourse markers such as “Next”, “Then”. • Summary ( S) denotes consolidating and reorganizing the key information obtained so far in order to prepare for subsequent reasoning, often introduced by summa-rizing phrases like “In summary”. • Exploration ( E) denotes proposing new hypotheses or considering alternative solution strategies when the current line of reasoning stalls or appears unpromising, often cued by expressions like “Alternatively”. • Verification ( V ) denotes examining recent reasoning steps to ensure their logical soundness and correctness, and is typically preceded by signals such as “Wait”. • Conclusion ( C) denotes presenting the final answer once sufficient and reliable reasoning has been estab-lished. To analyze the reasoning process, we extract the reasoning behavior chain b from the raw text R. This process involves two steps: segmentation and classification. We partition the reasoning text R into an ordered sequence of segments S = ( s1, s 2, . . . , s n) using the double-newline delimiter d = \n\n: 
+
+S = Split (R, delimiter = d). (3) For each segment si ∈ S , we identify its behavior type 
+
+bi ∈ B via a mapping function ϕ : S → B . This mapping is determined by identifying specific marker tokens at the onset of each segment bi = ϕ(si), where ϕ is defined by the rules in Section A. By applying ϕ to the sequence S, we obtain the reasoning behavior chain : 
+
+b = ( b1, b 2, . . . , b n), bi ∈ B . (4) Typically, a reasoning behavior chain b initiates with O
+
+and terminates with C, traversing various instances of 
+
+{P, S, E, V } as intermediate states. In complex scenar-ios, b could exhibit a non-linear reasoning structure, such as multiple C steps representing the derivation of sub-conclusions before the final synthesis. 3InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection    
+
+> Figure 2. Normalized frequencies of the top -10 reasoning behavior patterns of Qwen3-8B on the GPQA dataset. For each pattern, its frequency is shown for total, correct, incorrect, short -reasoning, and long-reasoning samples. Within each sample subset, frequen-cies are normalized to sum to 1.
+
+# 4. Main Method 
+
+This paper mainly analyzes the reasoning process from the perspective of behavior patterns. Figure 1 shows our main conceptions. We first introduce the definition of reasoning behavior patterns. To analyze how changes in behavior patterns affect LLM models, we subsequently introduce a method for structurally injecting behavior patterns. Building on the behavior pattern injection method, we propose two methods, InjectCorrect and InjectRLOpt, to optimize the model’s behavior pattern at reasoning time. 
+
+4.1. Reasoning Behavior Pattern 
+
+A reasoning behavior chain is a sequence of diverse behav-iors arranged in the order of their occurrence. As shown in Figure 1 (b) We treat each atomic-level reasoning behavior 
+
+b ∈ B = {O, P, V, E, S, C } as a discrete symbol, analo-gous to the nucleotide bases (A, T, C, G) in DNA. Under this analogy, the reasoning behavior chain constitutes a se-quence in which these symbols are ordered temporally or logically, similar to a nucleotide sequence. Different ways of combining and ordering these behaviors, just as differ-ent base sequences encode different proteins, give rise to distinct reasoning trajectories and conclusions. Formally, a behavior chain b of length L is an ordered sequence b = ( b1, b 2, . . . , b L), where bt ∈ B denotes the behavior at step t. To capture local structural units, we define a length-n local behavior segment (i.e., an n-gram) as g ∈ G (n), where G(n) = Bn is the set of all possible 
+
+n-gram patterns. Given a corpus of behavior chains D = {b(k)}Kk=1 , where each chain b(k) has length Lk, we compute the frequency of each n-gram pattern g ∈ G (n) as: freq D (g) = 
+
+> K
+
+X 
+
+> k=1
+> Lk−n+1
+
+X
+
+> t=1
+
+1
+
+
+
+(b(k) 
+
+> t
+
+, . . . , b (k)
+
+> t+n−1
+
+) = g
+
+
+
+, (5) where 1(·) is the indicator function. These counts are then normalized to obtain the empirical distribution: 
+
+p(n)(g) = freq D (g)
+
+P 
+
+> g′∈G (n)
+
+freq D (g′) . (6) Analogous to regulatory motifs in genomics, these n-gram behaviour patterns can be viewed as micro-strategies with specific functional or semantic roles, for example: • OP : The model first establishes or restates the task objective ( O), and then immediately proceeds with step-by-step reasoning or execution ( P ). This pattern reflects goal-grounded execution, where subsequent reasoning is explicitly anchored to a clearly articulated objective. • P V : The model carries out detailed reasoning ( P ) and then directly examines the resulting steps or conclu-sions for logical or computational errors ( V ). This is a derive-then-check pattern, characteristic of proof checking and numerical verification. • ESV : The model first explores possible approaches or hypotheses ( E), then summarizes or consolidates the intermediate findings ( S), and finally verifies their correctness ( V ). This forms a complete micro-loop of explore → consolidate → validate, functioning as a local reflective cycle that enhances robustness and reliability. Thus, each frequent n-gram is not only a statistical co-occurrence pattern, but can also be interpreted as a semanti-cally functionally coherent local reasoning process. Figure 2 presents the n-gram distributions of the Qwen3-8B model’s reasoning behavior when answering questions in the GPQA dataset. We observe substantial differences in the distributions of reasoning behavior patterns between correct and incorrect answers, whereas those between longer and shorter answers differ only marginally. This suggests that reasoning behavior patterns may influence the quality of the final answers. Motivated by this observation, we aim to explore how changing reasoning behavior patterns affects the model’s final answers, and therefore propose a behavior pattern injection method to steer the model’s reasoning process, which we describe in detail in the next section. 
+
+4.2. Structural Injection of Reasoning Behavior Patterns 
+
+Reasoning behavior injection refers to the control of a model’s reasoning process such that, at each step, the next reasoning behavior is sampled according to a prescribed probability distribution over behavior patterns. This behav-ior injection is analogous to DNA editing, as illustrated in 4InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+Figure 1 (c), in which the final gene expression is altered by modifying specific gene segments. Formally, at time step t ≥ 1, given the sequence of preced-ing behaviors b<t = ( b1, . . . , b t−1), the next behavior bt
+
+is sampled from a conditional distribution. We employ a variable-order n-gram scheme where a tunable hyperparam-eter n ∈ N specifies the maximum context length. At each step t, we define the effective n-gram order as: 
+
+nt = min( n, t ), (7) which allows the model to automatically back off to shorter contexts during the early stages of reasoning ( t < n ). The context ct is defined as the sequence of the most recent 
+
+nt − 1 behaviors: 
+
+ct = ( bt−nt+1 , . . . , b t−1), (8) where ct is an empty sequence when nt = 1 (i.e., at t =1). For any candidate behavior b ∈ B , we consider the concatenated pattern (ct, b ) ∈ G (nt). For a given corpus D,the probability of sampling b is given by: 
+
+P (b | ct) = freq D
+
+ (ct, b )P 
+
+> b′∈B
+
+freq D
+
+ (ct, b ′) , (9) where freq( ·) denotes the occurrence count of a pattern in the corpus of behavior chains D.The hyperparameter n governs the trade-off between con-textual expressiveness and statistical reliability. This setting aligns closely with research on fast-and-frugal heuristics, particularly in time-series forecasting (Katsikopoulos et al., 2020). Empirical studies have demonstrated that recency heuristics—which rely on very short contexts ( n = 1 or 
+
+2)—often outperform complex models in autocorrelated environments (Katsikopoulos et al., 2022; Castle, 2022). For reasoning behavior patterns, when n = 2 , the control mechanism conditions only on pairwise adjacency between behaviors (bi-grams), which is generally insufficient to cap-ture richer local substructures in reasoning. When n = 3 ,the context corresponds to behavior tri-grams, which are expressive enough to encode the smallest recurring struc-tural units in reasoning patterns and to distinguish between several common local motifs. For example, 3-step patterns can already capture typical elementary reasoning units such as “progression–exploration-verification” and “exploration-exploration-summary.” For n ≥ 4, the longer context al-lows finer-grained discrimination among behavior patterns. However, the space of possible behavior sequences grows exponentially with n. Consequently, many context segments 
+
+ct induce patterns (ct, b ) that are rarely or never observed in 
+
+D. Even when such patterns do appear, their counts are typ-ically too small to support reliable estimation of P (b | ct),leading to high-variance behavior control. From the perspective of behavior control, shorter context lengths (smaller n) yield more robust statistics for each behavior pattern at the cost of weaker contextual control, whereas longer contexts (larger n) encode richer structural information but suffer from fewer samples per pattern and thus higher variance in the empirical behavior distribution. Besides, the marginal benefit of extending the local structure from 3 to 4 or more steps is relatively limited, whereas the adverse impact of data sparsity becomes much more pronounced. At the scale of our corpus D, 3-gram patterns already provide sufficient coverage of common elementary reasoning structures while maintaining adequate statistical support. Therefore, unless otherwise specified, we fix n = 3 
+
+in all experiments and perform 3-gram-based reasoning behavior injection. 
+
+4.3. Reasoning Behavior Improvement 
+
+Building on the observation that behavior-pattern injection significantly influences response quality, we propose to steer the model’s reasoning process by optimizing the behavior distribution P (b | c). We explore two methods for this optimization: InjectCorrect and InjectRLOpt. The main procecure of these methods is shown in Figure 1 (d) The InjectCorrect method learning a aciton distribution from the behavioral priors of successful reasoning trajectories. It could be seen as a self-imitation learning (Oh et al., 2018; Chen et al., 2020). Specifically, let Dcorr ⊂ D be the subset of reasoning chains that result in a correct final answer. We define the optimized distribution Pcorr (b | c) as the empirical conditional distribution derived exclusively from 
+
+Dcorr :
+
+Pcorr (b | c) = freq Dcorr (( c, b )) 
+
+P 
+
+> b′∈B
+
+freq Dcorr (( c, b ′)) , (10) where freq Dcorr denotes the pattern count within the correct-only corpus. This approach steers the model toward local motifs that are statistically correlated with successful out-comes. In the InjectRLOpt method, we formulate the reasoning pro-cess as a Markov Decision Process (MDP) and optimize the behavior distribution using reinforcement learning (Sutton & Barto, 2018; Watkins & Dayan, 1992; Mnih et al., 2015). In this framework, each state st ∈ S is characterized by the current (n − 1) -gram context ct ∈ G (n−1) , which captures the local history of reasoning behaviors, while an action 
+
+at ∈ A corresponds to the selection of the subsequent be-havior bt ∈ B . Transitions within the behavior space are deterministic: the next state st+1 is generated by appending the chosen action at to the current context st and shifting the n-gram window. To align the model’s reasoning with answer correction, we employ a sparse terminal reward func-tion R(st, a t) based on the correctness of the final answer 5InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection                                                                                            
+
+> Table 1. Frequencies of Top 5 3-gram patterns across Qwen3 series models and GPQA, MATH, AIME25, MBPP datasets. Here, O: Objective, P: Progession, S: Summary, E: Exploration, V: Verification. Results are averaged over five runs. Qwen3-32B Qwen3-14B Rank GPQA MATH AIME25 MBPP GPQA MATH AIME25 MBPP
+> Top 1 EEE (1.67) VVV (1.04) CCC (3.86) VVV (1.07) EEE (2.11) VVV (1.58) EEE (4.72) VVV (1.42)
+> Top 2 VVV (1.32) EEE (0.89) EEE (3.49) EEE (0.53) VVV (1.95) EEE (1.21) VVV (4.33) EEE (0.81)
+> Top 3 VEE (1.04) CCC (0.85) VVV (3.27) PVV (0.50) EVE (1.84) PPP (0.85) CCC (2.81) VVE (0.52)
+> Top 4 EVE (1.04) PPP (0.80) VCC (2.21) VVC (0.43) VEE (1.71) VEE (0.80) VVC (2.23) VEV (0.50)
+> Top 5 EEV (0.93) VCC (0.62) VVC (2.05) OPV (0.42) VEV (1.57) VVE (0.71) VCV (2.11) VEE (0.49) Qwen3-8B Qwen3-4B
+> Top 1 EEE (3.63) VVV (1.94) EEE (6.01) VVV (1.98) EEE (6.28) EEE (2.61) EEE (8.15) VVV (1.52)
+> Top 2 VVV (2.85) EEE (1.78) VVV (4.60) EEE (0.95) EVE (2.86) VVV (1.48) VVV (4.21) EEE (1.40)
+> Top 3 EVE (2.64) VEE (1.07) CCC (3.53) VEV (0.68) VEE (2.81) VEE (1.19) CCC (3.21) VEE (0.65)
+> Top 4 VEE (2.47) PPP (0.88) VVC (2.67) VEE (0.66) EEV (2.60) EEV (0.89) VVC (2.37) VEO (0.62)
+> Top 5 EEV (2.28) VVE (0.88) CVV (2.60) VVE (0.64) VVV (1.76) EVE (0.88) CVV (2.34) VEV (0.58)
+
+A. The reward function is defined as: 
+
+R(st, a t) = 
+
+(
+
+1 if t = T and A is correct, 
+
+0 otherwise. (11) Based on this MDP formulation, for any reasoning trajectory 
+
+τ = {(st, a t, r t)}Tt=1 , we define the discounted return as 
+
+Gt = PTk=t γk−trk, where γ ∈ [0 , 1] is the discount factor. The corresponding action-value function, Q(s, a ) = E[Gt |
+
+st = s, a t = a], represents the expected success rate of a behavior given its local context. In practice, we derive an empirical estimate ˆQ(s, a ) by averaging the returns of all trajectories in D that contain the state-action pair (s, a ).However, a standard value-based Boltzmann policy (Reif, 1965) may be sensitive to noise, particularly for rare behav-ior patterns, where the empirical estimate ˆQ(s, a ) is based on a limited number of samples. To account for this vary-ing statistical confidence, we propose a Reliability-Aware Softmax Policy . Instead of relying solely on the estimated Q-values, this policy modulates the sampling probability using a visitation-based confidence weight: 
+
+π(a | s) = exp( ˆQ(s, a )/τ ) · f (N (s, a )) 
+
+P 
+
+> a′∈B
+
+exp( ˆQ(s, a ′)/τ ) · f (N (s, a ′)) , (12) where τ > 0 is the temperature parameter and N (s, a )
+
+denotes the visitation count of the pair (s, a ) in D. The confidence weight f (N ) is defined as: 
+
+f (N ) = 
+
+√N
+
+√N + c , (13) where c > 0 is a hyperparameter that controls the penalty for low-frequency patterns, we set c = 10 in our experi-ments. This mechanism serves as a frequentist regularizer that down-weights Q-values with high epistemic uncertainty, thereby steering the model toward reasoning motifs with robust statistical evidence. As the data density increases (N (s, a ) → ∞ ), the factor f (N ) approaches 1, and the pol-icy naturally recovers the standard Boltzmann distribution (Reif, 1965). 
+
+# 5. Experiments 
+
+Our experiments are designed to investigate the structural and functional properties of reasoning behaviors by address-ing three key objectives: • RQ1 (Domain Specificity): Does the model exhibit consistent and identifiable reasoning behavior patterns (motifs) that are characteristically associated with suc-cessful problem-solving within specific domains? • RQ2 (Pattern Transferability): Are these behavior patterns domain-dependent? Specifically, does the in-jection of behavior patterns derived from unrelated problem categories lead to a subsequent degradation in answer quality? • RQ3 (Behavioral Engineering): To what extent can we improve the model’s success rate purely by injecting optimized behavior distributions without modifying the underlying model parameters? 
+
+5.1. Setup Models. To investigate how reasoning behaviors evolve across different model scales, we employ the Qwen3 series (QwenTeam, 2025), including the 32B, 14B, 8B, and 4B variants. We specifically select this family because these models generate explicit, human-readable reasoning traces (Chain-of-Thought). This transparency is essential for our methodology, as it allows us to both extract behavior chains from raw outputs and perform granular interventions by injecting behavior marker tokens to steer the reasoning pro-cess. 6InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+Table 2. Performance (mean ± std) of Qwen3 series models on four datasets (GPQA, MATH, AIME25, MBPP) under different methods for adjusting the distribution of reasoning behavior patterns. Results are averaged over five runs. 
+
+Qwen3-32B Qwen3-14B Method GPQA MATH AIME25 MBPP GPQA MATH AIME25 MBPP Baseline 0.6061 ±0.022 0.9384 ±0.003 0.6933 ±0.043 0.5876 ±0.004 0.6040 ±0.015 0.9364 ±0.004 0.5933 ±0.086 0.5744 ±0.004 
+
+InjectCorrect 0.6232 ±0.017 0.9380 ±0.003 0.7000 ±0.100 0.5916 ±0.009 0.6051 ±0.013 0.9296 ±0.006 0.6467 ±0.069 0.5648 ±0.005 
+
+InjectRLOpt 0.6444 ±0.027 0.9416 ±0.003 0.7111 ±0.040 0.5908 ±0.004 0.6333 ±0.017 0.9332 ±0.004 0.6733 ±0.049 0.5704 ±0.003 
+
+Qwen3-8B Qwen3-4B Baseline 0.5869 ±0.020 0.9252 ±0.005 0.5867 ±0.044 0.5604 ±0.008 0.5222 ±.008 0.9288 ±0.004 0.5533 ±0.038 0.5520 ±0.004 
+
+InjectCorrect 0.5707 ±0.024 0.9233 ±0.007 0.6133 ±0.050 0.5612 ±0.004 0.5414 ±0.014 0.9240 ±0.005 0.5733 ±0.043 0.5523 ±0.009 
+
+InjectRLOpt 0.5949 ±0.018 0.9328 ±0.004 0.6600 ±0.054 0.5652 ±0.008 0.5323 ±0.029 0.9288 ±0.003 0.6400 ±0.037 0.5580 ±0.005 
+
+Datasets. Our evaluation spans four demanding reasoning-intensive benchmarks to ensure the generalizability of our findings: GPQA (Rein et al., 2024), AIME25(Zhang & Math-AI, 2025), MATH (Lightman et al., 2023), and MBPP (Austin et al., 2021). Collectively, these datasets provide a comprehensive testbed covering scientific inquiry, mathe-matical deduction, and code generation. 
+
+5.2. Main Results Large language models’ reasoning behavior patterns adapt to the characteristics of problems it solves. Ta-ble 1 presents the Top 5 3-gram behavior patterns and their corresponding frequencies for the Qwen3 models across multiple datasets. The frequency is computed as the total number of occurrences of a given pattern across all rea-soning instances divided by the total number of reasoning instances, i.e., the average number of times that pattern appears in a single reasoning instance. Table 1 shows that, across different tasks, EEE and VVV are among the model’s most frequently used behavior patterns. This observation aligns with prior research highlighting the efficacy of ex-tensive sampling or exploration (Wang et al., 2023; Yao et al., 2023) and the critical role of iterative self-verification and refinement (Lightman et al., 2023; Madaan et al., 2023) in complex reasoning tasks. At the same time, the distri-butions of behavior patterns still differ significantly across tasks. Specifically, on the GPQA dataset, the model more frequently adopts exploration-related patterns, whereas on the mathematical datasets MATH and AIME25, it more often employs stepwise patterns (e.g., PPP, CCC, VVC). Intuitively, this difference aligns with the human reasoning demands of the tasks. GPQA questions typically draw on diverse knowledge sources, so the model tends to “branch out, probe, and then converge,” (Guilford, 1967; Cropley, 2006) leading to repeated trial-and-error and exploratory behavior patterns, which is a tree-like reasoning process. In contrast, the structured nature of MATH and AIME25 tasks corresponds to the psychological classification of well-defined problems (Reitmann, 1964; Simon, 1977), with relatively linear and decomposable solution paths (Newell & Simon, 1972) . As a result, the model is more inclined to follow a chain-like trajectory, incrementally accumulating and verifying partial conclusions, which manifests as stable, stepwise patterns such as PPP, CCC, and VVC. 
+
+Table 3. The accuracy of Qwen3-8B on the GPQA dataset when specific patterns are masked during reasoning. Each column is a prefix, and each row corresponds to a masked action. Results are averaged over five runs. Qwen3-8B base accuracy: 0.5869 
+
+EE EV PE Exploration 0.5848 0.5828 0.5960 
+
+Verification 0.5869 0.5919 0.5859 
+
+Progression 0.5970 0.5758 0.5631 Conclusion 0.5889 0.5606 0.5896 
+
+Specific reasoning behavior patterns can emerge that substantially influence their reasoning outcomes. We conduct experiments with Qwen3-8B on the GPQA dataset, masking certain 3-gram behavior patterns to examine how they affect the quality of the model’s final answers. Specifi-cally, for a given 3-gram behavior pattern, once its 2-gram prefix is detected, we remove the last action of that 3-gram from the candidate action set, thereby masking the corre-sponding 3-gram behavior pattern. Table 3 reports exper-imental results when certain patterns are masked during reasoning. From this, we observe that masking certain be-havior patterns (e.g., EEP, PEE, EVV) increases the model’s final accuracy. In contrast, masking another set of behavior patterns (e.g., EVC, PEP) causes a substantial drop in accu-racy, while masking the remaining patterns does not result in any significant change in the model’s final accuracy. A possible explanation for this phenomenon is that some be-havior patterns can be substituted with alternative reasoning paths, so masking them has little effect on reasoning quality. 7InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+By contrast, other behavior patterns are harder to replace, and masking them could substantially influence the model’s reasoning quality. Therefore, we emphasize the critical role of reasoning behavior patterns in the reasoning process and argue that adjusting these patterns in large language models can steer their reasoning and ultimately influence the quality of final answers.  
+
+> Table 4. Cross-injection reasoning pattern transfer accuracy of Qwen3-8B between datasets. Patterns are extracted from the row dataset and injected into the column dataset. Results are averaged over five runs.
+
+GPQA MATH AIME25 MBPP GPQA / 0.9220 0.5778 0.5620 MATH 0.5879 / 0.6333 0.5630 
+
+AIME25 0.5798 0.9340 / 0.5560 MBPP 0.5596 0.9320 0.5667 /
+
+Large language models exhibit distinct reasoning pat-terns across different types of problems, and these pat-terns are adapted to the corresponding problem types. 
+
+Table 4 provides empirical support for this hypothesis by il-lustrating the transfer accuracy of reasoning patterns across various tasks. The results demonstrate that the effective-ness of pattern injection is highly sensitive to the semantic alignment between the extraction source and the injection target. We consistently observe that reasoning patterns trans-ferred between homogeneous tasks yield superior perfor-mance compared to those transferred across heterogeneous domains. This task-specific adaptation is most prominent in the mathematical domain. As indicated by the results for AIME25, a challenging mathematics dataset, injecting reasoning patterns extracted from the MATH dataset results in an accuracy of 0.6333. This performance significantly surpasses that of patterns derived from disparate domains, such as general science (GPQA, 0.5778) or code generation (MBPP, 0.5667). Conversely, significant domain shifts lead to suboptimal transfer outcomes. For the MBPP dataset, which focuses on code synthesis, injecting reasoning behavior patterns from MATH or GPQA results in stagnant performance (ranging from 0.55 to 0.56), indicating that the algorithmic logic required for coding is distinct from the chain-of-thought patterns used in arithmetic or general knowledge reason-ing. These findings collectively imply that reasoning in LLMs is not a monolithic process that can be universally applied; rather, it is a structured, multidimensional process in which the reasoning structure must match the intrinsic requirements of the target problem. 
+
+Adjusting large language models’ reasoning pattern dis-tribution can improve their final performance. Table 2 re-ports the accuracy of the Qwen3 model on different datasets    
+
+> Table 5. Impact of the discount factor γon GPQA performance across various model scales. Results are averaged over five runs.
+
+Qwen3 Method 32B 14B 8B 4B base 0.6061 0.6040 0.5869 0.5222 
+
+γ = 1 0.6343 0.6141 0.5859 0.5394 
+
+γ = 0 .99 0.6293 0.6230 0.5899 0.5303 
+
+γ = 0 .98 0.6444 0.6333 0.5949 0.5323 
+
+γ = 0 .96 0.6414 0.6020 0.5899 0.5242 under two reasoning behavior pattern distribution injection methods, InjectCorrect and InjectRLOpt. InjectCorrect is a method that demonstrates injecting the behavior pattern distribution extracted from the models’ reasoning process with correct answers. InjectRLOpt is a method that in-jects a behavior pattern distribution optimized by a rein-forcement learning algorithm. Specifically, it learns a value function from the models’ reasoning behavior chains and correct/incorrect labels of their answers. From a practical perspective, we compute a Boltzmann policy from the value function as the behavior pattern distribution injectant. From the experimental results in Table 2, InjectRLOpt gen-erally achieves the optimal overall performance: for most models and datasets, it matches or exceeds the baseline and also outperforms InjectCorrect in many cases. InjectCorrect yields modest gains over the baseline on a subset of tasks. Across different model sizes, the relative performance rank-ing of the three methods is largely consistent, suggesting that the benefits of this approach can transfer across scales. 
+
+5.3. Hyperparameter Choice 
+
+As illustrated in Table 5, we observe that for larger models (32B, 14B, and 8B), the reasoning performance peaks at γ =0.98 , suggesting that a moderate discount factor effectively balances the temporal credit between intermediate reasoning steps and the final terminal reward. In contrast, the smallest variant (4B) achieves its best result at γ = 1 .0. Given its robust performance across most scales, we recommend 
+
+γ = 0 .98 as the default hyperparameter for optimizing reasoning behavior by the InjectRLOpt method. 
+
+# 6. Results and Conclusions 
+
+This paper analyzes the reasoning behavior patterns of large language models. We find that large language models ex-hibit adaptive behavior patterns across different types of tasks, and that changes in these patterns can significantly affect their reasoning process and answer quality. Building on these findings, we propose two methods for improving reasoning behavior patterns: InjectCorrect and InjectRLOpt. 8InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+By modifying the model’s behavior patterns during reason-ing without changing its parameters, these methods substan-tially enhance the model’s reasoning quality and answer accuracy. Due to computational constraints, our experiments and anal-yses only consider 3 -gram behavior patterns. Future work can investigate more diverse behavior patterns. Moreover, this paper only examines how adjusting behavior patterns, without additional training, affects the model’s answer per-formance. Future work may employ post-training tech-niques, such as supervised fine-tuning and reinforcement learning, to explicitly optimize the model’s reasoning be-havior and further improve its reasoning capabilities. 
+
+# References 
+
+Austin, J., Odena, A., Nye, M., Bosma, M., Michalewski, H., Dohan, D., Jiang, E., Cai, C., Terry, M., Le, Q., et al. Program synthesis with large language models. arXiv preprint arXiv:2108.07732 , 2021. Binz, M. and Schulz, E. Turning large language models into cognitive models. In Kim, B., Yue, Y., Chaudhuri, S., Fragkiadaki, K., Khan, M., and Sun, Y. (eds.), Interna-tional Conference on Learning Representations , volume 2024, pp. 31234–31251, 2024. Castle, J. L. Commentary on “transparent mod-elling of influenza incidence”: Is the answer sim-plicity or adaptability? International Journal of Forecasting , 38(2):622–624, 2022. ISSN 0169-2070. doi: https://doi.org/10.1016/j.ijforecast.2021.02. 001. URL https://www.sciencedirect.com/ science/article/pii/S0169207021000297 .Chen, X., Zhou, Z., Wang, Z., Wang, C., Wu, Y., and Ross, K. Bail: best-action imitation learning for batch deep reinforcement learning. In Proceedings of the 34th Inter-national Conference on Neural Information Processing Systems , NIPS ’20, Red Hook, NY, USA, 2020. Curran Associates Inc. ISBN 9781713829546. Cropley, A. In praise of convergent thinking. Creativity Research Journal , 18(3):391–404, 2006. doi: 10.1207/ s15326934crj1803 13. DeepSeek-AI. Deepseek-v3 technical report, 2024. URL 
+
+https://arxiv.org/abs/2412.19437 .Golovneva, O., Chen, M. P., Poff, S., Corredor, M., Zettlemoyer, L., Fazel-Zarandi, M., and Celikyilmaz, A. ROSCOE: A suite of metrics for scoring step-by-step rea-soning. 2022. URL https://openreview.net/ forum?id=xYlJRpzZtsY .Guilford, J. P. The Nature of Human Intelligence . McGraw-Hill, New York, 1967. Guo, D., Yang, D., Zhang, H., Song, J., Wang, P., Zhu, Q., Xu, R., Zhang, R., Ma, S., Bi, X., Zhang, X., Yu, X., Wu, Y., Wu, Z. F., Gou, Z., Shao, Z., Li, Z., Gao, Z., Liu, A., Xue, B., Wang, B., Wu, B., Feng, B., Lu, C., Zhao, C., Deng, C., Ruan, C., Dai, D., Chen, D., Ji, D., Li, E., Lin, F., Dai, F., Luo, F., Hao, G., Chen, G., Li, G., Zhang, H., Xu, H., Ding, H., Gao, H., Qu, H., Li, H., Guo, J., Li, J., Chen, J., Yuan, J., Tu, J., Qiu, J., Li, J., Cai, J. L., Ni, J., Liang, J., Chen, J., Dong, K., Hu, K., You, K., Gao, K., Guan, K., Huang, K., Yu, K., Wang, L., Zhang, L., Zhao, L., Wang, L., Zhang, L., Xu, L., Xia, L., Zhang, M., Zhang, M., Tang, M., Zhou, M., Li, M., Wang, M., Li, M., Tian, N., Huang, P., Zhang, P., Wang, Q., Chen, Q., Du, Q., Ge, R., Zhang, R., Pan, R., Wang, R., Chen, R. J., Jin, R. L., Chen, R., Lu, S., Zhou, S., Chen, S., Ye, S., Wang, S., Yu, S., Zhou, S., Pan, S., Li, S. S., Zhou, S., Wu, S., Yun, T., Pei, T., Sun, T., Wang, T., Zeng, W., Liu, W., Liang, W., Gao, W., Yu, W., Zhang, W., Xiao, W. L., An, W., Liu, X., Wang, X., Chen, X., Nie, X., Cheng, X., Liu, X., Xie, X., Liu, X., Yang, X., Li, X., Su, X., Lin, X., Li, X. Q., Jin, X., Shen, X., Chen, X., Sun, X., Wang, X., Song, X., Zhou, X., Wang, X., Shan, X., Li, Y. K., Wang, Y. Q., Wei, Y. X., Zhang, Y., Xu, Y., Li, Y., Zhao, Y., Sun, Y., Wang, Y., Yu, Y., Zhang, Y., Shi, Y., Xiong, Y., He, Y., Piao, Y., Wang, Y., Tan, Y., Ma, Y., Liu, Y., Guo, Y., Ou, Y., Wang, Y., Gong, Y., Zou, Y., He, Y., Xiong, Y., Luo, Y., You, Y., Liu, Y., Zhou, Y., Zhu, Y. X., Huang, Y., Li, Y., Zheng, Y., Zhu, Y., Ma, Y., Tang, Y., Zha, Y., Yan, Y., Ren, Z. Z., Ren, Z., Sha, Z., Fu, Z., Xu, Z., Xie, Z., Zhang, Z., Hao, Z., Ma, Z., Yan, Z., Wu, Z., Gu, Z., Zhu, Z., Liu, Z., Li, Z., Xie, Z., Song, Z., Pan, Z., Huang, Z., Xu, Z., Zhang, Z., and Zhang, Z. DeepSeek-R1 incentivizes reasoning in LLMs through reinforcement learning. Nature , 645(8081):633– 638, September 2025. ISSN 1476-4687. doi: 10.1038/ s41586-025-09422-z. URL https://www.nature. com/articles/s41586-025-09422-z .Katsikopoulos, K. V., S¸ im s¸ ek, ¨O., Buckmann, M., and Gigerenzer, G. Classification in the Wild: The Science and Art of Transparent Decision Making . MIT Press, Cambridge, MA, 2020. ISBN 9780262044646. Katsikopoulos, K. V., ¨Ozg ¨ur S¸ im s¸ ek, Buckmann, M., and Gigerenzer, G. Transparent modeling of in-fluenza incidence: Big data or a single data point from psychological theory? International Journal of Forecasting , 38(2):613–619, 2022. ISSN 0169-2070. doi: https://doi.org/10.1016/j.ijforecast.2020.12. 006. URL https://www.sciencedirect.com/ science/article/pii/S0169207020301928 .Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., and Iwasawa, Y. Large language models are zero-shot reasoners. In 
+
+Proceedings of the 36th International Conference on 
+
+9InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+Neural Information Processing Systems , NIPS ’22, Red Hook, NY, USA, 2022. Curran Associates Inc. ISBN 9781713871088. Lightman, H., Kosaraju, V., Burda, Y., Edwards, H., Baker, B., Lee, T., Leike, J., Schulman, J., Sutskever, I., and Cobbe, K. Let’s verify step by step. arXiv preprint arXiv:2305.20050 , 2023. Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L., Wiegreffe, S., Alon, U., Dziri, N., Prabhumoye, S., Yang, Y., Welleck, S., Majumder, B. P., Gupta, S., Yazdan-bakhsh, A., and Clark, P. Self-refine: Iterative refinement with self-feedback, 2023. Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Ve-ness, J., Bellemare, M. G., Graves, A., Riedmiller, M., Fidjeland, A. K., Ostrovski, G., Petersen, S., Beattie, C., Sadik, A., Antonoglou, I., King, H., Kumaran, D., Wier-stra, D., Legg, S., and Hassabis, D. Human-level control through deep reinforcement learning. Nature , 518(7540): 529–533, 2015. doi: 10.1038/nature14236. Muennighoff, N., Yang, Z., Shi, W., Li, X. L., Fei-Fei, L., Hajishirzi, H., Zettlemoyer, L., Liang, P., Candes, E., and Hashimoto, T. s1: Simple test-time scaling. In Christodoulopoulos, C., Chakraborty, T., Rose, C., and Peng, V. (eds.), Proceedings of the 2025 Confer-ence on Empirical Methods in Natural Language Pro-cessing , pp. 20275–20321, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main. 1025. URL https://aclanthology.org/2025. emnlp-main.1025/ .Newell, A. and Simon, H. A. Human Problem Solving .Prentice-Hall, Englewood Cliffs, NJ, 1972. Oh, J., Guo, Y., Singh, S., and Lee, H. Self-imitation learn-ing, 2018. URL https://arxiv.org/abs/1806. 05635 .OpenAI. gpt-oss-120b, gpt-oss-20b model card, 2025. URL 
+
+https://arxiv.org/abs/2508.10925 .Pang, C., Cao, Y., and Luo, P. Reasoning pattern matters: Learning to reason without human rationales, 2025. URL 
+
+https://arxiv.org/abs/2510.12643 .Prasad, A., Saha, S., Zhou, X., and Bansal, M. ReCEval: Evaluating reasoning chains via correctness and informa-tiveness. In Bouamor, H., Pino, J., and Bali, K. (eds.), 
+
+Proceedings of the 2023 Conference on Empirical Meth-ods in Natural Language Processing , pp. 10066–10086, Singapore, December 2023. Association for Computa-tional Linguistics. doi: 10.18653/v1/2023.emnlp-main. 622. URL https://aclanthology.org/2023. emnlp-main.622/ .QwenTeam. Qwen3 technical report, 2025. URL https: //arxiv.org/abs/2505.09388 .Reif, F. Fundamentals of Statistical and Thermal Physics .McGraw-Hill, 1965. Rein, D., Hou, B. L., Stickland, A. C., Petty, J., Pang, R. Y., Dirani, J., Michael, J., and Bowman, S. R. GPQA: A graduate-level google-proof q&a benchmark. In First Conference on Language Modeling , 2024. URL https: //openreview.net/forum?id=Ti67584b98 .Reitmann, W. R. Heuristic Decision Procedures, Open Constraints, and the Structure of Ill-Defined Problems .Human judgments and optimality, 1964. Simon, H. A. The Structure of Ill-Structured Prob-lems , pp. 304–325. Springer Netherlands, Dordrecht, 1977. ISBN 978-94-010-9521-1. doi: 10.1007/ 978-94-010-9521-1 17. URL https://doi.org/ 10.1007/978-94-010-9521-1_17 .Sutton, R. S. and Barto, A. G. Reinforcement Learn-ing: An Introduction . MIT Press, Cambridge, MA, 2 edition, 2018. ISBN 978-0262039246. URL http://incompleteideas.net/book/ the-book-2nd.html .Wang, J., Jiang, J., Liu, Y., Zhang, M., and Cai, X. Prejudge-before-think: Enhancing large language mod-els at test-time by process prejudge reasoning. In Christodoulopoulos, C., Chakraborty, T., Rose, C., and Peng, V. (eds.), Findings of the Association for Computational Linguistics: EMNLP 2025 , pp. 4656–4673, Suzhou, China, November 2025. Asso-ciation for Computational Linguistics. ISBN 979-8-89176-335-7. doi: 10.18653/v1/2025.findings-emnlp. 250. URL https://aclanthology.org/2025. findings-emnlp.250/ .Wang, X., Wei, J., Schuurmans, D., Le, Q., Chi, E., Narang, S., Chowdhery, A., and Zhou, D. Self-consistency im-proves chain of thought reasoning in language mod-els, 2023. URL https://arxiv.org/abs/2203. 11171 .Watkins, C. J. C. H. and Dayan, P. Q-learning. Ma-chine Learning , 8(3–4):279–292, 1992. doi: 10.1007/ BF00992698. Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E. H., Le, Q. V., and Zhou, D. Chain-of-thought prompting elicits reasoning in large language models. In Proceedings of the 36th International Confer-ence on Neural Information Processing Systems , NIPS ’22, Red Hook, NY, USA, 2022. Curran Associates Inc. ISBN 9781713871088. 10 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+Yang, C., Si, Q., Dai, M., Yao, D., Zheng, M., Chen, M., Lin, Z., and Wang, W. Test-time prompt interven-tion. ArXiv , abs/2508.02511, 2025a. URL https: //api.semanticscholar.org/CorpusID: 280421972 .Yang, C., Si, Q., Duan, Y., Zhu, Z., Zhu, C., Lin, Z., Cao, L., and Wang, W. Dynamic early exit in reasoning models. 
+
+arXiv preprint arXiv:2504.15895 , 2025b. Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T., Cao, Y., and Narasimhan, K. Tree of thoughts: Deliberate problem solving with large language models. In Oh, A., Naumann, T., Globerson, A., Saenko, K., Hardt, M., and Levine, S. (eds.), Advances in Neural Information Processing Sys-tems , volume 36, pp. 11809–11822. Curran Associates, Inc., 2023. Zelikman, E., Harik, G., Shao, Y., Jayasiri, V., Haber, N., and Goodman, N. D. Quiet-star: Language models can teach themselves to think before speaking, 2024. URL 
+
+https://arxiv.org/abs/2403.09629 .Zhang, Y. and Math-AI, T. American invitational mathemat-ics examination (aime) 2025, 2025. 11 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+# A. Behavior Identify Rules  
+
+> Table 6. Control phrases to identify reasoning behaviors
+
+Category Phrases 
+
+Objective Okay,; We need to Progression Now; First,; Next,; Hmm,; Looking at; Let me compute; Let me calculate; So, first, ; Let’s compute; Let’s consider; Let’s think Summary In summary Verification Let me verify; But let me check; But wait; Wait; But maybe I should check; But just to make sure; Let me re-examine; Let me check; But let me just make sure; But let’s check Exploration Alternatively; But perhaps; Hmm. I remember; Another idea:; We might; Maybe; What if; Another approach; Another possibility Conclusion Therefore,; **Final Answer**; Final Answer; So, in conclusion,; In conslusion; So the answer is; Hence; So, answer is; So answer is; So Answer: ; So the correct answer is; Thus, the correct answer is; I’ll select option ; So yes, answer ; So the answer should be; So the answer must be; Thus we have; Thus answer This section describes the rules used to identify behavior types in the model’s reasoning text and to extract control nodes accordingly. The overall pipeline, shown in Algorithm 1, consists of three stages: segmentation, behavior classification, and node aggregation. In the segmentation stage, the raw reasoning text R is split using a double newline (‘ \n\n‘) as the delimiter. This yields an ordered sequence of segments 
+
+S = ( s1, s 2, . . . , s n) = Split (R, d ),
+
+where d is the double-newline delimiter. Each segment si corresponds to a paragraph-like unit or a logically coherent chunk in the model’s reasoning. Next, in the behavior classification stage, we assign a behavior label to each segment based on explicit control phrases. Concretely, for each segment si, we apply a mapping 
+
+bi = ϕ(si) ∈ B ,
+
+where B is the set of behavior categories, and ϕ(·) is a marker-based mapping function. The function ϕ searches for predefined control phrases (listed in Table 6) and maps the segment to the corresponding behavior category when a match is found. If no control phrase is detected, the behavior label is left undefined for that segment. By applying ϕ to every segment, we obtain an initial behavior sequence 
+
+b = ( b1, b 2, . . . , b n), bi ∈ B ∪ { undefined }.
+
+Finally, in the node aggregation stage, we combine behavior labels and text segments into an ordered list of control nodes N .The aggregation obeys the following rules: 1. We maintain the current behavior b(cur ) and the current aggregated segment ˜s(cur ). At initialization, the current behavior is set to Objective , i.e., b(cur ) ← O, and the current text is empty, ˜s(cur ) ← ∅ .2. We then iterate through segments si and their labels bi in order: - If bi is undefined (no control phrase detected), we treat this segment as a continuation of the current behavior and append it to ˜s(cur ) via ‘ConcatSentences‘: 
+
+˜s(cur ) ← ConcatSentences  ˜s(cur ), s i
+
+.
+
+- If bi is defined (a new behavior is explicitly signaled), then: 1. If ˜s(cur ) is non-empty, we append the current node  b(cur ), ˜s(cur ) to N . 2. We reset the current behavior and text to 
+
+b(cur ) ← bi, ˜s(cur ) ← si.
+
+3. After processing all segments, we append the final node  b(cur ), ˜s(cur ) to N .12 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+This procedure produces an ordered list of control nodes 
+
+N =  (b(1) , ˜s(1) ), . . . , (b(K), ˜s(K)),
+
+where each node is associated with a behavior type (e.g., Objective, Progression, Verification, Exploration, Summary, or Conclusion) and the corresponding text span. This structured representation is then used for downstream analysis and editing of the model’s reasoning process. 
+
+Algorithm 1 Extraction of Control Nodes from Reasoning Text 
+
+Require: Raw reasoning text R
+
+Ensure: Ordered list of control nodes N =  (b(1) , ˜s(1) ), . . . , (b(K), ˜s(K))
+
+1: // Segmentation. 
+
+2: Let the delimiter be the double newline d = \n\n. 
+
+3: Partition R into an ordered sequence of segments S = ( s1, s 2, . . . , s n) = Split (R, delimiter = d).
+
+4: // Behavior classification. 
+
+5: for i = 1 to n do 
+
+6: Assign a preliminary behavior label bi = ϕ(si) ∈ B , where ϕ is the marker-based mapping defined in Appendix A (using the control phrase dictionary in Table 6). 
+
+7: end for 
+
+8: This yields an initial behavior sequence b = ( b1, b 2, . . . , b n), bi ∈ B .
+
+9: // Node aggregation. 
+
+10: Initialize an empty list of nodes N .
+
+11: Initialize the current behavior b(cur ) ← O (Objective) and the current aggregated segment ˜s(cur ) ← ∅ .
+
+12: for i = 1 to n do 
+
+13: if bi is undefined (i.e., no behavior marker detected) then 
+
+14: Concatenate si to ˜s(cur ): ˜s(cur ) ← ConcatSentences  ˜s(cur ), s i
+
+.
+
+15: else 
+
+16: if ˜s(cur )̸ = ∅ then 
+
+17: Append node  b(cur ), ˜s(cur ) to N .
+
+18: end if 
+
+19: Reset the current node: b(cur ) ← bi, ˜s(cur ) ← si.
+
+20: end if 
+
+21: end for 
+
+22: Append the final node  b(cur ), ˜s(cur ) to N .
+
+23: return N .13 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+# B. N-grams Statistics 
+
+In this section, we present the top-20 most frequent 2-gram, 3-gram, and 4-gram reasoning behavior patterns used by Qwen3 models of varying sizes (32B, 14B, 8B, 4B) across multiple datasets (GPQA, MATH, AIME25, MBPP). 
+
+Table 7. Frequencies of Top 20 2-gram patterns across models and datasets. Qwen3-32B Qwen3-14B Rank GPQA MATH AIME25 MBPP GPQA MATH AIME25 MBPP 
+
+Top 1 EE (3.22) CC (2.47) CC (8.59) VV (2.21) EE (4.37) VV (3.18) VV (8.56) VV (2.60) 
+
+Top 2 VV (2.96) VV (2.24) VV (6.96) PV (1.07) VV (4.14) EE (2.54) EE (8.47) EE (1.39) 
+
+Top 3 VE (2.42) PP (1.98) EE (6.35) VE (1.03) VE (3.87) PP (2.07) CC (6.90) VE (1.18) 
+
+Top 4 EV (2.13) EE (1.88) VC (5.26) EE (1.01) EV (3.53) VE (2.03) VC (5.67) EV (1.00) 
+
+Top 5 PP (1.91) VC (1.58) CV (5.05) VC (0.86) PV (1.89) CC (1.91) CV (5.23) PV (0.83) 
+
+Top 6 PV (1.82) CV (1.56) PP (4.45) EV (0.80) PP (1.61) CV (1.58) PP (4.63) VC (0.69) 
+
+Top 7 VP (1.25) VE (1.43) PC (3.87) PP (0.68) VP (1.24) VC (1.57) VE (3.97) VP (0.47) 
+
+Top 8 PE (1.07) PC (1.21) CP (3.43) VP (0.67) PE (1.11) EV (1.51) EV (3.77) OP (0.46) 
+
+Top 9 EP (0.97) EC (1.21) VE (2.77) OP (0.55) EP (0.96) PV (1.35) PC (3.33) OV (0.35) 
+
+Top 10 OP (0.89) PV (1.16) PV (2.64) OV (0.41) OP (0.89) EC (1.25) CP (3.09) PP (0.32) 
+
+Top 11 VC (0.83) EV (1.02) EV (2.56) EC (0.38) VC (0.77) PC (1.08) PV (2.97) EC (0.28) 
+
+Top 12 EC (0.52) OP (0.91) EC (2.38) CV (0.29) EC (0.63) VP (0.93) EC (2.62) CV (0.16) 
+
+Top 13 PC (0.46) VP (0.80) VP (2.25) PC (0.26) CV (0.38) OP (0.90) VP (2.34) PE (0.15) 
+
+Top 14 CV (0.46) CP (0.74) CE (2.03) EP (0.25) PC (0.29) PE (0.71) CE (2.33) EP (0.13) 
+
+Top 15 CP (0.24) CE (0.72) PE (2.01) PE (0.25) CP (0.20) CE (0.67) PE (2.13) PC (0.12) 
+
+Top 16 CC (0.16) PE (0.67) EP (1.89) CC (0.13) CC (0.14) CP (0.66) EP (2.01) CE (0.06) 
+
+Top 17 CE (0.12) EP (0.61) OP (1.05) CP (0.11) CE (0.13) EP (0.66) OP (1.03) CP (0.05) 
+
+Top 18 OV (0.11) OV (0.08) PO (0.11) CE (0.11) OV (0.09) OV (0.08) EO (0.11) CC (0.04) 
+
+Top 19 OE (0.03) OC (0.04) OC (0.09) OE (0.05) OE (0.03) OE (0.03) OE (0.08) OE (0.03) 
+
+Top 20 PO (0.02) OE (0.03) CO (0.08) OC (0.01) OC (0.01) OC (0.02) OV (0.06) PO (0.01) Qwen3-8B Qwen3-4B Rank GPQA MATH AIME25 MBPP GPQA MATH AIME25 MBPP 
+
+Top 1 EE (6.89) VV (3.90) EE (10.45) VV (3.37) EE (10.09) EE (4.62) EE (13.05) VV (2.78) 
+
+Top 2 VV (5.81) EE (3.52) VV (9.89) EE (1.70) VE (5.17) VV (3.18) VV (8.85) EE (2.19) 
+
+Top 3 VE (5.42) VE (2.61) CC (8.43) VE (1.57) EV (4.77) VE (2.61) CC (8.01) VE (1.47) 
+
+Top 4 EV (4.95) CC (2.48) VC (6.41) EV (1.33) VV (3.95) CC (2.15) VC (5.71) EV (1.27) 
+
+Top 5 PV (2.41) PP (2.15) CV (6.25) PV (0.98) PV (1.66) EV (1.94) CV (5.65) PV (0.90) 
+
+Top 6 PP (1.93) CV (2.10) VE (4.99) VC (0.85) PE (1.58) PP (1.84) VE (4.87) VC (0.84) 
+
+Top 7 VP (1.70) EV (1.92) PP (4.87) OP (0.58) PP (1.37) CV (1.76) PP (4.37) OP (0.61) 
+
+Top 8 PE (1.46) VC (1.90) EV (4.55) VP (0.48) EP (1.36) EC (1.64) EV (4.35) VP (0.40) 
+
+Top 9 EP (1.33) EC (1.59) PC (3.59) OV (0.39) VP (1.05) VC (1.57) PC (3.56) EC (0.38) 
+
+Top 10 VC (0.94) PV (1.49) CP (3.27) EC (0.37) OP (0.93) PV (1.25) EC (3.31) OV (0.36) 
+
+Top 11 OP (0.93) PC (1.22) EC (2.94) PP (0.35) EC (0.86) PC (1.04) CP (3.19) PP (0.23) 
+
+Top 12 EC (0.81) VP (1.07) PV (2.69) CV (0.21) VC (0.72) OP (0.91) CE (2.71) PE (0.22) 
+
+Top 13 CV (0.65) OP (0.90) CE (2.40) PE (0.18) CV (0.46) CE (0.89) PV (2.55) CV (0.18) 
+
+Top 14 PC (0.33) CE (0.89) VP (2.13) EP (0.16) PC (0.24) PE (0.85) PE (2.36) EP (0.17) 
+
+Top 15 CC (0.25) EP (0.81) PE (2.03) PC (0.10) CE (0.22) VP (0.83) EP (2.30) CE (0.09) 
+
+Top 16 CP (0.25) PE (0.81) EP (1.98) CE (0.08) CP (0.15) EP (0.80) VP (1.98) PC (0.08) 
+
+Top 17 CE (0.19) CP (0.76) OP (1.04) CC (0.05) CC (0.15) CP (0.61) OP (1.06) CC (0.06) 
+
+Top 18 OV (0.06) OV (0.09) PO (0.10) OE (0.03) OV (0.06) OV (0.08) CO (0.09) OE (0.04) 
+
+Top 19 OE (0.03) OE (0.03) OV (0.10) OE (0.03) OE (0.03) OE (0.04) OC (0.08) CP (0.03) 
+
+Top 20 PO (0.01) OC (0.03) OE (0.09) OC (0.01) PO (0.01) OC (0.02) PO (0.06) OC (0.01) 
+
+Tables 7 to 9 report the top-20 most frequent 2 -gram, 3 - gram, and 4 -gram patterns of reasoning behaviors across Qwen3 models of different sizes (32B, 14B, 8B, 4B) and datasets (GPQA, MATH, AIME25, MBPP). Each pattern is defined over the categorical states Objective (O), Progression (P), Summary (S), Exploration (E), Verification (V), and Conclusion (C), and the tables list their relative frequencies for each model–dataset pair. Color-highlighted marks patterns dominated by Exploration (E), Verification (V), Conclusion (C), or Progression (P). Across all n - gram orders and model sizes, we observe that repetitive Exploration and Verification patterns (e.g., EE, VV, EEE, VVV, EEEE, VVVV) dominate the top positions. On GPQA, the most frequent patterns are typically E - and V - heavy, 14 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+reflecting long stretches of hypothesis generation and checking. For MATH and AIME25, conclusion-related patterns such as CC, CCC, and CCCC become substantially more prevalent, indicating that once a solution path is established, models often enter extended conclusion phases. In contrast, MBPP is strongly dominated by verification loops (VV, VVV, VVVV), suggesting repeated checking behavior in code-oriented reasoning. Model size also systematically affects the distribution of reasoning patterns. Larger models (32B, 14B) exhibit a richer mix of transitions between behaviors (e.g., VE, EV, EVEE, VEVV, VVVC), whereas smaller models (8B, 4B) show higher frequencies of pure repetition such as EEEE and VVVV and of long homogeneous sequences like EEE and VVV. This suggests that larger models tend to interleave exploration, verification, and conclusion more fluidly, while smaller models rely more heavily on simple, repetitive behavior loops. 
+
+Table 8. Frequencies of Top 20 3-gram patterns across models and datasets. Qwen3-32B Qwen3-14B Rank GPQA MATH AIME25 MBPP GPQA MATH AIME25 MBPP 
+
+Top 1 EEE (1.67) VVV (1.04) CCC (3.86) VVV (1.07) EEE (2.11) VVV (1.58) EEE (4.72) VVV (1.42) 
+
+Top 2 VVV (1.32) EEE (0.89) EEE (3.49) EEE (0.53) VVV (1.95) EEE (1.21) VVV (4.33) EEE (0.81) 
+
+Top 3 VEE (1.04) CCC (0.85) VVV (3.27) PVV (0.50) EVE (1.84) PPP (0.85) CCC (2.81) VVE (0.52) 
+
+Top 4 EVE (1.04) PPP (0.80) VCC (2.21) VVC (0.43) VEE (1.71) VEE (0.80) VVC (2.23) VEV (0.50) 
+
+Top 5 EEV (0.93) VCC (0.62) VVC (2.05) OPV (0.42) VEV (1.57) VVE (0.71) VCV (2.11) VEE (0.49) 
+
+Top 6 VVE (0.85) VVC (0.55) CVV (2.01) VVE (0.41) EEV (1.57) VEV (0.60) CVV (2.05) PVV (0.49) 
+
+Top 7 VEV (0.84) ECC (0.54) CCV (1.99) VEE (0.37) VVE (1.36) EVE (0.60) VCC (2.04) EVE (0.44) 
+
+Top 8 PPP (0.78) CVC (0.53) CVC (1.79) VEV (0.37) EVV (1.13) VVC (0.60) CVC (1.83) VVC (0.42) 
+
+Top 9 PVV (0.74) OPP (0.53) VCV (1.62) EVE (0.30) PVV (0.83) EEV (0.59) PPP (1.81) EEV (0.40) 
+
+Top 10 EVV (0.68) VCV (0.50) PPP (1.57) EVV (0.29) PPP (0.62) CVV (0.58) EEV (1.75) EVV (0.39) 
+
+Top 11 PPV (0.62) VEE (0.50) PCC (1.54) VVP (0.29) PPV (0.59) VCV (0.57) VEE (1.70) OPV (0.38) 
+
+Top 12 VPV (0.47) CVV (0.49) CCP (1.44) PPP (0.28) PVE (0.58) CCC (0.57) CCV (1.65) OVV (0.24) 
+
+Top 13 PEE (0.46) PPC (0.49) PPC (1.25) EEV (0.28) PEE (0.52) PPV (0.55) EVE (1.54) VVP (0.24) 
+
+Top 14 VVP (0.46) PPV (0.48) VEE (1.18) VPV (0.27) VPV (0.50) PVV (0.51) VVE (1.23) VPV (0.23) 
+
+Top 15 PVP (0.45) PCC (0.46) EEV (1.15) OVV (0.26) VVP (0.48) VCC (0.50) PPC (1.21) PPV (0.15) 
+
+Top 16 PVE (0.43) CCV (0.45) CPP (1.10) PPV (0.26) EEP (0.42) OPP (0.50) PCC (1.17) PVE (0.13) 
+
+Top 17 OPP (0.43) VVE (0.42) CPC (1.10) VPP (0.23) OPV (0.40) EVV (0.48) CCP (1.15) VEC (0.13) 
+
+Top 18 EEP (0.41) EEC (0.41) PCP (1.02) PVP (0.22) EPE (0.39) ECC (0.48) VEV (1.13) VPP (0.13) 
+
+Top 19 VPP (0.39) PVV (0.40) PPV (0.95) PVE (0.19) OPP (0.37) EEC (0.47) PVV (1.11) PVP (0.12) 
+
+Top 20 EPE (0.35) VEC (0.39) ECC (0.94) VEC (0.17) PVP (0.36) PPC (0.44) CPP (1.11) EEC (0.12) Qwen3-8B Qwen3-4B 
+
+Top 1 EEE (3.63) VVV (1.94) EEE (6.01) VVV (1.98) EEE (6.28) EEE (2.61) EEE (8.15) VVV (1.52) 
+
+Top 2 VVV (2.85) EEE (1.78) VVV (4.60) EEE (0.95) EVE (2.86) VVV (1.48) VVV (4.21) EEE (1.40) 
+
+Top 3 EVE (2.64) VEE (1.07) CCC (3.53) VEV (0.68) VEE (2.81) VEE (1.19) CCC (3.21) VEE (0.65) 
+
+Top 4 VEE (2.47) PPP (0.88) VVC (2.67) VEE (0.66) EEV (2.60) EEV (0.89) VVC (2.37) VEO (0.62) 
+
+Top 5 EEV (2.28) VVE (0.88) CVV (2.60) VVE (0.64) VVV (1.76) EVE (0.88) CVV (2.34) VEV (0.58) 
+
+Top 6 VEV (2.16) VVE (0.88) VCC (2.50) EVE (0.63) VEE (2.81) VEE (1.19) VEE (2.31) VEE (0.65) 
+
+Top 7 VVE (1.88) CCC (0.80) VCV (2.33) PVV (0.57) VEV (1.68) EVE (0.88) VCC (2.22) EVE (0.62) 
+
+Top 8 EVV (1.56) EVE (0.79) VEE (2.22) EEV (0.52) VVE (1.53) VVE (0.84) VCV (2.01) VVE (0.57) 
+
+Top 9 PVV (1.07) EEV (0.78) CCV (2.20) VVC (0.50) EVV (1.30) EEC (0.75) EEV (1.99) EEV (0.54) 
+
+Top 10 PVE (0.74) CVV (0.75) CVC (2.18) EVV (0.49) PEE (0.89) PPP (0.72) CCV (1.88) PVV (0.52) 
+
+Top 11 PPP (0.73) VEV (0.74) EEV (2.03) OPV (0.45) EEP (0.74) VEV (0.70) CVC (1.80) OPV (0.48) 
+
+Top 12 VPV (0.73) VVC (0.73) PPP (1.98) OVV (0.26) EPE (0.71) CCC (0.69) EVE (1.79) EVV (0.46) 
+
+Top 13 PEE (0.72) VCV (0.73) EVE (1.82) VPV (0.25) PVV (0.66) ECC (0.62) VVE (1.64) OVV (0.22) 
+
+Top 14 PPV (0.71) EEC (0.64) VVE (1.82) VVP (0.25) PVE (0.62) CVV (0.61) PPP (1.60) VPV (0.21) 
+
+Top 15 VVP (0.65) VCC (0.63) VEV (1.63) PPV (0.18) PPV (0.48) VCV (0.60) EEC (1.59) VVP (0.20) 
+
+Top 16 EEP (0.61) ECC (0.63) EVV (1.47) PVE (0.18) EEC (0.46) VVC (0.60) VEV (1.40) VEC (0.17) 
+
+Top 17 EPE (0.55) EVV (0.60) PPC (1.43) EEC (0.17) PPP (0.46) EVV (0.57) PPC (1.37) PVE (0.17) 
+
+Top 18 EVP (0.50) CVE (0.58) PCC (1.39) VEC (0.16) OPV (0.46) CVE (0.54) CCP (1.36) EEC (0.17) 
+
+Top 19 VPP (0.47) PVV (0.57) CCP (1.35) EVC (0.15) PEV (0.40) PPV (0.49) PCC (1.36) EVC (0.13) 
+
+Top 20 PVP (0.46) CVC (0.57) EEC (1.32) PVP (0.14) VEP (0.39) PVV (0.48) EVV (1.32) PPV (0.12) 
+
+15 InjectRBP: Steering Large Language Model Reasoning Behavior via Pattern Injection 
+
+Table 9. Frequencies of Top 20 4-gram patterns across models and datasets. Qwen3-32B Qwen3-14B Rank GPQA MATH AIME25 MBPP GPQA MATH AIME25 MBPP 
+
+Top 1 EEEE (0.93) VVVV (0.53) EEEE (2.06) VVVV (0.54) EEEE (1.07) VVVV (0.87) EEEE (2.81) VVVV (0.80) 
+
+Top 2 VVVV (0.63) EEEE (0.45) CCCC (1.75) EEEE (0.31) VVVV (0.99) EEEE (0.63) VVVV (2.32) EEEE (0.51) 
+
+Top 3 EVEE (0.52) PPPP (0.32) VVVV (1.65) OPVV (0.25) EVEE (0.88) VEEE (0.36) CCCC (1.15) PVVV (0.27) 
+
+Top 4 EEVE (0.49) CCCC (0.31) VCCC (0.98) PVVV (0.25) EEVE (0.88) PPPP (0.34) VVVC (1.14) OPVV (0.27) 
+
+Top 5 VEEE (0.48) OPPP (0.25) VVVC (0.97) VVVC (0.21) VEEE (0.78) VVVE (0.30) CVVV (0.99) VEEE (0.26) 
+
+Top 6 EEEV (0.42) VVVC (0.24) CVVV (0.91) VVVE (0.18) VEVE (0.78) EVEE (0.28) EEEV (0.90) VVVC (0.25) 
+
+Top 7 VEVE (0.39) CVCC (0.23) CCVV (0.83) VEEE (0.17) EEEV (0.72) VVVC (0.28) VCCC (0.90) VVEV (0.24) 
+
+Top 8 VEEV (0.37) VEEE (0.23) CVCC (0.79) VVEV (0.15) EVEV (0.71) VVCV (0.27) VEEE (0.87) VVVE (0.24) 
+
+Top 9 PPPP (0.33) CVVV (0.21) CCCV (0.77) EVEE (0.15) VEEV (0.65) EEVE (0.27) VVCV (0.85) EVEE (0.24) 
+
+Top 10 VVVE (0.33) VVCV (0.20) VVCC (0.76) VEVV (0.15) VVEV (0.60) EEEV (0.26) VCVV (0.83) VEVV (0.21) 
+
+Top 11 VVEV (0.33) VCCC (0.20) VVCV (0.72) VVVP (0.14) VVVE (0.55) CVVV (0.26) VVCC (0.82) EEVE (0.21) 
+
+Top 12 EVEV (0.33) PPPC (0.20) CCCP (0.72) OVVV (0.14) VEVV (0.55) VVEV (0.26) PPPP (0.81) VEVE (0.20) 
+
+Top 13 VVEE (0.32) PPPV (0.20) CVVC (0.70) EEVE (0.14) VVEE (0.54) VVEE (0.25) EEVE (0.81) EEEV (0.20) 
+
+Top 14 PVVV (0.32) VVCC (0.19) CCVC (0.70) VVEE (0.13) EVVE (0.53) OPPP (0.24) EVEE (0.75) VVEE (0.19) 
+
+Top 15 VEVV (0.30) EEEV (0.18) PCCC (0.70) PPPP (0.13) EEVV (0.46) VCVV (0.24) VCVC (0.72) EVVV (0.19) 
+
+Top 16 EVVE (0.29) EECC (0.18) VCCV (0.65) EEEV (0.12) EVVV (0.42) VEVV (0.22) CVCV (0.71) VEEV (0.17) 
+
+Top 17 EEVV (0.27) VCVC (0.18) VCVC (0.61) EVVV (0.12) PVVV (0.40) VEVE (0.22) CCCV (0.70) EVEV (0.15) 
+
+Top 18 EVVV (0.26) VVVE (0.17) VCVV (0.61) VEVE (0.12) PPPP (0.28) PPPV (0.22) CVCC (0.69) OVVV (0.14) 
+
+Top 19 PPVV (0.25) EEEC (0.17) EEEV (0.60) VPVV (0.12) PVEE (0.25) PVVV (0.22) CCVC (0.67) EVVE (0.13) 
+
+Top 20 PPPV (0.24) VCVV (0.17) PPPP (0.60) VEEV (0.12) PPVV (0.25) EVVV (0.21) CVVC (0.61) VVVP (0.13) Qwen3-8B Qwen3-4B 
+
+Top 1 EEEE (2.04) VVVV (1.09) EEEE (3.51) VVVV (1.21) EEEE (4.05) EEEE (1.58) EEEE (5.21) EEEE (0.98) 
+
+Top 2 VVVV (1.56) EEEE (0.98) VVVV (2.23) EEEE (0.59) EEVE (1.69) VVVV (0.79) VVVV (2.13) VVVV (0.86) 
+
+Top 3 EEVE (1.36) VEEE (0.48) CCCC (1.63) PVVV (0.35) EVEE (1.68) VEEE (0.61) CCCC (1.36) VEEE (0.36) 
+
+Top 4 EVEE (1.33) EVEE (0.37) VVVC (1.26) EVEE (0.33) VEEE (1.63) EEEV (0.47) VEEE (1.26) EVEE (0.35) 
+
+Top 5 VEEE (1.18) PPPP (0.36) VEEE (1.21) VVVE (0.32) EEEV (1.51) EVEE (0.47) EEEV (1.21) EEVE (0.32) 
+
+Top 6 EEEV (1.07) EEEV (0.36) CVVV (1.19) VEEE (0.32) VEVE (0.91) EEVE (0.45) VVVC (1.07) OPVV (0.31) 
+
+Top 7 VEVE (1.05) VVVE (0.35) EEEV (1.11) OPVV (0.31) VVVV (0.88) EEEC (0.38) CVVV (1.04) PVVV (0.29) 
+
+Top 8 VEEV (0.98) EEVE (0.35) VVCV (1.06) EEVE (0.30) VEEV (0.85) VVEE (0.35) EEVE (1.01) VVVC (0.29) 
+
+Top 9 EVEV (0.98) VVVC (0.34) VCCC (1.03) VVVC (0.30) EVEV (0.85) VVVE (0.34) EVEE (0.97) VVEV (0.25) 
+
+Top 10 VVEV (0.84) VVEE (0.34) EEVE (1.01) VVEV (0.29) VVEE (0.74) VEVE (0.29) VVCV (0.97) VEVE (0.25) 
+
+Top 11 VEVV (0.78) VVCV (0.32) CVCC (0.99) VEVE (0.29) EVVE (0.65) VVEV (0.29) EEEC (0.93) VEVV (0.25) 
+
+Top 12 VVVE (0.77) CVVV (0.31) VVCC (0.97) VEVV (0.29) EEVV (0.61) VEEV (0.28) VCVV (0.89) VEVV (0.24) 
+
+Top 13 VVEE (0.74) VCVV (0.30) VCVV (0.97) VEVV (0.29) VVVE (0.58) EECC (0.28) VVCC (0.87) VEEV (0.22) 
+
+Top 14 EVVE (0.71) VVEV (0.30) CCVV (0.94) VEEV (0.25) VVEV (0.58) PPPP (0.28) PEEE (0.86) EVVV (0.21) 
+
+Top 15 EVVV (0.60) EEEC (0.30) EVEE (0.93) EVVV (0.24) VEVV (0.55) VVCV (0.27) VCCC (0.84) VVEE (0.20) 
+
+Top 16 EEVV (0.60) VEEV (0.30) VCVC (0.89) VVEE (0.23) PEEE (0.54) CVVV (0.27) EEEP (0.80) EVEV (0.20) 
+
+Top 17 PVVV (0.53) VEVE (0.29) PPPP (0.81) EVEV (0.23) EVVV (0.46) VVVC (0.26) CVVC (0.79) EVVE (0.16) 
+
+Top 18 PEEE (0.39) CCCC (0.28) VCCV (0.81) EVVE (0.16) EPEE (0.43) CCCC (0.25) CEEE (0.79) EEVV (0.15) 
+
+Top 19 PVEE (0.35) VEVV (0.27) VVVE (0.81) OVVV (0.15) EEEP (0.43) CVEE (0.25) CVCC (0.77) OVVV (0.13) 
+
+Top 20 VPVV (0.34) PVVV (0.27) CCCV (0.79) VVVP (0.14) EEPE (0.43) VCVV (0.24) CCVV (0.75) OVVV (0.13) 
+
+16

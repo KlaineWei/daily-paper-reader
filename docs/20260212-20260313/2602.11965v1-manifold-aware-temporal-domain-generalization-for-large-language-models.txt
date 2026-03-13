@@ -1,0 +1,602 @@
+Title: Manifold-Aware Temporal Domain Generalization for Large Language Models
+
+URL Source: https://arxiv.org/pdf/2602.11965v1
+
+Published Time: Fri, 13 Feb 2026 02:03:05 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+Preprint. Under review. 
+
+# MANIFOLD -A WARE TEMPORAL DOMAIN GENERALIZA -
+
+# TION FOR LARGE LANGUAGE MODELS 
+
+Yiheng Yao 1 Zekun Cai 1,2∗ Xinyuan Song 3 Hiroki Hill Kobayashi 1
+
+Xuan Song 4 Ryosuke Shibasaki 2 Liang Zhao 31The University of Tokyo, Tokyo, Japan 2LocationMind, Tokyo, Japan 
+
+> 3
+
+Emory University, Atlanta, GA, USA 4Jilin University, Changchun, China 
+
+yihengyao@g.ecc.u-tokyo.ac.jp, caizekun@csis.u-tokyo.ac.jp 
+
+{xinyuan.song,liang.zhao }@emory.edu, songxuan@jlu.edu.cn kobayashi@ds.itc.u-tokyo.ac.jp, shiba@locationmind.com 
+
+# ABSTRACT 
+
+Temporal distribution shifts are pervasive in real-world deployments of Large Language Models (LLMs), where data evolves continuously over time. While Temporal Domain Generalization (TDG) seeks to model such structured evolution, existing approaches characterize model adaptation in the full parameter space. This formulation becomes computationally infeasible for modern LLMs. This paper introduces a geometric reformulation of TDG under parameter-efficient fine-tuning. We establish that the low-dimensional temporal structure underlying model evo-lution can be preserved under parameter-efficient reparameterization, enabling temporal modeling without operating in the ambient parameter space. Building on this principle, we propose Manifold-aware Temporal LoRA (MaT-LoRA), which constrains temporal updates to a shared low-dimensional manifold within a low-rank adaptation subspace, and models its evolution through a structured temporal core. This reparameterization dramatically reduces temporal modeling complex-ity while retaining expressive power. Extensive experiments on synthetic and real-world datasets, including scientific documents, news publishers, and review ratings, demonstrate that MaT-LoRA achieves superior temporal generalization performance with practical scalability for LLMs. 
+
+# 1 INTRODUCTION 
+
+Domain generalization (DG) Tremblay et al. (2018); Huang et al. (2020); Du et al. (2020); Qiao et al. (2020); Wang et al. (2022) aims to learn models that generalize to unseen domains without access to target-domain data, and has become a central problem for reliable deployment of machine learning systems. In many real-world scenarios, however, domains are not isolated but are interconnected through underlying physical dynamics or evolving structures. Temporal domain generalization (TDG) Li et al. (2020); Nasery et al. (2021); Qin et al. (2022); Bai et al. (2023); Yong et al. (2023); Zeng et al. (2024); Cai et al. (2024); Yu et al. (2025) represents a prominent and practically important instance of DG, where domains are indexed by time and assume data distributions evolve sequentially. 
+
+Figure 1: Scalability bottleneck of TDG. Full-parameter TDG scales prohibitively with model size, whereas MaT-LoRA maintains overhead nearly constant and yields over 10 10 × reduction at the 1B pre-trained model scale. TDG formalizes generalization as trajec-tories of model parameters in a high-dimensional space, aiming to synchronize model evolution with distribution dynamics to enable generalization to future domains. State-of-the-art approaches characterize pa-rameter evolution using mechanisms such as LSTM architectures Bai et al. (2023), continuous-time neural dynamics Cai et al. (2024), and spectral analyses of parame-ter trajectories Yu et al. (2025). Despite their methodological differences, these ap-proaches aim to uncover low-dimensional structure within full-parameter trajectories. However, learning such a structure requires 
+
+* Corresponding author 
+
+1
+
+> arXiv:2602.11965v1 [cs.LG] 12 Feb 2026
+
+Preprint. Under review. operating over the entire high-dimensional parameter space, leading to parameter overhead that scales with model size. As shown in Fig. 1, this overhead becomes prohibitively large for billion-parameter models, revealing the scalability limitation of TDG. It has become increasingly evident that large language models (LLMs) deployed in real-world environments are also subject to distribution shifts analogous to those studied in TDG. Empirical analyses reveal that model performance degrades as the evaluation time moves further away from the training period Luu et al. (2022), and simply scaling up model size does not eliminate this temporal generalization gap Lazaridou et al. (2021). Importantly, recent studies suggest that temporal variation in fine-tuned LLMs follows structured trajectories in weight space rather than random drift. Fine-tuned LLMs from neighboring time periods exhibit closely aligned update directions, and interpolating between them often yields effective models for unseen times with minimal additional training Nylund et al. (2024); Dziadzio et al. (2025). These empirical findings suggest that temporal model evolution in large-scale LLMs is also governed by low-dimensional dynamics, motivating the extension of TDG principles from moderate-scale models to modern large-scale LLMs. Extending TDG to large-scale LLMs is non-trivial due to several fundamental challenges. 1) Mis-matching of the parameter space for generalization. Classical TDG characterizes temporal evolution as trajectories in the full parameter space, assuming that model parameters can be freely optimized over time. In contrast, LLMs are typically fine-tuned via parameter-efficient fine-tuning, which restricts learning to parameter increments around a pretrained initialization. Consequently, temporal trajectories are expressed in a different parameter space. 2) Expressing temporal dynamics under constrained updates. The widely adopted LoRA-based fine-tune method Hu et al. (2022) for LLMs is confined to a low-rank subspace of the parameter space. Under such structural restriction, it is unclear whether the intrinsic low-dimensional temporal dynamics identified in TDG can remain fully representable, and whether the associated geometric structure can be preserved. To bridge this gap, we develop a Ma nifold-aware Temporal LoRA (MaT-LoRA). We reinterpret generalization as occurring in a translated increment space anchored at a pretrained initialization. We show that if full-parameter optima lie on a low-dimensional manifold, then the corresponding parameter increments inherit the same intrinsic geometric structure via diffeomorphic translation. Building on this observation, we further identify that under low-rank adaptation, temporal updates should not be treated as independent rank-constrained solutions, but as points residing on a shared low-dimensional manifold embedded within the rank-restricted space. This perspective shifts the objective from fitting disconnected per-domain adapters to identifying and modeling the underlying manifold structure governing temporal evolution. MaT-LoRA confines temporal evolution independent of the LLMs size, but with the intrinsic dimensionality of the shared update subspace. As illustrated in Fig. 1, MaT-LoRA reduces the effective temporal modeling complexity by more than ten orders of magnitude for TDG on billion-scale models. This makes TDG practically feasible for modern LLMs. We validate this framework through extensive experiments on both synthetic benchmarks and three real-world datasets, results demonstrating that MaT-LoRA consistently outperforms existing baselines while maintaining computational efficiency suitable for large-scale LLMs models. 
+
+# 2 RELATED WORK 
+
+Domain Generalization (DG) and Temporal Domain Generalization (TDG) Domain Gener-alization (DG) aims to generalize to unseen target domains, a paradigm that Temporal Domain Generalization (TDG) extends by explicitly modeling time-varying data distributions. Following the taxonomy established by Wu et al. (2025), existing TDG methodologies are organized into three primary categories: (1) Data Distribution , delineates the nature of temporal shifts into Covariate Shift Kim et al. (2021); Kulinski et al. (2020); Zhang et al. (2025) and Concept Drift Wen et al. (2023); Zhang et al. (2022); (2) Representation Learning , encompasses Decoupling-based Zhou et al. (2022), Invariant-based Hu et al. (2023), and Adaptive Mechanism-based frameworks Wen et al. (2023), alongside the integration of Large Time Series Models Jin et al. (2024); and (3) Out-Of-Distribution (OOD) Evaluation , stratifies assessment protocols into Extrinsic Kim et al. (2021); Zhang et al. (2022); Sun et al. (2025) and Intrinsic Xie et al. (2023); Cai et al. (2024; 2025) paradigms. 
+
+Parameter-Efficient Fine-Tuning (PEFT) Parameter-Efficient Fine-Tuning (PEFT) offers a resource-efficient paradigm for adapting large-scale models to diverse downstream tasks. Following the taxonomy proposed by Han et al. (2024), PEFT strategies can be categorized into four distinct groups: additive PEFT , augments the model architecture by injecting additional trainable modules or 2Preprint. Under review. parameters( Houlsby et al. (2019); Mahabadi et al. (2021)); selective PEFT , designates only a specific subset of existing parameters to be updated during fine-tuning( Liu et al. (2022); Sung et al. (2021)); 
+
+reparameterized PEFT , optimizes a low-dimensional reparameterization of the model weights during training that is subsequently merged for inference( Hu et al. (2022); Wu et al. (2024); and hybrid PEFT ( Mao et al. (2022); Zhou et al. (2024)). Current methodologies present a fundamental dichotomy. Traditional TDG methods rigorously model temporal dynamics but scale poorly with increasing parameter dimensionality. Conversely, PEFT strategies excel at adapting large-scale models yet typically treat adaptation as a static process, failing to capture the continuous evolution inherent in distributional shifts. The isolation of these paradigms highlights a critical research gap: the lack of a unified framework that efficiently reconciles temporal dynamic modeling with the computational constraints of LLMs. 
+
+# 3 PROBLEM DEFINITION 
+
+Temporal Domain Generalization (TDG) for large language models (LLMs) studies adaptation under continuous distribution shift over time. We consider a sequence of T source domains {D t}Tt=1 , where 
+
+Dt = {(x(t) 
+
+> i
+
+, y (t) 
+
+> i
+
+)}Nt
+
+> i=1
+
+, (1) and x(t) 
+
+> i
+
+, y(t) 
+
+> i
+
+, and Nt denote inputs, labels, and sample size at timestamp t ∈ R1. The shift is modeled as a temporal evolution of the conditional distribution Pt(Y | X) over Xt × Y t, implying a time-varying input–output relationship. Starting from a pretrained model Wpre , we represent adaptation at time t by an update ∆Wt, yielding the mapping gWpre +∆ Wt : Xt → Y t. TDG aims to learn and extrapolate the trajectory {∆Wt}Tt=1 to infer suitable weights for the future unseen domains {D T +1 , DT +2 , . . . }.
+
+# 4 METHODOLOGY 
+
+In this section, we develop MaT-LoRA(Manifold-aware Temporal LoRA), a framework for temporal domain generalization of LLMs. We first motivate a low-dimensional manifold structure for the trajectory of optimal updates under distribution shift. We then introduce a Manifold-Constrained Factorization that separates time-invariant spatial bases from a time-varying temporal core, retaining the expressivity of per-domain adapters while using constant memory. Finally, we describe general ways to parameterize the temporal core, from structured continuous dynamical systems to flexible arbitrary functions, to match different types of temporal evolution. 4.1 THE GEOMETRY OF PARAMETER INCREMENTS FOR TEMPORAL DOMAINS 
+
+In many temporal learning problems, distribution shift is driven by coherent physical, social, or semantic factors rather than arbitrary stochastic noise. We thus assume that the conditional distribution 
+
+Pt(Y | X) evolves over time according to an unknown but deterministic latent dynamics. Prior work in TDG Cai et al. (2024; 2025) suggests that the sequence of full-parameter optima 
+
+{W ∗ 
+
+> t
+
+}Tt=1 lies on a low-dimensional embedded manifold M in the ambient parameter space. We now formalize the corresponding statement in the parameter-increment space. 
+
+Definition 1 (Parameter increments) . Fix a pretrained initialization Wpre ∈ Rp. For each time step 
+
+t ∈ [T ], define the optimal increment 
+
+∆W ∗ 
+
+> t
+
+:= W ∗ 
+
+> t
+
+− Wpre . (2) 
+
+Define the map ϕ : Rp → Rp by 
+
+ϕ(W ) := W − Wpre . (3) 
+
+Lemma 1 (Embedded manifolds) . Let M ⊂ Rp be an embedded m-dimensional submanifold. Then 
+
+M′ := ϕ(M) = M − Wpre is also an embedded m-dimensional submanifold of Rp.Proof. The map ϕ(W ) = W − Wpre is smooth and bijective with smooth inverse ϕ−1(U ) = 
+
+U + Wpre ; hence ϕ is a diffeomorphism on Rp. The image of an embedded submanifold under a diffeomorphism is an embedded submanifold of the same dimension. Therefore M′ = ϕ(M) is an embedded m-dimensional submanifold. 
+
+Lemma 2 (Parameter-increment manifold) . Assume {W ∗ 
+
+> t
+
+}Tt=1 ⊂ M for some embedded m-dimensional submanifold M ⊂ Rp. Then {∆W ∗ 
+
+> t
+
+}Tt=1 ⊂ M ′, where M′ := M − Wpre is also an embedded m-dimensional submanifold. 
+
+3Preprint. Under review. 
+
+Proof. By Definition 1, ∆W ∗ 
+
+> t
+
+= ϕ(W ∗ 
+
+> t
+
+). Since W ∗ 
+
+> t
+
+∈ M for each t, it follows that ∆W ∗ 
+
+> t
+
+∈
+
+ϕ(M) = M′. The manifold claim follows from Lemma 1. This result motivates working in the parameter-increment space: modeling temporal generalization via ∆Wt provides a principled reparameterization for large pretrained models under temporal domain shifts, and it supports extrapolation by learning trajectories on a low-dimensional manifold. 4.2 MANIFOLD -C ONSTRAINED LOW -R ANK FACTORIZATION 
+
+TDG aims to model the continuous evolution of the data-generating process. For smaller models, prior methods (e.g., Bai et al. (2023); Cai et al. (2024)) often project the full parameter trajectory onto a compact latent manifold to obtain a compressed representation of temporal dynamics. For LLMs, such global dimensionality reduction is computationally infeasible due to the scale of the weight matrices, and directly regressing full weights can overwrite pretrained generalization Luo et al. (2025); Li et al. (2024). We therefore shift the perspective from compressing the full parameter space to modeling temporal generalization within a constrained update subspace that matches the inherently low-rank structure of effective model variations. 4.2.1 GEOMETRIC INCOHERENCE IN DISCRETE GENERALIZATION 
+
+Low-Rank Adaptation (LoRA) Hu et al. (2022) is not only parameter efficient; it restricts adaptation to an intrinsic low-dimensional coordinate system. Specifically, LoRA constrains the update to 
+
+Wpre + BA , where B ∈ Rd×r and A ∈ Rr×k, so that ∆W = BA has rank at most r. This confines optimization to a much smaller subset of the ambient parameter space and makes temporal evolution of updates easier to model. Consequently, learning temporal distribution shift via parameter dynamics reduces to modeling a time-varying embedded submanifold within the rank-r update space. In the standard approach, each domain t is fitted with an independent LoRA factorization (Bt, A t)
+
+Hu et al. (2022). While this enables domain-specific adaptation, it ignores temporal structure. In over-parameterized regimes, the loss surface is highly non-convex and admits many distinct solutions with similarly low loss; empirically, different optima can be connected by low-loss curves (mode connectivity), indicating large near-optimal sets rather than isolated points Garipov et al. (2018); Draxler et al. (2018). As a result, independently optimizing {(Bt, A t)}Tt=1 can yield updates that are scattered even within the low-rank update space, which makes extrapolation to unseen domains 
+
+{D T +1 , . . . } ill-posed. In contrast, if the full-parameter optima exhibit a manifold structure, then the same structure holds in the increment space by Lemmas 1–2. Specifically, assuming {W ∗ 
+
+> t
+
+}Tt=1 ⊂ M for some embedded low-dimensional submanifold M ⊂ Rp, Lemma 1 implies that the translated set M′ = M− Wpre remains an embedded submanifold of the same intrinsic dimension. Lemma 2 then yields {∆W ∗ 
+
+> t
+
+}Tt=1 ⊂M′. Therefore, optimal increments are not arbitrary points in the ambient rank-r space; they are constrained to lie on a compact low-dimensional manifold (up to translation). This shifts the modeling objective from fitting disconnected per-domain adapters to identifying and modeling the underlying manifold structure so that temporal extrapolation is well-defined. 4.2.2 SUBSPACE -S HARED TIME -V ARYING PARAMETERIZATION 
+
+Let {∆Wt = BtAt}Tt=1 be a sequence of LoRA updates where Bt ∈ Rd×r and At ∈ Rr×k.The global column subspace could be C = span (STt=1 col (Bt)) and the global row subspace be 
+
+R = span (STt=1 row (At)) . Then, there exist fixed basis matrices B ∈ Rd×r′
+
+and A ∈ Rr′×k, where 
+
+r′ satisfies r ≥ r′ ≥ max(dim( C), dim( R)) . Then, construct B such that its columns form a basis for the global column subspace C. Since col (Bt) ⊆ C = col (B) for all t, each column of Bt can be expressed as a linear combination of the columns of B. Thus, there exists a unique coefficient matrix 
+
+Ct ∈ Rr′×r′
+
+such that: 
+
+Bt = BC t (4) Similarly, construct A such that its rows form a basis for the global row subspace R. Since row (At) ⊆R = row (A), each row of At lies in the row space of A. Thus, there exists a unique coefficient matrix Dt ∈ Rr′×r′
+
+such that: 
+
+At = DtA (5) Substituting these factorizations back into the original update equation: 
+
+∆Wt = BtAt = ( BC t)( DtA) = B(CtDt)A (6) 4Preprint. Under review. To enforce geometric consistency and enable extrapolation, by defining the core matrix as Ft := 
+
+CtDt ∈ Rr′×r′
+
+, we introduce the Manifold-Constrained Factorization, where the time-varying update 
+
+∆W (t) could be decomposed into time-invariant ambient bases and a dynamic temporal core: 
+
+∆W (t) = B · Ft · A (7) 
+
+B and A identify the embedded submanifold within the rank-r latent space, and Ft governs the manifold generalization dynamics. We demonstrate in Sec. 5.2 that this structured form is not a restrictive approximation but rather a sufficient representation for any sequence of low-rank updates that share a common support. This confirms that the factorization captures the full expressive power of the independent adapters, provided the updates reside within a shared ambient subspace. 4.3 INSTANTIATIONS OF THE TEMPORAL CORE 
+
+As established in Section 4.1, the trajectory of the optimal update ∆Wt is diffeomorphic to the continuous evolution of the data distribution Dt. Under the shared-basis factorization ∆Wt = BF tA,all temporal variation is captured by the low-dimensional core Ft while B and A remain fixed. Because the induced map on the active subspace is a linear isomorphism under full-rank bases, this diffeomorphic structure is preserved in Ft, making the core dynamics topologically equivalent to the intrinsic data-stream dynamics. We therefore choose the parameterization of Ft to match the inductive bias of the underlying evolution, and consider three instantiations for different regimes: • Continuous Linear Dynamical Systems: If the data evolution is hypothesized to follow a smooth, continuous flow governed by an Autonomous Linear Dynamical System, we propose Lin-dym MaT-LoRA, which models the trajectory analytically using Lie algebra. Assuming the rate of change is governed by a constant velocity field W, the core evolves as: 
+
+Ft = exp( tW) · F0 (8) where W ∈ Rr′×r′
+
+is a learnable coefficient matrix and exp( ·) denotes the matrix exponential. This analytic form enforces a strong inductive bias for structural continuity. • Sequential Markovian Evolution: When the data evolution possesses the Markov property, a recursive modeling approach is required. We propose Markv MaT-LoRA, and parameterize Ft
+
+using a Recurrent Neural Network (e.g., RNN or LSTM) to capture autoregressive dependencies: vec (Ft) = RNN (ht−1), (9) This formulation allows the system to generate the current core Ft based on the trajectory of previous time steps, making it ideal for path-dependent shifts. • Arbitrary Non-Linear Dynamics: For scenarios where the domain shift exhibits complex, high-dimensional non-linear patterns without clear sequential dependency, we leverage the universal approximation capability of Multi-Layer Perceptrons (MLPs), named Non-lin MaT-LoRA. In this setting, the core matrix is modeled as a direct function of the timestamp t:vec (Ft) = MLP (t) (10) This form fits a global function to the temporal manifold, suitable for deterministic environments where the parameter state is strictly dependent on t.
+
+# 5 THEORETICAL ANALYSIS 
+
+5.1 PARAMETER EFFICIENCY ANALYSIS 
+
+Beyond geometric coherence, the proposed factorization is parameter-efficient. Consider LoRA updates of the form ∆Wt = BtAt with rank r, where Bt ∈ Rd×r and At ∈ Rr×k. Maintaining an independent adapter per domain yields 
+
+O(Multi ) = T (dr + rk ) = T (d + k)r. (11) A static single-adapter baseline uses 
+
+O(Single ) = dr + rk = ( d + k)r. (12) Our manifold-constrained parameterization shares the large bases B ∈ Rd×r′
+
+and A ∈ Rr′×k across time and learns only a small time-varying core Ft (via a lightweight model with |WF | parameters), giving 
+
+O(Ours ) = ( dr ′ + r′k) + |WF | = ( d + k)r′ + |WF |. (13) 5Preprint. Under review. With r′ ≤ r ≪ min( d, k ) and |WF | small, our total parameter cost is dominated by the shared bases and remains essentially independent of T . Consequently, compared to Discrete Multi-LoRA, MaT-LoRA reduces adapter storage by an approximate factor of T (up to the minor |WF | overhead), while still allowing domain-specific adaptation through the compact core Ft. This yields a scalable and VRAM-friendly alternative for long domain sequences, where keeping separate LoRA adapters quickly becomes prohibitive. 5.2 STABILITY AND JUSTIFICATION OF THE SHARED -B ASIS FORM 
+
+To justify the shared-basis parameterization ∆Wt = BF tA, we also show that, under the training procedure (gradient descent on LoRA factors), the learned factor subspaces do not drift far over time. Concretely, starting from the initial factors (B1, A 1), we prove that the components of Bt orthogonal to col( B1) and of At orthogonal to row( A1) remain small throughout the updates, up to a controlled leakage term. This establishes that using fixed shared subspaces for B and A is meaningful, and that temporal variation can be concentrated into a small core Ft.
+
+Assumption 1 (Differentiability and GD dynamics) . For each t ∈ [T ], the objective Jt : Rd×r ×
+
+Rr×k → R is differentiable. The LoRA factors (Bt, A t) are updated by gradient descent 
+
+Bt+1 = Bt − η∇B Jt(Bt, A t), At+1 = At − η∇AJt(Bt, A t), (14) 
+
+with step size η > 0.
+
+Assumption 2 (Reference (shared) subspaces) . Let B := B1 and A := A1. Define the orthogonal projectors 
+
+PB := Proj col( B) ∈ Rd×d, PA := Proj col( A⊤) ∈ Rk×k. (15) 
+
+Equivalently, Im( PA) = row( A) ⊂ Rk.
+
+Assumption 3 (Dissipativity of out-of-subspace components) . There exist constants αB , α A ≥ 0
+
+and εB , ε A ≥ 0 such that for all t ∈ [T ],
+
+(I − PB )Bt, (I − PB )∇B Jt(Bt, A t) ≥ αB ∥(I − PB )Bt∥2 
+
+> F
+
+− εB , (16) 
+
+At(I − PA), ∇AJt(Bt, A t)( I − PA) ≥ αA∥At(I − PA)∥2 
+
+> F
+
+− εA, (17) 
+
+where ⟨X, Y ⟩ := tr( X⊤Y ).
+
+Theorem 2 (Stability of (Bt, A t) subspaces under GD) . Under Assumptions 1–3, suppose the step size satisfies ηα B ≤ 1 and ηα A ≤ 1. Define 
+
+eBt := ∥(I − PB )Bt∥F , eAt := ∥At(I − PA)∥F , ∆Wt := BtAt. (18) 
+
+Then for all t ∈ [T ],
+
+(eBt+1 )2 ≤ (1 − ηα B )( eBt )2 + ηε B , (19) 
+
+(eAt+1 )2 ≤ (1 − ηα A)( eAt )2 + ηε A. (20) 
+
+Consequently, for all t ∈ [T ],
+
+(eBt )2 ≤ (1 − ηα B )t−1(eB 
+
+> 1
+
+)2 + εB
+
+αB
+
+
+
+1 − (1 − ηα B )t−1
+
+≤ (eB 
+
+> 1
+
+)2 + εB
+
+αB
+
+(αB > 0) , (21) 
+
+(eAt )2 ≤ (1 − ηα A)t−1(eA 
+
+> 1
+
+)2 + εA
+
+αA
+
+
+
+1 − (1 − ηα A)t−1
+
+≤ (eA 
+
+> 1
+
+)2 + εA
+
+αA
+
+(αA > 0) , (22) 
+
+and when αB = 0 (or αA = 0 ) the bound holds with the convention εB
+
+> αB
+
+ 1 − (1 − ηα B )t−1 := (t − 1) ηε B (or (t − 1) ηε A). Moreover, the induced updates satisfy 
+
+∥(I − PB )∆ Wt∥F ≤ eBt ∥At∥2, ∥∆Wt(I − PA)∥F ≤ ∥ Bt∥2eAt . (23) The detailed proof is provided in Section A. Theorem 2 shows that, under the dissipativity conditions in Assumption 3, the out-of-subspace energies (eBt )2 and (eAt )2 follow a contractive recursion with additive noise εB , ε A. Hence, if the initialization is aligned ( eB 
+
+> 1
+
+= eA 
+
+> 1
+
+= 0 ) and leakage is small, then col( Bt) stays close to col( B1) and row( At) stays close to row( A1) for all t, which in turn implies that the induced updates ∆Wt = BtAt largely remain supported on the shared subspaces, as quantified by (23) . Therefore, a shared (B, A ) with a time-varying core is a consistent structural restriction rather than an ad hoc constraint. 6Preprint. Under review. 
+
+# 6 EXPERIMENTS 
+
+This section empirically evaluates MaT-LoRA through comprehensive quantitative and qualitative analyses. We conducted experiments on four representative LLMs: DistilBERT( Sanh et al. (2019)), Qwen3-0.6B( Yang et al. (2025)), TinyLLaMA-1.1B( Zhang et al. (2024)), and LLaMA3-8B( Dubey et al. (2024)). By leveraging both synthetic and real-world datasets to ensure robust assessment, our evaluation aims to: (1) assess the temporal generalizability of MaT-LoRA within LLMs contexts; and (2) verify its fidelity in capturing underlying data dynamics. 6.1 SYNTHETIC DATASET 
+
+Synthetic datasets serve as an effective instrument for validation, avoiding the confounding factors of unknown generative laws and high-dimensional noise inherent in real-world scenarios. By restricting domain evolution to pure mathematical transformations, these datasets strictly conform to the TDG hypothesis of time-controlled dynamics. Validating on such data confirms MaT-LoRA’s capability to capture dynamics within a regime that faithfully follows the field’s most fundamental assumptions. Test Domain T+1 Test Domain T+2 Test Domain T+3 
+
+Figure 2: Visualization of Extrapolated Decision Boundaries on the Rotating 2-Moons Dataset across Four LLMs Backbones. 
+
+Experimental Setup : The Rotating 2-Moons dataset serves as a benchmark for controlled, con-tinuous concept drift. In this setting, the classification boundary remains topologically invariant, while the data distribution undergoes a deterministic geometric shift. The sequence comprises 12 distinct domains, each containing 200 class-balanced instances generated via an 18 ◦ counterclockwise rotation per time step, perturbed by Gaussian noise ( σ = 0 .10 ). The first 9 domains constitute the training set, with the subsequent domains reserved for evaluation. To accommodate continuous 2D inputs, we project coordinates directly into the latent space via a linear layer, eschewing standard token and positional embeddings. 
+
+Qualitative Analysis of Decision Boundaries : Fig. 2 illustrates the decision boundaries derived from MaT-LoRA across four pre-trained LLMs: DistilBERT, Qwen, TinyLLaMA, and LLaMA-3. DistilBERT demonstrates superior generalization, with predictions that tightly track the ground-truth trajectory over multiple extrapolation steps, indicating effective capture of the underlying dynamics. Notably, despite the larger parameter counts of TinyLLaMA and LLaMA3 compared to Qwen, they exhibit clearer decision boundaries. While Qwen achieves superior test performance, visual inspection suggests it has captured spurious features, a phenomenon potentially attributable to its distinct Q, K normalization mechanism. Overall, MaT-LoRA consistently enables pre-trained models—which inherently lack temporal extrap-olation capabilities—to model data dynamics with high fidelity, demonstrating the robustness of our approach in enhancing generalization within the LLMs domain. 7Preprint. Under review. 6.2 REAL -WORD DATASET 
+
+We utilize three existing temporal misalignment datasets(AIC, NewsCLS, and Yelp) introduced by Luu et al. (2022). AIC is a binary classification benchmark that requires identifying the publication venue (ICML vs. AAAI) based on a paper’s title. NewsCLS is a three-class classification benchmark that predicts the publisher from news content. Yelp is a five-class classification benchmark that maps a user review to its corresponding numerical rating. Further datasets details are provided in B.1. Table 1: Performance comparison on temporal domain datasets, reporting classification accuracy (%). Method AIC NewsCLS Yelp Offline 84 .00 ± 5.58 82 .79 ± 0.97 69 .59 ± 0.92                                              
+
+> IncFinetune 90 .58 ±0.63 82 .60 ±1.69 70 .46 ±0.28
+> Last Domain 90 .17 ±0.63 80 .55 ±2.07 68 .41 ±0.42
+> MaT-LoRA Lin-dym 91 .17 ±1.42 83 .72 ±4.89 72 .04 ±0.28
+> Markv 91.67 ±2.02 84.86 ±1.98 72.29 ±0.12
+> Non-lin 90 .75 ±1.75 84 .70 ±0.72 71 .78 ±0.24
+
+Metrics . Accuracy (%) is used for classification tasks. All models were trained on training domains and then deployed on all unseen test domains. Each method’s experiments were repeated three times, with mean results and standard deviations reported. Detailed parameter settings for each dataset are provided in Appendix B.2. As presented in Table 1, all three variants of MaT-LoRA consistently outperform the baseline methods across real-world datasets. While approaches like Offline and LastDomain demonstrate limited efficacy, their failure to explicitly model temporal continuity results in significant performance gaps. In contrast, MaT-LoRA effectively captures the underlying evolution of data distributions. Notably, even the simplest linear variant performs exceptionally well, suggesting that real-world temporal variations and their manifestation in low-dimensional spaces may not be complex. Furthermore, our results demonstrate that all three datasets achieve state-of-the-art performance on RNN variants, indicating that distributional changes can be based on the evolution of previous states. Overall, these findings confirm MaT-LoRA as a robust benchmark for Temporal Domain Generalization in LLMs. Table 2: Comparison of training and testing run-ning time (seconds) on AIC. Method Train Test Offline 532 ± 153 2.11 
+
+Last domain 241 ± 31 2.73 
+
+IncFinetune 402 ± 77 2.46 
+
+MaT-LoRA 740 ± 18 2.99 
+
+Running time . MaT-LoRA targets TDG tasks within LLMs, where computational efficiency is paramount. To evaluate this, we conducted a comparative analysis against baselines on the AIC dataset over three independent runs, report-ing the mean and standard deviation for train-ing duration and the average inference latency. As shown in Table 2, MaT-LoRA incurs only a marginal increase in training time compared to baselines, a slight overhead attributed to op-timizing parameter generalization on the sub-manifold. Crucially, inference latency remains on par with baselines, demonstrating that MaT-LoRA effectively mitigates domain shifts while maintaining high efficiency during both training and testing. 
+
+# 7 CONCLUSION 
+
+In this work, we presented MaT-LoRA, a framework for temporal domain generalization in LLMs that exploits the low-dimensional manifold structure of parameter updates. By introducing a Manifold-Constrained Factorization, our approach decouples adaptation into time-invariant spatial bases and a dynamic temporal core, effectively reconciling the expressivity of domain-specific adapters with constant memory efficiency. Furthermore, the flexible parameterization of this core, ranging from continuous dynamical systems to arbitrary functions, enables robust generalization across diverse evolutionary patterns. Extensive experiments on both synthetic and real-world datasets validate the superior efficacy and computational efficiency of our proposed design. 8Preprint. Under review. 
+
+# REFERENCES 
+
+Guangji Bai, Chen Ling, and Liang Zhao. Temporal domain generalization with drift-aware dynamic neural networks. In The Eleventh International Conference on Learning Representations , 2023. Zekun Cai, Guangji Bai, Renhe Jiang, Xuan Song, and Liang Zhao. Continuous temporal domain generalization. Advances in Neural Information Processing Systems , 37:127987–128014, 2024. Zekun Cai, Yiheng Yao, Guangji Bai, Renhe Jiang, Xuan Song, Ryosuke Shibasaki, and Liang Zhao. Continuous domain generalization. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. Kushal Dave, Steve Lawrence, and David M Pennock. Mining the peanut gallery: Opinion extraction and semantic classification of product reviews. In Proceedings of the 12th international conference on World Wide Web , pp. 519–528, 2003. Felix Draxler, Kambis Veschgini, Manfred Salmhofer, and Fred A. Hamprecht. Essentially no barriers in neural network energy landscape. In International Conference on Machine Learning (ICML) ,2018. Yingjun Du, Jun Xu, Huan Xiong, Qiang Qiu, Xiantong Zhen, Cees GM Snoek, and Ling Shao. Learning to learn with variational information bottleneck for domain generalization. In European Conference on Computer Vision , pp. 200–216, 2020. Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models. 
+
+arXiv e-prints , pp. arXiv–2407, 2024. Sebastian Dziadzio, Vishaal Udandarao, Karsten Roth, Ameya Prabhu, Zeynep Akata, Samuel Albanie, and Matthias Bethge. How to merge your multimodal models over time? In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 20479– 20491, June 2025. Timur Garipov, Pavel Izmailov, Dmitrii Podoprikhin, Dmitry Vetrov, and Andrew Gordon Wilson. Loss surfaces, mode connectivity, and fast ensembling of DNNs. In Advances in Neural Information Processing Systems (NeurIPS) , 2018. Zeyu Han, Chao Gao, Jinyang Liu, Jeff Zhang, and Sai Qian Zhang. Parameter-efficient fine-tuning for large models: A comprehensive survey. Transactions on Machine Learning Research , 2024. ISSN 2835-8856. Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for nlp. In International conference on machine learning , pp. 2790–2799. PMLR, 2019. Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. Xuanming Hu, Wei Fan, Kun Yi, Pengfei Wang, Yuanbo Xu, Yanjie Fu, and Pengyang Wang. Boosting urban prediction via addressing spatial-temporal distribution shift. In 2023 IEEE International Conference on Data Mining (ICDM) , pp. 160–169. IEEE, 2023. Zeyi Huang, Haohan Wang, Eric P Xing, and Dong Huang. Self-challenging improves cross-domain generalization. In 16th European Conference on Computer Vision, ECCV 2020 , pp. 124–140. Springer, 2020. Ming Jin, Shiyu Wang, Lintao Ma, Zhixuan Chu, James Zhang, Xiaoming Shi, Pin-Yu Chen, Yuxuan Liang, Yuan-fang Li, Shirui Pan, et al. Time-llm: Time series forecasting by reprogramming large language models. In International Conference on Learning Representations , 2024. Taesung Kim, Jinhee Kim, Yunwon Tae, Cheonbok Park, Jang-Ho Choi, and Jaegul Choo. Re-versible instance normalization for accurate time-series forecasting against distribution shift. In 
+
+International conference on learning representations , 2021. 9Preprint. Under review. Sean Kulinski, Saurabh Bagchi, and David I Inouye. Feature shift detection: Localizing which features have shifted via conditional distribution tests. Advances in neural information processing systems , 33:19523–19533, 2020. Angeliki Lazaridou, Adhi Kuncoro, Elena Gribovskaya, Devang Agrawal, Adam Liska, Tayfun Terzi, Mai Gimenez, Cyprien de Masson d’Autume, Tomas Kocisky, Sebastian Ruder, et al. Mind the gap: Assessing temporal generalization in neural language models. Advances in Neural Information Processing Systems , 34:29348–29363, 2021. Da Li, Yongxin Yang, Yi-Zhe Song, and Timothy Hospedales. Sequential learning for domain generalization. In European Conference on Computer Vision , pp. 603–619. Springer, 2020. Hongyu Li, Liang Ding, Meng Fang, and Dacheng Tao. Revisiting catastrophic forgetting in large language model tuning. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pp. 4297–4308, 2024. Haokun Liu, Derek Tam, Mohammed Muqeeth, Jay Mohta, Tenghao Huang, Mohit Bansal, and Colin A Raffel. Few-shot parameter-efficient fine-tuning is better and cheaper than in-context learning. Advances in Neural Information Processing Systems , 35:1950–1965, 2022. Yun Luo, Zhen Yang, Fandong Meng, Yafu Li, Jie Zhou, and Yue Zhang. An empirical study of catastrophic forgetting in large language models during continual fine-tuning. IEEE Transactions on Audio, Speech and Language Processing , 2025. Kelvin Luu, Daniel Khashabi, Suchin Gururangan, Karishma Mandyam, and Noah A Smith. Time waits for no one! analysis and challenges of temporal misalignment. In Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies , pp. 5944–5958, 2022. Rabeeh Karimi Mahabadi, Sebastian Ruder, Mostafa Dehghani, and James Henderson. Parameter-efficient multi-task fine-tuning for transformers via shared hypernetworks. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing , pp. 565–576, 2021. Yuning Mao, Lambert Mathias, Rui Hou, Amjad Almahairi, Hao Ma, Jiawei Han, Scott Yih, and Madian Khabsa. Unipelt: A unified framework for parameter-efficient language model tuning. In 
+
+Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 6253–6264, 2022. Anshul Nasery, Soumyadeep Thakur, Vihari Piratla, Abir De, and Sunita Sarawagi. Training for the future: A simple gradient interpolation loss to generalize along time. Advances in Neural Information Processing Systems , 34:19198–19209, 2021. Kai Nylund, Suchin Gururangan, and Noah A Smith. Time is encoded in the weights of finetuned language models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 2571–2587, 2024. Bo Pang, Lillian Lee, and Shivakumar Vaithyanathan. Thumbs up? sentiment classification using machine learning techniques. arXiv preprint cs/0205070 , 2002. Fengchun Qiao, Long Zhao, and Xi Peng. Learning to learn single domain generalization. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 12556– 12565, 2020. Tiexin Qin, Shiqi Wang, and Haoliang Li. Generalizing to evolving domains with latent structure-aware sequential autoencoder. In International Conference on Machine Learning , pp. 18062–18082. PMLR, 2022. Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. arXiv preprint arXiv:1910.01108 , 2019. Yanru Sun, Zongxia Xie, Emadeldeen Eldele, Dongyue Chen, Qinghua Hu, and Min Wu. Learning pattern-specific experts for time series forecasting under patch-level distribution shift. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 10 Preprint. Under review. Yi-Lin Sung, Varun Nair, and Colin A Raffel. Training neural networks with fixed sparse masks. 
+
+Advances in Neural Information Processing Systems , 34:24193–24205, 2021. Jonathan Tremblay, Aayush Prakash, David Acuna, Mark Brophy, Varun Jampani, Cem Anil, Thang To, Eric Cameracci, Shaad Boochoon, and Stan Birchfield. Training deep networks with synthetic data: Bridging the reality gap by domain randomization. In Proceedings of the IEEE conference on computer vision and pattern recognition workshops , pp. 969–977, 2018. Jindong Wang, Cuiling Lan, Chang Liu, Yidong Ouyang, Tao Qin, Wang Lu, Yiqiang Chen, Wenjun Zeng, and S Yu Philip. Generalizing to unseen domains: A survey on domain generalization. IEEE transactions on knowledge and data engineering , 35(8):8052–8072, 2022. Qingsong Wen, Weiqi Chen, Liang Sun, Zhang Zhang, Liang Wang, Rong Jin, Tieniu Tan, et al. Onenet: Enhancing time series forecasting models under concept drift by online ensembling. 
+
+Advances in Neural Information Processing Systems , 36:69949–69980, 2023. Taiqiang Wu, Jiahao Wang, Zhe Zhao, and Ngai Wong. Mixture-of-subspaces in low-rank adaptation. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing ,pp. 7880–7899, 2024. Xin Wu, Fei Teng, Xingwang Li, Ji Zhang, Tianrui Li, and Qiang Duan. Out-of-distribution generalization in time series: A survey. arXiv preprint arXiv:2503.13868 , 2025. Mixue Xie, Shuang Li, Longhui Yuan, Chi Liu, and Zehui Dai. Evolving standardization for continual domain generalization over temporal drift. Advances in Neural Information Processing Systems ,36:21983–22002, 2023. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 ,2025. LIN Yong, Fan Zhou, Lu Tan, Lintao Ma, Jianmeng Liu, HE Yansu, Yuan Yuan, Yu Liu, James Y Zhang, Yujiu Yang, et al. Continuous invariance learning. In The Twelfth International Conference on Learning Representations , 2023. En Yu, Jie Lu, Xiaoyu Yang, Guangquan Zhang, and Zhen Fang. Learning robust spectral dynamics for temporal domain generalization. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. Qiuhao Zeng, Wei Wang, Fan Zhou, Gezheng Xu, Ruizhi Pu, Changjian Shui, Christian Gagn ´e, Shichun Yang, Charles X Ling, and Boyu Wang. Generalizing across temporal domains with koopman operators. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pp. 16651–16659, 2024. Peiyuan Zhang, Guangtao Zeng, Tianduo Wang, and Wei Lu. Tinyllama: An open-source small language model. arXiv preprint arXiv:2401.02385 , 2024. Weiyang Zhang, Xinyang Chen, Yu Sun, Weili Guan, and Liqiang Nie. Batch training for streaming time series: A transferable augmentation framework to combat distribution shifts. Transactions on Machine Learning Research , 2025. Zeyang Zhang, Xin Wang, Ziwei Zhang, Haoyang Li, Zhou Qin, and Wenwu Zhu. Dynamic graph neural networks under spatio-temporal distribution shift. Advances in neural information processing systems , 35:6074–6089, 2022. Han Zhou, Xingchen Wan, Ivan Vuli ´c, and Anna Korhonen. Autopeft: Automatic configuration search for parameter-efficient fine-tuning. Transactions of the Association for Computational Linguistics , 12:525–542, 2024. Tian Zhou, Ziqing Ma, Qingsong Wen, Xue Wang, Liang Sun, and Rong Jin. Fedformer: Frequency enhanced decomposed transformer for long-term series forecasting. In International conference on machine learning , pp. 27268–27286. PMLR, 2022. 11 Preprint. Under review. 
+
+# A PROOF OF THEOREM 2
+
+Proof. We prove the B-part (19) – (21) ; the A-part (20) – (22) follows by the same argument using Assumption 3 and (17). Fix t ∈ [T ] and set R := I − PB . By Assumption 2, PB is an orthogonal projector, hence R is also an orthogonal projector with R⊤ = R and R2 = R. By Assumption 1, left-multiplying by R gives 
+
+RB t+1 = RB t − ηR ∇B Jt(Bt, A t). (24) Then we have, 
+
+∥RB t+1 ∥2 
+
+> F
+
+= ∥RB t∥2 
+
+> F
+
+− 2η RB t, R ∇B Jt(Bt, A t) + η2∥R∇B Jt(Bt, A t)∥2 
+
+> F
+
+. (25) Apply Assumption 3 and (16) to the inner product term: 
+
+RB t, R ∇B Jt(Bt, A t) ≥ αB ∥RB t∥2 
+
+> F
+
+− εB . (26) Substituting into (25) yields 
+
+∥RB t+1 ∥2 
+
+> F
+
+≤ (1 − 2ηα B )∥RB t∥2 
+
+> F
+
++ 2 ηε B + η2∥R∇B Jt(Bt, A t)∥2 
+
+> F
+
+. (27) By Cauchy-Schwarz inequality, 
+
+RB t, R ∇B Jt(Bt, A t) ≤ ∥ RB t∥F ∥R∇B Jt(Bt, A t)∥F . (28) If ∥RB t∥F > 0, combining with Assumption 3 and (16) gives 
+
+∥R∇B Jt(Bt, A t)∥F ≥ αB ∥RB t∥F − εB
+
+∥RB t∥F
+
+. (29) Hence 
+
+η2∥R∇B Jt(Bt, A t)∥2 
+
+> F
+
+≤ η2
+
+
+
+αB ∥RB t∥F + εB
+
+∥RB t∥F
+
+2
+
+≤ 2η2α2 
+
+> B
+
+∥RB t∥2 
+
+> F
+
++ 2 η2 ε2
+
+> B
+
+∥RB t∥2
+
+> F
+
+.
+
+(30) We now use a case split. 
+
+Case 1: ∥RB t∥2 
+
+> F
+
+≥ 2ηε B . Then 2η2 ε2
+
+> B
+> ∥RB t∥2
+> F
+
+≤ ηε B . Also, by Assumption on step size, ηα B ≤ 1,so 
+
+2η2α2 
+
+> B
+
+∥RB t∥2 
+
+> F
+
+≤ 2ηα B ∥RB t∥2 
+
+> F
+
+(31) Therefore, 
+
+η2∥R∇B Jt(Bt, A t)∥2 
+
+> F
+
+≤ 2ηα B ∥RB t∥2 
+
+> F
+
++ ηε B . (32) Substituting into (27) gives 
+
+∥RB t+1 ∥2 
+
+> F
+
+≤ (1 − 2ηα B )∥RB t∥2 
+
+> F
+
++ 2 ηε B + 2 ηα B ∥RB t∥2 
+
+> F
+
++ ηε B
+
+= ∥RB t∥2 
+
+> F
+
++ 3 ηε B . (33) Moreover, in Case 1 we also have ηε B ≤ 12 ∥RB t∥2 
+
+> F
+
+, hence 
+
+∥RB t+1 ∥2 
+
+> F
+
+≤ ∥ RB t∥2 
+
+> F
+
++ 3 ηε B ≤ (1 − ηα B )∥RB t∥2 
+
+> F
+
++ ηε B (34) since ηα B ≤ 1.
+
+Case 2: ∥RB t∥2 
+
+> F
+
+< 2ηε B . Then trivially 
+
+∥RB t+1 ∥2 
+
+> F
+
+≤ ∥ RB t∥2 
+
+> F
+
++ 2 ηε B
+
+≤ (1 − ηα B )∥RB t∥2 
+
+> F
+
++ ηε B
+
+(35) using ηα B ≤ 1.Combining the two cases yields the unified recursion 
+
+∥RB t+1 ∥2 
+
+> F
+
+≤ (1 − ηα B )∥RB t∥2 
+
+> F
+
++ ηε B , (36) since eBt = ∥RB t∥F .12 Preprint. Under review. Let xt := ( eBt )2. Then 
+
+xt+1 ≤ (1 − ηα B )xt + ηε B (37) If αB > 0, iterating gives 
+
+xt ≤ (1 − ηα B )t−1x1 + ηε Bt−2X
+
+> j=0
+
+(1 − ηα B )j
+
+= (1 − ηα B )t−1x1 + εB
+
+αB
+
+
+
+1 − (1 − ηα B )t−1
+
+,
+
+(38) If αB = 0 , then xt+1 ≤ xt + ηε B so xt ≤ x1 + ( t − 1) ηε B .Finally, 
+
+(I − PB )∆ Wt = ( I − PB )BtAt ⇒∥(I − PB )∆ Wt∥F ≤ ∥ (I − PB )Bt∥F ∥At∥2
+
+= eBt ∥At∥2,
+
+(39) and similarly ∆Wt(I − PA) = BtAt(I − PA) gives 
+
+∥∆Wt(I − PA)∥F ≤ ∥ Bt∥2∥At(I − PA)∥F
+
+= ∥Bt∥2eAt . (40) 
+
+# B EXPERIMENT 
+
+B.1 DATASET 
+
+We utilize the three real-world benchmarks proposed by Luu et al. (2022) to evaluate performance under temporal shifts: • AI venue classification (AIC) : We utilize the AIC dataset proposed by Luu et al. (2022), which constitutes a binary classification benchmark explicitly demonstrated to exhibit significant temporal distribution shifts. The task requires discriminating between papers published in AAAI and ICML across four sequential time intervals: 2009–2011, 2012–2014, 2015–2017, and 2018–2020. This setup serves as a challenging proxy for topic classification and author disambiguation under evolving data dynamics. A representative instance: Input: “PCA-SVM-Based Comprehensive Evaluation for Customer Relationship Management System of Power Supply Enterprise” Output: ICML (vs. AAAI) • News source classification (NewsCLS) : Derived from the metadata of the Newsroom dataset, this benchmark constitutes a three-way classification task designed to identify publication sources(Fox News, The New York Times, and Washington Post) across four sequential time intervals: 2009–2010, 2011–2012, 2013–2014, and 2015–2016, the first three domains used for training and the last for testing. A representative instance: Input: A Muslim woman said Sunday that her viral article explaining why she voted for Donald Trump has angered her liberal pals as well as other Muslims. Output: FoxNews (vs NYTimes or WaPost) • Review rating classification (Yelp) : This canonical sentiment analysis task involves predicting the numerical rating assigned by an author based on the review text Pang et al. (2002); Dave et al. (2003). Adopting the temporal partitioning strategy from Luu et al. (2022), the dataset spans the years 2013 through 2019. To enhance training efficiency, we subsample the first 10,000 instances from each year. The data corresponding to the initial four years (2013–2016) constitutes the training set, while the subsequent three years (2017–2019) are reserved for testing. Input: Best thai food in the area. Everything was authentic and delicious. Will definitely be back again and again. Output: 5.0 B.2 EXPERIMENTAL SETUP 
+
+We employ a DistilBERT backbone (max len=512, batch size=2, LoRA r = 8 ) and benchmark against three baseline strategies: Offline (training on the union of all domains), LastDomain (using only the most recent domain), and IncFinetune (sequential training). All baselines utilize a 90/10 13 Preprint. Under review. train-validation split and an early stopping protocol with a patience of 10 and an evaluation interval of 50 steps. For IncFinetune , early stopping triggers the transition to the subsequent domain. In contrast, our proposed MaT-LoRA follows a fixed training schedule: 2 epochs for AIC and Yelp, and 10 epochs for NewsCLS to accommodate its larger scale. 14

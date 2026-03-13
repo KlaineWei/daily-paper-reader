@@ -1,0 +1,424 @@
+Title: Any House Any Task: Scalable Long-Horizon Planning for Abstract Human Tasks
+
+URL Source: https://arxiv.org/pdf/2602.12244v1
+
+Published Time: Fri, 13 Feb 2026 02:29:31 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+> 1
+
+# Any House Any Task: Scalable Long-Horizon Planning for Abstract Human Tasks 
+
+Zhihong Liu 1,3,* , Yang Li 1,4,* , Rengming Huang 1,2 , Cewu Lu 1,2 and Panpan Cai 1,2,† 1Shanghai Innovation Institute 2Shanghai Jiao Tong University 
+
+3Xi’an Jiao Tong University 4Nankai University 
+
+*Equal contribution †Corresponding author 
+
+Abstract —Open-world language-conditioned task planning is crucial for robots operating in large-scale household environments. While many recent works attempt to address this problem using Large Language Models (LLMs) via prompting or training, a key challenge remains: scalability . Performance often degrades rapidly with increasing environment size, plan length, instruction ambiguity, and constraint complexity. In this work, we propose Any House Any Task (AHAT), a household task planner optimized for long-horizon planning in large environments given abstract human instructions. At its core, AHAT utilizes an LLM trained to map task instructions and textual scene graphs into grounded subgoals defined in the Planning Domain Definition Language (PDDL). These subgoals are subsequently solved to generate feasible and optimal long-horizon plans through explicit symbolic reasoning. To enhance the model’s ability to decompose complex and ambiguous intentions, we introduce TGPO, anovel reinforcement learning algorithm that integrates external correction of intermediate reasoning trace into Group Relative Policy Optimization (GRPO). Experiments demonstrate that AHAT achieves significant performance gains over state-of-the-art prompting, planning, and learning methods, particularly in human-style household tasks characterized by brief instructions but requiring complex execution plans. 
+
+I. I NTRODUCTION 
+
+Long-horizon task planning in large household environments is an open challenge for robotics. Such tasks require reasoning over diverse skills with heterogeneous constraints, identifying relevant resources from long-horizon scene contexts, and most critically, interpreting abstract human instructions that concisely describe goals without explicitly revealing underlying intentions or subtasks. When these factors are entangled, the resulting planning problem becomes highly challenging. Prior work such as SayPlan [22] and DELTA [21] have studied related settings, but primarily focuses on concrete task instructions that explicitly specify subtasks and desired behaviors, and operates over a small action space with fewer than ten actions. As instruction ambiguity increases and the action space expands, the performance of these approaches degrades rapidly, limiting their applicability to realistic household tasks. To address these challenges, we propose Any House Any Task (AHAT), a large language model trained via reinforcement learning to efficiently solve task planning in large household environments under abstract human instructions. AHAT is built upon two key ideas:  
+
+> •
+
+Subgoal-based planning . Rather than predicting low-level action sequences in an end-to-end manner, where Tidy up the books in office room 
+
+> clean up the house for festival gathering
+> AHAT Policy
+> PDDL Planner
+> tidy up the books
+> (item_in book3 in bookcase1)
+
+... 
+
+> clean the gusets room
+> (clean floor4)
+
+... 
+
+> ...
+> navigate(book3)
+> pick(book3)
+> ...
+> navigate(vac1)
+> power on(vac1)
+> ...
+
+AHAT 
+
+> Task
+> Scene Graph
+> Plan decomp trace
+> & sub-goals
+> Place snacks on the table
+> Set out the tableware
+> Clean the guest room for guests
+
+Fig. 1: In large-scale environments, AHAT receives abstract instructions and a scene graph, generates a decomposition trace and corresponding subgoals. These subgoals are then solved using a PDDL planner, resulting in an executable long-horizon plan that satisfies the user’s requirements. intention understanding, long-horizon reasoning, and constraint satisfaction are entangled within a single model, we train the LLM to predict a sequence of task subgoals, each formulated as a PDDL goal and solved by an off-the-shelf PDDL planner. The prediction is augmented with chain-of-thought reasoning: the model first decomposes an abstract task into subtasks, and then predicts a corresponding PDDL goal for each subtask. This design allows the LLM to focus on intention understanding, task decomposition, and grounding subtasks into formal representations, while delegating constraint satisfaction and optimal plan synthesis to the symbolic planner.  
+
+> •
+
+Learning with reasoning trace revision . Standard reinforcement learning often struggles with abstract human tasks, where success criteria are implicit and 2
+
+difficult to specify explicitly. We propose to bootstrap reinforcement learning via external correction of intermediate reasoning traces. Given a failed plan generated by the policy, an auxiliary model revises the reasoning trace of task decomposition, while leaving subgoal generation to the policy. The corrected trace is integrated into learning through token-level constrained sampling : tokens corresponding to the revised decomposition trace are forced during policy rollout, whereas subgoals are generated autoregressively by the policy. Rewards are evaluated on the resulting subgoal plan, and policy gradients are derived accordingly. While PDDL-based LLM planning and RL for large-language models have each been studied extensively alone, to the best of our knowledge, we are the first to integrate them, training a model specialized for PDDL-based subgoal planning using reinforcement learning and applying it to abstract, long-horizon household tasks. To realize this integration, we instantiate our framework on top of Group Relative Policy Optimization (GRPO) [23], resulting in Trace-Guided Policy Optimization (TGPO), which improves credit assignment by allowing policy gradients to be estimated under corrected intermediate reasoning while preserving on-policy optimization of subgoals. To support training, we construct a large-scale dataset comprising 50k long-horizon household planning tasks. We generate realistic and diverse user instructions by prompting large language models with combinations of 308 household scene graphs, derived from HSSD [17] and Gibson [28], and 1.6k user personas that vary across age, occupation, and cultural background. The diversity of the dataset supports generalizable model learning. We evaluate AHAT on a diverse suite of household planning tasks, including in-distribution settings with held-out scenes and tasks from the training set, out-of-distribution human tasks collected via crowd-sourcing, as well as two public household task-planning benchmarks, Behavior-1K [19] and PARTNR [4]. Across all settings, AHAT consistently outperforms the strongest baselines, including general-purpose large language models (e.g., GPT-5 and Gemini-3), prompting-based planners (e.g., SayPlan and Delta), and learning-based methods such as SFT, GRPO, and Reinforce++ [13]. Performance gains are especially pronounced on hard tasks with highly abstract instructions, where baseline methods degrade substantially. In addition, our results demonstrate that AHAT scales robustly with increasing constraint complexity, plan length, and task ambiguity. II. B ACKGROUND AND RELATED WORKS 
+
+A. Symbolic Task Planning 
+
+Symbolic planning casts task planning as searching for a sequence of discrete actions under explicit logical constraints. A standard formalism is the Planning Domain Definition Language (PDDL) [1], which specifies a planning domain and a problem in a structured, interpretable way. A PDDL planning problem can be written as P =
+
+⟨D , I, G⟩ , where the domain D defines the symbolic vocabulary (predicates and operator schemas), while the problem instantiates the domain with a concrete object set and provides an initial state I and a goal condition G. A symbolic state is a set of grounded predicates over the objects. Each grounded action a is applicable in state s if its preconditions 
+
+Pre( a) hold, i.e., Pre( a) ⊆ s; executing a transitions the state by applying its effects Eff( a). A PDDL planner (symbolic planner) [12] seeks an action sequence A = ( a1, . . . , a N ) such that starting from I, the resulting state satisfies G.PDDL enables precise feasibility checking and plan synthesis under complex constraints, but its search complexity grows rapidly with the number of objects and grounded action instances. 
+
+B. Household Task Planing 
+
+Recent work increasingly employs large language models (LLMs) for household task planning, which can be broadly categorized into prompting-based approaches and training-based planners. 
+
+Prompting-based planning encodes the environment into structured representations ( e.g. , scene graphs) and queries an LLM to generate plans. SayPlan [22] reduces effective planning horizons via scene-graph representations and iterative replanning. Subsequent work improves long-horizon reasoning by augmenting state and memory, including maintaining historical actions and related objects [6], retrieval-augmented memory [9], and in-context task demonstrations for few-shot grounded planning [26]. Other works explore alternative mechanisms for guiding plan generation, including perception, interaction, and interface constraints [15, 25, 27]. Although LLMs exhibit strong commonsense knowledge, prompting-based pipelines typically incur high latency due to repeated LLM queries and performance upper-bound is restrained as general-purpose LLMs have not been trained for robot task planning. 
+
+Training-based planners improve household task planning through supervision and reinforcement learning. LLM-Personalize [10] aligns planning with human preferences via demonstrations and reinforced self-training, while Embodied-Reasoner [33] and EmboMatrix [18] adopt staged pipelines that combine supervision learning, and reinforcement learning. Other lines extract executable plans through demonstration-conditioned translation [14], guide generation with grounded models to ensure realizable actions [16], or learn affordance-centric value functions linking language to physical feasibility [3]. While these end-to-end, training-based approaches can improve plan feasibility to some extent, their performance degrades significantly as operational constraints become more complex or planning horizons increase. 
+
+C. Integration of LLM and Symbolic Planners 
+
+While symbolic planning provides strong constraint handling, and LLM-based planners offer flexible language understanding, recent work increasingly combines them into hybrid LLM-PDDL pipelines for task planning. A common 3forward pass 2       
+
+> persona scene graph skill set
+> move
+> pick
+> place
+> ...
+> (a) Data Generation
+> forward pass 1
+> Task Generator
+> "Clean up my house for festeval gathering"
+> task
+> decomposition
+> subgoal
+> grounding
+> Hi-PDDL Planner
+> plan
+> solving
+> (b) Policy Supervision
+> decomp. trace
+> T
+> subgoals
+> G
+> plan
+> A
+> instruction
+> scene graph
+> task prompt T, G
+> T, G
+> T, G
+> T' ,G'
+> T', G'
+> group-relative policy gradient
+> AHAT
+> Policy
+> (c) Trace-Guided Policy Optimization
+> ...
+> ...
+> A...
+> A
+> A'
+> PDDL
+> Planner
+> A
+> A'
+> Plan
+> Review
+> Trace Improver
+> instruction
+> scene graph
+> task prompt
+> constrained
+> sampling
+
+Fig. 2: Overview of AHAT. (a) Data Generation : Task synthesis and annotation. (b) Policy Supervision : Supervised fine-tuning (SFT) on the constructed long-horizon household planning dataset. (c) Trace-Guided Policy Optimization : The reinforcement learning loop that integrates external correction of intermediate reasoning traces, improving subgoal generation and task decomposition through constrained sampling, and optimizing the AHAT model for robust planning performance. paradigm fixes the PDDL domain and prompts the LLM to translate natural-language instructions into PDDL problems or goals, which are then solved by an PDDL planner [2, 7, 20, 24]. To improve the correctness of PDDL files generated by LLMs, several works adopt iterative refinement. PDDLEGO [32] incrementally constructs and revises PDDL using interaction feedback to enable adaptive planning under partial observability. ISR-LLM [34], Unidomain [30] and NL2Plan [8] similarly rely on repeated LLM-driven verification and self-correction to improve symbolic feasibility and robustness. BoN-iVML [31] uses Best-of-N sampling to improve correctness. Beyond LLM refinement, other efforts induce human or environment feedback to improve the PDDL file correctness [5, 7, 11]. To reduce the complexity of solving a task in a single pass, DELTA [21] employs an LLM for decomposing long-horizon household tasks into sub-task, which are then solved by a symbolic planner. Overall, the above methods largely hinge on the general-purpose LLM’s capability to reliably generate solvable symbolic specifications; consequently, their performance typically degrades as environment size and operational complexity increase. In contrast, AHAT trains the model via reinforcement learning to predict PDDL subgoals, directly optimizing the model to improve subgoals’ solvability, and remains robust as environment size and constraint complexity scale. III. O VERVIEW 
+
+AHAT is a large language model trained to perform long-horizon task planning in large household environments, based on a textual scene graph representation of the environment and abstract natural-language task instructions. 
+
+A. AHAT Planning 
+
+Given a scene–task pair, AHAT predicts a sequence of sub-goals expressed in the Planning Domain Definition Language (PDDL), which are subsequently solved in sequence using off-the-shelf PDDL planners (Fig. 1). To support structured reasoning, AHAT does not directly generate sub-goals in a single step. Instead, it first decomposes an abstract task into a sequence of natural-language sub-tasks, referred to as the 
+
+decomposition trace , and then grounds each sub-task into a corresponding PDDL sub-goal. Concretely, we represent the environment as a scene graph 
+
+SG = ( V, E ), where each node v ∈ V is a room, a piece of furniture, or an object, and edges E encode spatial containment and placement relations (e.g., in , on ). Each node maintains executability-related state attributes (e.g., open/closed ,
+
+dirty/clean , powered on/off ) used for planning. Given a task q and a scene graph SG , AHAT uses a policy model to first generate a subtask decomposition trace: 
+
+T = AHAT( q, SG) ,
+
+Here T is a sequence of K natural-language subtasks, denoted as T = {tk}Kk=1 , where tk is the k-th subtask. AHAT then grounds each subtask tk into PDDL subgoals and its relevant object set 
+
+{(gk, obj k)}Kk=1 = AHAT( q, SG , T ),
+
+where gk = {gk, 1, g k, 2, . . . , g k,m }, and each gk,i is a PDDL goal; obj k denotes the core objects relevant to subtask tk.Overall, the AHAT output is o =  T, {(gk, obj k)}Kk=1 
+
+.For execution, we solve each subtask sequentially using a PDDL planner. At subtask k, we construct a subtask-specific PDDL problem Pk:
+
+Pk = Construct(SG k, g k, obj k),4
+
+where gk and obj k are the PDDL subgoals and subtask-relevant objects predicted by the AHAT policy model, and 
+
+SG k is the updated scene graph after executing preceding subtasks. Construct( ·) augments the predicted (gk, obj k) with states extracted from SG k to form a complete PDDL problem file for subtask k under the given PDDL domain D. It then solves each subtask to obtain a subplan Ak and sequentially composes them into the final plan A:
+
+Ak = Solve (D, Pk),
+
+A =A1 ⊕ A 2 ⊕ · · · ⊕ A K .
+
+This design separates high-level intention understanding and task decomposition from low-level constraint satisfaction and plan synthesis. 
+
+B. AHAT Training 
+
+AHAT is trained on a synthetic dataset comprising 50k long-horizon household planning tasks, initialized from a Qwen-2.5-7B base model. The dataset is constructed using 308 household scene graphs collated from HSSD [17] and Gibson [28]. Task instructions are synthesized by large language models prompted with both the scene graph and a user 
+
+persona , which specifies attributes such as age, occupation, and cultural background. The combination of diverse source scenes and personas ensures high variability and realism in task instructions(Fig. 2a). Training begins with a warm-up phase through supervised fine-tuning (SFT) as shown in Fig. 2b. During this stage, a strong language model (e.g., GPT-5) is used to generate decomposition traces and PDDL sub-goals, which serve as supervision signals. Reinforcement learning using TGPO is subsequently launched after a small number of SFT epochs (e.g., three epochs). Each reinforcement learning iteration involves two forward passes(Fig. 2c). In the first pass, AHAT performs standard inference to produce a group of N candidate outputs, each consisting of a decomposition trace and a set of sub-goals. These outputs are evaluated using a composite reward function with two criteria: (1) feasibility , which checks whether the sub-goals can be successfully solved by the PDDL planner, and (2) 
+
+task completion , which assesses whether the resulting action sequence fulfills all user intentions, verified by an auxiliary language model (the reviewer ). In the second pass, we perform trace improvement and trace-guided sub-goal regeneration. Only failed outputs are selected, and an external language model (the trace improver )revises their decomposition traces based on feedback from the PDDL planner and the reviewer. A second inference of AHAT is then conducted, where the revised trace is injected through token-level constrained sampling: tokens corresponding to the revised decomposition trace are forced during policy rollout, while sub-goals are generated autoregressively by the policy. Rewards are re-evaluated for the resulting plans, which are added back into the candidate group to compute group-relative rewards and derive robust policy gradients. The remainder of the paper is organized as follows. Section IV describes the task generation pipeline, presents the data annotation process and supervised fine-tuning details. Section V introduces the TGPO reinforcement learning algorithm, and Section VI reports experimental results and discussions. IV. D ATA GENERATION & A NNOTATION 
+
+We construct a large-scale training corpus to optimize the AHAT model’s ability to generate AHAT-style planning outputs (see Sec. III-A) from natural-language instructions, including a decomposition trace T and grounded PDDL subgoals with object arguments G = {(gk, obj k)}Kk=1 . The resulting data is used in two stages: (1) Supervised fine-tuning (SFT) first warms up the model, equipping it with basic capabilities for task decomposition and PDDL grounding, and (2) reinforcement learning (RL) is applied to directly optimize task performance, with feasibility and completion. As shown in Fig. 2a, our data generation pipeline consists of two stages: (i) task synthesis , which generates diverse and realistic instructions grounded in whole-house scene graphs and persona contexts; and (ii) annotation and verification ,which produces and filters high-quality supervision data, including decomposition traces, grounded subgoals/objects, and solver-validated plans, via a two-stage checking procedure. 
+
+A. Data Generation 
+
+We select large-scale scenes from the HSSD [17] and Gibson [28] datasets, curate 308 scenes, and convert each into a textual scene graph. While scene graphs provide the physical and semantic context of a house, real-world tasks also vary significantly with characteristics of the user. To increase realism and diversity, we construct 1.6k user personas and use them as contextual backgrounds for LLM-based data synthesis. Each persona varies in age, occupation, cultural background, and other attributes. We generate personas in two steps: (i) sample a persona skeleton by selecting attribute values from predefined candidate sets, and (ii) employ an LLM to enrich the skeleton into a coherent, detailed persona description. Given a scene graph, a persona, and a predefined skill set that defines the available capabilities of the robot, we prompt an LLM to synthesize diverse long-horizon household tasks. To capture different levels of instruction abstractness, we use multiple prompt templates that encourage the LLM to generate tasks spanning from explicit instructions that specify concrete entities to abstract expressions of user intent without mentioning specific objects. This process yields 50k realistic task instructions aligned with the corresponding personas, spanning a wide range of semantic goals and abstractness levels. 
+
+B. SFT Data Annotation 
+
+To annotate SFT data, we develop Hi-PDDL Planner (Fig. 2a), a prompting-based pipeline that follows the same subgoal-based planning procedure as AHAT (Sec. III-A), but replaces the learned policy with a strong general-purpose LLM (e.g. , GPT-5). Given an instruction, the scene graph, and the predefined skill set, Hi-PDDL first generates a natural-language decomposition trace and a sequence of grounded 5
+
+PDDL subgoals. These subgoals are then solved sequentially by an off-the-shelf PDDL planner, and the resulting subplans are concatenated into a long-horizon executable plan. We retain only high-quality annotations that satisfy the predefined two planning objectives ( i.e. , feasibility and task completion). When planning or verification fails, we extract feedback from PDDL planner and reviewer and prompt the LLM to revise the decomposition trace and/or subgoals within a limited retry budget. Unlike for planning, the reviewer in Hi-PDDL also checks whether a failure is caused by missing task-critical objects in the scene graph; if so, it recommends which objects to add. In such cases, we repair the scene graph by injecting the required objects suggested by the reviewer, and then re-run Hi-PDDL on the updated scene graph. The resulting SFT dataset contains 50k long-horizon tasks, each coming with the decomposition trace, PDDL subgoals, and the executable plan. We leverage this dataset to perform Supervised Fine-Tuning (SFT) on Qwen2.5-7B. Empirically, SFT equips the model with basic capabilities for task decomposition and PDDL grounding, providing a practical initialization for subsequent RL training. V. T RACE -G UIDED POLICY OPTIMIZATION 
+
+We instantiate our reinforcement learning algorithm on top of Group Relative Policy Optimization (GRPO), resulting in Trace-Guided Policy Optimization (TGPO) . Each TGPO iteration consists of two forward passes. The first pass performs standard GRPO rollouts and evaluation. The second pass performs trace improvement and trace-guided sub-goal regeneration. Trajectories from both passes are then used to compute group-relative advantages and update the policy. 
+
+A. Inference and Evaluation 
+
+In the first pass, the policy πθ generates a group of N
+
+candidate outputs {on}Nn=1 given instruction q and the scene graph SG . We evaluate each candidate using a composite reward with two criteria: feasibility and task completion .Feasibility checks ensure that all predicted sub-goals are solvable by the PDDL planner under the given domain D.For each subtask tk, we construct a PDDL problem file Pk
+
+by augmenting the predicted subgoal gk and relevant objects 
+
+obj k with states extracted from the updated scene graph SG k.Specifically, we define the problem file as: 
+
+Pk = Construct(SG k, g k, obj k),
+
+where Construct( ·) forms a complete problem file for subtask 
+
+tk. The feasibility indicator Ifeas (o) is then defined as: 
+
+Ifeas (o) = 
+
+> K
+
+Y
+
+> k=1
+
+I[Solve (D, Pk)] ,
+
+where I[·] = 1 if the PDDL planner returns a valid subplan and 
+
+0 otherwise. Thus, Ifeas (o) = 1 if all sub-goals are solvable. For task completion , we employ an auxiliary LLM as a reviewer to assess whether the resulting action sequence fulfills the instruction. Concretely, we use QWEN3-235B [29] to review the solver-composed plan by summarizing and critiquing it w.r.t. q, and output a discrete label c ∈{Bad , Normal , Good }, which we map to a scalar completion score Rcomp (o) ∈ { 0, α, 1} with α = 0 .5.We define the final reward by combining the above scores: 
+
+R(o) = Ifeas (o) · Rcomp (o).
+
+This assigns a maximal reward only when the output is both solvable and intent-aligned. 
+
+B. Trace Improvement and Sub-goal Regeneration 
+
+In the second pass, we perform trace improvement and trace-guided sub-goal regeneration for failed plans. We define a candidate o as failed if its final reward is below a preset threshold R(o) < τ , where τfail ∈ (0 , 1) controls the strictness of selecting correction targets. Among failed samples, errors typically rooted in the decomposition trace: missing required subtasks, incorrect temporal ordering, or misinterpretation of ambiguous user intents. These reasoning errors are difficult to fix through random exploration because reward feedback is sparse, and credit assignment is challenging, i.e., it is unclear which part of the reasoning causes the failure. To address this, we introduce 
+
+trace improvement . For each failed candidate, an auxiliary LLM (the trace improver ) revises its decomposition trace T
+
+using structured feedback from the PDDL planner and the reviewer, producing an improved trace T ′.We then perform sub-goal regeneration. The revised trace 
+
+T ′ is injected into a second policy rollout via token-level constrained sampling: tokens corresponding to T ′ are forced, while sub-goals are generated autoregressively by the policy: 
+
+{(g′
+
+> k
+
+, obj ′
+
+> k
+
+}Kk=1 = AHAT( q, SG , T ′),
+
+The regenerated output is re-evaluated with the same reward function R(·) and added back to the rollout group, resulting in an augmented group of candidate outputs with a total size of N ′, enabling TGPO to estimate group-relative advantages under corrected intermediate reasoning while preserving on-policy optimization of sub-goal grounding. Given the augmented candidate group {on}N ′ 
+
+> n=1
+
+and their rewards R(on), TGPO follows a similar approach as in GRPO to compute group-relative advantages and update the policy. We use An to denote the group-relative advantages of candidate output on within the same augmented group. For the abbreviation of annotation, we write the AHAT policy as 
+
+πθ , indicating it is parameterized by θ. Following GRPO, we also use a clipped surrogate objective and KL regularization w.r.t a reference policy to stabilize training: 
+
+JTGPO (θ) = E
+
+ 1
+
+N ′ 
+
+> N′
+
+X
+
+> n=1
+
+min 
+
+
+
+ρnAn, clip( ρn, 1 − ϵ, 1 + ϵ)An
+
+
+
+− βD KL (πθ ∥ πref )
+
+
+
+where ρn = πθ (on)/π θold (on) is the importance ratio between current learner policy πθ and the rollout policy. πref is the reference policy, and ϵ, β are hyperparameters. 6
+
+TABLE I: Comparison of Success Rates (%) on AHAT Benchmark and Human Tasks                                                                        
+
+> AHAT Benchmark Human Tasks
+> Model Time(s) Easy Complex Abstract -GPT-5 8.0 35.7 ±4.9 21.3 ±1.5 11.5 ±5.0 25.7 ±4.3 Gemini-3.0-pro 23.5 33.6 ±3.3 17.0 ±7.4 18.0 ±6.1 12.6 ±6.0 SayPlan 63.7 50.3 ±4.2 26.5 ±3.9 20.1 ±3.3 26.0 ±5.1 DELTA 37.8 50.5 ±4.0 19.7 ±5.2 9.1 ±1.3 10.0 ±4.6 AHAT-TGPO 3.1 99.5 ±0.4 94.6 ±2.4 89.0 ±2.8 82.2 ±2.9
+
+TABLE II: Comparison of Success Rates (%) on Public Benchmarks                                
+
+> Model Behavior Partnr
+> GPT-5 39.0 ±9.3 69.2 ±7.2 Gemini-3.0-pro 28.3 ±8.2 71.8 ±8.4 SayPlan 49.0 ±7.0 72.2 ±7.8 DELTA 36.1 ±4.62 69.3 ±6.1 AHAT-TGPO 84.4 ±6.6 82.6 ±5.1
+
+TABLE III: Ablation Study on AHAT planning                         
+
+> AHAT Benchmark Success Rate (%)
+> Model Easy Complex Abstract Qwen2.5-7B (Base) 0.0 0.0 0.0 E2E-TGPO 84.8 ±0.5 63.4 ±2.2 45.6 ±3.2 AHAT-TGPO 99.5 ±0.4 94.6 ±2.4 89.0 ±2.8
+
+TABLE IV: Ablation Study of TGPO                                        
+
+> AHAT Benchmark Success Rate (%)
+> Strategy Easy Complex Abstract AHAT-SFT 94.8 ±1.5 75.5 ±2.6 34.9 ±4.7 AHAT-GRPO 98.9 ±0.8 93.4 ±3.2 66.3 ±2.4 AHAT-Reinforce++ 98.5 ±0.6 88.8 ±3.3 72.0 ±5.5 AHAT-TGPO 99.5 ±0.4 94.6 ±2.4 89.0 ±2.8
+
+VI. E XPERIMENT 
+
+We evaluate AHAT on tasks from four complementary sources: our AHAT benchmark, human-authored tasks, and two public household planning benchmarks—PARTNR and Behavior-1K. We report planning success rate and planning time, and further conduct an ablation study and scalability tests. Across all tests, AHAT achieves the highest planning success rate among compared methods, and attains the shortest planning time on the AHAT benchmark. Based on the scalability tests, AHAT scales well with increasing problem scale. 
+
+A. Experiment Setup 1) Task and Environment: To evaluate in-domain generalization, we construct the AHAT benchmark as a
+
+held-out split of our synthesized task corpus. AHAT contains 346 tasks grounded in 179 scenes and uses whole-house 
+
+scene graphs with contextually plausible distractor objects, resulting in a larger planning state space than the other three benchmarks. We stratify AHAT by instruction abstractness, plan length, and constraint complexity into three subsets. 1 
+
+> •
+
+Easy (146 tasks / 109 scenes): instructions explicitly specify the required action and the objects of interest ,leading to short-horizon plans with few constraints. Example: “I’m in the bathroom, can you bring me a towel?”.  
+
+> •
+
+Complex (94 tasks / 75 scenes): explicit instructions with long-horizon, constraint-heavy planning, typically involving multiple entities (e.g. , objects, devices, and furniture) and cross-area coordination. Example: “Retrieve the portable induction stove and hot-pot saucepan from the kitchen cabinet, place them on the kitchen island, fill the saucepan with water, and turn on the stove.”.  
+
+> •
+
+Abstract (108 tasks / 45 scenes): instructions that express user needs at a high level without explicitly specifying the target objects or intermediate subgoals, thus requiring intent inference and grounding before planning; the constraint complexity is comparable to the Complex subset. Example: “Clean up the house for a festival gathering.”. To assess performance on real-world instructions beyond our synthesized corpus, we collect a set of human-authored tasks using a web-based data collection platform. Participants are presented with visualized scene graphs and asked to specify tasks they would like a robot to perform. After manual filtering for quality, the collected tasks form our Human Tasks 
+
+test set, consisting of 50 tasks, with an average scene graph size of 112 nodes and an average plan length of 11. We additionally find that these human instructions are concise, with an average length of 5.7 words, suggesting that users typically provide high-level requests and expect the robot to infer missing details from the scene and autonomously plan and execute, rather than enumerating step-by-step actions. We further evaluate AHAT and baselines on two public household planning benchmarks: PARTNR [4] and Behavior-1K [19], which exhibit complementary distributions in task formulations and scene configurations:  
+
+> •
+
+PARTNR. The instructions in PARTNR are mostly explicit, covering 13 action types. We utilize the PARTNR validation mini-split with 368 tasks in HSSD houses. The average plan length in PARTNR is 15.8, which is   
+
+> 1Scene counts are not mutually exclusive across subsets. 7
+
+comparable to the 15.6 in our AHAT Complex subset. However, PARTNR results in a smaller planning state space, as its scene graphs only include task-relevant objects, along with furniture and rooms, averaging 65 nodes compared to 150 in AHAT.  
+
+> •
+
+Behavior-1K. Instructions in Behavior-1K are explicit as well. The public release provides 50 tasks with scene configurations, which we use as input to our planning pipeline. We remove non-household tasks (e.g., hiding Easter eggs), leaving a final set of 30 tasks. Since its scenes originally contain only task-relevant objects, we augment them with contextually plausible distractor objects to better reflect household clutter. This augmented benchmark has an average plan length of 25.5, while the AHAT Abstract subset averages 20. Despite the longer planning horizons, Behavior-1K scenes remain smaller, averaging 35 nodes per scene. 
+
+2) Evaluation Metrics: We evaluate each method in terms of average planning time (T) and success rate (SR). The success rate accounts for both plan feasibility and task completion, as defined below: 
+
+SR = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+Ifeas (oi) · Rcomp (oi).
+
+N refers to the number of samples in the corresponding test dataset. 
+
+3) Baselines: We compare AHAT with three categories of baselines:  
+
+> •
+
+Prompting-based planners. SayPlan [22] performs semantic retrieval to focus on task-relevant subgraphs, then iteratively re-plans via error-driven reflection. DELTA [21] decomposes a task into subtasks, formulates each subtask as a PDDL problem, and solves them with an off-the-shelf planner. In contrast, AHAT learns to generate and revise decomposition traces and grounded subgoals via RL fine-tuning with feasibility- and completion-based verification.  
+
+> •
+
+General-purpose LLMs. We directly prompt 
+
+Gemini-3-Pro and GPT-5 to produce long-horizon plans, and control their inference budget to match the planning latency of AHAT. 2 
+
+> •
+
+Learning-based planners. We compare against GRPO [23], which applies group-relative policy optimization to subgoal generation, and Reinforce++ [13], a variance-reduced REINFORCE baseline, using the same data and optimization settings. 
+
+B. Comparison Results 
+
+Table I reports success rate (SR) and average planning time on the AHAT benchmark and Human Tasks. Across all tests, AHAT improves the success rates over the strongest baseline by 49% on easy tasks, 68.1% on complex tasks, 68.9% on abstract tasks, reducing 61% planning time from the fastest baseline. Notably, it remains robust on the Abstract     
+
+> 2We use Gemini-3-Pro (low reasoning level) and GPT-5 (no extra reasoning effort) as representative strong general-purpose LLMs.
+
+tasks with high instruction ambiguity. On human tasks, AHAT achieves a success rate of 82.2%, outperforming the strongest baseline by 56.2%. On public benchmarks (Table II) with concrete instructions, AHAT also significantly outperforms all baselines. The performance gain is attributed to both subgoal-based planning, which decouples reasoning over user intents with optimal planning under constraints, and TGPO reinforcement learning, where externally improved reasoning traces explicitly guide the policy to improve its task decomposition capability. 
+
+C. Ablation Study 
+
+We conduct two ablation studies to evaluate the effectiveness of our core algorithmic designs: subgoal-based planning and trace-guided policy optimization. In the first study, we replace subgoal generation with end-to-end generalization of action sequences, resulting in E2E-TRPO. As shown in Table III, compared to AHAT-TGPO, E2E-TGPO experiences a drop of 14.7% on easy tasks, 
+
+31.2% on complex tasks, and 43.4% on abstract tasks. E2E-TGPO’s performance significantly degrades, particularly as tasks become more complex. This outcome highlights the crucial role of subgoal-based planning in maintaining the model’s ability to decompose complex, abstract tasks. These results reinforce the strength of our approach, which is an essential feature for managing large-scale environments with complex constraints. In the second study, we replace TGPO learning with standard SFT, GRPO, and Reinforce++, resulting in AHAT-SFT, AHAT-GRPO, and AHAT-Reinforce++, respectively. As shown in Table IV, reinforcement learning methods consistently outperform AHAT-SFT, demonstrating the importance of policy reinforcement for successful task planning. Specifically, on abstract tasks, AHAT-TGPO improves performance by 22.7% over AHAT-GRPO and 
+
+17.0% over AHAT-Reinforce++. These results confirm that integrating trace revision through TGPO is essential for learning to solve abstract tasks. 
+
+D. Scalability Test 
+
+We conduct scalability tests to assess how AHAT scales with increasing task complexity. Fig. 3 shows that enlarging the environment, extending the planning horizon, increasing instruction abstractness, and increasing action constraints complexity lead to only modest performance drops for AHAT, indicating strong scalability and reasoning robustness. In contrast, baselines degrade substantially along one or more axes. 
+
+a) Scalability on Environment Size: We measure scalability by the average scene-graph size (30–180 nodes). As shown in (Fig. 3a), AHAT remains stable as graph size increases, with minimal degradation (16%). In contrast, SayPlan and GPT-5 degrade significantly, with grounding errors exacerbated by larger graphs. AHAT and E2E-TGPO are both trained with RL our constructed dataset, whose scene graphs span a wide range of scales (50–350 nodes; avg. ∼150), improving robustness to large environments at test time. 8(a)  (b)  
+
+> (c) (d)
+> E2E-TGPO
+
+Fig. 3: Scalability Test Results showing the variation of success rate with: (a) Scene Graph Size, (b) Plan Length, (c) Task Abstractness, and (d) Constraint Complexity. 
+
+b) Scalability on Plan Length: Horizon length is scaled by plan length (1–10, 11–20, 21–30, 31+ actions). As shown in Fig. 3b, AHAT’s performance drops by only 16% at the longest horizon, compared to 43% for E2E-TGPO. This resilience is due to AHAT ’s decompose-then-solve structure, which prevents error accumulation by solving subplans sequentially, while E2E-TGPO suffers from cascading errors in monolithic action sequences. 
+
+c) Scalability on Instruction Abstractness: We quantify abstractness by the ratio of plan length to instruction word count. As abstractness increases (0–3.9+), AHAT drops by 19%, while E2E-TGPO drops the most (58%). This is due to the fact that in the end-to-end setup, after TGPO trace improvement, the generated samples often fail to maintain feasibility and degrade into a GRPO-like behavior. As a result, E2E-TGPO struggles to leverage TGPO’s benefits effectively, limiting its ability to handle abstract instructions. 
+
+d) Scalability on Constraint Complexity: We measure constraint complexity by the average number of preconditions per action. As complexity increases (1.0–3.0), AHAT’s performance declines by just 3%, while SayPlan (42%), E2E-TGPO (32%), and GPT-5 (26%) degrade significantly. AHAT ’s symbolic planner enforces preconditions and effects, maintaining feasibility even under dense constraints, unlike purely neural generation methods. VII. C ONCLUSION & L IMITATIONS 
+
+We present AHAT, a household task planner that addresses long-horizon planning in large environments from abstract human instructions. AHAT uses a model trained with TGPO, a reinforcement learning method, to predict a sequence of grounded subgoals, which are then solved sequentially by off-the-shelf PDDL planners. We further propose a data generation and annotation pipeline that produces abstract and diverse instructions in large-scale environments, resulting in a synthetic dataset of 50K long-horizon household planning tasks. Experiments on the AHAT benchmark, Human Tasks, PARTNR and Behavior-1K demonstrate that AHAT substantially outperforms prior LLMs, prompting-based planners, and learning-based methods, achieving higher success rates and stronger robustness across varying levels of task complexity. Despite its strong performance, AHAT has a few limitations. It relies on structured textual scene representations, which may cause information loss, and future iterations will support direct visual input. Additionally, it operates under a closed domain assumption with predefined PDDL domains, and extending this to multiple domains is a key direction. Lastly, our experiments assume full observability, overlooking challenges like perceptual noise and environmental dynamics; integrating active exploration and online planning is a promising path forward. REFERENCES 
+
+[1] Constructions Aeronautiques, Adele Howe, Craig Knoblock, ISI Drew McDermott, Ashwin Ram, Manuela Veloso, Daniel Weld, David Wilkins Sri, Anthony Barrett, Dave Christianson, et al. Pddl—the planning domain definition language. Technical Report, Tech. Rep. , 1998. [2] Timo Birr, Christoph Pohl, Abdelrahman Younes, and Tamim Asfour. Autogpt+ p: Affordance-based task planning with large language models. arXiv preprint arXiv:2402.10778 , 2024. [3] Anthony Brohan, Yevgen Chebotar, Chelsea Finn, Karol Hausman, Alexander Herzog, Daniel Ho, Julian Ibarz, Alex Irpan, Eric Jang, Ryan Julian, et al. Do as i can, not as i say: Grounding language in robotic affordances. In Conference on robot learning , pages 287–318. PMLR, 2023. [4] Matthew Chang, Gunjan Chhablani, Alexander Clegg, Mikael Dallaire Cote, Ruta Desai, Michal Hlavac, Vladimir Karashchuk, Jacob Krantz, Roozbeh Mottaghi, Priyam Parashar, et al. Partnr: A benchmark for planning and reasoning in embodied multi-agent tasks. arXiv preprint arXiv:2411.00081 , 2024. [5] Guanqi Chen, Lei Yang, Ruixing Jia, Zhe Hu, Yizhou Chen, Wei Zhang, Wenping Wang, and Jia Pan. Language-augmented symbolic planner for open-world task planning. arXiv preprint arXiv:2407.09792 , 2024. [6] Siwei Chen, Anxing Xiao, and David Hsu. Llm-state: Open world state representation for long-horizon task planning with large language model. arXiv preprint arXiv:2311.17406 , 2023. [7] Gautier Dagan, Frank Keller, and Alex Lascarides. Dynamic planning with a llm. arXiv preprint arXiv:2308.06391 , 2023. 9
+
+[8] Elliot Gestrin, Marco Kuhlmann, and Jendrik Seipp. Nl2plan: Robust llm-driven planning from minimal text descriptions. arXiv preprint arXiv:2405.04215 , 2024. [9] Marc Glocker, Peter H¨ onig, Matthias Hirschmanner, and Markus Vincze. Llm-empowered embodied agent for memory-augmented task planning in household robotics. 
+
+arXiv preprint arXiv:2504.21716 , 2025. [10] Dongge Han, Trevor McInroe, Adam Jelley, Stefano V Albrecht, Peter Bell, and Amos Storkey. Llm-personalize: Aligning llm planners with human preferences via reinforced self-training for housekeeping robots. In Proceedings of the 31st International Conference on Computational Linguistics , pages 1465–1474, 2025. [11] Muzhi Han, Yifeng Zhu, Song-Chun Zhu, Ying Nian Wu, and Yuke Zhu. Interpret: Interactive predicate learning from language feedback for generalizable task planning. 
+
+arXiv preprint arXiv:2405.19758 , 2024. [12] Malte Helmert. The fast downward planning system. 
+
+Journal of Artificial Intelligence Research , 26:191–246, 2006. [13] Jian Hu, Jason Klein Liu, Haotian Xu, and Wei Shen. Reinforce++: Stabilizing critic-free policy optimization with global advantage normalization, 2025. URL https://arxiv. org/abs/2501.03262 .[14] Wenlong Huang, Pieter Abbeel, Deepak Pathak, and Igor Mordatch. Language models as zero-shot planners: Extracting actionable knowledge for embodied agents. In International conference on machine learning , pages 9118–9147. PMLR, 2022. [15] Wenlong Huang, Fei Xia, Ted Xiao, Harris Chan, Jacky Liang, Pete Florence, Andy Zeng, Jonathan Tompson, Igor Mordatch, Yevgen Chebotar, et al. Inner monologue: Embodied reasoning through planning with language models. arXiv preprint arXiv:2207.05608 , 2022. [16] Wenlong Huang, Fei Xia, Dhruv Shah, Danny Driess, Andy Zeng, Yao Lu, Pete Florence, Igor Mordatch, Sergey Levine, Karol Hausman, et al. Grounded decoding: Guiding text generation with grounded models for embodied agents. Advances in Neural Information Processing Systems , 36:59636–59661, 2023. [17] Mukul Khanna, Yongsen Mao, Hanxiao Jiang, Sanjay Haresh, Brennan Shacklett, Dhruv Batra, Alexander Clegg, Eric Undersander, Angel X Chang, and Manolis Savva. Habitat synthetic scenes dataset (hssd-200): An analysis of 3d scene scale and realism tradeoffs for objectgoal navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 16384–16393, 2024. [18] Zixing Lei, Sheng Yin, Yichen Xiong, Yuanzhuo Ding, Wenhao Huang, Yuxi Wei, Qingyao Xu, Yiming Li, Weixin Li, Yunhong Wang, et al. Embomatrix: A scalable training-ground for embodied decision-making. arXiv preprint arXiv:2510.12072 , 2025. [19] Chengshu Li, Ruohan Zhang, Josiah Wong, Cem Gokmen, Sanjana Srivastava, Roberto Mart´ ın-Mart´ ın, Chen Wang, Gabrael Levine, Michael Lingelbach, Jiankai Sun, et al. Behavior-1k: A benchmark for embodied ai with 1,000 everyday activities and realistic simulation. In Conference on Robot Learning , pages 80– 93. PMLR, 2023. [20] Bo Liu, Yuqian Jiang, Xiaohan Zhang, Qiang Liu, Shiqi Zhang, Joydeep Biswas, and Peter Stone. Llm+ p: Empowering large language models with optimal planning proficiency. arXiv preprint arXiv:2304.11477 ,2023. [21] Yuchen Liu, Luigi Palmieri, Sebastian Koch, Ilche Georgievski, and Marco Aiello. Delta: Decomposed efficient long-term robot task planning using large language models. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pages 10995– 11001. IEEE, 2025. [22] Krishan Rana, Jesse Haviland, Sourav Garg, Jad Abou-Chakra, Ian Reid, and Niko Suenderhauf. Sayplan: Grounding large language models using 3d scene graphs for scalable robot task planning. In 7th Annual Conference on Robot Learning .[23] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. [24] Keisuke Shirai, Cristian C Beltran-Hernandez, Masashi Hamaya, Atsushi Hashimoto, Shohei Tanaka, Kento Kawaharazuka, Kazutoshi Tanaka, Yoshitaka Ushiku, and Shinsuke Mori. Vision-language interpreter for robot task planning. In 2024 IEEE International Conference on Robotics and Automation (ICRA) , pages 2051–2058. IEEE, 2024. [25] Ishika Singh, Valts Blukis, Arsalan Mousavian, Ankit Goyal, Danfei Xu, Jonathan Tremblay, Dieter Fox, Jesse Thomason, and Animesh Garg. Progprompt: Generating situated robot task plans using large language models. 
+
+arXiv preprint arXiv:2209.11302 , 2022. [26] Chan Hee Song, Jiaman Wu, Clayton Washington, Brian M Sadler, Wei-Lun Chao, and Yu Su. Llm-planner: Few-shot grounded planning for embodied agents with large language models. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 2998–3009, 2023. [27] Zhenyu Wu, Ziwei Wang, Xiuwei Xu, Jiwen Lu, and Haibin Yan. Embodied task planning with large language models. arXiv preprint arXiv:2307.01848 , 2023. [28] Fei Xia, Amir R. Zamir, Zhi-Yang He, Alexander Sax, Jitendra Malik, and Silvio Savarese. Gibson env: real-world perception for embodied agents. In Computer Vision and Pattern Recognition (CVPR), 2018 IEEE Conference on . IEEE, 2018. [29] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. [30] Haoming Ye, Yunxiao Xiao, Cewu Lu, and Panpan Cai. Unidomain: Pretraining a unified pddl domain from real-world demonstrations for generalizable robot task planning. 10 
+
+[31] Zhouliang Yu, Yuhuan Yuan, Tim Z Xiao, Fuxiang Frank Xia, Jie Fu, Ge Zhang, Ge Lin, and Weiyang Liu. Generating symbolic world models via test-time scaling of large language models. arXiv preprint arXiv:2502.04728 , 2025. [32] Li Zhang, Peter Jansen, Tianyi Zhang, Peter Clark, Chris Callison-Burch, and Niket Tandon. Pddlego: Iterative planning in textual environments. arXiv preprint arXiv:2405.19793 , 2024. [33] Wenqi Zhang, Mengna Wang, Gangao Liu, Xu Huixin, Yiwei Jiang, Yongliang Shen, Guiyang Hou, Zhe Zheng, Hang Zhang, Xin Li, et al. Embodied-reasoner: Synergizing visual search, reasoning, and action for embodied interactive tasks. arXiv preprint arXiv:2503.21696 , 2025. [34] Zhehua Zhou, Jiayang Song, Kunpeng Yao, Zhan Shu, and Lei Ma. Isr-llm: Iterative self-refined large language model for long-horizon sequential task planning. In 
+
+2024 IEEE International Conference on Robotics and Automation (ICRA) , pages 2081–2088. IEEE, 2024.

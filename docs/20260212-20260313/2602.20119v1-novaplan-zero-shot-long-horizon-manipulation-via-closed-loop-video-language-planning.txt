@@ -1,0 +1,1202 @@
+Title: NovaPlan: Zero-Shot Long-Horizon Manipulation via Closed-Loop Video Language Planning
+
+URL Source: https://arxiv.org/pdf/2602.20119v1
+
+Published Time: Tue, 24 Feb 2026 03:18:12 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# NovaPlan: Zero-Shot Long-Horizon Manipulation via Closed-Loop Video Language Planning 
+
+Jiahui Fu* 1, Junyu Nan* 1,2, Lingfeng Sun* 1, Hongyu Li* 1,3, Jianing Qian 4, Jennifer L. Barry 1,Kris Kitani 2, George Konidaris 3
+
+* Equal contribution Robotics and AI Institute 1 Carnegie Mellon University 2 Brown University 3 University of Pennsylvania 4Initial Observation              
+
+> Step 1Step 2Step 3Step 4Step 4Recovery
+> Object Flow
+> Hand Flow
+> End -Effector Pose
+> Video Language
+> Planner
+> “There are four
+> colored blocks
+> standing upright
+> on the table
+> around the red
+> base board... ”
+
+Fig. 1: Zero-shot long-horizon manipulation. Given a task and an initial observation, a video language planner is used to select and generate the best next-step video. Executable robot actions are extracted from the video using hand or object tracking. Updated observation is sent back to the planner to enable closed-loop reasoning and recovery from failure states. 
+
+Abstract —Solving long-horizon tasks requires robots to in-tegrate high-level semantic reasoning with low-level physical interaction. While vision-language models (VLMs) and video generation models can decompose tasks and imagine outcomes, they often lack the physical grounding necessary for real-world execution. We introduce NovaPlan, a hierarchical framework that unifies closed-loop VLM and video planning with geometrically grounded robot execution for zero-shot long-horizon manipula-tion . At the high level, a VLM planner decomposes tasks into sub-goals and monitors robot execution in a closed loop, enabling the system to recover from single-step failures through autonomous re-planning. To compute low-level robot actions, we extract and utilize both task-relevant object keypoints and human hand poses as kinematic priors from the generated videos, and employ a switching mechanism to choose the better one as a reference for robot actions, maintaining stable execution even under heavy occlusion or depth inaccuracy. We demonstrate the effectiveness of NovaPlan on three long-horizon tasks and the Functional Ma-nipulation Benchmark (FMB). Our results show that NovaPlan can perform complex assembly tasks and exhibit dexterous error recovery behaviors without any prior demonstrations or training .Project page: https://nova-plan.github.io/ 
+
+I. I NTRODUCTION 
+
+Video generation models have recently emerged as powerful world simulators, capable of synthesizing physically plausible interactions from image and language prompts [37, 39, 34]. Ideally, these models should enable robots to “imagine” and execute complex manipulation plans without the need for task-specific demonstrations. However, translating high-level video plans into precise low-level control remains an open challenge, especially for tasks involving long horizons and intricate interactions. Existing methods that predict robot actions directly from video often suffer from an embodiment gap , where any structural mismatches between synthesized motion and robot morphology may lead to inaccurate and non-executable ac-tions [14, 8, 9, 18]. Recent works mitigate this by extracting object-centric representations and converting them into robot actions using motion planning [29, 19, 41, 4], yet they remain brittle due to three fundamental limitations. First, video models may suffer from temporal inconsistencies and hallucinations that degrade the overall performance over long 
+
+> arXiv:2602.20119v1 [cs.RO] 23 Feb 2026
+
+durations [6, 43]. Second, real-world execution is prone to failure whenever the robot cannot accurately track the visual plan due to occlusion, depth inaccuracy, or geometric warping in the generated video. Third, rigid planning strategies fail to balance the strategic foresight needed for coupled assembly with the reactivity required for exploratory search. To address these challenges, we introduce NovaPlan, a closed-loop framework that unifies high-level video language planning with robust, grounded execution. NovaPlan treats video generation not as a source of static trajectories, but as a dynamic query within a verify-and-recover loop. NovaPlan consists of the following steps: 1) A vision-language model (VLM) acts as a high-level arbiter, decomposing high-level in-structions and visual observations into a sequence of language-based sub-tasks. 2) A video generation model then rolls out these language actions to synthesize multiple candidate video plans. 3) These rollouts are filtered and ranked to identify the most physically and semantically consistent demonstration based on the smoothness of motion and correspondence with the task. 4) The top-ranked candidate is subsequently fed into a hybrid flow mechanism that extracts robot trajectories by switching between the synthesized object motion and human hand motion. By leveraging the human hand as a robust kinematic prior, NovaPlan maintains stable control even when the target object is occluded in the generated video. 5) Finally, we close the loop by prompting the VLM to audit state transitions and improvise corrective actions if execution fails. We evaluate NovaPlan as a system through a comprehensive experimental suite designed to probe the reasoning and execu-tion limits of long-horizon manipulation under the zero-shot assumption. Our system outperforms leading VLM- and VLA-based zero-shot models [23, 13] across a variety of multi-step tasks by combining planning diversity with execution stability. Direct comparisons with NovaFlow [19] also highlight how NovaPlan mitigates the reliability issues inherent in purely object-centric approaches. Furthermore, deployment on the Functional Manipulation Benchmark (FMB) [26] demonstrates that NovaPlan can perform high-precision assembly and dis-cover complex contact-rich behaviors, such as non-prehensile poking, without prior demonstrations. These results suggest that grounding video models into a closed-loop framework enables robots to solve intricate tasks that extend beyond stan-dard prehensile primitives. Our contributions are as follows:  
+
+> •
+
+A closed-loop video language planning architecture that integrates VLM-based verification and video generation to enable zero-shot long-horizon planning and recovery.  
+
+> •
+
+A hybrid tracking mechanism that dynamically switches between object flow and hand flow based on the evalua-tion of video generation, depth estimation, and tracking reliability before execution.  
+
+> •
+
+A geometric calibration method that grounds “generated” human hands into physically executable robot trajectories, resolving scale and warping inconsistencies in the gener-ated video.  
+
+> •
+
+Zero-shot performance on diverse long-horizon tasks and the Functional Manipulation Benchmark (FMB), demon-strating the capability to solve complex assembly tasks and exhibit non-prehensile error recovery behaviors via hand poking, all without any prior training. II. R ELATED WORK 
+
+Zero-shot long-horizon manipulation requires integrating high-level semantic reasoning with low-level physical ground-ing. VLMs and video models are powerful tools for this pur-pose. We review relevant literature in zero-shot manipulation policies and video-driven planning. 
+
+A. Zero-Shot Manipulation 
+
+Inspired by the breakthroughs in large language models (LLMs) and vision-language models (VLMs) [31, 36, 24], there is growing interest in solving robotic manipulation tasks through zero-shot generalization. One popular approach in-volves training vision-language-action (VLA) models [17, 10, 35] on massive collections of real-world robotic trajectories to learn generalizable control policies. However, the scalability of VLAs is often constrained by the high cost of collecting high-quality physical interaction data compared to web-scale text and image data. To mitigate this data scarcity, alternative re-search directions leverage the high-level reasoning capabilities of VLMs to generate symbolic or spatial plans instead of direct motor actions [23, 12, 9, 40]. While these VLM-based planners show promise in task decomposition, they often lack the fine-grained 3D spatial awareness and dynamic reasoning necessary for precise manipulation in unstructured environments. 
+
+B. Video Generation for Robotics 
+
+Video generation models offer a potential solution to these limitations by providing a rich representation for dynamic reasoning and future state prediction. Robotic research pri-marily focuses on image-to-video (I2V) generation, where future frames are predicted conditioned on an initial visual observation and a language description. Prior works have attempted to convert generated videos into robot actions using inverse dynamics models [8, 2, 25] or imitation learning policies [3, 20, 22]. However, these methods typically require significant amounts of task-specific demonstrations to train the downstream action predictors. More recent works attempt to extract control signals from videos using off-the-shelf percep-tion models for 6D pose estimation [29, 41] or flow track-ing [19, 3]. Nevertheless, these approaches remain susceptible to perception inaccuracy and tracking drift. Moreover, existing video-based methods often operate in an open-loop manner, limiting their ability to handle long-horizon tasks or recover from execution errors. In contrast, NovaPlan unifies high-level VLM verification with a hybrid hand-object tracking mechanism within a closed-loop framework, enabling robust long-horizon manipulation and autonomous error recovery in zero-shot settings. III. M ETHOD 
+
+Our goal is to develop a closed-loop hierarchical video language planner for zero-shot long-horizon manipulation. As Low level Planner                         
+
+> Geometric
+> Calibration
+> Robot Execution
+> Latest Obs
+> Success :Advance to next step
+> Fail :Previous goal image +Failure reason
+> Current Obs
+> “There are four
+> colored blocks
+> standing upright
+> on the table
+> around the red
+> base board... ”
+> VLM
+> Critic
+> High level Planner
+> VLM
+> Reasoning
+> Selected
+> Video
+> Generated
+> Videos
+> Task phase?
+> …
+> Video
+> Evaluation
+> üTarget object
+> üPhysics laws
+> üIntended motion
+> üReach sub -goal
+> Metrics
+
+# …    
+
+> Failures?
+> Next actions?
+> Limitations?
+> … Previous
+> goal image
+> Calibrated
+> Depth Estimation
+> HaMeR Hand
+> Reconstruction
+
+Fig. 2: NovaPlan system overview. A high-level planner takes in the task instruction and current observation, and proposes multiple task-solving videos after VLM reasoning about the task progress. Videos are selected based on flow and semantic consistency. The low-level planner calculates the robot action from the extracted hand or object flow. Updated observations are sent to a VLM critic to determine whether the robot should proceed to the next step or recover from failure. shown in Figure 2, NovaPlan unifies high-level planning with low-level grounded execution. A video language planner first decomposes high-level tasks into sub-goals, generates multiple visual rollouts for each candidate, and monitors execution via an integrated verification and recovery loop (Section III-A). Then, a low-level planner extracts robot trajectories via a hy-brid flow mechanism that adaptively switches between object and hand flow, transforming them into executable robot actions (Section III-B). 
+
+A. Closed-Loop Video Language Planning 
+
+The NovaPlan planning process follows a modular closed-loop pipeline centered on a generate-then-verify tree search. This process identifies a sequence of validated actions A =
+
+{a1, . . . , a h}, where h denotes the planning horizon. Specifi-cally, each expansion in the search follows four iterative steps: 1) Task Decomposition : The VLM proposes Nc sub-goal candidates, leveraging its strong semantic reasoning capabil-ity. 2) Video Rollout : The video model generates L visual rollouts for each candidate to simulate its physical outcomes. 3) Validation and Selection : The VLM evaluates candidate rollouts for physical plausibility and semantic consistency to prune the search space (details below). The planner identifies the top-ranked candidates and proceeds recursively until a plan of length h is established. 4) Verify and Recover :The VLM monitors execution in a closed loop and triggers autonomous recovery sequences upon detecting failure states. By simulating and verifying multiple visual paths before execution, NovaPlan ensures the physical feasibility of the grounded robot commands. 
+
+Rollout Evaluation Metrics. To evaluate each rollout, No-vaPlan constructs a flow image by overlaying the extracted 2D object flow [16] onto the initial scene observation (see object flow image in Figure 3). This visual representation allows the VLM to analyze the semantic and physical alignment of the synthesized motion through four key metrics. Specifically, the target metric verifies that the correct object is being manipulated by the generated motion. The physics metric 
+
+assesses whether the interaction follows plausible physical laws, such as gravity and rigid-body constraints. The motion metric confirms that the direction and magnitude of the tracked flow match the intended language command. The result metric 
+
+ensures the final state of the rollout aligns with the desired sub-task outcome from task decomposition. The sub-goal candidates are ranked and selected based on the summed metric scores. 
+
+Planning horizon. The optimal planning horizon h varies across tasks. Tasks with coupled interactions require long-term strategic foresight; for instance, in assembly tasks, inserting parts in the wrong sequence can lead to irreversible physical dead-ends. Conversely, for exploratory tasks such as finding hidden objects in closed drawers, only short-horizon planning is needed. To manage this trade-off, the VLM autonomously 
+
+selects h ∈ { 1, N } (defining greedy or strategic mode , respec-tively) based on semantic task understanding and geometric dependencies. The strategic mode ( h = N ) is critical for cou-pled tasks where strict dependencies exist between steps, while the greedy mode ( h = 1 ) is used for independent sub-tasks or exploratory tasks under partial observability, maximizing reactivity while minimizing computational overhead. 
+
+Execution Re-grounding. Once the robot begins executing sub-goals from A in the real world, changes in the environ-ment or object states may occur, rendering the pre-planned trajectories from initial rollouts unsuitable for direct execution. Therefore, at each execution step t, we generate a new video reference Vt based on the updated image observation Ireal,t 
+
+and the pre-selected top-ranked language action at ∈ A.This re-grounding process ensures that the visual plan is geometrically grounded in the actual workspace, producing accurate trajectories that can be directly mapped to robot Hand Flow Tracking      
+
+> HaMeR
+> Estimation
+> 3D Scale
+> Calibration
+> Hand
+> Flow
+> Object Flow Tracking
+> Object
+> Grounding
+> 3D Keypoint
+> Tracking
+> Object
+> Flow
+> RGB /Depth
+> Estimation
+> Video Language Planner
+> Flow to
+> Robot action
+> On -Robot Execution
+> First
+> Last
+> First
+> Last
+> Video Language Planner
+
+Fig. 3: NovaPlan low-level execution system overview. Given the generated video plan (RGB+Depth), we switch between (top) grounding the target object, tracking 3D keypoints, and recovering object flow, or (bottom) estimating the hand pose with HaMeR, calibrating 3D scale, and computing the hand flow. The resulting object/hand flows are converted into robot actions for on-robot execution, with a video language planner enabling closed-loop re-planning and recovery. actions. The final output Vt is then passed to the execution layer (Section III-B) for object and hand flow extraction. 
+
+Verification and recovery. After each execution step t,NovaPlan closes the loop via a verify-and-recover mechanism. The VLM critic evaluates the state transition by compar-ing three images: the start state ( Ireal,t ), the current state (Ireal,t +1 ), and the target state ( Itarget,t ), defined as the last frame of the generated video Vt. If the VLM verifies that the action execution has failed, the system triggers a recovery routine. The VLM analyzes the failure mode (e.g., “grasp slip”) and synthesizes a corrective action aiming to restore the scene from the current state to the target state Itarget,t .This recovery generation utilizes the same single-step rollout as the greedy mode ( h = 1 ). However, instead of proposing an action to advance the task, the VLM synthesizes a local repair command designed to transition the scene from the current failed state Ireal,t +1 back to the original target state 
+
+Itarget,t , allowing the system to resume the high-level plan. This mechanism allows NovaPlan to “improvise” solutions to runtime failures that open-loop strategies cannot handle. 
+
+B. Low-level planner 
+
+To translate the synthesized visual plans into physically executable actions, we utilize two complementary 3D repre-sentations to bridge the gap between video generation and robot control: object flow and hand flow. For object flow, we extract the object’s 6-DoF trajectory and transform it into robot end-effector motion using a static transformation between the object frame and end-effector frame, assuming the object remains fixed relative to the gripper post-grasp. For hand flow, we use the initial contact pose to guide a grasp proposal network, and then directly map the hand trajectory to end-effector poses. We detail each approach below. 
+
+1) Object Flow: Object flow represents the 3D trajectory of the target object, captured as the dense point motion throughout the generated video. Formally, we define the object flow as F = {f ti | i = 1 , . . . , K ; t = 1 , . . . , T }, where 
+
+f ti ∈ R3 denotes the 3D position of keypoint i at frame t on the object. To extract this flow, we adopt and refine the tracking framework from NovaFlow [19]. Specifically, our system first reconstructs the 3D geometry of the scene, leveraging 3D geometric models, such as MoGe2 [38], which predicts high-fidelity depth sequences. To ensure temporal coherence and eliminate geometric flickering, we refine these depth estimates using a Consistent Video Depth [27] (CVD) optimization layer. Following MegaSaM [21], we simplify this optimization by assuming a fixed camera, consistent with our tabletop experimental setup. Finally, to resolve scale ambiguity, we perform affine calibration using the initial depth frame to align the estimated depth predictions with the real-world metric scale [29, 19]. This produces globally consistent and metrically accurate 3D scene representations. After depth recovery, we obtain per-frame object masks and sample K keypoints on the target to be tracked using a 3D dense point tracker [42]. Given the resulting 3D flow F,we recover the object’s 6-DoF motion by computing a rigid transform (Rt, tt) between adjacent frames. This transform between object keypoints {f t−1 
+
+> i
+
+}Ki=1 and {f ti }Ki=1 is solved using the Kabsch algorithm [15]: 
+
+Rt = argmin 
+
+> R∈SO (3)
+> K
+
+X
+
+> i=1
+
+∥R(f t−1 
+
+> i
+
+− ct−1) − (f ti − ct)∥2, (1) where ct−1 and ct are the point cloud centroids at the previous and current timesteps, respectively. The 3D translation is subsequently computed as tt = ct − Rtct−1.
+
+2) Hand Flow: We define hand flow H as the 3D trajectory of human hand pose: H = {Ht | t = 1 , . . . , T }, where Ht
+
+denotes the MANO mesh [33] at frame t.
+
+When to use hand flow. While object flow works well when the object is mostly visible, it becomes unreliable when the target object is heavily occluded by the hand or experiences large rotations. We adopt a dynamic switching logic based on trajectory smoothness: representing the computed rotation in axis-angle form Rt = ( θt, ut), we switch to hand flow if 
+
+∃i ∈ [1 , T ], θ i > θ max , (2) where θmax is the maximum allowable rotation magnitude between adjacent frames. 
+
+Extracting hand trajectory. We utilize a hand pose es-timator (HaMeR) [30] to extract hand pose trajectory from generated videos. However, generated videos can introduce geometric artifacts such as scale inaccuracy and projective drift, resulting in a “floating” trajectory where the hand and object are not in contact. To address this, we use a dual-anchor calibration routine to ground the raw hand pose estimations. An illustration of the routine can be found in Figure 3. The calibration routine proceeds in three stages: detecting the interaction interval, recovering metric scale at contact onset, and compensating for projective drift at release. 
+
+Detecting interaction interval. We first identify when the hand interacts with the object by detecting motion in the object mask. Assuming the object is static before contact, we define contact onset tstart as the first frame where the appearing mask area relative to the initial mask exceeds a threshold ϵ:
+
+tstart = argmin 
+
+> t
+
+( |Mt 
+
+> obj
+
+\ Mt0
+
+> obj
+
+||Mt0
+
+> obj
+
+| ≥ ϵ
+
+)
+
+, (3) where Mt 
+
+> obj
+
+is the object mask and t0 is the first frame. We define contact end tend analogously as the last frame satisfying the same motion criterion. 
+
+Recovering metric scale. Once we identify the contact onset, we recover a metric scale that brings the hand into contact with the object. We project the hand skeleton to the image plane and select fingertips whose projections fall inside the object mask Mtstart  
+
+> obj
+
+, forming a contact set Fcontact .For each fingertip f ∈ Fcontact , we estimate a candidate isotropic scale sf by snapping the fingertip to its nearest point in the metric 3D object point cloud Pobj . We then take 
+
+sstart = max f ∈F contact sf to avoid under-scaling from occluded fingertips. The maximizing fingertip becomes the designated 
+
+contact finger used as the reference for subsequent corrections. 
+
+Compensating for projective drift. Even after applying the global scale sstart , generated videos can exhibit projective (a) HaMeR on recovery video (b) Scale and translation calibration  
+
+> (c) Hand trajectory after calibration (d) 6DoF transforms from hand trajectory
+
+Fig. 4: Geometric grounding for non-prehensile recovery. 
+
+(a) HaMeR [30] predicts the MANO hand mesh on the generated recovery video. (b) Red: mesh from raw prediction. Green: mesh after scale calibration. Cyan: mesh after addi-tional translation offset enforcing fingertip and object surface contact. (c) The hand trajectory after calibration. (d) Calibrated trajectory converted into per-frame SE(3) transforms. drift as the hand moves relative to the camera. To compensate for this temporal distortion, we re-estimate the contact-based scale at release as send and compute a drift offset using the designated contact fingertip: 
+
+derr = ptend  
+
+> tip
+
+(send ) − ptend  
+
+> tip
+
+(sstart ). (4) To avoid perturbing the approach and transport phases, we apply this offset only near release by linearly ramping it over a short window [tcorr , t end ], where tcorr is the first frame at which the globally-scaled contact fingertip comes within distance δ
+
+of its release position. 
+
+Computing SE(3) trajectory. Having calibrated the hand positions across frames, we convert them into a 6-DoF hand motion trajectory. Assuming a fixed hand gesture over the contact interval, we model hand motion as a rigid SE (3) 
+
+trajectory. For each frame t, we set the translation to the calibrated 3D position of the designated contact fingertip. For rotation, we compute Rt from a palm frame built on 3D landmarks: the palm normal nt is obtained by fitting a plane to the wrist and MCP joints, the in-plane axis ut is the wrist-to-middle-MCP direction projected onto the plane, and 
+
+vt = nt ×ut completes a right-handed basis. This yields a per-frame 6-DoF hand motion (Rt, tt), analogous to the 6-DoF object motion recovered from object flow. 
+
+3) Flow to Robot Action: Both object flow and hand flow must ultimately be converted into executable robot end-effector trajectories. For object flow, we transform the recov-ered object motion (Rt, tt) into robot end-effector motion. We first employ a grasp proposal network [28] to generate a candidate set of grasps on the target object and select the top-ranked grasp pose. This establishes a static transformation 
+
+Tobj →ee between the object frame and the end-effector frame. Assuming the object remains static with respect to the end-effector post-grasp [29, 4, 41, 11], we transform all object : Execution failure                                           
+
+> 4
+> 123456
+> (d.1) Functional Manipulation Benchmark Variant with Failure Recovery
+> 1
+> SV
+> SV SV
+> 12
+> 34
+> 12
+> 34
+> 12
+> 34
+> (a) Four -Layer Block Stacking (b) Color Sorting (c) Hidden Object Search
+> 12345
+> (d.2) Functional Manipulation Benchmark
+> SV :Side view
+> :Error recovery with
+> finger poking
+> :
+> SV
+
+Fig. 5: Robot Experiments. (a-c) The long horizon tasks in Section IV-B, each with three steps. (d-e) Functional Manipulation Benchmark Multi-Object Multi-Stage Assembly 1 task and its variant in Section IV-D, including one recovery step. poses into end-effector poses via this fixed transformation, yielding the target robot trajectory. For hand flow, we use the first hand pose that makes contact with the object (at tstart ) to guide the grasp proposal network, establishing the initial grasp configuration. Subsequently, the end-effector pose trajectory is set to directly follow the cal-ibrated hand pose trajectory (Rt, tt). This direct mapping leverages the hand as a kinematic prior, enabling the robot to execute even when the object is heavily occluded. 
+
+C. Non-prehensile Correction using Generated Video 
+
+In some low-tolerance tasks where objects get stuck, the optimal corrective action is non-prehensile, as it can nudge the object back towards a successful state without a full re-grasp. However, the non-prehensile prompts, e.g., poke the object with the index finger, can distort the hand in the generated video and shift the apparent contact geometry. To handle this geometric distortion, we extend the standard grounding procedure by explicitly enforcing object contact with the finger specified in the video generation prompt, as illustrated in Figure 4. For example, if the planner generates a video with “poke with index finger” prompt, we designate the poke finger as the contact finger and, at each anchor frame tstart and tend ,solve for an isotropic scale and a translation correction (s, ∆t)
+
+s.t. the designated fingertip aligns with the object surface in metric geometry. We apply the start-anchor correction 
+
+(sstart , ∆tstart ) to ground the full sequence and then compensate residual projective drift near release using the localized ramp. This ensures that the poke fingertip is in contact with the object at the anchors even when the generated hand shape deviates from the normal human hand shape prior. The rest of the geometric grounding procedures remain unchanged. IV. E XPERIMENTS 
+
+NovaPlan is designed to zero-shot solve diverse long-horizon manipulation problems. To test its capabilities, we design a set of long-horizon tasks that assess reasoning, task decomposition, sub-task execution, error analysis, and error recovery capabilities. We also include tasks from [19] to demonstrate improvements in short-horizon zero-shot settings. Finally, we utilize an assembly task from the Functional Ma-nipulation Benchmark (FMB) [26] to discuss the boundaries of NovaPlan’s capacity in this zero-shot setup. We aim to answer the following key questions:  
+
+> •
+
+Q1: Long-Horizon Robustness: Can NovaPlan’s closed-loop planning and recovery enable it to robustly perform multi-step tasks in a zero-shot setting?  
+
+> •
+
+Q2: Hybrid Flow Efficacy: Can generated human hands serve as effective references for robots in manipulation tasks? Does incorporating hand flow improve execution stability over purely object-centric methods?  
+
+> •
+
+Q3: Zero-Shot Capability: What are the current capa-bility boundaries of NovaPlan? Can the system solve the challenging FMB without task-specific training, and what are the bottlenecks for future improvement? 
+
+A. Hardware and Implementation Details 
+
+Runtime. We deploy perception-heavy components (video generation, depth estimation, 3D tracking) on an NVIDIA H100 GPU, with hand flow extraction on an NVIDIA RTX A6000 workstation. Table I reports the runtime breakdown for a 41-frame 720P video. Our pipeline, with parallelized object/hand flow extraction, is approximately 40 s end-to-end. 
+
+Hardware. We utilize a Franka Research 3 arm equipped with a Robotiq 2F-85 gripper, with RGB and depth images captured by a front-facing RealSense D455 camera fixed on 0.0              
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success Rate
+> 60%
+> 40%
+> 20%
+> 10%
+> Color Sort
+> Final Success (S3)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 100% 100%
+> 30%
+> 0%
+> Hidden Object Search
+> Final Success (S3)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 70%
+> 30%
+> 0% 0%
+> Block Stacking
+> Final Success (S3)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 S1 S2
+> S3
+> S1 S2
+> S3
+> S1
+> S2
+> S3
+> S1
+> S2
+> S3
+> Color Sort
+> Progression (S1-S3)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 S1 S2 S3 S1 S2 S3
+> S1 S2
+> S3
+> S1
+> Hidden Object Search
+> Progression (S1-S3)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 S1 S2
+> S3
+> S1
+> S2
+> S3
+> S1
+> S1 S2
+> Block Stacking
+> Progression (S1-S3)
+> NovaPlan NovaFlow* +Pi-0.5 +MOKA +
+
+Fig. 6: Long-horizon task performance. (Left) We show the final success rate of different methods on three long-horizon tasks. (Right) We show the success rate of different methods on three long-horizon tasks at each step. For fair comparison, we assume compared methods (with + mark) are provided with an oracle high-level plan. TABLE I: Runtime breakdown for major modules (seconds).           
+
+> Model Wan / Veo MoGe2 / + CVD SAM3 TAPIP3D HaMeR Time 30 3 / 90 3.5 3.5 0.8/frame
+
+the table. All experiments use a joint impedance controller to track the calculated joint reference. For perception, we upgrade several modules from [19]: MegaSaM [21] to MoGe2 [38] for metric depth recovery and Grounded-SAM2 [32] to SAM3 [5]. We use TAPIP3D [42] for 3D point tracking, HaMeR [30] for hand tracking, Wan2.2 [37, 7] and Veo 3.1 [39] for video generation, and GPT-5.2 as the VLM for all reasoning tasks. The maximum rotation magnitude between frames is set as θmax = 45 ◦ for switching from object to hand flow in Equation (2). 
+
+Baselines. We compare NovaPlan against three representa-tive zero-shot methods from distinct architectural paradigms: NovaFlow [19] (video-based planning), π0.5 [13] (VLA model), and MOKA [23] (VLM-based planning). Although all baselines are zero-shot planners, they do not naturally possess long-horizon reasoning capabilities. We believe the high-level agentic reasoning system is not the current bottleneck of robot manipulation, and to ensure a fair comparison, we assume they have access to an “oracle task decomposition module” that provides the desired short-horizon task instructions when executing single sub-tasks. For more experiment details, please refer to our supplementary materials. 
+
+B. Experiment: Long-Horizon Task Solving 
+
+To answer Q1 , we evaluate the system’s ability to handle three different multi-step tasks with dependencies:  
+
+> •
+
+Four-layer Block Stacking: Stacking four colored 2-inch blocks vertically in three steps, where the robot stacks onto towers of 1, 2, and 3 blocks sequentially.  
+
+> •
+
+Color Sorting: Sorting three blocks into color-matched containers. A challenging aspect is that the yellow block’s tight fit requires precise vertical alignment to prevent jamming.  
+
+> •
+
+Hidden Object Search: Finding a target object hidden in one of the two closed drawers and placing it on the other drawer’s top surface. This exploratory task requires a conditional plan of two or three steps depending on which drawer contains the object. We conduct ten trials for each task with varying initial setups. For each step in the long-horizon tasks, we mark the trial as a failure only when the method cannot recover from an error. For Color Sorting , since sub-tasks do not depend on order, we use the step number to represent the count of correctly sorted cups after full execution. As shown in Figure 6, we report the overall success of the long-horizon tasks alongside task progression results showing single-task success rates. For block stacking, NovaPlan and all baselines have a performance drop when stacking onto two or three blocks. Stacking the fourth block onto three existing blocks requires precise spatial reasoning. π0.5 can stack up to two layers but fails beyond that. With calibrated depth estimation and object flow extraction, NovaFlow can stack three blocks with 70% success rate but drops to 30% on the fourth due to object flow instability. NovaPlan switches to hand flow when needed, resulting in greater stability, and succeeds in seven out of ten trials. For color sorting, we intentionally introduce a difficult case involving a yellow block and cup with low tolerance. All methods experience a performance drop in this case. For NovaPlan, all failures stem from inaccurate pose extraction due to depth estimation error. Better depth models or more camera views can potentially handle this better. For hidden object search, the long-horizon success rate is a combination of drawer opening and object retrieval skills. 
+
+π0.5 performs drawer opening significantly better than object retrieval, likely due to the task distribution in the DROID dataset [1]. MOKA fails to find the correct grasp pose for drawer opening due to the horizontal handle layout. Both NovaPlan and NovaFlow succeed in all trials, as their sub-skill success rates are high and robust. These results demonstrate that NovaPlan possesses stable short-horizon task execution and robust recovery capabilities within long-horizon manipu-lation tasks. 
+
+C. Experiment: Short Horizon Task Solving 
+
+To answer Q2 , we compare directly against NovaFlow on its original task suite: Block Insertion , Water Plant , and Open Open Drawer Water Plant Open Lid Yellow Block Insertion      
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Success Rate
+> 100%
+> 90% 90% 90%
+> 80%
+> 90% 90%
+> 50%
+> 80%
+> 60%
+> 80%
+> 40%
+> NovaPlan NovaFlow* NovaFlow
+
+Fig. 7: Single-step task performance. Comparison with NovaFlow* (implemented) and NovaFlow (from [19]). 
+
+Drawer . We exclude Hang Mug because it requires a goal image for plan video generation. We also exclude Cup on Saucer , as its simple pick-and-place behavior is already well covered by our long-horizon tasks. We conduct ten trials per task following the same setup as in [19]. The goal is to deter-mine if the major failure source, self-occlusion during object-centric tracking, can be resolved using hand flow. As seen in Figure 7, NovaPlan achieves a higher success rate across all tasks. The use of the hand as a reference when object flow is noisy improves system stability. However, failures still persist when poor depth estimation leads to degraded performance in both keypoint tracking and hand scale calibration. 
+
+D. Experiment: Zero-Shot FMB Solving 
+
+FMB requires the robot to complete complex long-horizon behaviors by composing individual manipulation skills in functionally relevant ways. In a zero-shot setup, the difficulties arise from: 1) the need for long-horizon analysis and planning, 2) the requirement for millimeter precision in assembly sub-tasks, 3) the presence of irregular shapes unseen by pre-trained foundation models, and 4) diverse failure modes that are dif-ficult to recover from using simple grasping. We tackle FMB by chaining our system’s capabilities in long-term planning, closed-loop reasoning, stable execution, and failure recovery to test the limits of this zero-shot setup. In this experiment, none of the VLA/VLM baselines could complete a single step; therefore, we only report the success and failure modes of NovaPlan. Our goal is to answer Q3 : determining the reach of our method in long-horizon tasks and identifying missing components in the pipeline. We use standard Initial Layout 3 of the FMB Multi-Object Multi-Stage Task Assembly 1, as shown in Figure 5(d.2.1), where reorientation is not required for parts lying flat on the table. Additionally, we show a variant of that setup with the U-shaped parts placed upside down to demonstrate the solution on another assembly target, as shown in Figure 5(d.1.1). The first challenge we identify is single-view video genera-tion for tasks involving irregularly shaped objects. While Wan 2.2 and Veo 3.1 are sufficient for previous tasks, only Veo 3.1 can generate physically feasible videos for all FMB stages, and with a much lower success rate. This difficulty increases in failure recovery mode, where the physics are complex. Figure 8(a) and (b) show examples of generated videos for an (a) Generated FMB insertion video. (b) Generated FMB recovery video.  
+
+> (c) Failure case where video model
+> fails to generate recovery video.
+> (d ) Failure case which requires
+> reorientation of the object to recover.
+
+Fig. 8: Generated videos and failure cases on FMB task. (a) Contact frame from the generated insertion video. (b) Contact frame from the generated error recovery video. (c) Failure case of NovaPlan where video model fails to generate physically plausible recovery motion. (d) Failure case of NovaPlan which requires reorientation of the object. insertion step and a recovery step. Using the validation metrics in Section III-A, NovaPlan can regenerate until a feasible video plan is obtained. We believe the capability of NovaPlan will improve significantly with a good multi-view or moving-view video generation model. Another challenge in failure recovery is that both the object displacement and the hand motion are small in the recovery motion, as depicted in Figure 8, so keypoint flow and pose estimates tend to be dominated by noise. This makes object flow extraction noisy and hand pose extraction quality poor; at the same time, grasp proposal networks like GraspGen [28] perform poorly in the failure scene, making grasp selection really difficult. Consequently, both object flow and hand flow in grasp mode fail. However, we find that the non-prehensile recovery mode, where the fingertip is used to push the object, provides a cleaner trajectory to track. Utilizing hand pose in this mode enables NovaPlan to recover from failure. V. D ISCUSSION AND FAILURE ANALYSIS 
+
+NovaPlan integrates state-of-the-art models across all com-ponents, including vision-language reasoning, video genera-tion, depth estimation, keypoint tracking, and hand estimation. Consequently, its performance is inherently tied to the capa-bilities and limitations of these individual modules. Current video generation models struggle to produce feasible recovery plans for most failure modes, even with careful prompting, and grasp proposal networks often fail to provide stable grasps for irregular shapes. These bottlenecks make reorientation tasks and recovery from certain failure modes, such as those shown in Figure 8 (c) and (d), particularly challenging. Nevertheless, we remain optimistic that the capabilities of NovaPlan will naturally expand as foundation models and geometric reason-ing algorithms continue to advance. VI. C ONCLUSION 
+
+We present NovaPlan, a hierarchical framework that achieves zero-shot long-horizon manipulation by coupling closed-loop video language planning with geometrically grounded execution. By extracting object keypoints and hand poses from generated videos, NovaPlan bridges the gap be-tween high-level task understanding and low-level control. Our experiments across three diverse long-horizon tasks and the challenging FMB benchmark demonstrate robust performance in complex assembly and error recovery, all without task-specific demonstrations or training. As foundation models im-prove, NovaPlan provides a scalable pathway toward general-purpose robotic manipulation. REFERENCES 
+
+[1] DROID: A Large-Scale In-the-Wild Robot Manipulation Dataset. https://droid-dataset.github.io/. [2] Anurag Ajay, Seungwook Han, Yilun Du, Shuang Li, Abhi Gupta, Tommi Jaakkola, Josh Tenenbaum, Leslie Kaelbling, Akash Srivastava, and Pulkit Agrawal. Com-positional Foundation Models for Hierarchical Planning. 
+
+Advances in Neural Information Processing Systems , 36: 22304–22325, December 2023. [3] Homanga Bharadhwaj, Debidatta Dwibedi, Abhinav Gupta, Shubham Tulsiani, Carl Doersch, Ted Xiao, Dhruv Shah, Fei Xia, Dorsa Sadigh, and Sean Kirmani. Gen2Act: Human Video Generation in Novel Scenarios enables Generalizable Robot Manipulation, September 2024. [4] Homanga Bharadhwaj, Roozbeh Mottaghi, Abhinav Gupta, and Shubham Tulsiani. Track2Act: Predicting Point Tracks from Internet Videos Enables Generalizable Robot Manipulation. In European Conference on Com-puter Vision (ECCV) , 2024. ISBN 978-3-031-73116-7. doi: 10.1007/978-3-031-73116-7 18. [5] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoub-hik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, An-drew Huang, Jie Lei, Tengyu Ma, Baishan Guo, Arpit Kalla, Markus Marks, Joseph Greer, Meng Wang, Peize Sun, Roman R¨ adle, Triantafyllos Afouras, Effrosyni Mavroudi, Katherine Xu, Tsung-Han Wu, Yu Zhou, Liliane Momeni, Rishi Hazra, Shuangrui Ding, Sagar Vaze, Francois Porcher, Feng Li, Siyuan Li, Aishwarya Kamath, Ho Kei Cheng, Piotr Doll´ ar, Nikhila Ravi, Kate Saenko, Pengchuan Zhang, and Christoph Feichtenhofer. SAM 3: Segment Anything with Concepts, November 2025. [6] Taiye Chen, Xun Hu, Zihan Ding, and Chi Jin. Learning World Models for Interactive Video Generation, May 2025. [7] LightX2V Contributors. Lightx2v: Light video genera-tion inference framework. https://github.com/ModelTC/ lightx2v, 2025. [8] Yilun Du, Sherry Yang, Bo Dai, Hanjun Dai, Ofir Nachum, Josh Tenenbaum, Dale Schuurmans, and Pieter Abbeel. Learning Universal Policies via Text-Guided Video Generation. In Advances in Neural Information Processing Systems (NeurIPS) , December 2023. [9] Yilun Du, Sherry Yang, Pete Florence, Fei Xia, Ayzaan Wahid, Brian Ichter, Pierre Sermanet, Tianhe Yu, Pieter Abbeel, Joshua B. Tenenbaum, Leslie Pack Kaelbling, Andy Zeng, and Jonathan Tompson. Video Language Planning. In The Twelfth International Conference on Learning Representations , October 2023. [10] Dibya Ghosh, Homer Rich Walke, Karl Pertsch, Kevin Black, Oier Mees, Sudeep Dasari, Joey Hejna, Tobias Kreiman, Charles Xu, Jianlan Luo, You Liang Tan, Lawrence Yunliang Chen, Quan Vuong, Ted Xiao, Pan-nag R. Sanketi, Dorsa Sadigh, Chelsea Finn, and Sergey Levine. Octo: An Open-Source Generalist Robot Policy. In Robotics: Science and Systems (RSS) , volume 20, July 2024. ISBN 979-8-9902848-0-7. [11] Haojie Huang, Karl Schmeckpeper, Dian Wang, Ondrej Biza, Yaoyao Qian, Haotian Liu, Mingxi Jia, Robert Platt, and Robin Walters. IMAGINATION POLICY: Using Generative Point Cloud Models for Learning Manipula-tion Policies. In Conference on Robot Learning (CoRL) ,September 2024. [12] Wenlong Huang, Chen Wang, Yunzhu Li, Ruohan Zhang, and Li Fei-Fei. ReKep: Spatio-Temporal Reasoning of Relational Keypoint Constraints for Robotic Manipula-tion. In Conference on Robot Learning (CoRL) , January 2025. [13] Physical Intelligence, Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Es-mail, Michael Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Galliker, Dibya Ghosh, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost To-bias Springenberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky. $π {0.5 }$: A Vision-Language-Action Model with Open-World Generaliza-tion, April 2025. [14] Joel Jang, Seonghyeon Ye, Zongyu Lin, Jiannan Xiang, Johan Bjorck, Yu Fang, Fengyuan Hu, Spencer Huang, Kaushil Kundalia, Yen-Chen Lin, Lo¨ ıc Magne, Ajay Mandlekar, Avnish Narayan, You Liang Tan, Guanzhi Wang, Jing Wang, Qi Wang, Yinzhen Xu, Xiaohui Zeng, Kaiyuan Zheng, Ruijie Zheng, Ming-Yu Liu, Luke Zettle-moyer, Dieter Fox, Jan Kautz, Scott Reed, Yuke Zhu, and Linxi Fan. DreamGen: Unlocking Generalization in Robot Learning through Video World Models. In 9th Annual Conference on Robot Learning , September 2025. [15] W. Kabsch. A solution for the best rotation to relate two sets of vectors. Acta Crystallographica Section A: Crystal Physics, Diffraction, Theoretical and General Crystallography , 32(5):922–923, September 1976. ISSN 0567-7394. doi: 10.1107/S0567739476001873. [16] Nikita Karaev, Iurii Makarov, Jianyuan Wang, Natalia Neverova, Andrea Vedaldi, and Christian Rupprecht. Co-Tracker3: Simpler and Better Point Tracking by Pseudo-Labelling Real Videos, October 2024. [17] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan P. Foster, Pannag R. Sanketi, Quan Vuong, Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn. Open-VLA: An Open-Source Vision-Language-Action Model. In Conference on Robot Learning (CoRL) , January 2025. [18] Po-Chen Ko, Jiayuan Mao, Yilun Du, Shao-Hua Sun, and Joshua B. Tenenbaum. Learning to Act from Actionless Videos through Dense Correspondences. In International Conference on Learning Representations (ICLR) , Octo-ber 2023. [19] Hongyu Li, Lingfeng Sun, Yafei Hu, Duy Ta, Jennifer Barry, George Konidaris, and Jiahui Fu. NovaFlow: Zero-Shot Manipulation via Actionable Flow from Generated Videos, October 2025. [20] Shuang Li, Yihuai Gao, Dorsa Sadigh, and Shuran Song. Unified Video Action Model, March 2025. [21] Zhengqi Li, Richard Tucker, Forrester Cole, Qianqian Wang, Linyi Jin, Vickie Ye, Angjoo Kanazawa, Alek-sander Holynski, and Noah Snavely. MegaSaM: Accu-rate, Fast and Robust Structure and Motion from Casual Dynamic Videos. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [22] Junbang Liang, Pavel Tokmakov, Ruoshi Liu, Sruthi Sud-hakar, Paarth Shah, Rares Ambrus, and Carl Vondrick. Video Generators are Robot Policies, August 2025. [23] Fangchen Liu, Kuan Fang, Pieter Abbeel, and Sergey Levine. MOKA: Open-Vocabulary Robotic Manipulation through Mark-Based Visual Prompting. In First Work-shop on Vision-Language Models for Navigation and Manipulation at ICRA 2024 , April 2024. [24] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual Instruction Tuning. In Advances in Neural Information Processing Systems (NeurIPS) , volume 36, December 2023. [25] Calvin Luo, Zilai Zeng, Yilun Du, and Chen Sun. Solving New Tasks by Adapting Internet Video Knowledge. In 
+
+ICLR 2025 , October 2024. [26] Jianlan Luo, Charles Xu, Fangchen Liu, Liam Tan, Zipeng Lin, Jeffrey Wu, Pieter Abbeel, and Sergey Levine. FMB: A Functional Manipulation Benchmark for Generalizable Robotic Learning, January 2024. [27] Xuan Luo, Jia-Bin Huang, Richard Szeliski, Kevin Matzen, and Johannes Kopf. Consistent video depth estimation. ACM Trans. Graph. , 39(4):71:71:1–71:71:13, August 2020. ISSN 0730-0301. doi: 10.1145/3386569. 3392377. [28] Adithyavairavan Murali, Balakumar Sundaralingam, Yu-Wei Chao, Wentao Yuan, Jun Yamada, Mark Carlson, Fabio Ramos, Stan Birchfield, Dieter Fox, and Clemens Eppner. GraspGen: A Diffusion-based Framework for 6-DOF Grasping with On-Generator Training, July 2025. [29] Shivansh Patel, Shraddhaa Mohan, Hanlin Mai, Unnat Jain, Svetlana Lazebnik, and Yunzhu Li. Robotic Manip-ulation by Imitating Generated Videos Without Physical Demonstrations, July 2025. [30] Georgios Pavlakos, Dandan Shan, Ilija Radosavovic, Angjoo Kanazawa, David Fouhey, and Jitendra Malik. Reconstructing Hands in 3D with Transformers. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9826–9836, 2024. [31] Qwen, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tianyi Tang, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 Technical Report, January 2025. [32] Tianhe Ren, Shilong Liu, Ailing Zeng, Jing Lin, Kun-chang Li, He Cao, Jiayu Chen, Xinyu Huang, Yukang Chen, Feng Yan, Zhaoyang Zeng, Hao Zhang, Feng Li, Jie Yang, Hongyang Li, Qing Jiang, and Lei Zhang. Grounded SAM: Assembling Open-World Models for Diverse Visual Tasks, January 2024. [33] Javier Romero, Dimitrios Tzionas, and Michael J. Black. Embodied hands: Modeling and capturing hands and bodies together. CoRR , abs/2201.02610, 2022. URL https://arxiv.org/abs/2201.02610. [34] Gemini Robotics Team, Krzysztof Choromanski, Col-ine Devin, Yilun Du, Debidatta Dwibedi, Ruiqi Gao, Abhishek Jindal, Thomas Kipf, Sean Kirmani, Isabel Leal, Fangchen Liu, Anirudha Majumdar, Andrew Mar-mon, Carolina Parada, Yulia Rubanova, Dhruv Shah, Vikas Sindhwani, Jie Tan, Fei Xia, Ted Xiao, Sherry Yang, Wenhao Yu, and Allan Zhou. Evaluating Gemini Robotics Policies in a Veo World Simulator, January 2026. [35] TRI LBM Team, Jose Barreiros, Andrew Beaulieu, Aditya Bhat, Rick Cory, Eric Cousineau, Hongkai Dai, Ching-Hsin Fang, Kunimatsu Hashimoto, Muham-mad Zubair Irshad, Masha Itkina, Naveen Kuppuswamy, Kuan-Hui Lee, Katherine Liu, Dale McConachie, Ian McMahon, Haruki Nishimura, Calder Phillips-Grafflin, Charles Richter, Paarth Shah, Krishnan Srinivasan, Blake Wulfe, Chen Xu, Mengchao Zhang, Alex Alspach, Maya Angeles, Kushal Arora, Vitor Campagnolo Guizilini, Alejandro Castro, Dian Chen, Ting-Sheng Chu, Sam Creasey, Sean Curtis, Richard Denitto, Emma Dixon, Eric Dusel, Matthew Ferreira, Aimee Goncalves, Grant Gould, Damrong Guoy, Swati Gupta, Xuchen Han, Kyle Hatch, Brendan Hathaway, Allison Henry, Hillel Hochsztein, Phoebe Horgan, Shun Iwase, Donovon Jack-son, Siddharth Karamcheti, Sedrick Keh, Joseph Master-john, Jean Mercat, Patrick Miller, Paul Mitiguy, Tony Nguyen, Jeremy Nimmer, Yuki Noguchi, Reko Ong, Aykut Onol, Owen Pfannenstiehl, Richard Poyner, Leti-cia Priebe Mendes Rocha, Gordon Richardson, Christo-pher Rodriguez, Derick Seale, Michael Sherman, Mariah Smith-Jones, David Tago, Pavel Tokmakov, Matthew Tran, Basile Van Hoorick, Igor Vasiljevic, Sergey Za-kharov, Mark Zolotas, Rares Ambrus, Kerri Fetzer-Borelli, Benjamin Burchfiel, Hadas Kress-Gazit, Siyuan Feng, Stacie Ford, and Russ Tedrake. A Careful Exami-nation of Large Behavior Models for Multitask Dexterous Manipulation, July 2025. [36] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth´ ee Lacroix, Bap-tiste Rozi` ere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. LLaMA: Open and Efficient Foundation Language Models, February 2023. [37] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jingren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Mengyang Feng, Ningyi Zhang, Pandeng Li, Pingyu Wu, Ruihang Chu, Ruili Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wenmeng Zhou, Wente Wang, Wenting Shen, Wenyuan Yu, Xianzhong Shi, Xiaoming Huang, Xin Xu, Yan Kou, Yangyu Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yitong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhen Han, Zhi-Fan Wu, and Ziyu Liu. Wan: Open and Advanced Large-Scale Video Generative Models, April 2025. [38] Ruicheng Wang, Sicheng Xu, Yue Dong, Yu Deng, Jian-feng Xiang, Zelong Lv, Guangzhong Sun, Xin Tong, and Jiaolong Yang. MoGe-2: Accurate Monocular Geometry with Metric Scale and Sharp Details, July 2025. [39] Thadd¨ aus Wiedemer, Yuxuan Li, Paul Vicol, Shixi-ang Shane Gu, Nick Matarese, Kevin Swersky, Been Kim, Priyank Jaini, and Robert Geirhos. Video models are zero-shot learners and reasoners, September 2025. [40] Guang Yin, Yitong Li, Yixuan Wang, Dale Mc-Conachie, Paarth Shah, Kunimatsu Hashimoto, Huan Zhang, Katherine Liu, and Yunzhu Li. CodeDif-fuser: Attention-Enhanced Diffusion Policy via VLM-Generated Code for Instruction Ambiguity. In Robotics: Science and Systems (RSS) XXI . arXiv, June 2025. doi: 10.48550/arXiv.2506.16652. [41] Zhao-Heng Yin, Sherry Yang, and Pieter Abbeel. Object-centric 3D Motion Field for Robot Learning from Human Videos, June 2025. [42] Bowei Zhang, Lei Ke, Adam W. Harley, and Katerina Fragkiadaki. TAPIP3D: Tracking Any Point in Persistent 3D Geometry, April 2025. [43] Chenyu Zhang, Daniil Cherniavskii, Andrii Zadaianchuk, Antonios Tragoudaras, Antonios Vozikis, Thijmen Ni-jdam, Derck W. E. Prinzhorn, Mark Bodracska, Nicu Sebe, and Efstratios Gavves. Morpheus: Benchmarking Physical Reasoning of Video Generative Models with Real Physical Experiments, April 2025. APPENDIX AVISION -L ANGUAGE PLANNING IMPLEMENTATION 
+
+To ensure robust long-horizon reasoning, our high-level planner operates within a physics-compliant reasoning frame-work established via structured prompt conditioning. Rather than relying on unconstrained generation, this approach re-stricts the model’s output space to adhere to environmental affordances and causal dependencies. The following sections detail the specific reasoning strategies governing our VLM prompting. In our experiments, we utilize GPT-5.2 for all VLM-based reasoning tasks. 
+
+A. Constraint-Aware Task Decomposition and Action Pro-posal 
+
+The high-level planner takes as input the task goal, the latest scene observation, and the action history. It decomposes the goal into a sequence of macro-actions. To reduce physically invalid proposals and redundant moves, we use a structured prompt that enforces basic physical constraints and ordering rules. 
+
+1) Dynamic Context and Prompt Structure: The VLM action proposal is conditioned on the current observation, the task goal, and the full action history. It also receives a small amount of step-dependent context: the remaining planning horizon Tremain and an optional constraint context carried over from the previous step (when available). The prompt encodes three types of guidance. 
+
+• Horizon-dependent urgency. We add a short note based on Tremain . If Tremain ≤ 2, we append “Time is critical. Actions must be aggressive.” Otherwise, we append “You have time. Prioritize precision and safety.” 
+
+• State awareness to avoid redundant moves. The model is instructed to treat objects that are already in their final configuration as completed and to avoid moving them, while treating misplaced objects that overlap target zones as potential obstructions. 
+
+• Ordering constraints. When two objects interact, the model is instructed to test both orders. If executing A
+
+then B is feasible but B then A blocks access, then A
+
+is enforced as the prerequisite, and all proposed actions must start with A.
+
+Prompt for Task Decomposition and Action Proposal 
+
+Analyze the scene and history. Propose EXACTLY 
+
+{num_actions } distinct narrative macro-actions. 
+
+Goal: {goal }
+
+Action History: {prev_act_str }{urgency_note }
+
+Constraint Context: {constraint_context }
+
+Critical visual analysis (intersections & hierarchy) 
+
+1) Trace target zones: Visually trace the target locations (slots, containers, stacking areas) for 
+
+all objects. 2) Detect overlaps: Do any target zones visually cross or intersect? 3) Determine hierarchy (access & occlusion):  
+
+> •
+
+Occlusion principle: If placing object B visually ‘‘covers’’ or ‘‘bridges’’ the access path to object A’s target, then object A must be placed first.  
+
+> •
+
+Constrained access: Placing objects in deep 
+
+or central zones first is safer than placing peripheral objects that may narrow the workspace.  
+
+> •
+
+Generic rule: Place objects that sit lowest or 
+
+deepest in the assembly structure first. 
+
+State verification (goal state vs. obstruction)  
+
+> •
+
+Analyze objects in the workspace: Distinguish objects that are correctly placed from those that are clutter/obstacles . 
+
+> •
+
+Correctly placed: If an object is fully aligned with its target (e.g., inside its slot, neatly stacked, or in its final position), treat it as a completed step, not an obstruction. It usually does not need to be moved.  
+
+> •
+
+Misplaced/loose: If an object lies haphazardly across target zones or rests on top of other destinations without being properly placed, it is an obstruction that might need to be moved.  
+
+> •
+
+Correction: Do not propose removing objects that are already in their correct final state unless they clearly block a necessary path. 
+
+Mental simulation (‘‘order of operations’’ test) 
+
+Compare potential sequences for interacting objects ( A
+
+and B): 1) Sequence 1 (A then B): ‘‘If I place A first, can I still place B?’’ 2) Sequence 2 (B then A): ‘‘If I place B first, can I still place A?’’ 
+
+Critical conclusion  
+
+> •
+
+If (A then B) works but (B then A) fails because B blocks A’s path/slot, then A is the prerequisite. You must propose A first.  
+
+> •
+
+Generic indicator: The prerequisite object often lies ‘‘under,’’ ‘‘behind,’’ or ‘‘inside’’ the other object’s zone, or its insertion path is crossed by the other object.  
+
+> •
+
+Risk assessment: If paths cross or zones overlap, assume strict ordering is required until proven otherwise. 
+
+Selection filter  
+
+> •
+
+Only propose actions that pass the ‘‘order of operations’’ test.  
+
+> •
+
+If multiple valid actions exist (independent sub-tasks), propose diverse options.  
+
+> •
+
+Mandatory filter: If you identify a prerequisite object (e.g., A must be first), then every single one of the {num_actions } proposals must start with 
+
+A. 
+
+> •
+
+Do not offer options that violate the prerequisite. If A is the bottleneck, diversity should come from how you handle A (e.g., different grasp or approach), not from proposing B or C.
+
+Step 1: phase identification 
+
+Where are we? (approaching → interacting → transporting 
+
+→ finishing). 
+
+Step 2: apply constraints (critical) 
+
+1) No telekinesis (active voice): Objects never move on their own.  
+
+> •
+
+Bad: ‘‘The pot moves to the drawer.’’  
+
+> •
+
+Good: ‘‘Grasp the pot and move it.’’ 2) Abstraction level:  
+
+> •
+
+Bad: ‘‘Move forward 10 cm.’’  
+
+> •
+
+Good: ‘‘Reach down and grasp the handle.’’ 3) Single hand only: The robot has one right hand. Do not use bimanual actions. 4) Pacing & termination:  
+
+> •
+
+Do not complete the task instantly if the object is far; approach first.  
+
+> •
+
+If done: output FINISH: Hold position. 5) Action description format:  
+
+> •
+
+Do not mention ‘‘the robot’’ or ‘‘the robot right hand.’’  
+
+> •
+
+Start directly with the verb.  
+
+> •
+
+Be definitive; do not use ‘‘/’’ or ‘‘or’’ inside an action.  
+
+> •
+
+Bad: ‘‘Grasp the block from the top/side.’’  
+
+> •
+
+Good: ‘‘Grasp the block from the top.’’ 
+
+Step 3: generate {num_actions } strategies 
+
+For each action, identify the primary object being manipulated or interacted with. This object will be tracked visually during video generation.                                                                   
+
+> Output format (JSON only). You must provide EXACTLY
+> {num_actions }actions:
+> {
+> "phase": "Current Phase Analysis...", "dependency_analysis": "Explain the ’Future Block’ test results.", "valid_objects": ["List of objects that are safe to manipulate NOW"], "proposals": [
+> {"action": "Action description 1", "track_object": "object being manipulated (e.g., drawer handle, cup, lid)", "reasoning": "Why this is valid now?" },
+> {"action": "Action description 2", "track_object": "object being manipulated", "reasoning": "Why this is valid now?" },... ]
+> }
+> Important: the proposals array must contain EXACTLY
+> {num_actions }items. Each item must include both action and track_object.
+
+We post-process the returned actions to remove boilerplate prefixes (e.g., “the robot . . . ”), enforce single-hand phrasing, and ensure that exactly the desired number of actions is pro-duced. In greedy mode (see Section III-A), we set Nc = 1 and propose the next viable action based on the latest observation. In strategic mode, we perform tree search and use the video generation model as an object dynamics verifier to select a full action plan in advance; details are given in Section A-A2. Section G shows example multi-step plans for all long-horizon tasks in our experiments. 
+
+2) Full Action Plan Generation in Strategic Mode: As described in Section III-A, for coupled tasks we use a tree search to generate a single feasible plan over the full horizon before execution. At each step in strategic mode, we ask the VLM to propose Nc = 2 action candidates and sample L = 4 
+
+video rollouts per candidate. We then select the two beams whose rollouts receive the highest rankings and use them to initialize the next step. The full procedure is summarized in Algorithm 1. 
+
+B. Physics-Based Video Rollout Selection 
+
+To select a rollout for execution, we use a VLM as an automatic evaluator and apply a hierarchical scoring rubric over the generated candidates. In our experiments, for each proposed action at each step during execution, we use Wan 2.2 and Veo 3.1 each to generate eight rollout videos as candidates for selection. To reduce evaluation cost, we batch-score candidates by stitching them into a single grid image. Each tile corresponds to one candidate rollout and is labeled with its original candidate index (ID). Concretely, each tile contains (i) a flow image (2D ob-ject motion flow overlaid on the start frame computed by CoTracker3) and (ii) the last frame of the generated video, stacked vertically and separated by a cyan divider. Given the grid and the associated action text for each ID, the VLM assigns a score to every candidate and follows a strict hierarchy of checks, stopping at the first violated constraint:  
+
+> •
+
+Target check. Did the correct object move? If the wrong object moves or there is no motion, the score is 0.0. 
+
+> •
+
+Physics check. Is the motion physically plausible (no melting, deformation, teleportation, or objects appearing from nowhere)? If violated, the score is at most 0.1. 
+
+> •
+
+Motion check. Does the motion direction and trajectory in the flow visualization match the action language in-struction? If violated, the score is at most 0.2. 
+
+> •
+
+Result check. Does the final frame match the intended outcome and make progress toward the goal? If satisfied, the score lies in [0 .3, 1.0] .In Figure 9 we show an example of the grid image, where each tile is labeled with the returned score and success flag.                                                                                                                                                                      
+
+> Prompt for Video Rollout Selection
+> Rank {N}robot rollouts.
+> Goal: ‘‘ {goal }’’
+> IMAGE: Grid with {N}tiles. Each tile has TOP=motion flow overlay on initial frame, CYAN LINE=divider, BOTTOM=final frame. Yellow ‘‘ID: k’’ label on each tile.
+> Actions:
+> {ID 0: ‘‘...’’ }{ID 1: ‘‘...’’ }
+> ... SCORING RULES (Strict Hierarchical Check -apply in order, stop at first failure): 1. Target Check: Did the CORRECT object move? If WRONG object moved or NO motion at all →score=0.0 2. Physics Check: Is physics realistic? If object MELTS/DEFORMS/TELEPORTS or NEW objects appear from nowhere →score ≤0.1 3. Motion Check: Look at TOP (flow overlay on initial frame). Does the motion direction/trajectory match what the ACTION describes?
+> •NO (wrong direction/drifted/stuck/incomplete path)
+> →score ≤0.2, ok=false
+> •YES (motion trajectory matches action description)
+> →continue 4. Result Check: Look at BOTTOM (final frame, below cyan line). Does it show the expected outcome of the ACTION?
+> •NO (object deformed/new objects appeared/wrong final position/action not completed) →score ≤0.2, ok=false
+> •YES (final state matches what action intended, progresses toward goal) →score 0.3--1.0, ok=true
+> OUTPUT: JSON only. Score ALL candidates.
+> {
+> ‘‘rankings’’: [
+> {‘‘candidate_id’’: 0, ‘‘success’’: true, ‘‘score’’: 0.9, ‘‘reason’’: ‘‘perfect insertion’’ },
+> {‘‘candidate_id’’: 1, ‘‘success’’: false, ‘‘score’’: 0.1, ‘‘reason’’: ‘‘wrong object moved’’ }
+> ]
+> }
+> Key: candidate_id=ID (0-based index matching the grid labels), success=boolean, score=float(0--1), reason=string rationale
+
+C. Closed-Loop State Verification 
+
+After each executed action, NovaPlan verifies the outcome with a VLM-based critic. Unlike open-loop pipelines that assume success, we explicitly evaluate the observed state transition to detect action-level failures, such as grasp slippage, partial insertions, or acting on the wrong object. 
+
+1) State Verification: Given an intended action and goal, the critic compares three images:  
+
+> •
+
+Start state ( It): the observation before execution. Algorithm 1 Tree Search for Full Action Plan Generation 
+
+Require: start frame I0, goal g, horizon H
+
+Require: candidate set size Nc, actions per candidate A, rollouts per action K
+
+Require: video generation model G, VLM V
+
+Ensure: best candidate b⋆
+
+candidate state. each candidate (beam) b stores: current frame Ib; action history Hb; metadata list Mb; score sb.
+
+metadata. each entry m ∈ M b is a per-step dict used for state carryover, e.g., 
+
+{action: a, track object: o, candidate id: id , VLM context: ξ}.
+
+context carryover. GET CONTEXT (Mb) returns the most recent VLM context (or ∅) to enforce constraints consistently across steps.  
+
+> 1:
+
+B ← { (I0, ∅, ∅, 0) } 
+
+> 2:
+
+for t ← 1 to H do  
+
+> 3:
+
+C ← ∅ ▷ all rollout candidates at step t 
+
+> 4:
+
+id ← 0 
+
+> 5:
+
+for all b = ( Ib, Hb, Mb, s b) ∈ B do  
+
+> 6:
+
+h ← FORMAT HISTORY (Hb) 
+
+> 7:
+
+c ← GET CONTEXT (Mb) 
+
+> 8:
+
+Π ← V .PROPOSE ACTIONS (Ib, g, A, h, H − t + 1 , c ) ▷ Π is a list of proposals {(ai, o i, ξ i)}Ai=1  
+
+> 9:
+
+for i ← 1 to |Π| do  
+
+> 10:
+
+a ← Π[ i].action; o ← Π[ i].track object; ξ ← Π[ i].VLM context  
+
+> 11:
+
+{V (1) , . . . , V (K)} ← G .GENERATE ROLLOUTS (Ib, a, K ) ▷ V (k) is the kth generated video  
+
+> 12:
+
+for k ← 1 to K do  
+
+> 13:
+
+I′ ← LAST FRAME (V (k)) 
+
+> 14:
+
+F ← FLOW (V (k), o ) 
+
+> 15:
+
+C ← C ∪ { (id, b, a, o, ξ, V (k), F, I ′)} 
+
+> 16:
+
+id ← id + 1  
+
+> 17:
+
+end for  
+
+> 18:
+
+end for  
+
+> 19:
+
+end for  
+
+> 20:
+
+if C = ∅ then  
+
+> 21:
+
+break  
+
+> 22:
+
+end if  
+
+> 23:
+
+R ← V .RANK ROLLOUTS BATCH (g, C, top n = Nc) ▷ VLM scores candidates using a stitched grid of (flow, final-frame) tiles  
+
+> 24:
+
+initialize default score map s(·) ← smin for all candidate ids  
+
+> 25:
+
+for all r ∈ R do  
+
+> 26:
+
+s(r. candidate id ) ← r. score  
+
+> 27:
+
+end for  
+
+> 28:
+
+Bnext ← ∅  
+
+> 29:
+
+for all (id, b, a, o, ξ, V, F, I ′) ∈ C do  
+
+> 30:
+
+H′ ← H b ∪ { a} 
+
+> 31:
+
+m′ ← { action : a, track object : o, candidate id : id, VLM context : ξ } 
+
+> 32:
+
+M′ ← M b ∪ { m′} 
+
+> 33:
+
+b′ ← (I′, H′, M′, s (id ))  
+
+> 34:
+
+Bnext ← B next ∪ { b′} 
+
+> 35:
+
+end for  
+
+> 36:
+
+B ← TOP B(Bnext , N c) ▷ sort by candidate score and keep best Nc 
+
+> 37:
+
+end for  
+
+> 38:
+
+b⋆ ← arg max b∈B sb 
+
+> 39:
+
+return b⋆Fig. 9: Example grid image for video rollout selection. The grid contains eight candidate video rollouts for the hidden object search task at the first step (“open the right drawer”).  
+
+> •
+
+Current state ( It+1 ): the observation after the robot stops.  
+
+> •
+
+Target state ( Itarget ): the last frame of the generated video plan. The planned video provides a concrete visual reference for the expected outcome. The critic checks whether the change observed in the real world ( It → It+1 ) is consistent with the intended change in the video plan ( It → Itarget ). This comparison distinguishes no-change outcomes (the action did not take effect) from incorrect-change outcomes (a change occurred but the result is wrong), such as moving the wrong object or stopping before the action is completed.                                                                                                
+
+> Prompt for State Verification
+> You are aRobotic Systems Verifier. Your task is to determine whether the CURRENT STATE (Image 2) satisfies the physical requirements of the intended ACTION, given the START STATE (Image 1).
+> INTENDED ACTION: {action }
+> GOAL SPECIFICATION: {goal }
+> You are provided with three images:
+> Image 1(START STATE): state before the action.
+> Image 2(CURRENT STATE): state after attempting the action.
+> Image 3(TARGET STATE): expected outcome from the video plan.
+> Verification logic:
+> 1) Analyze the action. List the physical constraints implied by ‘‘ {action }’’ (e.g., insert ⇒inside acavity and flush; place ⇒resting on asurface;
+> grasp ⇒firm contact). 2) Compare Image 1vs. Image 2. What changed? Did the intended object move as expected?
+
+Fig. 10: Example annotated start image for recovery video generation . The VLM marks the contact point between the purple block and the human index finger with a red star on the lower right part of the purple block, indicating where the corrective poke should occur.                                                              
+
+> 3) Inspect Image 2. Are the action-specific physical constraints satisfied in the current state? 4) Compare Image 2vs. Image 3. Using Image 3 as a visual reference, is the object state close enough to the target outcome?
+> OUTPUT (JSON only):
+> {‘‘success’’: boolean, ‘‘reason’’: string }
+> The reason should identify which physical constraint is (or is not) satisfied, and whether the change from Image 1to Image 2matches the intended change from Image 1 to Image 3.
+
+2) Recovery Action Proposal and Video Generation: A core capability of NovaPlan is recovery from runtime errors. When the verifier returns "success": false , the system enters a corrective planning loop. We use hierarchical prompting that prioritizes local corrections over full resets when the remaining discrepancy is small and the goal remains achievable. This de-sign reduces unnecessary motion and limits error accumulation that can arise from repeatedly replanning full pick-and-place sequences. 
+
+(a) Recovery Mode Selection The VLM first serves as a decision-maker. It compares the current observation with the target state Itarget and selects a recovery strategy S ∈{grasp , non-prehensile }. If grasp recovery is selected, the system proceeds with the standard planning pipeline (i.e., a normal non-recovery step). Otherwise, it invokes the non-prehensile recovery procedure described below. 
+
+(b) Spatial Grounding and Annotation When non-prehensile recovery is selected, the system grounds the abstract corrective plan in the scene geometry. We query the VLM to identify a single contact region where a small external interaction (e.g., a poke or nudge) can move the manipulated object toward the target configuration. To bridge the semantic planner and the video generation model, the VLM produces two outputs:  
+
+> •
+
+Visual Annotation: The VLM edits the latest observation image by overlaying a visual marker (e.g., a red star) at the selected contact point, yielding It+1 ,anno . See Fig-ure 10 for an example in which the VLM marks the contact point between the purple block and a human index finger with a red star for a corrective poke. • Textual Guidance: The VLM generates a detailed prompt P that specifies the desired correction video, including the scene setup, the finger contact point, the hand motion trajectory, and the intended final state. 
+
+Prompt for Recovery Action Proposal and Video Generation 
+
+You are a Recovery-Policy Controller for a manipulation task. You must (i) select a recovery mode and (ii) if non-prehensile recovery is chosen, spatially ground asingle contact point, return an annotated image, and synthesize a structured prompt for video generation. 
+
+INPUTS (provided):  
+
+> •
+
+Current observation and image to annotate: Image 1 
+
+> •
+
+Goal / target image: Image 2 
+
+> •
+
+Goal text: {goal_text }
+
+TASK 1: Recovery Mode Selection. 
+
+Compare Image 1 with Image 2 and choose 
+
+S ∈ { grasp , non_prehensile }.
+
+Choose non_prehensile if a small perturbation (e.g., agentle poke/nudge) can plausibly correct the remaining discrepancy; otherwise choose grasp. Provide a brief justification grounded in visible evidence. 
+
+TASK 2: Spatial Grounding + Annotation (only if 
+
+S = non_prehensile). 
+
+Identify one manipulated object and one contact point that will nudge the object toward Image 2. 
+
+> •
+
+Specify: object_name, contact_surface, contact_-location.  
+
+> •
+
+Define a single anchor contact point (no alternatives).  
+
+> •
+
+Overlay a small solid red star centered exactly at the contact point on Image 1, producing the annotated Image 1. 
+
+> •
+
+Return the annotated Image 1 in the response as abase64-encoded PNG (no surrounding text). 
+
+TASK 3: Textual Guidance Prompt P (only if S is non_prehensile). 
+
+Write a detailed prompt P for a first--last-frame conditioned video generator, using: START = annotated Image 1, GOAL = Image 2.P must be highly structured with labeled sections and must include:  
+
+> •
+
+Global constraints (single continuous shot, fixed camera, no cuts; last frame matches goal exactly).  
+
+> •
+
+Scene description (what is present; what must remain still / never be touched).  
+
+> •
+
+Framing constraints (camera view, margins, full visibility requirements).  
+
+> •
+
+Contact target (single anchor; explicitly tie to the red star center).  
+
+> •
+
+Hard spatial constraints (where the hand may move; what must remain in frame).  
+
+> •
+
+Hand appearance + stability constraints (realistic proportions; no warping; stable pose).  
+
+> •
+
+Hand approach constraints (straight-line approach; height constraints; no arcs).  
+
+> •
+
+Continuous-contact rule (no sliding; no switching surfaces; no second contact point).  
+
+> •
+
+Action description (direction and components; intended rotation/settling toward goal).  
+
+> •
+
+End behavior (pause, retract, exit; no second push; realistic contact physics; silent). Use unambiguous language (must/only/never ), include 
+
+exactly one contact point and exactly one push, do not introduce new objects, and keep all untouched objects unchanged. 
+
+OUTPUT (strict JSON only). Return only valid JSON with exactly this schema: {"recovery_mode": "grasp" | "non_prehensile", "mode_justification": {"discrepancy_summary": "string (1{3 sentences)", "why_this_mode": "string (1{3 sentences)" }, "annotation": {
+
+"enabled": boolean, "object_name": "string" | null, "contact_point_definition": "string" | null, "edit_spec": {"marker": "solid_red_star", "anchor": "center_of_star_is_contact_point", "placement": "string" }, "annotated_image_png_base64": "string" | null }, "prompt_P": {"enabled": boolean, "title": "string", "text": "string (full structured prompt P)" }}If recovery_mode=grasp, set annotation.enabled=false and prompt_P.enabled=false, and set image/prompt fields to null. 
+
+(c) Conditioned Video Generation The final recovery video is generated by a video generation model. We use Veo 3.1 to generate the recovery video in the First-Last-Frame setting. Specifically, the model generates a recovery video 
+
+V conditioned on the annotated start image It+1 ,anno , the proposed correction prompt P , and the target image Itarget 
+
+as the required last frame: 
+
+V = VideoModel (It+1 ,anno , P, I target ) (5) Using It+1 ,anno rather than the raw observation constrains the video model to the specific contact dynamics selected by the VLM. This yields a targeted non-prehensile correction (e.g., a single poke) that steers the scene toward the target configuration without requiring a full reset. Here, we show the example video prompt for generating the recovery video of a human index finger poking the purple block for the fourth step of the FMB variant: 
+
+Example Prompt for Non-prehensile Recovery Video Generation 
+
+Use the provided START image as the first frame and the provided GOAL image as the last frame. The last frame must match the provided goal image: same camera view, same object poses. Single continuous shot, fixed camera, no cuts. 
+
+Scene: slightly top-down view of a perforated metal workbench. A red puzzle base is centered. A purple U-shaped block sits on the base. A yellow rectangular bar stays perfectly still. The green and blue pieces behind remain perfectly still and are never touched. 
+
+Framing: medium-wide shot with extra margin around the red base; the entire red base is visible with space around it. 
+
+Contact target (single anchor, no alternatives): 
+
+A small solid red star is painted on the outer camera-right-facing vertical side wall of the purple block’s right leg, very close to the bottom edge near the red base surface. The center of this red star is the only contact point of the human index finger on the purple block. 
+
+Hard spatial constraint: All visible hand motion stays in the front half of the red base (closest to the bottom of the frame) for the entire shot and never moves into the back half. Make sure the full hand, including the palm and the thumb, is always visible in the view. 
+
+Hand appearance + stability (reduce DoF): It should be a normal adult human hand (realistic proportions), not oversized, not close to the camera. The hand should enter the scene from the right side of the screen. The index finger extended and the full hand always visible in the view. The fingertip shape and perspective stay consistent (no warping). The finger does not twist or rotate; the pose is stable. Hand approach (straight line, no vertical motion): The index finger is low, nearly parallel to the tabletop, and approaches horizontally along a single straight line at the same height as the red star on the purple block. The finger never descends from above, never arcs, and never rises above the purple block’s top edge.                                                                                                                                                                                                 
+
+> Continuous-contact rule (no sliding, no switching surfaces): The fingertip pad presses onto the center of the red star on the bottom edge of the purple block’s right leg and fully covers/occludes the star during contact. From first contact until the purple block is fully seated, the fingertip stays glued to that exact star location (no sliding upward, no rolling over an edge, no moving to the top face, no second contact point). The top face of the purple block is never touched at any time.
+> Action (correct tilt direction, one push only): With the fingertip still glued to the red star on the bottom edge of the purple block’s right leg, perform one smooth inward push from camera-right to camera-left with aslight downward component. This makes the purple block rotate forward toward the camera (toward the bottom of the frame) like a hinge: the front edge (bottom of frame) goes down into the socket first while the back edge (top of frame) rises slightly. Immediately after this forward tilt, the block drops/slides into the socket underneath and becomes fully seated/flush exactly like the goal image.
+> End: As soon as it seats, the finger stops pushing, pauses for afraction of asecond still at the same low height, then retracts straight back to camera-right along the same straight line and exits. No second push, no re-contact elsewhere. Realistic contact physics. Silent.
+
+APPENDIX BMONOCULAR DEPTH ESTIMATION AND CALIBRATION 
+
+We estimate per-frame depth from the generated RGB video, enforcing metric and temporal consistency. Concretely, we use MoGe2 to produce depth in metric units and optionally refine the depth sequence with a Consistent Video Depth (CVD) optimizer to reduce temporal flicker. 
+
+A. MoGe2 Metric Depth Estimation 
+
+Given the input RGB video and known camera intrinsics, we apply MoGe2 to predict a depth map for each frame in metric units. We pass the intrinsics to the model during inference so that the predicted depth is directly tied to the physical camera geometry. If needed, the resulting per-frame depth sequence serves as the metric initialization for a subsequent CVD refinement. 
+
+B. Consistent Video Depth (CVD) 
+
+To suppress frame-to-frame depth flicker, we optionally refine the MoGe2 depth sequence with CVD by solving for a temporally consistent depth Dcons . CVD minimizes geometric reprojection errors induced by optical flow across frames and regularizes the solution with gradient and normal-consistency terms. In our implementation, we set the gradient weight 
+
+wgrad = 2 .0 and the normal-consistency weight wnormal =5.0, and we run the optimization at a fixed processing budget of 196608 pixels. Because MoGe2 provides metric depth, we freeze the global shift term during CVD to preserve the metric offset while improving temporal coherence. 
+
+C. RANSAC-Based Affine Calibration 
+
+To align the generated depth Dgen with a reference sensor depth for the first frame, Dsensor , we estimate a global affine transformation 
+
+Dmetric = sdepth · Dgen + tdepth ,
+
+where sdepth is a scale factor and tdepth is an additive shift. Here, Dgen is taken either from MoGe2 directly or from the MoGe2 output after the optional CVD refinement. We estimate (sdepth , t depth ) with RANSAC to reduce sensitivity to outliers arising from invalid sensor measurements, specular or reflective regions, and occasional depth prediction failures. We first build a calibration mask M that keeps pixels with finite, positive depth in both Dgen and Dsensor . To suppress isolated sensor artifacts (“pepper noise”), we remove small connected components in the valid-depth mask (area < 50 
+
+pixels). We then run RANSAC for 1000 iterations to find 
+
+(sdepth , t depth ) that maximizes the number of inliers: 
+
+argmax 
+
+> s,t
+
+X
+
+> p∈M
+
+I    s D gen (p) + t − Dsensor (p) < τ  ,
+
+(6) where τ is the inlier threshold (we set τ = 0 .15 by default). Finally, we re-fit (sdepth , t depth ) using all RANSAC inliers to obtain the calibrated parameters used to convert the full depth sequence to metric scale. APPENDIX CHAND FLOW CALIBRATION ALGORITHM 
+
+The generated human hand often exhibits “floating” artifacts where the hand appears detached from the object due to scale inconsistency in the generated video. We implement a dual-anchor calibration routine that supports two operational modes: grasp mode and non-prehensile mode as described in Section III-B2. Here we provide more details about the hand scale calibration routines and the values of the hyperparame-ters. 
+
+A. Identification of Interaction Interval 
+
+Contact onset tstart is defined as the first frame at which the relative increase of the object mask area with respect to the initial mask exceeds a threshold ϵ (see Equation (3)); tend is defined analogously for contact termination. For grasp mode, we use ϵ = 0 .9. For non-prehensile mode, we use ϵ = 0 .95 
+
+since the scale of the object motion is smaller in this case. 
+
+B. Anchor 1: Scale Recovery at Contact 
+
+The primary calibration occurs at the contact onset tstart .For grasp mode, we recover a global scale factor s to enforce physical contact between the hand and the object. To find candidate contact fingers, we compute the 2D projection of the tip of each finger. We represent each 2D projection as a circle with a radius of 15 pixels to allow small projection error. The object points in contact can be determined by unprojecting the overlap between the fingertip projection circle and the object mask. Then a candidate isotropic scale sf is estimated by snapping the fingertip to the center of the object points in contact. The fingertip associated with the maximum candidate scale is deemed the contact finger and its scale is used as the global scale factor s.For non-prehensile mode, there might be no overlap be-tween the fingertip and object mask at the contact onset 
+
+tstart , since the video model tends to generate videos with deformations in contact finger when prompted to recover through poking, as illustrated in Figure 4. In this case, since the planner already specifies the contact finger (e.g., “index”) in the prompt for video generation, we can directly use it to compute the scale correction s. We use the intersection of hand mask and object mask to obtain the object points in contact, and then compute s as 
+
+s = ∥Pc∥∥Ptip ∥ , (7) where Pc is the center of object points in contact, and 
+
+Ptip is the 3D location of tip of the contact finger. An additional translation vector ∆tstart is computed such that 
+
+Pc = sP tip + ∆ tstart , ensuring the contact finger physically touches the object in the metric world frame. 
+
+C. Anchor 2: Drift Compensation at Release 
+
+Video models often exhibit “projective drift,” where the hand’s scale implicitly changes as it moves closer to or further away from the camera. To correct this, we calculate a translation offset derr as specified in Equation (4). To avoid perturbing the approach and transport phases, we apply this correction only near release. We find tcorr as the first frame whose universally-scaled fingertip comes within δ of its release configuration, 
+
+tcorr = argmin 
+
+> t
+
+pttip (sstart ) − ptend  
+
+> tip
+
+(sstart ) 2 < δ, (8) and then linearly ramp up the translation within [tcorr , t end ]:
+
+α(t) = I(t ≥ tcorr ) · t − tcorr 
+
+tend − tcorr 
+
+,
+
+Ptcal = Ptraw (sstart , ∆tstart ) + α(t) derr ,
+
+(9) where Ptraw (sstart , ∆tstart ) is the position of the contact finger tip under the universal scale, and ∆tstart is the optional translational compensation that is non-zero only in the non-prehensile mode. We use δ = 5 cm for grasp mode, and 
+
+δ = 2 cm for non-prehensile mode. 
+
+D. Rejection of Hand Flow 
+
+Reliable hand trajectory estimation requires the hand to remain largely within the camera view. We therefore project the estimated hand mesh into the image plane, and reject any trajectory where more than 30% of the hand mask lies outside the image in any frame during the critical interaction phase. Additionally, the trajectory is rejected if the primary cali-bration step (Anchor 1 or Anchor 2) fails. Specifically, if no candidate finger tip satisfies the projection error constraints and the set of candidate scales is empty, the current video generation step is marked as a failure. In either case (visibility TABLE II: Oracle task definitions provided to the baselines (π0.5 and NovaFlow).   
+
+> Task Oracle Sub-step Sequence Four-layer Block Stacking
+> 1.1 Grasp the blue block. 1.2 Put the blue block onto the red block. 2.1 Grasp the green block. 2.2 Put the green block onto the blue block. 3.1 Grasp the yellow block. 3.2 Put the yellow block onto the green block.
+> Color Sorting 1.1 Grasp the yellow block. 1.2 Put the yellow block into the yellow container. 2.1 Grasp the blue block. 2.2 Put the blue block into the blue container. 3.1 Grasp the red block. 3.2 Put the red block into the red saucer.
+> Hidden Object Search
+> 1.1 Grasp the left drawer’s black handle. 1.2 Pull the black drawer handle straight outward. 2.1 Grasp the right drawer’s green handle. 2.2 Pull the green drawer handle straight outward. 3.1 Grasp the block in the right drawer. 3.2 Place the block onto the top surface of the left drawer.
+
+violation or calibration failure), the system discards the current hand flow and prompts the video model for re-generation. APPENDIX DHAND -G UIDED GRASP SELECTION 
+
+NovaPlan also uses the generated video’s human hand as a kinematic prior to select grasps. We implement a three-stage filtering and scoring pipeline to identify the optimal grasp pose. We first generate N = 5000 candidate grasps using Grasp-Gen, then filter the candidate grasps using the pipeline below: 1) Contact Filtering: Given contact fingers Fcontact from the hand mesh calibration procedure, we calculate the distance dprox between the grasp’s “palm line” (segment connecting gripper finger bases) and these contact points. Grasps with dprox > 5 cm are discarded to ensure semantic alignment with the hand-object interaction. 2) Collision Avoidance ( Scollision ): We verify collision-free poses against the scene point cloud (excluding the target object) with a threshold of 1 mm. Grasps with potential collision with scene point cloud are filtered. 3) Palm Line Support ( Ssupport ): To verify that the gripper makes contact with the object, we compute the fraction of object points that are within 0.5 cm of the gripper’s opening. This metric is used as a soft filter for the final scoring of the remaining grasps. We rank the unfiltered grasps using a composite score Stotal :
+
+Stotal = Sconf · Ssupport (10) where Sconf is the raw confidence from GraspGen and 
+
+Ssupport is the metric representing the fraction of the object surface that could be grasped with the predicted grasp direc-tion. APPENDIX EBASELINE ORACLE DEFINITIONS 
+
+To ensure a fair comparison, baselines that lack long-horizon planning capabilities ( π0.5 and NovaFlow) are pro-vided with an “Oracle Planner.” This oracle feeds the systems with a fixed sequence of ground-truth sub-goals in text form, which we present in Table II. APPENDIX FVISUALIZATIONS OF LONG -HORIZON EXPERIMENT 
+
+ROLLOUTS 
+
+We provide a qualitative analysis of our video-based plan-ning approach across all long-horizon manipulation tasks. The rollouts from Figure 11 to Figure 15 illustrate that NovaPlan can synthesize coherent multi-step plans and execute them with robustness and precision. In the Four-layer Block Stacking task (Figure 11), the planner generates and follows a multi-stage vertical assembly plan, requiring consistent geometric reasoning over several sequential placements. In the Color Sorting task (Figure 12), the planner uses semantic cues to match each object to its target container based on visual appearance. It also places the yellow block upright, allowing it to enter the yellow container without jamming at the opening. In the Hidden Object Search task (Figure 13), the planner operates under partial observability and must first explore the scene (e.g., open multiple drawers if necessary) to reveal the target object before completing the placement. In the assembly task from the Functional Manipulation Benchmark (Figure 14), NovaPlan is able to complete along-horizon assembly sequence that requires millimeter-level alignment. Finally, the FMB variant assembly task (Figure 15) show-cases a last non-prehensile poking recovery step, highlighting the effectiveness of our hand-flow extraction strategy for proposing and executing corrective interactions. APPENDIX GEXAMPLE PLANS AND ACTION PROMPTS FOR VIDEO 
+
+GENERATION OF LONG -HORIZON TASKS 
+
+Here, we present representative multi-step plans produced by the planner. For each long-horizon task, we also provide the corresponding example prompts used to condition the video generation model, together with the object of interest tracked at each step. Fig. 11: Four-layer block stacking experiment. Each row in this figure illustrates a distinct, sequential step in the block stacking task. The frames in each row display the execution of that specific step, ordered chronologically from left to right. This rollout demonstrates the model’s ability to handle precise geometric constraints as the robot identifies, grasps, and aligns multiple blocks vertically. 
+
+Fig. 12: Color sorting experiment. Each row in this figure illustrates a distinct, sequential step in the color sorting task. The frames in each row display the execution of that specific step, ordered chronologically from left to right. This sequence highlights the semantic understanding of the planner as the robot sorts objects into containers with matching colors and the execution precision of preventing the yellow block from getting stuck at the yellow container. 
+
+Fig. 13: Hidden object search experiment. Each row in this figure illustrates a distinct, sequential step in the hidden object search task. The frames in each row display the execution of that specific step, ordered chronologically from left to right. This rollout shows an example of planning under partial observability where the robot must open drawers to reveal the target object. Fig. 14: Functional Manipulation Benchmark experiment. Each row in this figure illustrates a distinct, sequential step in an assembly task from the Functional Manipulation Benchmark. The frames in each row display the execution of that specific step, ordered chronologically from left to right. This sequence shows that NovaPlan has the capability to solve long-horizon assembly tasks with millimeter precision. 
+
+Fig. 15: Variant of Functional Manipulation Benchmark experiment. Each row in this figure illustrates a distinct, sequential step in the variant of an assembly task from the Functional Manipulation Benchmark. The frames in each row display the execution of that specific step, ordered chronologically from left to right. The last row of this rollout demonstrates a non-prehensile poking recovery and shows the effectiveness of our hand flow extraction strategy. TABLE III: Examples of generated multi-step action plans, action prompts for step video generation, and objects to track. 
+
+Step Proposed Action Action Prompt for Video Generation Object to Track Task 1: 4-Layer Block Stacking 
+
+Goal: Stack three blocks onto the other block. 
+
+1 Reach to the orange block, grasp it from the top, lift it, move it to the red block, center it, and lower until seated. A human hand reaches to the orange block sitting on the tabletop, grasps it firmly from the top, lifts it straight up, carries it to the red block on the tabletop on its right side, carefully centers it over the red block, and lowers it until fully seated and stable before releasing. The human hand should make every effort not to occlude the orange block during the action and keep the orange block fully visible. The hand completely leaves the frame after the action is done and the overall scene remains still. Do not introduce any new objects in the scene. Orange block 2 Reach to the green block, grasp it from the top, lift it, move it above the orange block, align it, and lower to seat before releasing. A human hand reaches to the green block sitting on the tabletop, grasps it firmly from the top, lifts it quickly, carries it directly above the orange block, puts it onto the orange block’s top face, and releases it. The human hand should avoid occluding the green block during the action and keep the green block entirely in view. The hand fully exits the scene after the action is done and the scene stays motionless. Do not create any new objects in the scene. Green block 3 Reach to the white block, pinch-grasp from the side, lift, hover above the green block, touch the white block’s lower edge to align, then release. A human hand reaches to the white block sitting on the tabletop, grasps it from the side with a tight pinch, snap-lifts it, carries it quickly to hover just above the green block’s top face, touches the white block’s lower edge lightly to the green top to align, and releases it. The human hand should take care not to occlude the white block during the action and keep the white block fully in frame. The hand leaves the scene entirely after the action is done and the whole scene stays still. Do not create any new objects in the scene. White block 
+
+Task 2: Color Sorting 
+
+Goal: Put objects into containers of matching colors. 
+
+1 Reach to the blue cube, grasp it from the top, lift it, move it above the center of the blue dish, lower it onto the dish, and release inside the boundary. A human hand reaches to the blue cube on the tabletop, grasps it from the top, lifts it clear of the surface, moves it above the center of the blue dish, lowers it onto the dish surface, and releases after ensuring it is fully inside the dish boundary. The human hand should make every effort not to occlude the blue cube during the action and keep the blue cube clearly in view. The hand fully exits the scene after the action is done and the scene remains still. Blue cube 2 Reach to the yellow cube, grasp it from the top, lift it, move it straight above the yellow cup opening, lower it into the cup, and release without contacting the rim. A human hand reaches to the yellow cube on the left side of the tabletop in the scene, grasps it from the top, lifts it clear of the surface, moves it straight above the yellow cup opening, lowers it down into the cup until it is fully seated inside, and releases without contacting the rim. The human hand should avoid blocking the yellow cube during the action and keep the yellow cube fully in frame. The hand completely leaves the frame after the action is done and the whole scene stays still. Yellow cube 
+
+Continued on next page TABLE III – continued from previous page Step Proposed Action Action Prompt for Video Generation Object to Track 
+
+3 Reach to the orange cube, grasp it from the top, lift it, move it over the center of the orange dish, lower until it contacts the bottom, and release fully inside. A human hand reaches to the orange cube on the tabletop, grasps it firmly from the top, lifts it clear of the surface, moves it straight over the center of the orange dish, lowers it until it contacts the dish bottom, and releases with the cube fully inside the dish boundary. The human hand should take care not to occlude the orange cube during the action and keep the orange cube entirely visible. The hand fully exits the scene after the action is done and the whole scene stays still. Orange cube 
+
+Task 3: Hidden Object Search 
+
+Goal: Find the object hidden in one drawer unit and place it on top of the other unit. 
+
+1 Reach to the right unit’s black handle, grasp it firmly, and pull the drawer straight outward slowly until the interior is clearly visible. A human hand reaches for the right unit’s black handle, grips it firmly, and draws the drawer straight outward slowly until the inside is clearly visible. The hand should make every effort not to occlude the black handle and keep it fully visible throughout. After the drawer is open, the hand exits the frame completely and the scene remains static. Do not introduce any new objects in the scene. Black handle 2 Reach to the left unit’s green handle, grasp it securely, and pull the drawer straight out at a steady pace until the interior is clearly visible. A human hand reaches to the left unit’s green handle, grasps it firmly, holds it and pulls the drawer outward steadily until the interior is clearly visible. The hand should avoid blocking the green handle and keep it entirely in view during the motion. Once the drawer is opened, the hand fully exits the scene and everything stays still. Do not create any new objects in the scene. Green handle 3 Place the blue block in the left drawer onto the top surface of the right drawer and release it. A human hand grasps the blue block from the top in the left drawer, lifts it up, and moves it onto the top surface of the right drawer and releases it. The human hand should take care not to occlude the blue block during the action and keep the blue block fully in frame. The hand fully exits the scene after the action is done and the whole scene stays still. Do not create any new objects in the scene. Blue block 
+
+Task 4: Functional Manipulation Benchmark 
+
+Goal: Insert all colored blocks on the table into their matching sockets in the red base. 
+
+1 Reach to the blue U-shaped block, grasp it near the top edge, lift it, approach the right-side socket from behind the red base, align the inner notch, slide forward while lowering, then press down to seat flush. A human hand picks up the blue U-shaped block from the back right side of the tabletop and places it into the furthest horizontal slot at the top of the red board. The open side of the U faces the center. The human hand then fully leaves the scene after the action is done and the whole scene stays still. The human hand should make every effort not to occlude the blue block during the action. Blue block 2 Reach to the purple U-shaped block, grasp it near the top edge, lift it, align it with the lowest front socket, lower into the slot, and press down to seat flush. A human hand picks up the purple U-shaped block from the back left side of the tabletop and inserts it into the lowest horizontal socket at the front of the red board. The open side of the U faces the center, aligning with the blue block. The human hand then fully exits the scene after the action is done and the scene remains still. The human hand should avoid occluding the purple block during the action. Purple block 
+
+Continued on next page TABLE III – continued from previous page Step Proposed Action Action Prompt for Video Generation Object to Track 
+
+3 Reach to the yellow rectangular bar, grasp it at the midpoint, lift it, align it with the long central groove, lower it into the slot, and press until it sits fully seated. A human hand picks up the long rectangular yellow block sitting on the right side of the red base on the tabletop and places it into the long central groove on the red base, seating it centered longitudinally within the vertical groove and aligning it with the U-shape openings of the blue and green blocks. The bottom edge of the yellow block extends past the purple block, terminating near the bottom edge of the recessed cross-shaped area of the red base. The human hand leaves the scene entirely after the action is done and the whole scene stays still. The human hand should take care not to occlude the yellow block during the action. Yellow bar 4 Reach to the green block, grasp it near the top center, lift it, align it with the middle slot, lower and press down until it sits flush and locks over the yellow bar. A human hand picks up the green block and inserts it into the middle horizontal slot on the red board. The green block sits in the middle horizontal slot and the arch of the green block straddles directly over the center of the yellow bar, locking it down into the red base. The human hand fully exits the scene after the action is done and the scene remains static. The human hand should make every effort not to occlude the green block during the action. Green block 
+
+Task 5: Functional Manipulation Benchmark-Variant 
+
+Goal: Insert all colored blocks on the table into their matching sockets in the red base. 
+
+1 Reach to the yellow rectangular bar, grasp it at the midpoint, lift it, align it with the long central groove, lower it into the slot, and press down until it sits fully flush. A human hand holds the long rectangular yellow block and places it into the long central groove running vertically down the center of the red board. Ensure it is lying flat at the bottom of the pocket. The human hand exits the scene completely after the action is done and the whole scene stays still. The human hand should avoid occluding the yellow block during the action. Yellow bar 2 Reach to the blue block, grasp it near the top edge, lift it, align it with the top horizontal slot, lower it to straddle over the yellow bar, and press down to seat fully. A human hand picks up the blue block that is sitting on the right backside of the tabletop and inserts the blue block into the top horizontal slot at the top of the red base. It should straddle over the yellow bar and sit fully in the furthest horizontal slot. The human hand fully leaves the scene after the action is done and the whole scene stays still. The human hand should make every effort not to occlude the blue block during the action. Blue block 3 Reach to the green block, grasp it near the top center, lift it, align it with the middle slot, lower to bridge over the yellow bar, and press down until fully seated. A human hand picks up the green block that is sitting on the tabletop and inserts it into the middle horizontal slot. It should bridge over the yellow bar and sit fully in the middle horizontal slot. The human hand leaves the scene entirely after the action is done and the scene remains still. The human hand should take care not to occlude the green block during the action. Green block 
+
+Continued on next page TABLE III – continued from previous page Step Proposed Action Action Prompt for Video Generation Object to Track 
+
+4 Reach to the purple U-shaped block, grasp it near the top edge, lift it, align it with the lowest remaining socket, lower it into place, and press down to seat flush. A human hand picks up the purple U-shaped block that is sitting on the tabletop and inserts it into the last remaining empty horizontal socket at the lowest part of the red board. It should bridge over the yellow bar and sit upright in the lowest horizontal socket in the red base. The human hand fully exits the scene after the action is done and the whole scene stays still. The human hand should avoid occluding the purple block during the action. Purple block

@@ -1,0 +1,671 @@
+Title: Constraint-Rectified Training for Efficient Chain-of-Thought
+
+URL Source: https://arxiv.org/pdf/2602.12526v1
+
+Published Time: Mon, 16 Feb 2026 01:18:57 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Constraint-Rectified Training for Efficient Chain-of-Thought 
+
+Qinhang Wu ∗1, Sen Lin 2, Ming Zhang 3, Yingbin Liang 1, Ness B. Shroff 1
+
+> 1
+
+The Ohio State University 2University of Houston 3Google 
+
+Chain-of-Thought (CoT) has significantly enhanced the reasoning capabilities of Large Language Models (LLMs), especially when combined with reinforcement learning (RL) based post-training methods. While longer reasoning traces can improve answer quality and unlock abilities such as self-correction, they also incur high inference costs and often introduce redundant steps, known as overthinking. Recent research seeks to develop efficient reasoning strategies that balance reasoning length and accuracy, either through length-aware reward design or prompt-based calibration. However, these heuristic-based approaches may suffer from severe accuracy drop and be very sensitive to hyperparameters. To address these problems, we introduce CRT (Constraint-Rectified 
+
+Training), a principled post-training framework based on reference-guarded constrained optimization, yielding a more stable and interpretable formulation for efficient reasoning without fragile threshold tuning. CRT alternates between minimizing reasoning length and rectifying accuracy only when performance falls below the reference, enabling stable and effective pruning of redundant reasoning. We further extend CRT with a two-stage training scheme that first discovers the shortest reliable reasoning patterns and then refines accuracy under a learnt length budget, preventing the re-emergence of verbose CoT. Our comprehensive evaluation shows that this framework consistently reduces token usage while maintaining answer quality at a robust and reliable level. Further analysis reveals that CRT improves reasoning efficiency not only by shortening responses but also by reducing internal language redundancy, leading to a new evaluation metric. Moreover, CRT-based training naturally yields a sequence of intermediate checkpoints that span a spectrum of explanation lengths while preserving correctness, enabling fine-grained control over reasoning verbosity without retraining. 
+
+1. Introduction 
+
+Frontier reasoning models such as OpenAI o1 (Jaech et al., 2024) and Gemini 2.5 (Comanici et al., 2025) have demonstrated remarkable proficiency in addressing complex tasks in mathe-matics, programming, and logical reasoning across diverse domains. Meanwhile, open-source families such as Qwen3 and Phi-4 series provide a spectrum of parameter scales, substantially advancing research in language model reasoning. At the heart of these successes lies Chain-of-Thought (CoT), which allows models to reason step by step and achieve higher performance on challenging problems. 
+
+> *Correspondence to Qinhang Wu (wu.5677@osu.edu).
+> arXiv:2602.12526v1 [cs.LG] 13 Feb 2026
+
+While CoT strengthens reasoning capability, it frequently produces redundant outputs, a phe-nomenon termed overthinking (Sui et al., 2025), which incurs computational overhead and can even degrade answer quality. Efforts to address this efficient reasoning problem primarily span supervised fine-tuning (SFT), inference-time add-ons, and post-training reinforcement learning. Among them, post-training RL is especially powerful since it directly optimizes accuracy and efficiency through reward shaping, rather than relying on prompt curation or decoding strate-gies. However, many existing approaches rely on heuristic reward design or fixed accuracy thresholds that are difficult to tune and often lead to unstable tradeoffs between correctness and brevity. This naturally leads to the following question: Can we develop a principled approach to enhance reasoning efficiency without sacrificing accuracy? In this work, we cast efficient reasoning as a constrained optimization problem, in which the reasoning length is minimized subject to constraints that ensure reasoning accuracy is maintained. More specifically, our contributions can be summarized as follows: • We formulate efficient reasoning as a principled reference-guarded constrained optimization 
+
+problem, where a relative safeguard against a frozen reference policy is introduced to replace fragile absolute-value based accuracy constraints. • We introduce Constraint-Rectified Training (CRT) , a simple and principled post-training algorithm that alternates between shortening reasoning traces and restoring accuracy only when performance falls below the reference, enabling stable and effective pruning of redundant reasoning. • We further extend CRT with a two-stage training scheme that first discovers the short-est reliable reasoning patterns and then refines accuracy under a fixed length budget, preventing the re-emergence of verbose CoT. • We conduct comprehensive evaluations across multiple reasoning benchmarks, demon-strating that CRT consistently reduces reasoning redundancy while maintaining robust answer accuracy. Beyond average length, we further propose a quantitative metric to measure internal language redundancy, revealing efficiency gains that are not captured by token count alone. 
+
+2. Related Work 
+
+RL-based reasoning . CoT prompting (Wei et al., 2022) shows that inducing intermediate steps can substantially improve model’s performance on a wide range of reasoning tasks. Subsequent extensions enhance CoT by reasoning traces aggregation (Wang et al., 2023) and tree-based CoT generalization (Yao et al., 2023). RL has recently re-emerged as a practical recipe for training Large Reasoning Model (LRM) (Cobbe et al., 2021; Lightman et al., 2024; Luo et al., 2025b; Wang et al., 2024; Zeng et al., 2025; Zhu et al., 2025), popularized by the renewed adoption of RL-based post-training in DeepSeek-R1 (Guo et al., 2025). A representative approach is GRPO (Shao et al., 2024), which replaces an explicit reward model with group-relative comparisons among multiple rollouts per prompt; this line has been extended by many variants (Mansouri et al., 2025; Wu et al., 2025; Yu et al., 2025; Zhang et al., 2025). In parallel, a growing body of work characterizes reasoning traces as structured objects to better understand how post-training shapes reasoning behavior (Chen et al., 2025; Hu et al., 2025; Singla et al., 2025). Despite the apparent logical form of CoT, reasoning traces are associated with a diverse set of failures beyond final-answer correctness. Recent studies highlight illusionary or invalid 2Figure 1 | Failure modes of heuristic length-accuracy tradeoffs. Color intensity encodes the response length (brighter = longer; darker = shorter). Circle fill represents accuracy: a fully filled circle marks a correct prediction, whereas a partially filled circle reflects partial correctness, with larger filled regions corresponding to higher correctness. Numbers below the circles denote training steps. reasoning, where the trace may appear plausible without faithfully supporting the answer (He et al., 2025; Jose, 2025; Liu et al., 2025b; Weatherhead et al., 2025); overthinking , where redundant steps inflate cost and can even degrade accuracy (Chen et al., 2024); underthinking , where LRMs still fail to allocate sufficient effective computation (Wang et al., 2025b); collapse into illegible or degenerate chains (Jose, 2025); forgetting induced by reasoning-centric post-training (Phan et al., 2025); and data contamination that can confound conclusions about genuine reasoning improvements (Dang and Mohaisen, 2025; Wang et al., 2025a). These findings collectively call for training frameworks that explicitly regulate how computation is allocated during reasoning. 
+
+Overthinking . The efficiency cost of reasoning has attracted particular attention: unnecessary CoT steps increase latency and token usage, and may introduce additional opportunities for error. Existing approaches mitigate overthinking from several angles, including supervised shortening or compression of reasoning traces (Kang et al., 2025; Liu et al., 2024; Xia et al., 2025), RL-based post-training that directly optimizes for efficient reasoning (Arora and Zanette, 2025; Hou et al., 2025; Li et al., 2025b; Liu et al., 2025a; Luo et al., 2025a; Shen et al., 2025; Yi et al., 2025), and inference-time controls such as early exiting based on intermediate signals (Dai et al., 2025; Hao et al., 2024). However, many methods still hinge on heuristic thresholds or sensitive trade-offs between brevity and correctness, leaving open the question of how to enforce efficiency while preserving answer reliability in a principled manner. 
+
+3. Motivation 
+
+Despite the empirical success of CoT reasoning, inefficiency remains a critical issue for prac-tical deployment, particularly consequential in budget-constrained environments. Existing approaches predominantly quantify inefficiency through response length, implicitly assuming 3that shorter reasoning traces correspond to more efficient reasoning. However, we argue that reasoning inefficiency is not merely a matter of verbosity, but reflects deeper optimization pathologies that are poorly addressed by pure length-based objectives. From an optimization perspective, CoT post-training involves competing objectives: improving task accuracy while reducing reasoning cost. Most existing approaches address this tension by collapsing efficiency into a scalar proxy such as response length and heuristically combining it with an accuracy-based reward. While simple and intuitive, this design treats correctness as a tunable preference rather than an explicit constraint, obscuring its structural role in the optimization problem. The consequences of this entanglement are illustrated in Figure 1. Panel A summarizes two failure modes observed during training with heuristic length-accuracy tradeoffs. In accuracy erosion , models achieve shorter responses at the cost of degraded correctness, even when starting from a strong baseline. In length churn , response length fluctuates substantially across training iterations while accuracy remains largely unchanged, indicating inefficient optimization that fails to suppress redundant reasoning. These behaviors reflect unstable optimization trajectories rather than isolated hyperparameter choices. These failure modes are not merely incidental. Table 1 quantifies accuracy stability condi-tioned on successful length reduction (Len ↓). Across both datasets, selected heuristic baselines 
+
+ThinkPrune and ACPO frequently exhibit accuracy degradation when length decreases: up to one-third of length-reduced instances suffer correctness loss. In contrast, CRT exhibits substan-tially higher accuracy preservation under Len ↓, with a larger fraction of cases maintaining or improving correctness. This gap highlights a fundamental limitation of length-based approaches: since correctness is not explicitly enforced, they provide no mechanism to bound performance degradation. Small changes in length pressure can therefore induce unwanted accuracy shifts. Table 1 | Accuracy stability under successful length reduction. Each entry reports the percentage of problems whose accuracy decreases (AD%), perserves (AP%), or improves (AI%) after training, conditioned on instances where response length is reduced.                             
+
+> Method AD% ( ↓)AP% ( ↑)AI% ( ↑)Acc ( ↑)
+> SAT Math
+> ThinkPrune-1k 37.5% 45.8% 16.7% 81.45
+> ACPO 27.3% 40.9% 31.8% 91.02
+> CRT (ours) 12.5% 56.2% 31.2% 93.16
+> GSM8K
+> ThinkPrune-1k 34.0% 46.1% 19.9% 81.54
+> ACPO 28.7% 51.1% 20.2% 82.78
+> CRT (ours) 20.0% 55.6% 24.4% 84.64
+
+Toward Principled Efficiency Optimization. The insights above indicate that reasoning ineffi-ciency is not merely a matter of verbosity, but a consequence of how efficiency and correctness are coupled during optimization. This motivates a shift from heuristic reward mixing toward a constraint-aware formulation. We advocate for explicitly rectifying efficiency optimization with correctness constraints. Such formulation cleanly separates what must not be sacrificed 
+
+(correctness) from what should be improved (reasoning efficiency), yielding three key advantages: 1. Principled guarantees: correctness is preserved reliably rather than recovered post hoc; 42. Stable optimization dynamics: redundant reasoning patterns are suppressed even when they do not immediately affect accuracy; 3. Fine-grained accuracy control: efficiency can be optimized incrementally without brittle threshold tuning. 
+
+4. Method 
+
+In this section, we introduce Constraint-Rectified Training (CRT), a post-training framework that enables systematic pruning of redundant reasoning while maintaining robust correctness. 
+
+4.1. Preliminaries 
+
+Let 𝑥 denote an input prompt drawn from a distribution 𝜌 , and let 𝑦 represent the model-generated output containing both CoT reasoning and the final answer. We denote 𝑦 ∗ (𝑥 ) as the ground-truth answer corresponding to prompt 𝑥 , and model responses are sampled from a policy 𝜋 𝜃 ( 𝑦 | 𝑥 ) parameterized by 𝜃 . To quantify efficiency, we introduce a normalized length measure ℓnorm ( 𝑦 ), obtained by normalizing response length with respect to the per-prompt mean and variance, yielding a scale-invariant length measure. Solution correctness is evaluated using a verifier-based indicator 1{ 𝑦 = 𝑦 ∗ (𝑥 )} .
+
+4.2. Formulation 
+
+We formulate efficient reasoning as a constrained optimization problem: the goal is to reduce the expected length of generated solutions while ensuring that accuracy does not fall below a specified threshold 𝛼 . Formally, we optimize min  
+
+> 𝜋
+
+E𝑥 ∼𝜌 , 𝑦 ∼𝜋 𝜃 ( 𝑦 |𝑥 ) [ℓnorm ( 𝑦 )] 
+
+s.t. − E𝑥 ∼𝜌 , 𝑦 ∼𝜋 𝜃 ( 𝑦 |𝑥 ) [1{ 𝑦 = 𝑦 ∗ (𝑥 )}] ≤ 𝛼 
+
+(1) which captures the central tension in efficient reasoning: shortening CoT without sacrificing correctness beyond an acceptable margin. However, it is often impractical to specify an appropriate accuracy threshold 𝛼 before post-training for Equation (1). If the threshold is set too high, the feasible region becomes overly restrictive and the model cannot meaningfully shorten its reasoning. Conversely, if the threshold is set too small, the optimization may aggressively prune CoT steps, leading to severe degrada-tion in reasoning quality. 1 In short, the scalar constraint parameter 𝛼 is difficult to tune and does not provide a stable accuracy safeguard during training. To address this problem, we introduce a reference-policy guard to replace the fixed accuracy threshold. Let 𝜋 ref denote a frozen reference model (e.g., the initial model before any length-aware post-training). Since 𝜋 ref represents the original reasoning capability of the model, an intuitive requirement is that our updated policy 𝜋 
+
+should not perform significantly worse than 𝜋 ref in terms of correctness. This leads to a relative accuracy constraint: 
+
+E𝑥 ∼𝜌 , 𝑦 ref ∼𝜋 ref ( 𝑦 |𝑥 ) [1{ 𝑦 = 𝑦 ∗ (𝑥 )}] ≥ E𝑥 ∼𝜌 , 𝑦 ref ∼𝜋 ref ( 𝑦 |𝑥 ) [1{ 𝑦 ref = 𝑦 ∗ (𝑥 )}] − 𝜀 (2) where 𝜀 ≥ 0 is a small tolerance indicating how much accuracy degradation is allowed. This relative constraint avoids the difficulty of selecting an absolute accuracy threshold and ensures 
+
+> 1In the extreme case, the model may omit intermediate reasoning entirely and directly output a final answer.
+
+5that length pruning does not undermine the model’s original problem-solving performance. Under this reference-based accuracy safeguard, the objective can be reformulated as follows: min  
+
+> 𝜋
+
+E𝑥 ∼𝜌 , 𝑦 ∼𝜋 𝜃 ( 𝑦 |𝑥 ) [ℓnorm ( 𝑦 )] 
+
+s.t. E𝑥 ∼𝜌 , 𝑦 ∼𝜋 𝜃 ( 𝑦 |𝑥 ) [1{ 𝑦 = 𝑦 ∗ (𝑥 )}] ≥ E𝑥 ∼𝜌 , 𝑦 ref ∼𝜋 ref ( 𝑦 |𝑥 ) [1{ 𝑦 ref = 𝑦 ∗ (𝑥 )}] − 𝜀 .(3) 
+
+4.3. Constraint-Rectified Training 
+
+We now turn to developing a practical post-training method that can enforce this constraint during optimization. A natural first attempt to enforce the above constraint is to adopt a primal-dual optimization framework, in which the accuracy constraint is incorporated via a Lagrange multiplier and jointly optimized with the primary objective. While conceptually straightforward, such approaches often introduce additional sensitivity to hyperparameter tuning, as the dual variable must be carefully calibrated to balance accuracy preservation and length reduction. In practice, we observe that improper tuning can lead to oscillatory behavior or overly conservative updates, limiting the effectiveness of reasoning pruning. To avoid the use of dual variables, in this paper we leverage the Constraint-Rectified Policy Optimization (CRPO) framework (Xu et al., 2021), which performs immediate, lightweight switches between minimizing length and maintaining accuracy. This aligns directly with our goal: to prune unnecessary reasoning while ensuring the model does not degrade relative to the reference policy. Under our updated formulation, we modify CRPO so that accuracy is enforced relative to the reference model rather than via an absolute threshold. The algorithm therefore alternates between (i) shortening reasoning length when accuracy is sufficiently high, and (ii) restoring accuracy whenever the model underperforms the reference. We propose the resulting algorithm as CRT detailed in Algorithm 1. The procedure is simple, stable in practice, and naturally implements our reference-guarded constraint. 
+
+4.4. Two-stage Extension of CRT 
+
+The reference-guarded formulation in Equation (3) enables effective pruning of redundant reasoning by minimizing response length while ensuring that accuracy does not fall below a fixed reference policy. This design is well aligned with our primary objective of obtaining concise yet reliable reasoning trajectories. However, after Stage I converges, the policy usually reaches a saturated regime where the reasoning length can no longer be substantially reduced. Beyond this point, further updates yield limited improvements in length, while gains in accuracy become comparatively more meaningful and valuable. Thus motivated, we introduce a novel two-stage extension of CRT that decouples efficiency discovery from accuracy refinement. Stage I aggressively compresses reasoning traces under reference-guarded correctness constraints. Stage II then reverses the roles of objective and constraint, but crucially, it avoids introducing an absolute length target which would again require brittle threshold selection. Instead, we use the Stage I trained policy itself as a length reference, and constrain Stage II to match the normalized length profile achieved by that Stage I reference model. This modification yields a principled accuracy-refinement phase without sacrificing the efficiency discovered in Stage I. 
+
+Stage I: Length Minimization under Reference-Guarded Accuracy Constraints. In the first stage, we solve the reference-guarded constrained optimization problem in Equation (3), pro-ducing a compressed policy whose correctness remains competitive with that of the original 6Algorithm 1 Constraint-Rectified Training 
+
+1: Input: Initial LM parameters 𝜃 0, reference policy 𝜋 ref , tolerance 𝜀 , CRPO slack 𝜂 > 0, learning rate 𝜂 𝜃 ,total steps 𝑇 .
+
+2: for step 𝑡 = 0, 1, . . . , 𝑇 − 1 do 
+
+3: Sample minibatch {𝑥 𝑖 }𝐵 𝑖 =1 ∼ 𝜌 , generate 𝑦 𝑖 ∼ 𝜋 𝜃 (· | 𝑥 𝑖 )
+
+4: Generate reference responses 𝑦 ref  
+
+> 𝑖
+
+∼ 𝜋 ref (· | 𝑥 𝑖 )
+
+5: Evaluate minibatch accuracy of current and reference policies: ˆ𝐴 𝑡 = 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+1{ 𝑦 𝑖 = 𝑦 ∗ (𝑥 𝑖 )} , ˆ𝐴 ref = 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+1{ 𝑦 ref  
+
+> 𝑖
+
+= 𝑦 ∗ (𝑥 𝑖 )} 
+
+6: if ˆ𝐴 𝑡 < ˆ𝐴 ref − 𝜀 − 𝜂 then 
+
+7: /* accuracy below reference → rectify toward accuracy */ 
+
+𝜃 𝑡 +1 ← 𝜃 𝑡 + 𝜂 𝜃 ∇𝜃 
+
+1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+1{ 𝑦 𝑖 = 𝑦 ∗ (𝑥 𝑖 )} 
+
+!
+
+8: else 
+
+9: /* accuracy acceptable → optimize for shorter reasoning */ 
+
+𝜃 𝑡 +1 ← 𝜃 𝑡 − 𝜂 𝜃 ∇𝜃 
+
+1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+ℓnorm ( 𝑦 𝑖 )
+
+!
+
+10: end if 
+
+11: end for 
+
+reference policy. Once improvement in response length saturates, we obtain the Stage I reference policy, denoted by 𝜋 (𝐼 ) 
+
+> ref
+
+.
+
+Stage II: Accuracy Maximization under Reference-Based Length Constraints. In the second stage, we shift the optimization focus to maximizing solution correctness while constraining the expected normalized length to remain close to that of the Stage I policy 𝜋 (𝐼 ) 
+
+> ref
+
+:max  
+
+> 𝜋
+
+E𝑥 ∼𝜌 , 𝑦 ∼𝜋 𝜃 ( 𝑦 |𝑥 ) [1{ 𝑦 = 𝑦 ∗ (𝑥 )}] 
+
+s.t. E𝑥 ∼𝜌 , 𝑦 ∼𝜋 𝜃 ( 𝑦 |𝑥 ) [ℓnorm ( 𝑦 )] ≤ E𝑥 ∼𝜌 , 𝑦 (𝐼 )     
+
+> ref ∼𝜋 (𝐼 )
+> ref (𝑦 |𝑥 )
+
+h
+
+ℓnorm 
+
+
+
+𝑦 (𝐼 )
+
+> ref
+
+i 
+
++ 𝛿 ,(4) where 𝛿 ≥ 0 is a small tolerance controlling how much the policy is allowed to deviate (in expectation) from the Stage I length regime. To ensure a consistent length scale across stages, we freeze the statistics used in length normalization (e.g., mean and variance) based on rollouts from 𝜋 (𝐼 ) 
+
+> ref
+
+.This second stage prevents the model from reintroducing unnecessarily long CoT traces to recover accuracy and preserves the learned efficiency profile discovered in Stage I, while encouraging the policy to find higher-quality reasoning strategies within that constraint. 75. Experiments 
+
+5.1. Experimental Setup 
+
+We implement our method within the Verl (Sheng et al., 2025) RL framework. All experiments are conducted using the hardware configuration detailed in Section A. We evaluate our approach on two backbone language models: DeepSeek-R1-Distilled-Qwen-1.5B (Guo et al., 2025) (hereafter 
+
+DeepSeek-1.5B ), and Qwen3-4B (Yang et al., 2025). Across all settings, we use a fixed batch size of 128 and generate 16 rollouts per prompt during training and testing. 
+
+Dataset. Following SimpleRL-Zoo (Zeng et al., 2025), we perform RL on a mixture of the training splits from GSM8K (Cobbe et al., 2021) and MATH (Hendrycks et al., 2021). GSM8K consists of 7.4 𝑘 training and 1.3 𝑘 test examples, while MATH provides 7.5 𝑘 training and 5 𝑘 test examples. These datasets are well-suited for studying reasoning efficiency for several reasons. First, they exhibit complementary difficulty regimes: GSM8K emphasizes elementary, multi-step arithmetic reasoning, whereas MATH contains more challenging problems requiring deeper symbolic manipulation. Second, both datasets provide standardized, in-domain evaluation splits with relatively low inference cost, enabling controlled and systematic analysis of reasoning behaviors under RL training. For evaluation, we consider both in-domain and out-domain benchmarks. In-domain performance is assessed on GSM8K (Cobbe et al., 2021) and MATH500 (Lightman et al., 2024), which follow the same problem distributions as the RL training data. To evaluate generalization beyond the training domain, we additionally report results on a suite of out-domain math reasoning benchmarks, including SAT Math (Zhong et al., 2024), AMC23 (math ai, 2023), AIME24 (Jia, 2024), and OLYMPIAD Bench (He et al., 2024). 
+
+Baselines. In addition to the two base models, we compare our proposed method (denoted as CRT) against reproduced results from recent approaches for efficient reasoning, including ThinkPrune (Hou et al., 2025), L1 (Aggarwal and Welleck, 2025), O1-Pruner (Luo et al., 2025a), ShorterBetter (Yi et al., 2025), and ACPO (Cheng et al., 2025). For ThinkPrune, we evaluate two length budgets, 1 𝑘 and 500. For O1-Pruner, we test two penalty coefficients: 𝜆 ∈ { 1.0, 4.0 }.
+
+Metrics. We report Acc , defined as the pass@1 accuracy (in %) averaged over rollouts per question, and Len , defined as the average number of generated tokens per response. In addition, to better capture the trade-off between reasoning quality and efficiency, we report two composite metrics: AES 1, and AES 2. Higher AES (Luo et al., 2025a) values indicate more favorable efficiency-accuracy trade-off, with AES 2 imposing a stricter penalty on accuracy degradation than AES 1. The formal definition of AES is provided in Section B. 
+
+5.2. Main Results 
+
+We report the in-domain evaluation results for DeepSeek-1.5B in Table 2 and the out-domain results in Table 3. We report Qwen3-4B results in Table 4. Across all settings, CRT achieves the highest AES scores among the evaluated baselines, indicating a superior ability to balance accuracy and reasoning efficiency. Moreover, CRT preserves the original model’s accuracy across most tasks, and in several cases yields measurable improvements. As shown by the training tra-jectories in Figure 2 (left), CRT consistently reduces average response length throughout training while largely maintaining task performance in both domains. In contrast, ThinkPrune exhibits substantial performance degradation beginning in the mid-training phase. These training-time dynamics directly account for the observed differences in final inference performance. 82600 2800 3000 3200 3400 3600         
+
+> Average Length (tokens)
+> 84
+> 85
+> 86
+> Acc (%)
+> Base model
+> ThinkPrune-1k
+> ACPO
+> CRT 8600 8800 9000 9200 9400 9600 9800 10000 10200
+> Average Length (tokens)
+> 50
+> 52
+> Acc (%)
+> Base model
+> ThinkPrune-1k
+> ACPO
+> CRT 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> 110
+> Training Steps
+> 25
+> 27
+> 30
+> 32
+> 89
+> 95
+> 104
+> 114
+> 142
+> 203
+> 223
+> 228
+> 238
+> 250
+> 281
+> 429
+> 432
+> 517
+> 558
+> 574
+> Question index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Row-wise normalized length (0 1 per question)
+
+Figure 2 | Left: Inference trajectories over training checkpoints. We periodically save intermedi-ate model checkpoints during training and evaluate them via inference on the testing dataset. The base model is DeepSeek-1.5B. The upper figure reports in-domain performance, while the lower figure reports out-domain performance. Right: Case study of CRT training behavior evaluated on GSM8K. Each row corresponds to a question, and each column to an intermediate model checkpoint generated during CRT training. Table 2 | Empirical evidence on in-domain testing dataset: GSM8K and MATH500. 
+
+Method GSM8K MATH500 Avg Metrics 
+
+Acc Len Acc Len 𝐴 𝐿 AES 1 AES 2
+
+DeepSeek-1.5B 84.43 1869 85.19 4987 84.81 3428.0 0.0000 0.0000 
+
++ ThinkPrune-500 78.91 995 85.25 4455 82.08 2725.0 0.0441 -0.1168 
+
++ ThinkPrune-1k 81.54 1128 85.69 4206 83.62 2667.0 0.1515 0.0811 
+
++ L1 86.34 2272 85.69 4891 86.02 3581.5 -0.0022 -0.0022 
+
++ O1-Pruner-1.0 80.36 1272 85.75 4174 83.06 2723.0 0.1022 -0.0013 
+
++ O1-Pruner-4.0 84.39 1561 85.56 4452 84.97 3006.5 0.1288 0.1288 
+
++ ShorterBetter 71.24 294 82.47 3205 76.85 1749.6 0.0207 -0.4482 
+
++ ACPO 82.78 1252 85.44 4175 84.11 2713.3 0.1673 0.1261 
+
++ CRT (ours) 84.64 1172 86.06 3826 85.35 2499.2 0.2901 0.2901 
+
+5.3. Analyzing Redundancy Beyond Average Length 
+
+While average response length is a useful coarse indicator of reasoning efficiency, it does not fully capture qualitative differences in how different models reason. In particular, two responses of comparable length may differ substantially in informational density, with one exhibiting repetitive or self-referential patterns (e.g., verification loops or self-doubt statements) that do not contribute to problem solving. Motivated by this observation, we move beyond length-based metrics and analyze changes in language redundancy across training checkpoints and baselines. Qualitative inspection at the sample level reveals that earlier checkpoints frequently contain self-checking and verification loops, where later results could be reiterated multiple times throughout the reasoning trace. Whether such patterns are directly correlated with correctness remains unclear; however, they suggest that efficiency gains may arise not only from shorter outputs but also from reduced redundancy within the text. Although one could assess redundancy using semantic judges (e.g., LLM-based evaluators), we instead focus on deterministic, text-based metrics that can be computed directly and reproducibly. 9Table 3 | Empirical evidence on out-domain testing dataset: SAT Math, AMC23, AIME24, and OLYMPIAD Bench.                                                                                                                              
+
+> Method SAT AMC23 AIME24 Olymp. Avg Metrics
+> Acc Len Acc Len Acc Len Acc Len 𝐴 𝐿 AES 1AES 2
+> DeepSeek-1.5B 89.84 1373 69.84 8634 30.42 14044 13.25 15527 50.84 9894.5 0.00 0.00
+> + ThinkPrune-500 81.45 609 71.88 7715 27.92 13378 13.63 14791 48.72 9123.2 -0.13 -0.33
+> + ThinkPrune-1k 81.45 759 72.97 7548 28.96 13001 14.44 14326 49.46 8908.5 -0.03 -0.17
+> + L1 97.66 2377 72.34 8134 29.38 13565 12.56 15533 52.98 9902.2 0.12 0.12
+> + O1-Pruner-1.0 86.91 1225 70.78 7606 28.54 12930 12.81 14410 49.76 9042.8 -0.01 -0.12
+> + O1-Pruner-4.0 91.21 1500 71.88 7848 30.63 12669 12.62 14547 51.58 9141.0 0.12 0.12
+> + ShorterBetter 84.77 200 74.84 6068 27.08 11714 11.62 12908 49.58 7722.4 0.10 -0.03
+> + ACPO 91.02 1282 71.25 7251 30.42 12367 12.62 14189 51.33 8772.2 0.14 0.14
+> + CRT (ours) 93.16 1582 74.38 6934 28.54 12674 13.63 13956 52.43 8786.4 0.21 0.21
+
+Table 4 | Evaluation results using Qwen3-4B as the base model. Full dataset-wise results are reported in Table 7.                                 
+
+> Method 𝐴 𝐿 AES 1AES 2
+> Qwen3-4B 65.77 2472.8 00
+> + ThinkPrune-500 64.96 2109.8 0.09 0.02
+> + ThinkPrune-1k 64.46 2006.9 0.09 -0.01
+> + O1-Pruner-4.0 62.66 1394.3 0.2 -0.04
+> + ShorterBetter 61.22 1343.4 0.11 -0.23
+> + ACPO 63.12 1675.6 0.12 -0.08
+> + CRT (ours) 62.99 1361.4 0.24 0.03
+
+Compression Ratio as a Redundancy Metric. Redundant text is inherently more compressible. Let zip (·) denote a deterministic compression algorithm (e.g., gzip), and let | · | denote the byte length of a rollout-level response, including chain-of-thought tokens. We define the compression ratio as 𝑅 zip ( 𝑦 ) = |zip ( 𝑦 ) | | 𝑦 | where a lower value of 𝑅 zip indicates greater internal redundancy. We report redundancy statistics across baselines in Table 5, including the average compression ratio 𝑅 zip over all responses, as well as its correctness-conditional variants 𝑅 correct zip ,
+
+𝑅 wrong zip . CRT achieves the highest compression ratio, indicating substantially reduced internal redundancy. Notably, although Table 2 shows that CRT attains a comparable average output length to ThinkPrune-1k, Table 5 reveals a markedly lower redundancy level. This discrepancy demonstrates that average length alone fails to capture structural redundancy in generated reasoning, underscoring the need for redundancy-aware metrics beyond length. 
+
+5.4. Controlling Explanation Length with Correctness Guarantees 
+
+A distinctive advantage of our method is its ability to provide fine-grained, correctness-preserving control over the level of explanation detail. Unlike prior approaches that manipulate the trade-off between correctness and length, our procedure yields a sequence of intermediate checkpoints that span a spectrum of explanation lengths while maintaining original answer quality. This produces a model family that users can query at different levels of verbosity, ranging from concise answers to fully elaborated solutions without sacrificing correctness. To illustrate this property, we visualize the rollout behavior of intermediate checkpoints on the in-domain GSM8K dataset in Figure 2 (Right). We further present a qualitative case study in Figure 3, which tracks the evolution of a single GSM8K example across intermediate training checkpoints. Despite sub-10 Table 5 | Evaluation on answer redundancy using GSM8K.                      
+
+> Method ¯𝑅 zip (↑)¯𝑅 correct zip (↑)¯𝑅 wrong zip (↑)
+> DeepSeek-1.5B 0.356 0.364 0.323
+> + Thinkprune-1k 0.388 0.395 0.363
+> + O1-Pruner-4.0 0.372 0.381 0.335
+> + ACPO 0.397 0.405 0.366
+> + CRT (ours) 0.423 0.433 0.383
+
+Figure 3 | Controlling explanation length while preserving correctness across training check-points. stantial differences in explanation length and structure, all checkpoints produce the same correct final answer. Earlier checkpoints generate detailed, self-verifying reasoning traces, whereas later checkpoints converge to increasingly compact and direct solutions. This progression highlights a key strength of our approach: explanation length can be continuously adjusted through training progress, rather than discretely tuned via heuristics, while preserving correctness throughout. 
+
+5.5. Ablation Study 
+
+We evaluate the effectiveness of the proposed two-stage training scheme by comparing full CRT against a single-stage variant that follows only Stage I for the same number of training steps, denoted as CRT (1s) . In addition, we include a primal-dual baseline, denoted as PD ,which jointly optimizes accuracy and length within a single-stage primal-dual formulation. As shown in Table 6, CRT (1s) consistently underperforms the full two-stage CRT across both in-domain and out-domain evaluations in terms of AES scores. Notably, it exhibits degraded accuracy and longer length on in-domain data, indicating that aggressively minimizing length alone is insufficient to recover reasoning quality once compression saturates. In contrast, the second stage of CRT effectively restores accuracy without substantially increasing response length, leading to improved accuracy-efficiency trade-off. This effect is especially pronounced under AES 2, which heavily penalizes accuracy degradation, highlighting the importance of the Stage II refinement in preserving correctness while maintaining the efficiency profile discovered in Stage I. 11 Table 6 | Evaluation of CRT variants. DeepSeek-1.5B is used as the base model. Detailed per-dataset results are reported in Table 8.                             
+
+> Method 𝐴 𝐿 AES 1AES 2
+> In-domain
+> CRT 85.35 2499.2 0.29 0.29
+> CRT (1s) 84.52 2549.6 0.24 0.22
+> PD 82.28 2461 0.13 -0.02
+> Out-domain
+> CRT 52.43 8786.4 0.21 0.21
+> CRT (1s) 52.03 8613 0.20 0.20
+> PD 50.1 8607.4 0.06 -0.02
+
+6. Conclusion 
+
+In this work, we revisit the problem of overthinking in LRMs from a principled optimization perspective. While prior approaches often rely on heuristic reward shaping, our analysis highlights that such designs struggle to reliably balance brevity and correctness and are prone to unstable training dynamics. To address this, we introduce Constraint-Rectified Training (CRT) , a reference-guarded post-training framework that minimizes reasoning length while preserving solution quality relative to a frozen reference policy. CRT alternates between pruning redundant reasoning and rectifying accuracy only when performance falls below the reference, yielding a stable and interpretable objective without brittle threshold tuning. CRT further admits a two-stage extension that first discovers the shortest reliable reasoning patterns and then refines accuracy under a learnt length budget, preventing the re-emergence of verbose CoT. Empirically, CRT consistently reduces token usage while maintaining answer quality, improves internal reasoning efficiency beyond length, and naturally produces a spectrum of verbosity-controlled checkpoints without retraining. 
+
+References 
+
+P. Aggarwal and S. Welleck. L1: Controlling how long a reasoning model thinks with re-inforcement learning. In Second Conference on Language Modeling , 2025. URL https: //openreview.net/forum?id=4jdIxXBNve .D. Arora and A. Zanette. Training language models to reason efficiently. arXiv preprint arXiv:2502.04463 , 2025. X. Chen, J. Xu, T. Liang, Z. He, J. Pang, D. Yu, L. Song, Q. Liu, M. Zhou, Z. Zhang, et al. Do not think that much for 2+ 3=? on the overthinking of o1-like llms. arXiv preprint arXiv:2412.21187 ,2024. Y. Chen, Y. Mao, X. Yang, S. Ge, S. Bi, L. Liu, S. Hosseini, L. Tan, Y. Nie, and S. Nie. Your thoughts tell who you are: Characterize the reasoning patterns of lrms. arXiv preprint arXiv:2509.24147 ,2025. X. Cheng, J. Li, Z. Zhang, X. Tang, X. Zhao, X. KONG, and Z. Zhang. Incentivizing dual process thinking for efficient large language model reasoning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL https://openreview.net/forum?id= ezOfR26pGQ .12 Y. Chow, M. Ghavamzadeh, L. Janson, and M. Pavone. Risk-constrained reinforcement learning with percentile risk criteria. Journal of Machine Learning Research , 18(167):1–51, 2018. K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, et al. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 , 2021. G. Comanici, E. Bieber, M. Schaekermann, I. Pasupat, N. Sachdeva, I. Dhillon, M. Blistein, O. Ram, D. Zhang, E. Rosen, et al. Gemini 2.5: Pushing the frontier with advanced reason-ing, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. M. Dai, C. Yang, and Q. Si. S-grpo: Early exit via reinforcement learning in reasoning models. 
+
+arXiv preprint arXiv:2505.07686 , 2025. T. C. Dang and D. Mohaisen. Memories retrieved from many paths: A multi-prefix frame-work for robust detection of training data leakage in large language models. arXiv preprint arXiv:2511.20799 , 2025. D. Guo, D. Yang, H. Zhang, J. Song, R. Zhang, R. Xu, Q. Zhu, S. Ma, P. Wang, X. Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. S. Hao, S. Sukhbaatar, D. Su, X. Li, Z. Hu, J. Weston, and Y. Tian. Training large language models to reason in a continuous latent space. arXiv preprint arXiv:2412.06769 , 2024. C. He, R. Luo, Y. Bai, S. Hu, Z. L. Thai, J. Shen, J. Hu, X. Han, Y. Huang, Y. Zhang, J. Liu, L. Qi, Z. Liu, and M. Sun. Olympiadbench: A challenging benchmark for promoting agi with olympiad-level bilingual multimodal scientific problems. In ACL (1) , pages 3828–3850, 2024. URL https://doi.org/10.18653/v1/2024.acl-long.211 .C. He, X. Jiang, L. Wang, H. Yang, C. Peng, P. Yan, F. Shen, and X. Xu. What makes reasoning invalid: Echo reflection mitigation for large language models. arXiv preprint arXiv:2511.06380 ,2025. D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt. Measuring mathematical problem solving with the MATH dataset. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2) , 2021. URL 
+
+https://openreview.net/forum?id=7Bywt2mQsCe .B. Hou, Y. Zhang, J. Ji, Y. Liu, K. Qian, J. Andreas, and S. Chang. Thinkprune: Pruning long chain-of-thought of llms via reinforcement learning. arXiv preprint arXiv:2504.01296 , 2025. S. Hu, X. Cai, Y. Huang, Z. Yao, L. Zhang, P. Zhang, Y. Deng, and K. Chen. How llms learn to reason: A complex network perspective. arXiv preprint arXiv:2509.23629 , 2025. A. Jaech, A. Kalai, A. Lerer, A. Richardson, A. El-Kishky, A. Low, A. Helyar, A. Madry, A. Beutel, A. Carney, et al. Openai o1 system card. arXiv preprint arXiv:2412.16720 , 2024. M. Jia. Aime_2024. https://huggingface.co/datasets/Maxwell-Jia/AIME_2024 , 2024. Hugging Face Datasets. A. Jose. Reasoning models sometimes output illegible chains of thought. arXiv preprint arXiv:2510.27338 , 2025. 13 Y. Kang, X. Sun, L. Chen, and W. Zou. C3ot: Generating shorter chain-of-thought without compromising effectiveness. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 39, pages 24312–24320, 2025. G. Li, Y. Chen, M. Lin, and T. Yang. Drpo: Efficient reasoning via decoupled reward policy optimization. arXiv preprint arXiv:2510.04474 , 2025a. R. Li, Z. Luo, Q. Zhang, R. Li, B. Zhou, A. Payani, and X. Du. Aalc: Large language model efficient reasoning via adaptive accuracy-length control. arXiv preprint arXiv:2506.20160 ,2025b. H. Lightman, V. Kosaraju, Y. Burda, H. Edwards, B. Baker, T. Lee, J. Leike, J. Schulman, I. Sutskever, and K. Cobbe. Let’s verify step by step. In The Twelfth International Conference on Learning Representations , 2024. URL https://openreview.net/forum?id=v8L0pN6EOi .H. Liu, L. Cao, Y. Ren, M. Zhou, H. Dong, X. Ma, S. Han, and D. Zhang. Bingo: Boosting efficient reasoning of llms via dynamic and significance-based reinforcement learning. arXiv preprint arXiv:2506.08125 , 2025a. J. Liu, W. Dai, Z. Huang, N. Miao, and E. Chen. Verifying large language models’ reasoning paths via correlation matrix rank. arXiv preprint arXiv:2510.24299 , 2025b. T. Liu, Q. Guo, X. Hu, C. Jiayang, Y. Zhang, X. Qiu, and Z. Zhang. Can language models learn to skip steps? Advances in Neural Information Processing Systems , 37:45359–45385, 2024. H. Luo, L. Shen, H. He, Y. Wang, S. Liu, W. Li, N. Tan, X. Cao, and D. Tao. O1-pruner: Length-harmonizing fine-tuning for o1-like reasoning pruning. In 2nd AI for Math Workshop @ ICML 2025 , 2025a. URL https://openreview.net/forum?id=ioYybCRcyW .H. Luo, Q. Sun, C. Xu, P. Zhao, J.-G. Lou, C. Tao, X. Geng, Q. Lin, S. Chen, Y. Tang, and D. Zhang. Wizardmath: Empowering mathematical reasoning for large language models via reinforced evol-instruct. In The Thirteenth International Conference on Learning Representations , 2025b. URL 
+
+https://openreview.net/forum?id=mMPMHWOdOy .O. E. Mansouri, M. E. A. Seddik, and S. Lahlou. Noise-corrected grpo: From noisy rewards to unbiased gradients. arXiv preprint arXiv:2510.18924 , 2025. math ai. amc23, 2023. URL https://huggingface.co/datasets/math-ai/amc23 .H. Phan, X. Yang, K. Yao, J. Zhang, S. Bi, X. Tang, M. Khabsa, L. Liu, and D. Lei. Beyond reasoning gains: Mitigating general capabilities forgetting in large reasoning models. arXiv preprint arXiv:2510.21978 , 2025. Z. Shao, P. Wang, Q. Zhu, R. Xu, J. Song, X. Bi, H. Zhang, M. Zhang, Y. Li, Y. Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Y. Shen, J. Zhang, J. Huang, S. Shi, W. Zhang, J. Yan, N. Wang, K. Wang, Z. Liu, and S. Lian. Dast: Difficulty-adaptive slow-thinking for large reasoning models. arXiv preprint arXiv:2503.04472 ,2025. G. Sheng, C. Zhang, Z. Ye, X. Wu, W. Zhang, R. Zhang, Y. Peng, H. Lin, and C. Wu. Hybridflow: A flexible and efficient rlhf framework. In Proceedings of the Twentieth European Conference on Computer Systems , pages 1279–1297, 2025. 14 P. Singla, S. Garg, A. Singh, I. Garg, and K. S. Saichandran. Thinking about thinking: Evaluating reasoning in post-trained language models. arXiv preprint arXiv:2510.16340 , 2025. Y. Sui, Y.-N. Chuang, G. Wang, J. Zhang, T. Zhang, J. Yuan, H. Liu, A. Wen, S. Zhong, N. Zou, H. Chen, and X. Hu. Stop overthinking: A survey on efficient reasoning for large language models. Transactions on Machine Learning Research , 2025. ISSN 2835-8856. URL https: //openreview.net/forum?id=HvoG8SxggZ .H. Wang, H. Li, B. Ko, and H. Zhang. On the fragility of benchmark contamination detection in reasoning models. arXiv preprint arXiv:2510.02386 , 2025a. P. Wang, L. Li, Z. Shao, R. Xu, D. Dai, Y. Li, D. Chen, Y. Wu, and Z. Sui. Math-shepherd: Verify and reinforce llms step-by-step without human annotations. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 9426–9439, 2024. X. Wang, J. Wei, D. Schuurmans, Q. V. Le, E. H. Chi, S. Narang, A. Chowdhery, and D. Zhou. Self-consistency improves chain of thought reasoning in language models. In The Eleventh International Conference on Learning Representations , 2023. URL https://openreview.net/f orum?id=1PL1NIMMrw .Y. Wang, Q. Liu, J. Xu, T. Liang, X. Chen, Z. He, L. Song, D. Yu, J. Li, Z. Zhang, et al. Thoughts are all over the place: On the underthinking of long reasoning models. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025b. S. Weatherhead, F. Salim, and A. Belbasis. Illusions of reflection: open-ended task reveals sys-tematic failures in large language models’ reflective reasoning. arXiv preprint arXiv:2510.18254 ,2025. J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V. Le, D. Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems , 35:24824–24837, 2022. Y. Wu, L. Ma, L. Ding, M. Li, X. Wang, K. Chen, Z. Su, Z. Zhang, C. Huang, Y. Zhang, et al. It takes two: Your grpo is secretly dpo. arXiv preprint arXiv:2510.00977 , 2025. H. Xia, C. T. Leong, W. Wang, Y. Li, and W. Li. Tokenskip: Controllable chain-of-thought compression in llms. arXiv preprint arXiv:2502.12067 , 2025. T. Xu, Y. Liang, and G. Lan. Crpo: A new approach for safe reinforcement learning with convergence guarantee. In International Conference on Machine Learning , pages 11480–11491. PMLR, 2021. A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv, C. Zheng, D. Liu, F. Zhou, F. Huang, F. Hu, H. Ge, H. Wei, H. Lin, J. Tang, J. Yang, J. Tu, J. Zhang, J. Yang, J. Yang, J. Zhou, J. Zhou, J. Lin, K. Dang, K. Bao, K. Yang, L. Yu, L. Deng, M. Li, M. Xue, M. Li, P. Zhang, P. Wang, Q. Zhu, R. Men, R. Gao, S. Liu, S. Luo, T. Li, T. Tang, W. Yin, X. Ren, X. Wang, X. Zhang, X. Ren, Y. Fan, Y. Su, Y. Zhang, Y. Zhang, Y. Wan, Y. Liu, Z. Wang, Z. Cui, Z. Zhang, Z. Zhou, and Z. Qiu. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. S. Yao, D. Yu, J. Zhao, I. Shafran, T. Griffiths, Y. Cao, and K. Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. Advances in neural information processing systems , 36:11809–11822, 2023. 15 J. Yi, J. Wang, and S. Li. Shorterbetter: Guiding reasoning models to find optimal inference length for efficient reasoning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL https://openreview.net/forum?id=MJvwM5dBZM .Q. Yu, Z. Zhang, R. Zhu, Y. Yuan, X. Zuo, YuYue, W. Dai, T. Fan, G. Liu, J. Liu, L. Liu, X. Liu, H. Lin, Z. Lin, B. Ma, G. Sheng, Y. Tong, C. Zhang, M. Zhang, R. Zhang, W. Zhang, H. Zhu, J. Zhu, J. Chen, J. Chen, C. Wang, H. Yu, Y. Song, X. Wei, H. Zhou, J. Liu, W.-Y. Ma, Y.-Q. Zhang, L. Yan, Y. Wu, and M. Wang. DAPO: An open-source LLM reinforcement learning system at scale. In The Thirty-ninth Annual Conference on Neural Information Processing Systems ,2025. URL https://openreview.net/forum?id=2a36EMSSTp .W. Zeng, Y. Huang, Q. Liu, W. Liu, K. He, Z. MA, and J. He. SimpleRL-zoo: Investigating and taming zero reinforcement learning for open base models in the wild. In Second Conference on Language Modeling , 2025. URL https://openreview.net/forum?id=vSMCBUgrQj .X. Zhang, S. Wu, Y. Zhu, H. Tan, S. Yu, Z. He, and J. Jia. Scaf-grpo: Scaffolded group relative policy optimization for enhancing llm reasoning. arXiv preprint arXiv:2510.19807 , 2025. W. Zhong, R. Cui, Y. Guo, Y. Liang, S. Lu, Y. Wang, A. Saied, W. Chen, and N. Duan. Agieval: A human-centric benchmark for evaluating foundation models. In NAACL-HLT (Findings) , pages 2299–2314, 2024. URL https://doi.org/10.18653/v1/2024.findings-naacl.149 .J. Zhu, C. Zheng, J. Lin, K. Du, Y. Wen, Y. Yu, J. Wang, and W. Zhang. Retrieval-augmented pro-cess reward model for generalizable mathematical reasoning. arXiv preprint arXiv:2502.14361 ,2025. 
+
+A. Hardware Details 
+
+All baselines and our proposed method were trained on systems with the following hardware configuration: • Operating system: Red Hat Enterprise Linux (RHEL) 9 • Type of CPU: Intel Xeon Platinum 8470 (Sapphire Rapids, 52 cores) running at 2.0 GHz • Type of GPU: NVIDIA H100 "Hopper" with 94 GB memory All model inference and evaluation were conducted on separate systems with the following hardware configuration: • Operating system: Red Hat Enterprise Linux (RHEL) 9 • Type of CPU: AMD EPYC 7H12 (64 cores) running at 2.6 GHz • Type of GPU: NVIDIA A100 "Ampere" with 40 GB memory 
+
+B. Additional Details 
+
+Length Normalization. We implement response-length normalization using a per-prompt standardization scheme:  
+
+> ℓnorm
+
+( 𝑦 ) = 𝜎 LEN ( 𝑦 ) − E𝑦 ∼𝜋 𝜃 (· | 𝑥 ) [LEN ( 𝑦 )] √︁ 
+
+Var 𝑦 ∼𝜋 𝜃 (· | 𝑥 ) [LEN ( 𝑦 )] 
+
+!
+
+. (5) 16 where the expectation and variance are computed over responses sampled from the current policy. This normalization preserves the relative ordering of response lengths while making length penalties comparable across prompts with different intrinsic difficulty. 
+
+Accuracy-Efficiency Score (AES). This metric was first introduced in O1-Pruner (Luo et al., 2025a), which jointly considers the relative change in accuracy ( Δ𝐴 ) and response length ( Δ𝐿 ), defined as 
+
+Δ𝐴 = 𝐴 model − 𝐴 base 
+
+𝐴 base 
+
+, Δ𝐿 = 𝐿 base − 𝐿 model 
+
+𝐿 base 
+
+,where Δ𝐿 > 0 indicates a shorter response than the baseline. The AES is computed as AES =
+
+
+
+𝛼 Δ𝐿 + 𝛽 |Δ𝐴 |, Δ𝐴 ≥ 0, 
+
+𝛼 Δ𝐿 − 𝛾 |Δ𝐴 |, Δ𝐴 < 0, where 𝛼 controls the sensitivity to efficiency gain, while 𝛽 and 𝛾 govern the reward and penalty magnitudes for accuracy gain or loss, respectively. We report two variants: AES 1 with (𝛼 , 𝛽 , 𝛾 ) =
+
+(1, 3, 5 ) (Luo et al., 2025a) and AES 2 with (𝛼 , 𝛽 , 𝛾 ) = (1, 3, 10 ) (Li et al., 2025a). 
+
+C. Additional Results 
+
+We present the full Qwen3-4B results in Table 7, and report the full CRT ablation study in Table 8. Table 7 | Full results of experiments based on Qwen3-4B. 
+
+Method GSM8K MATH500 SAT MATH AMC23 AIME24 Olymp. Avg Metrics 
+
+Acc Len Acc Len Acc Len Acc Len Acc Len Acc Len 𝐴 𝐿 AES 1 AES 2
+
+Qwen3-4B 92.2 310 85.62 1113 99.02 1260 69.38 1895 24.38 6382 24 3876 65.77 2472.8 0 0
+
++ ThinkPrune-500 91.45 281 84.53 1253 99.22 772 67.97 1806 22.71 5332 23.88 3214 64.96 2109.8 0.09 0.02 
+
++ ThinkPrune-1k 90.32 287 84.78 1167 98.83 1004 66.09 1631 23.33 4879 23.38 3074 64.46 2006.9 0.09 -0.01 
+
++ O1-Pruner-4.0 90.2 186 82.12 849 98.05 287 63.44 1459 19.58 3222 22.56 2364 62.66 1394.3 0.2 -0.04 
+
++ ShorterBetter 90.16 133 80.28 598 96.48 1092 62.19 1064 16.04 3235 22.19 1939 61.22 1343.4 0.11 -0.23 
+
++ ACPO 89.98 196 83.38 755 99.22 549 62.81 1285 21.25 4586 22.06 2683 63.12 1675.6 0.12 -0.08 
+
++ CRT (ours) 90.2 222 82.94 790 98.83 318 64.06 1387 20.21 3264 21.69 2188 62.99 1361.4 0.24 0.03 
+
+Table 8 | Full results of CRT ablation study on all testing datasets. 
+
+Method GSM8K MATH500 SAT AMC23 AIME24 Olymp. Avg Metrics 
+
+Acc Len Acc Len Acc Len Acc Len Acc Len Acc Len 𝐴 𝐿 AES 1 AES 2
+
+DeepSeek-1.5B 84.43 1869 85.19 4987 89.84 1373 69.84 8634 30.42 14044 13.25 15527 62.16 7738.9 0 0
+
+CRT 83.23 1102 85.81 3998 93.16 1214 72.66 6982 29.17 12426 13.12 13831 62.86 6591.8 0.18 0.18 
+
+CRT (1s) 84.64 1172 86.06 3826 93.16 1582 74.38 6934 28.54 12674 13.63 13956 63.4 6690.7 0.20 0.20 
+
+PD 79.24 975 85.31 3947 88.67 803 71.72 7337 27.5 12540 12.5 13750 60.82 6558.6 0.04 -0.06 
+
+17 Algorithm 2 Primal-Dual Finetuning (PDO Chow et al. (2018) variant) 
+
+1: Input: Initial LM parameters 𝜃 0, reference policy 𝜋 ref , dual variable 𝜆 0 ≥ 0, learning rates 𝜂 𝜃 , 𝜂 𝜆 ,tolerance 𝜀 , total steps 𝑇 .
+
+2: for step 𝑡 = 0, 1, . . . , 𝑇 − 1 do 
+
+3: Sample minibatch {𝑥 𝑖 }𝐵 𝑖 =1 ∼ 𝜌 .
+
+4: Generate 𝑦 𝑖 ∼ 𝜋 ( 𝑦 | 𝑥 𝑖 , 𝜃 𝑡 ) and 𝑦 ref  
+
+> 𝑖
+
+∼ 𝜋 ref ( 𝑦 | 𝑥 𝑖 ).
+
+5: Estimate minibatch accuracies: ˆ𝐴 𝑡 = 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+1{ 𝑦 𝑖 = 𝑦 ∗ (𝑥 𝑖 )} ,ˆ𝐴 ref = 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+1{ 𝑦 ref  
+
+> 𝑖
+
+= 𝑦 ∗ (𝑥 𝑖 )} .
+
+6: Compute constraint residual: ˆ𝑔 𝑡 ← ( ˆ𝐴 ref − 𝜀 ) − ˆ𝐴 𝑡 .
+
+7: Compute Lagrangian estimator: ˆL( 𝜃 𝑡 , 𝜆 𝑡 ) = 1
+
+𝐵 
+
+> 𝐵
+
+∑︁ 
+
+> 𝑖 =1
+
+ℓnorm ( 𝑦 𝑖 ) + 𝜆 𝑡 ˆ𝑔 𝑡 .
+
+8: /* Primal update on policy: */ 
+
+𝜃 𝑡 +1 ← 𝜃 𝑡 − 𝜂 𝜃 ∇𝜃 ˆL( 𝜃 𝑡 , 𝜆 𝑡 ).
+
+9: /* Dual update on constraint: */ 
+
+𝜆 𝑡 +1 ← 𝜆 𝑡 + 𝜂 𝜆 ˆ𝑔 𝑡 
+
+
+
+> +
+
+.
+
+10: end for 
+
+We provide the full text for Figure 3: 18 Step 10 (Length: 579) 
+
+Okay, so I need to figure out how many bolts of fiber a robe takes. The problem says it takes 2 bolts of blue fiber and half that much white fiber. Hmm, let me break this down step by step. First, the blue fiber part is straightforward. It’s 2 bolts. So, that’s simple enough. Now, the white fiber is half that much. Wait, does that mean it’s half a bolt? Or is it half the quantity? Hmm, the problem says "half that much," which usually means half the quantity, not half a bolt. So, if blue fiber is 2 bolts, white fiber would be 2 divided by 2. Let me calculate that. 2 divided by 2 is 1. So, white fiber is 1 bolt. Now, to find the total number of bolts, I need to add the blue fiber and white fiber together. So, that’s 2 bolts plus 1 bolt. Let me do the addition: 2 + 1 equals 3. So, altogether, the robe takes 3 bolts of fiber. Wait, just to double-check, sometimes in math problems, especially with word problems, the wording can be tricky. The problem says "half that much." So, is it 50% more than half of the blue fiber? No, that doesn’t make sense because it’s saying half that much, not half more. So, half of 2 is 1. That still seems correct. Alternatively, if someone misreads it as half as much, that would be 1 bolt, but the problem says half that much, which is 1. So, yes, 1 bolt white fiber. Adding them together gives 3 total bolts. I don’t think there’s any other way to interpret "half that much." If it were half of the blue fiber, that would be 1, but half that much would mean half the amount, so half of 2 is 1. Either way, it’s 1. So, adding them gives 3. I think that’s solid. So, the total number of bolts is 3. **Final Answer** The robe takes a total of 3 bolts of fiber. The robe takes 2 bolts of blue fiber. The white fiber is half that much, which is calculated as follows: White fiber = 22 = 1 bolt Adding the blue fiber and white fiber together gives: Total bolts = 2 + 1 = 3
+
+Thus, the total number of bolts is 3 .
+
+> 19 Step 50 (Length: 268)
+
+First, determine the amount of blue fiber needed, which is 2 bolts. Next, calculate the white fiber required. It’s half of the blue fiber, so 2 divided by 2 equals 1 bolt. Finally, add the two amounts together to find the total number of bolts: 2 plus 1 equals 3 bolts. **Solution:** Let’s determine the total number of bolts needed for the robe. 1. **Blue Fiber:** Blue fiber = 2 bolts 2. **White Fiber:** White fiber = 12 × Blue fiber = 12 × 2 = 1 bolt 3. **Total Bolts:** Total bolts = Blue fiber + White fiber = 2 + 1 = 3 bolts **Final Answer:** 
+
+> 3
+> Step 110 (Length: 134)
+
+First, the robe requires 2 bolts of blue fiber. Next, it needs half as much white fiber as blue fiber, which is 1 bolt. Adding these together, the total number of bolts required is 3. **Solution:** 1. **Blue Fiber:** 2 bolts. 2. **White Fiber:** Half of the blue fiber, so 12 × 2 = 1 bolt. **Total Bolts Needed:** 2 + 1 = 3
+
+D. Case Study of Inference Behavior 
+
+> We present the full case study corresponding to the right panel of Figure 2 in Figure 4. The results show that response length is consistently reduced over training for most samples, while the majority of questions preserve performance or even exhibit accuracy improvements. 20 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> 110
+
+Training Steps 
+
+> 6
+> 25
+> 27
+> 30
+> 32
+> 44
+> 89
+> 94
+> 95
+> 99
+> 104
+> 114
+> 127
+> 142
+> 159
+> 163
+> 203
+> 220
+> 223
+> 225
+> 228
+> 238
+> 250
+> 270
+> 281
+> 284
+> 344
+> 348
+> 352
+> 367
+> 387
+> 389
+> 429
+> 432
+> 459
+> 470
+> 517
+> 549
+> 558
+> 574
+> Question index 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> 110
+
+Training Steps 
+
+> 6
+> 25
+> 27
+> 30
+> 32
+> 44
+> 89
+> 94
+> 95
+> 99
+> 104
+> 114
+> 127
+> 142
+> 159
+> 163
+> 203
+> 220
+> 223
+> 225
+> 228
+> 238
+> 250
+> 270
+> 281
+> 284
+> 344
+> 348
+> 352
+> 367
+> 387
+> 389
+> 429
+> 432
+> 459
+> 470
+> 517
+> 549
+> 558
+> 574
+> Question index
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Row-wise normalized length (0 1 per question)
+
+Figure 4 | Case study of GSM8K inference behavior. Each row corresponds to a question, and each column to an intermediate model checkpoint generated during CRT training. Color intensity encodes the response length (brighter = longer; darker = shorter). Circle fill represents accuracy: a fully filled circle marks a correct prediction, whereas a partially filled circle reflects partial correctness. 21

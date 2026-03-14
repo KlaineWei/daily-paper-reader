@@ -6,76 +6,73 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-13
-- 运行时间：2026-03-13 19:11:39 UTC
+- 最新运行日期：2026-03-14
+- 运行时间：2026-03-14 19:57:20 UTC
 - 运行状态：成功
-- 本次总论文数：18
-- 精读区：7
+- 本次总论文数：17
+- 精读区：6
 - 速读区：11
 
 ### 今日简报（AI）
-今日深度复盘 18 篇 AI 顶尖成果，重点攻克双臂机器人复杂操控与神经符号 VLA 模型两大满分课题。
-核心突破在于通过分层场景清理与神经符号架构，赋予了具身智能在密集杂乱环境下的强鲁棒性与逻辑理解力。
-建议优先研读 HSC-VLA 与 NS-VLA，掌握分层强化学习与多模态大模型在具身智能领域的最新融合趋势。
-- 详情：[/202603/13/README](/202603/13/README)
+今日精选 17 篇前沿论文，深度复盘自动驾驶与具身智能领域的两项 9 分级重磅突破。
+重点关注 SAMoE-VLA 的场景自适应专家模型及 MoMaStage 的长程任务规划，展示了 AI 在复杂物理环境中的精准决策力。
+建议优先研读具身智能与 LLM 强化学习的结合，掌握大模型从逻辑推理走向物理落地的最新趋势。
+- 详情：[/202603/14/README](/202603/14/README)
 
 ### 精读区论文标签
-1. [HSC-VLA: Hierarchical Scene-Clearing for Robust Bimanual Manipulation in Dense Clutter](/202603/13/2603.07484v1-hsc-vla-hierarchical-scene-clearing-for-robust-bimanual-manipulation-in-dense-clutter)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：用于长程操作任务的分层 VLA 框架
-2. [NS-VLA: Towards Neuro-Symbolic Vision-Language-Action Models](/202603/13/2603.09542v1-ns-vla-towards-neuro-symbolic-vision-language-action-models)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：通过在线强化学习优化的神经符号 VLA 模型
-3. [OmniGuide: Universal Guidance Fields for Enhancing Generalist Robot Policies](/202603/13/2603.10052v1-omniguide-universal-guidance-fields-for-enhancing-generalist-robot-policies)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：通过引导场提升VLA模型在复杂任务中的表现
-4. [SysNav: Multi-Level Systematic Cooperation Enables Real-World, Cross-Embodiment Object Navigation](/202603/13/2603.06914v1-sysnav-multi-level-systematic-cooperation-enables-real-world-cross-embodiment-object-navigation)  
+1. [SAMoE-VLA: A Scene Adaptive Mixture-of-Experts Vision-Language-Action Model for Autonomous Driving](/202603/14/2603.08113v1-samoe-vla-a-scene-adaptive-mixture-of-experts-vision-language-action-model-for-autonomous-driving)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：视觉语言模型集成用于长程规划与机器人导航
-5. [Learning From Failures: Efficient Reinforcement Learning Control with Episodic Memory](/202603/13/2603.07110v1-learning-from-failures-efficient-reinforcement-learning-control-with-episodic-memory)  
+   evidence：用于自动驾驶的视觉-语言-动作（VLA）模型
+2. [MoMaStage: Skill-State Graph Guided Planning and Closed-Loop Execution for Long-Horizon Indoor Mobile Manipulation](/202603/14/2603.08383v1-momastage-skill-state-graph-guided-planning-and-closed-loop-execution-for-long-horizon-indoor-mobile-manipulation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于机器人强化学习长程探索的情境记忆
-6. [From Reactive to Map-Based AI: Tuned Local LLMs for Semantic Zone Inference in Object-Goal Navigation](/202603/13/2603.08086v1-from-reactive-to-map-based-ai-tuned-local-llms-for-semantic-zone-inference-in-object-goal-navigation)  
+   evidence：基于分层技能的长程移动操作规划
+3. [Cross-Hand Latent Representation for Vision-Language-Action Models](/202603/14/2603.10158v1-cross-hand-latent-representation-for-vision-language-action-models)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：微调本地大模型用于具身导航中的语义推理
-7. [SELF-VLA: A Skill Enhanced Agentic Vision-Language-Action Framework for Contact-Rich Disassembly](/202603/13/2603.11080v1-self-vla-a-skill-enhanced-agentic-vision-language-action-framework-for-contact-rich-disassembly)  
+   evidence：用于跨具身操纵的视觉-语言-动作框架
+4. [ResWM: Residual-Action World Model for Visual RL](/202603/14/2603.11110v1-reswm-residual-action-world-model-for-visual-rl)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于复杂拆解任务的智能体VLA框架
+   evidence：用于稳定长程视觉控制的基于模型的强化学习框架
+5. [Ada-RS: Adaptive Rejection Sampling for Selective Thinking](/202603/14/2602.19519v1-ada-rs-adaptive-rejection-sampling-for-selective-thinking)  
+   标签：评分：8.0/10、query:slm-rl
+   evidence：针对8B模型的自适应拒绝采样以实现高效推理
+6. [ImpedanceDiffusion: Diffusion-Based Global Path Planning for UAV Swarm Navigation with Generative Impedance Control](/202603/14/2603.09031v1-impedancediffusion-diffusion-based-global-path-planning-for-uav-swarm-navigation-with-generative-impedance-control)  
+   标签：评分：8.0/10、query:slm-rl
+   evidence：结合VLM的无人机长程路径规划分层框架
 
 ### 速读区论文标签
-1. [Hierarchical Reward Design from Language: Enhancing Alignment of Agent Behavior with Human Specifications](/202603/13/2602.18582v1-hierarchical-reward-design-from-language-enhancing-alignment-of-agent-behavior-with-human-specifications)  
+1. [GradAlign: Gradient-Aligned Data Selection for LLM Reinforcement Learning](/202603/14/2602.21492v1-gradalign-gradient-aligned-data-selection-for-llm-reinforcement-learning)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：长程强化学习任务的分层奖励设计
-2. [Toward AI Autonomous Navigation for Mechanical Thrombectomy using Hierarchical Modular Multi-agent Reinforcement Learning (HM-MARL)](/202603/13/2602.18663v1-toward-ai-autonomous-navigation-for-mechanical-thrombectomy-using-hierarchical-modular-multi-agent-reinforcement-learning-hm-marl)  
+   evidence：大语言模型强化学习的数据选择
+2. [ExpLang: Improved Exploration and Exploitation in LLM Reasoning with On-Policy Thinking Language Selection](/202603/14/2602.21887v1-explang-improved-exploration-and-exploitation-in-llm-reasoning-with-on-policy-thinking-language-selection)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：长程导航任务中的分层强化学习
-3. [TPRU: Advancing Temporal and Procedural Understanding in Large Multimodal Models](/202603/13/2602.18884v1-tpru-advancing-temporal-and-procedural-understanding-in-large-multimodal-models)  
+   evidence：通过基于强化学习的思考语言选择提高推理能力
+3. [AutoQRA: Joint Optimization of Mixed-Precision Quantization and Low-rank Adapters for Efficient LLM Fine-Tuning](/202603/14/2602.22268v1-autoqra-joint-optimization-of-mixed-precision-quantization-and-low-rank-adapters-for-efficient-llm-fine-tuning)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：用于具身智能和机器人操作的小型多模态模型
-4. [Pyramid MoA: A Probabilistic Framework for Cost-Optimized Anytime Inference](/202603/13/2602.19509v1-pyramid-moa-a-probabilistic-framework-for-cost-optimized-anytime-inference)  
+   evidence：结合量化与LoRA的参数高效微调
+4. [Search More, Think Less: Rethinking Long-Horizon Agentic Search for Efficiency and Generalization](/202603/14/2602.22675v1-search-more-think-less-rethinking-long-horizon-agentic-search-for-efficiency-and-generalization)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：分层智能体混合架构，以低成本提升小模型推理能力
-5. [Enhancing Web Agents with a Hierarchical Memory Tree](/202603/13/2603.07024v1-enhancing-web-agents-with-a-hierarchical-memory-tree)  
+   evidence：针对效率和泛化的长程智能体搜索
+5. [Search More, Think Less: Rethinking Long-Horizon Agentic Search for Efficiency and Generalization](/202603/14/2602.22675v2-search-more-think-less-rethinking-long-horizon-agentic-search-for-efficiency-and-generalization)  
+   标签：评分：8.0/10、query:slm-rl
+   evidence：针对效率和泛化的长程智能体搜索
+6. [LEAD: Breaking the No-Recovery Bottleneck in Long-Horizon Reasoning](/202603/14/2603.06870v1-lead-breaking-the-no-recovery-bottleneck-in-long-horizon-reasoning)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：分层存储用于解耦高层逻辑与底层动作
-6. [ImageEdit-R1: Boosting Multi-Agent Image Editing via Reinforcement Learning](/202603/13/2603.08059v1-imageedit-r1-boosting-multi-agent-image-editing-via-reinforcement-learning)  
+   evidence：突破大语言模型长程推理中的不可恢复瓶颈
+7. [EXPLORE-Bench: Egocentric Scene Prediction with Long-Horizon Reasoning](/202603/14/2603.09731v2-explore-bench-egocentric-scene-prediction-with-long-horizon-reasoning)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：强化学习协调多智能体视觉语言任务
-7. [AgentServe: Algorithm-System Co-Design for Efficient Agentic AI Serving on a Consumer-Grade GPU](/202603/13/2603.10342v1-agentserve-algorithm-system-co-design-for-efficient-agentic-ai-serving-on-a-consumer-grade-gpu)  
+   evidence：具身智能体第一人称视角场景预测的长程推理
+8. [MANSION: Multi-floor lANguage-to-3D Scene generatIOn for loNg-horizon tasks](/202603/14/2603.11554v1-mansion-multi-floor-language-to-3d-scene-generation-for-long-horizon-tasks)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：智能体 AI 中小参数语言模型的高效推理服务
-8. [Meta-Reinforcement Learning with Self-Reflection for Agentic Search](/202603/13/2603.11327v1-meta-reinforcement-learning-with-self-reflection-for-agentic-search)  
-   标签：评分：7.0/10、query:slm-rl
-   evidence：带有自我反思的元强化学习用于长程智能体搜索
-9. [Helix: Evolutionary Reinforcement Learning for Open-Ended Scientific Problem Solving](/202603/13/2603.07642v1-helix-evolutionary-reinforcement-learning-for-open-ended-scientific-problem-solving)  
+   evidence：具身智能环境中跨楼层长程任务的评估框架
+9. [$\textbf{Re}^{2}$: Unlocking LLM Reasoning via Reinforcement Learning with Re-solving](/202603/14/2603.07197v1-textbfre2-unlocking-llm-reasoning-via-reinforcement-learning-with-re-solving)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：用于复杂问题解决的分层进化强化学习
-10. [SGG-R$^{\rm 3}$: From Next-Token Prediction to End-to-End Unbiased Scene Graph Generation](/202603/13/2603.07961v2-sgg-rrm-3-from-next-token-prediction-to-end-to-end-unbiased-scene-graph-generation)  
+   evidence：通过可验证奖励的强化学习改进大模型推理步骤
+10. [Ares: Adaptive Reasoning Effort Selection for Efficient LLM Agents](/202603/14/2603.07915v1-ares-adaptive-reasoning-effort-selection-for-efficient-llm-agents)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：强化学习策略优化用于多模态模型中的结构化推理
-11. [Deep Tabular Research via Continual Experience-Driven Execution](/202603/13/2603.09151v2-deep-tabular-research-via-continual-experience-driven-execution)  
+   evidence：多步LLM智能体任务的动态推理努力选择
+11. [SPIRAL: A Closed-Loop Framework for Self-Improving Action World Models via Reflective Planning Agents](/202603/14/2603.08403v1-spiral-a-closed-loop-framework-for-self-improving-action-world-models-via-reflective-planning-agents)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：用于长程分析任务的闭环决策
+   evidence：通过反思规划智能体进行长程视频生成
 
 
 <div class="dpr-home-promo-card">

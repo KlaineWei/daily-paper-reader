@@ -1,0 +1,845 @@
+Title: AutoQRA: Joint Optimization of Mixed-Precision Quantization and Low-rank Adapters for Efficient LLM Fine-Tuning
+
+URL Source: https://arxiv.org/pdf/2602.22268v1
+
+Published Time: Fri, 27 Feb 2026 01:04:16 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# AutoQRA: Joint Optimization of Mixed-Precision Quantization and Low-rank Adapters for Efficient LLM Fine-Tuning 
+
+Changhai Zhou 1 Shiyang Zhang 2 Yuhua Zhou 3 Qian Qiao 4 Jun Gao 2 Cheng Jin 1 Kaizhou Qin 1
+
+Weizhong Zhang 1
+
+## Abstract 
+
+Quantization followed by parameter-efficient fine-tuning has emerged as a promising paradigm for downstream adaptation under tight GPU mem-ory constraints. However, this sequential pipeline fails to leverage the intricate interaction between quantization bit-width and LoRA rank. Specifi-cally, a carefully optimized quantization alloca-tion with low quantization error does not always translate to strong fine-tuning performance, and different bit-width and rank configurations can lead to significantly varying outcomes under the same memory budget. To address this limitation, we propose AutoQRA , a joint optimization frame-work that simultaneously optimizes the bit-width and LoRA rank configuration for each layer dur-ing the mixed quantized fine-tuning process. To tackle the challenges posed by the large discrete search space and the high evaluation cost asso-ciated with frequent fine-tuning iterations, Auto-QRA decomposes the optimization process into two stages. First, it first conducts a global multi-fidelity evolutionary search, where the initial pop-ulation is warm-started by injecting layer-wise importance priors. This stage employs specific operators and a performance model to efficiently screen candidate configurations. Second, trust-region Bayesian optimization is applied to locally refine promising regions of the search space and identify optimal configurations under the given memory budget. This approach enables active compensation for quantization noise in specific layers during training. Experiments show that AutoQRA achieves performance close to full-precision fine-tuning with a memory footprint comparable to uniform 4-bit methods. 
+
+> 1
+
+Fudan University 2Yale University 3Zhejiang Univer-sity 4OpenWPLab. Correspondence to: Changhai Zhou 
+
+<zhouch23@m.fudan.edu.cn >, Cheng Jin <jc@fudan.edu.cn >,Weizhong Zhang <weizhongzhang@fudan.edu.cn >.
+
+Preprint. February 27, 2026. 
+
+## 1. Introduction 
+
+Deploying large language model (LLMs) for specific down-stream tasks can be prohibitively memory intensive, which prevents many users from adapting strong base models in practice (Makridakis et al., 2023; Raiaan et al., 2024; Chang et al., 2024). A common workaround is a sequential pipeline: first quantize the pretrained backbone to fit a tight GPU memory budget, then perform parameter efficient fine tun-ing by training lightweight adapters such as LoRA while keeping the quantized backbone frozen (Hu et al., 2022; Li et al., 2023; Xu et al., 2023). In this setting, the deployment budget is a hard constraint, and the objective is the post fine tuning performance achieved within that budget. Recent work has begun to exploit layerwise heterogeneity in the quantize-then-fine-tune pipeline for LLMs. On the quan-tization side, mixed-precision methods allocate different bit widths across layers according to estimated sensitivity, aiming to reduce the discrepancy between the quantized model and its full-precision counterpart (Huang et al., 2025; Lee et al., 2025). On the adaptation side, non-uniform rank allocation concentrates LoRA capacity on layers that are more important for task adaptation (Zhang et al., 2023; Zhou et al., 2025). However, we find that a bit-width allocation that appears favorable under reconstruction or calibration criteria can still lead to poor performance after fine-tuning. Moreover, under the same memory budget, different combi-nations of bit width and LoRA rank can yield sharply dif-ferent outcomes. The fundamental reason is that bit width and LoRA rank interact, yet most methods treat them as independent decisions. For example, a typical performance-oriented pipeline first fixes per-layer precision using static proxies and then adjusts non-uniform ranks. This separa-tion is misaligned with the deployment objective because the two knobs are coupled during training. Lower preci-sion introduces quantization noise, while additional adapter capacity can partially compensate for that noise through learning. Once bit widths are fixed, the system loses the opportunity to trade redundant precision for learnability in the layers where adapters can use it most effectively, leading to systematic resource misallocation. These observations motivate a joint optimization problem 1
+
+> arXiv:2602.22268v1 [cs.LG] 25 Feb 2026 Submission and Formatting Instructions for ICML 2026
+
+that assigns a bit width and a LoRA rank to each layer for fine-tuning. Solving this problem is difficult: the search space is large and fully discrete, making exhaustive enu-meration infeasible. More importantly, low-cost proxies are unreliable because they do not model the interaction between quantization noise and adapter updates (Frantar et al., 2023; Zhao et al., 2025). Reliable evaluation therefore requires at least partial fine-tuning, which turns the search into an expensive black-box optimization problem. In many deployment settings, this search is run offline and its cost can be amortized over repeated deployments, making search time a secondary constraint relative to memory and post-fine-tuning performance. Nevertheless, repeated trial-and-error via fine-tuning remains prohibitively expensive. To this end, we adopt a multi-fidelity search strategy that quickly filters poor configurations using short fine-tuning runs, and allocates longer fine-tuning runs only to a small set of promising candidates. We propose AutoQRA , a coarse-to-fine framework for automated quantization and rank al-location. AutoQRA uses a two-phase design that balances global coverage with local refinement. In Phase I , AutoQRA performs a global multi-fidelity evo-lutionary search to approximate the Pareto frontier over accuracy and memory. The population is warm-started with layer-wise importance priors, and importance-guided muta-tions focus edits on influential layers. A learned surrogate model screens candidates and improves promotion decisions (Ru et al., 2020), while the returned frontier is formed from real measured evaluations rather than surrogate predictions. In Phase II , AutoQRA refines strong Phase I candidates with trust-region Bayesian optimization (Eriksson et al., 2020). We fit a Gaussian process surrogate on evaluations at the highest-fidelity setting and select configurations using Ex-pected Improvement (EI) (Jones et al., 1998). Both phases terminate automatically when improvements saturate, using hypervolume progress for Phase I (Zitzler & Thiele, 1999) and acquisition saturation for Phase II. Our contributions are: (1) We formulate joint per layer bit width and LoRA rank allocation under a strict memory bud-get, and explain why decoupled pipelines are misaligned with post fine tuning performance. (2) We introduce Au-toQRA, a two phase coarse to fine framework that com-bines multi fidelity evolutionary screening with trust region Bayesian refinement to search the discrete joint space ef-ficiently. (3) Experiments show that AutoQRA achieves performance close to full precision fine tuning with a mem-ory footprint comparable to uniform 4 bit methods. 
+
+## 2. Related Work 
+
+Our work is situated at the intersection of parameter-efficient fine-tuning and automated model compression, building upon advances in quantization and black-box optimization. 
+
+2.1. Efficient LLM Fine-Tuning Quantization and Mixed-Precision. PTQ serves as a foun-dation for compressing LLMs, with methods like GPTQ (Frantar et al., 2023) and AWQ (Lin et al., 2023) utilizing second-order information or activation statistics to minimize reconstruction error. While highly effective for inference, standard PTQ often degrades performance when weights are frozen during subsequent fine-tuning. To address layer-wise sensitivity, mixed-precision techniques such as SliM-LLM (Huang et al., 2025) allocate bit-widths based on Hessian spectra or salience metrics. However, these methods typ-ically focus exclusively on weight precision, treating the adaptation capacity as a fixed constant or ignoring it entirely. 
+
+PEFT. Exemplified by LoRA (Hu et al., 2022), freezes the backbone and injects trainable low-rank matrices. QLoRA (Dettmers et al., 2023) further democratized access by quan-tizing the backbone to 4-bit, yet it retains a uniform rank assignment. Acknowledging that uniform capacity is inef-ficient, adaptive approaches like AdaLoRA (Zhang et al., 2023) and RankAdaptor (Zhou et al., 2025) dynamically prune or allocate ranks based on singular value importance. Crucially, these methods optimize the topology of adapters but assume a static, uniform precision for the underlying weights, failing to exploit the memory trade-offs available through variable quantization. Recent efforts have attempted to bridge these two paradigms. LoftQ (Li et al., 2023) and LQ-LoRA (Guo et al., 2023) propose alternating optimiza-tion schemes or initialization heuristics to align quantiza-tion with low-rank structures. While pioneering, they rely on localized proxies (e.g., reconstruction loss) rather than global task performance, and they typically resort to itera-tive heuristics rather than a principled global search over the joint discrete design space. 
+
+2.2. Automated Search for Model Compression 
+
+Our approach also draws inspiration from Neural Architec-ture Search and Automated Machine Learning, which frame compression as a discrete optimization problem. 
+
+Search Strategies for Compression. Early works in NAS utilized Reinforcement Learning (RL) or Evolutionary Al-gorithms (EAs) to discover efficient architectures (Zoph & Le, 2016; Real et al., 2019). For model compression, similar search strategies have been applied to find per-layer quanti-zation policies (Wang et al., 2019). However, these methods often incur prohibitive computational costs, making them impractical for LLM fine-tuning loops. 
+
+Sample-Efficient Black-Box Optimization. To mitigate search costs, multi-fidelity optimization has emerged as a standard. Hyperband (Li et al., 2018) and BOHB (Falkner 2Submission and Formatting Instructions for ICML 2026        
+
+> (a) Sensitivity Analysis (b) Proxy Failure
+> Figure 1. Empirical Motivation for Joint Optimization. (a) Impact of Joint Allocation: We visualize the accuracy distribution of feasible mixed-precision configurations across tasks. The substantial performance spread demonstrates that distinct pairings of bit-width (q) and rank ( r) yield vastly different outcomes even under the same memory budget. (b) Proxy-Objective Mismatch: Standard calibration metrics (Perplexity, x-axis) fail to predict post-finetuning accuracy (y-axis). The weak correlation ( ρ=0 .46 ) and frequent rank reversals indicate that static proxies cannot reliably identify configurations where learnable adapters compensate for quantization noise.
+
+et al., 2018) leverage cheap, low-fidelity approximations (e.g., partial epochs) to efficiently allocate resources to promising candidates. Techniques for optimizing over mixed categorical and continuous spaces, such as CoCaBO (Ru et al., 2020), demonstrate that leveraging correlations be-tween variables can significantly accelerate convergence. 
+
+## 3. Methodology 
+
+We introduce AutoQRA ( Auto mated Q uantization– Rank A llocation), a framework designed to resolve the evalua-tion dilemma in joint model compression and adaptation. AutoQRA formulates the allocation of bit-width and rank as a constrained black-box optimization problem, replac-ing unreliable static proxies with dynamic assessment. To navigate the prohibitive search space efficiently, we adopt a coarse-to-fine strategy: Phase I approximates the global Pareto frontier via a multi-fidelity evolutionary search, while Phase II performs local Bayesian refinement to pinpoint con-figurations where adapter capacity maximally compensates for quantization noise (Figure 2). 
+
+3.1. Motivation and Problem Formulation Motivation We identify a critical dependency between quan-tization precision and adaptation rank. Figure 1a illustrates the performance distributions of diverse mixed bit-rank con-figurations across five downstream tasks. Crucially, distinct combinations of bit-width ( q) and rank ( r) yield vastly dif-ferent outcomes even under identical memory constraints. We observe substantial performance fluctuations, with ac-curacy gaps exceeding 25% on tasks such as Winogrande and ARC-Challenge. The consistent relative performance of specific configurations, indicated by color markers, demon-strates that downstream utility is strictly coupled with the joint allocation of q and r. Suboptimal combinations lead to severe degradation, whereas optimal pairings approach full-precision performance. This volatility underscores that bit-width and rank cannot be optimized in isolation. Static metrics employed by decoupled methods fail to capture these non-linear interactions. We also provide a detailed dis-cussion on the orthogonality between backbone and adapter contributions in Appendix A. A common strategy is to guide bit allocation using PTQ-style calibration metrics. However, once adapters are intro-duced, static proxies become unreliable for selecting learn-able joint allocations. We randomly sample n=30 feasible bit–rank configurations and compare a calibration proxy (neg. log perplexity computed with frozen weights) to the final post-finetuning task score. Figure 1b shows only mod-erate correlation and frequent rank reversals. Two failure modes are salient. First, configurations with worse proxy values can still fine-tune well when rank is assigned to learn-able layers that compensate quantization noise. Second, even when proxy values are similar, post-finetune accuracy can vary substantially across configurations, indicating that proxy-matched quantization error does not determine fine-tuning outcomes. Together with Figure 1a, this mismatch motivates treating joint bit–rank allocation as a constrained black-box optimization problem. 
+
+Discussion. A key reason for the mismatch between quan-tization proxies and downstream fine tuning performance is that common proxies evaluate forward reconstruction of a frozen backbone, whereas downstream adaptation is an optimization problem carried out in a constrained update space. As a result, a bit width allocation that appears fa-vorable under reconstruction or calibration criteria can still lead to poor fine tuned performance, because it may intro-duce error patterns that are misaligned with the correction directions expressible by low rank updates. Equivalently, 3Submission and Formatting Instructions for ICML 2026 Phase I: Global Multi-Fidelity Evolutionary Search Phase II: Local Bayesian Refinement    
+
+> Low-Fidelity
+> High-Fidelity
+> Multi -Fidelity
+> Evaluation
+> Best Configuration:
+> Ranks = {16, 8, 8, 4, 16, 16, 8, 8, 4, 12, 12, ...}
+> Bits ={6, 4, 4, 2, 4, 2, 4,2 ,6, 4, 2, 4, 6, 2, ... }
+
+Pareto Interface  
+
+> Rank
+> Bit -Width
+> Performance
+> n
+> n-1
+> n-2
+> ...
+> 2
+> 1
+> 0Importance -Guided
+> Initialization
+> Warm -S tart Population
+> ··
+> ·
+> (a) Population
+> Crossover &
+> Important-Guide
+> Mutation
+> ···
+> (b) Offspring Population
+> Iteration
+> Elite Population
+
+Population 
+
+Refinement 
+
+> Elite Selection
+
+Figure 2. Overview of the AutoQRA framework. Phase I (left) approximates the global Pareto frontier via a multi-fidelity evolutionary search, utilizing importance-guided mutations and surrogate screening to navigate the discrete space. Phase II (right) performs a local Bayesian refinement to identify a precise operating point that maximizes user utility under the budget constraint. 
+
+the per layer bit pattern imposes a structural constraint on the function class of the frozen backbone, and only a subset of these constrained structures remains highly trainable un-der a fixed rank budget. This viewpoint is consistent with findings related to the lottery ticket hypothesis (Frankle & Carbin, 2019; Frankle et al., 2020), which suggest that under strong structural constraints only certain parameterizations or subnetworks remain highly trainable and can reach high accuracy after optimization. In our setting, different bit allo-cations correspond to different constrained structures, while rank allocation controls the degrees of freedom available to compensate quantization noise during training. 
+
+Design Space and Budget. Consider a transformer model with L layers. We define discrete search spaces for bit-widths Q (e.g., {2, 4, 8}) and LoRA ranks R (e.g., 
+
+{4, 8, 16 }). A configuration C is a sequence of tuples speci-fying the precision and topology for each layer: 
+
+C = {(qℓ, r ℓ)}Lℓ=1 , where qℓ ∈ Q , r ℓ ∈ R . (1) The total memory footprint M (C) comprises the quantized backbone, trainable adapters, and quantization metadata. Let N (Wℓ) be the parameter count of the dense weights at layer ℓ. Assuming adapters utilize 16-bit precision ( pr =16 ), the layer-wise memory cost is: 
+
+mℓ(C) = N (Wℓ) · qℓ
+
+8 + mmeta 
+
+> ℓ
+
+| {z }
+
+> Quantized Backbone
+
++ (din rℓ + rℓdout ) · pr
+
+8| {z }
+
+> Trainable Adapters
+
+, (2) 
+
+where mmeta  
+
+> ℓ
+
+accounts for quantization scales and zero-points. We aim to maximize the validation performance 
+
+P (C) after fine-tuning, subject to a strict global memory budget Bmax .
+
+The Optimization Challenge. Formally, we solve the con-strained optimization problem: maximize  
+
+> C
+
+P (C) := Metric (FineTune (C)) 
+
+subject to 
+
+> L
+
+X
+
+> ℓ=1
+
+mℓ(C) ≤ Bmax .
+
+(3) This formulation presents two challenges: (1) P (C) is a 
+
+black-box function with no closed-form gradient relative to discrete qℓ or rℓ; and (2) evaluating P (C) is computa-tionally expensive, prohibiting exhaustive search over the exponential space (|Q| × |R| )L.Phase I approximates the Pareto frontier C∗ of non-dominated configurations. Phase II (Refinement) subse-quently maximizes a scalarized utility function f (C; α) gov-erned by a user preference parameter α ∈ [0 , 1] :
+
+f (C; α) = α · ˆP (C) − (1 − α) · ˆM (C), (4) where ˆP and ˆM denote min-max normalized metrics. 
+
+3.2. Phase I: Global Multi-Fidelity Evolutionary Search 
+
+Phase I aims to construct a diverse set of feasible bit– rank configurations that concentrate near the performance– memory Pareto frontier, which Phase II subsequently refines. As illustrated in Figure 2, we combine (i) an evolutionary loop (Deb et al., 2002) for exploration and diversity with (ii) a Hyperband-style multi-fidelity evaluation schedule, so that evaluations at the highest-fidelity setting (largest step count) are reserved for only a small fraction of candidates. We first define the footprint used to enforce feasibility. Fol-lowing Eq. (2), the total footprint is 
+
+M (C) = 
+
+> L
+
+X
+
+> ℓ=1
+
+mℓ(C). (5) 4Submission and Formatting Instructions for ICML 2026 
+
+In all experiments, the feasibility check M (C) ≤ Bmax 
+
+uses the exact accounting from our implementation, includ-ing quantization metadata (e.g., scales and zero-points). We use two signals to guide joint search: Iq (ℓ) for propos-ing bit edits and Ir (ℓ) for proposing rank edits. They are separated because quantization sensitivity and adaptation learnability are often mismatched, not because the optimiza-tion is decoupled. Iq (ℓ) measures a layer’s sensitivity to low-bit perturbations on a small calibration set, while Ir (ℓ)
+
+measures how much update energy a layer exhibits during fine-tuning. Both signals are used only for warm start and for defining proposal distributions in our operators; they are not used as substitutes for the final fine-tuning metric.See Appendix B for Iq (ℓ) and Ir (ℓ) definitions. We encode each configuration by an ordinal embedding 
+
+ψ(C) ∈ R2L: each qℓ ∈ Q and rℓ ∈ R is mapped to its ordinal index on the corresponding ladder and then stan-dardized, and we concatenate all layers. 
+
+Warm start. Initialization starts from an importance-shaped prototype and adds small perturbations for diversity: 
+
+q(0)  
+
+> ℓ
+
+= τq ( eIq (ℓ)) 
+
+> Q
+
+, r(0)  
+
+> ℓ
+
+= τr ( eIr (ℓ)) 
+
+> R
+
+. (6) Here eIq , eIr denote normalized scores; τq , τ r are monotone mappings from scores to discrete ladders that respect the hard constraint M (C) ≤ Bmax (implemented via a greedy fill under the exact memory accounting). The initial popula-tion P0 is formed by this prototype plus perturbed variants, followed by feasibility repair. 
+
+Feasibility repair. We use a deterministic projection REPAIR (·) to map any infeasible candidate back into the feasible set; the operator is reused in Phase II. Let q− 
+
+> ℓ
+
+(resp. 
+
+r− 
+
+> ℓ
+
+) denote the nearest lower choice in Q (resp. R). We define the memory saved by a single discrete downgrade as 
+
+∆Mt(ℓ) = 
+
+(
+
+M (C) − M (C ↓ qℓ), t = q, M (C) − M (C ↓ rℓ), t = r, (7) where t ∈ { q, r }, and C ↓ qℓ replaces qℓ by q− 
+
+> ℓ
+
+(analogously for rℓ). While M (C) > B max , we apply the downgrade that minimizes sensitivity per saved memory:        
+
+> (ℓ⋆, t ⋆) = arg min
+> ℓ, t ∈{ q,r }
+> eIt(ℓ) + ϵ
+> ∆Mt(ℓ)s.t. ∆Mt(ℓ)>0,(8)
+
+with Iq used for t=q and Ir used for t=r. This rule removes capacity from low-sensitivity layers and from the knob (bit or rank) that yields the largest memory relief for the smallest expected damage, terminating once feasibility is restored. 
+
+Variation operators. Offspring are generated by two com-plementary mutations, each followed by REPAIR (·). Asensitivity-guided mutation selects a layer according to 
+
+Pr  
+
+> t
+
+(ℓ) = It(ℓ)γ
+
+PLj=1 It(j)γ , t ∈ { q, r },
+
+(t = q: bit updates; t = r: rank updates) .
+
+(9) where γ > 0 controls the concentration of importance sam-pling. It then changes qℓ or rℓ by one adjacent discrete step. A memory-balanced coupled mutation applies a pri-mary memory-increasing edit (e.g., qℓ ↑ or rℓ ↑), then per-forms compensating memory-decreasing edits (possibly on different layers) until feasibility is restored. This global compensation avoids the scale mismatch of within-layer “iso-memory” pairing and keeps the search concentrated near the constraint boundary. 
+
+Multi-fidelity evaluation. We parameterize evaluation cost by the number of fine-tuning steps T (equivalently, a fractional number of epochs) and use an increasing ladder 
+
+0 < T 1 < · · · < T S with pruning factor η > 1. Evalua-tions at smaller Ts provide inexpensive but noisier estimates 
+
+P (C; Ts) (low-fidelity, LF), while TS denotes the largest step count used in our search (high-fidelity, HF) and is not assumed to correspond to fully converged fine-tuning. When a candidate is promoted from Ts to Ts+1 , it continues train-ing from its checkpoint at Ts rather than restarting, so that 
+
+P (C; Ts+1 ) is directly comparable across candidates. To reduce variance in LF ranking, we fix the optimizer hyper-parameters, random seed, and data order across candidates. 
+
+Surrogate screening. Multi-fidelity screening is used ex-clusively for promotion decisions. At stage s, we train Φs
+
+to predict the HF score P (C; TS ) from LF observations. Let Ds = {(Ci, P (Ci; Ts), P (Ci; TS )) } be the paired set collected so far (across generations). With feature vector 
+
+xi = [ P (Ci; Ts), log M (Ci), ψ (Ci)] , we fit Φs(·; θs) by regression: 
+
+θ⋆s = arg min 
+
+> θ
+
+X
+
+> (Ci,·)∈D s
+
+ρ(Φ s(xi; θ) − P (Ci; TS ))+ λ∥θ∥22,
+
+(10) where ρ(·) is the Huber loss to mitigate occasional LF outliers. When |D s| is insufficient early on, promotion falls back to ranking by the measured P (C; Ts). Crucially, Pareto selection uses measured P (C; TS ) rather than surro-gate predictions, ensuring the returned frontier is supported by evaluations at TS .
+
+Update and termination. After each generation, we update the population using NSGA-II with constrained domina-tion: feasible candidates dominate infeasible ones; among infeasible candidates, lower constraint violation is pre-ferred. The loop terminates when the dominated hyper-volume(Appendix C.2) of the feasible front stabilizes (rela-tive improvement below ϵhv for ∆ generations), yielding a compact feasible Pareto set for Phase II. 5Submission and Formatting Instructions for ICML 2026 
+
+3.3. Phase II: Local Bayesian Refinement 
+
+Phase I is primarily responsible for coverage : it explores the combinatorial bit–rank space under the hard constraint 
+
+M (C) ≤ Bmax and returns a diverse set of measured can-didates evaluated at TS near the Pareto frontier. Phase II is responsible for selection and sharpening : given a user preference α (Eq. (4) ), we identify a single operating point by improving the scalarized utility f (C; α) using a small number of additional evaluations at TS .A natural concern is that a handful of Phase II evaluations may be insufficient in the original exponential space. We therefore do not optimize over the full space in Phase II. Instead, Phase II operates on a reduced search region that Phase I has already verified to be feasible and competitive at TS . Moreover, rather than committing to a single local basin, we follow the multi-region trust-region principle of TuRBO (Eriksson et al., 2020): we maintain several discrete trust regions around multiple strong Phase I solutions and allocate the limited Phase II evaluations to the region with the highest predicted improvement. Let Dhi = {(Ci, y i)}n0 
+
+> i=1
+
+collect all measured evaluations at TS after Phase I. Each Ci is evaluated at TS and satisfies 
+
+M (Ci) ≤ Bmax .For each entry we record 
+
+yi := f (Ci; α) := α ˆP (Ci) − (1 − α) ˆM (Ci),P (Ci) := P (Ci; TS ) (11) 
+
+We set y+0 = max 1≤i≤n0 yi and initialize J trust-region centers by taking the top candidates in Dhi while en-forcing diversity in atomic distance: we greedily se-lect C(1) 0 , . . . , C (J)0 such that each new center satisfies 
+
+datom (C(j)0 , C (j′)0 ) ≥ ∆div for all j′ < j . The global in-cumbent is the best measured one in Dhi (ties broken by smaller M (Ci)). We model the utility landscape with a Gaussian process surrogate in the standardized ordinal embedding ψ(C) ∈
+
+R2L used throughout. We place a GP prior on a latent function g(C) and assume noisy observations 
+
+g(C) ∼ GP  0, k (C, C ′), y = g(C)+ ε, ε ∼ N (0 , σ 2
+
+> n
+
+), (12) 
+
+refitting hyperparameters by maximizing the GP marginal likelihood on the updated Dhi . We use a Mat ´ern-5/2 kernel in the embedded space: 
+
+k(C, C ′) = σ2
+
+> f
+
+
+
+1 + √5 r + 53 r2
+
+
+
+exp( −√5 r),r = ∥ψ(C) − ψ(C′)∥2/ℓ gp .
+
+(13) Phase II proposes candidates only within discrete trust re-gions. An atomic edit changes exactly one variable to an adjacent value on its ladder (either a neighbor in Q for qℓ or a neighbor in R for rℓ). Let datom (C, C ′) be the minimum number of atomic edits needed to transform C into C′. For region j at iteration t, with center C(j) 
+
+> t
+
+and integer radius 
+
+δj,t , we first define the pre-repair neighborhood 
+
+Bj,t ≜  C′ datom (C′, C (j) 
+
+> t
+
+) ≤ δj,t , (14) and then project every candidate to feasibility using the same operator R EPAIR (·) as in Phase I: 
+
+Ωj,t ≜  REPAIR (C′) C′ ∈ B j,t . (15) Thus every C ∈ Ωj,t satisfies M (C) ≤ Bmax under the same exact accounting as Phase I. We then form the union 
+
+Ωt = SJj=1 Ωj,t . When Ωt is too large to enumerate, we subsample a fixed-size pool from each neighborhood be-fore applying REPAIR (·), using the same sensitivity-guided proposal distribution as in Phase I. Given the GP posterior mean μt(C) and standard deviation 
+
+σt(C), we use Expected Improvement (EI) with respect to the best measured utility y+ 
+
+> t
+
+= max {yi : ( Ci, y i) ∈ D hi }:
+
+zt(C) := μt(C) − y+
+
+> t
+
+σt(C) ,
+
+EI t(C) := ( μt(C) − y+ 
+
+> t
+
+) Φ  zt(C) + σt(C) ϕ zt(C),
+
+(16) 
+
+We select the next configuration by scanning the pool Ωt:
+
+Ct+1 = arg max 
+
+> C∈Ωt
+
+EI t(C), (17) evaluate it at TS to obtain yt+1 = f (Ct+1 ; α), and update 
+
+Dhi ← D hi ∪ { (Ct+1 , y t+1 )}. Surrogate predictions are used only for proposing evaluations; the final returned con-figuration is always supported by measured utility. We adapt the trust-region radius only for the region that generated Ct+1 . Let j(t) denote the selected region (i.e., 
+
+Ct+1 ∈ Ωj(t),t ). For every region j ∈ { 1, . . . , J },
+
+δj,t +1 =
+
+
+
+min {κ↑δj,t , δ max }, j = j(t), y t+1 > y + 
+
+> t
+
+,
+
+max {κ↓δj,t , δ min }, j = j(t), y t+1 ≤ y+ 
+
+> t
+
+,δj,t , j̸ = j(t),
+
+(18) and we update the corresponding center by 
+
+C(j) 
+
+> t+1
+
+=
+
+(
+
+Ct+1 , j = j(t), y t+1 > y + 
+
+> t
+
+,C(j) 
+
+> t
+
+, otherwise . (19) The loop terminates when either (i) no meaningful improve-ment is predicted, 
+
+max 
+
+> C∈Ωt
+
+EI t(C) < ϵ ei , (20) or (ii) a hard cap of Nmax Phase II iterations is reached. We return the best measured feasible configuration C⋆ =arg max (Ci,y i)∈D hi yi.6Submission and Formatting Instructions for ICML 2026 
+
+Table 1. Main results across four backbones. We report task-average accuracy (%), average weight precision (AvgBit), average LoRA rank (AvgRank), and total memory footprint (Mem, GB). Bold / underline indicate best / second best per backbone.                                                                                                                                                                    
+
+> Method LLaMA3.1-8B LLaMA3.2-3B Qwen2.5-7B Qwen2.5-3B
+> Avg ↑AvgBit ↓AvgRank Mem ↓Avg ↑AvgBit ↓AvgRank Mem ↓Avg ↑AvgBit ↓AvgRank Mem ↓Avg ↑AvgBit ↓AvgRank Mem ↓
+> LoRA (FP16) 69.94 16.00 16.00 20.50 65.40 16.00 16.00 10.40 71.33 16.00 16.00 20.20 65.53 16.00 16.00 10.84 QLoRA (4-bit) 67.45 4.00 16.00 15.22 64.43 4.00 16.00 8.90 69.01 4.00 16.00 15.60 62.89 4.00 16.00 8.16 AdaLoRA (4-bit) 66.36 4.00 15.84 14.92 61.88 4.00 15.73 8.60 69.05 4.00 15.65 15.40 62.51 4.00 15.92 8.70 LoftQ (4-bit) 68.65 4.00 16.00 15.13 64.91 4.00 16.00 8.83 69.35 4.00 16.00 15.33 62.71 4.00 16.00 8.21 LQ-LoRA 67.82 3.78 16.00 20.12 63.63 3.85 16.00 7.12 66.91 3.85 16.00 18.52 62.86 3.63 16.00 7.05 AMQ+LoRA 67.75 3.88 16.00 14.45 63.31 3.91 16.00 7.22 70.71 3.91 16.00 14.90 62.81 4.00 16.00 8.17 AMQ+AdaLoRA 67.63 3.93 10.18 14.40 63.38 3.96 9.68 7.25 70.66 3.96 10.18 14.70 64.88 3.80 15.84 8.65 AutoQRA ( ≤4bit) 69.83 3.75 10.50 13.08 65.58 3.64 11.14 6.72 71.35 3.71 10.57 11.95 66.33 3.72 9.78 6.45
+> AutoQRA (optimal) 70.45 5.25 12.25 17.32 66.16 5.14 12.57 8.41 73.19 5.36 12.70 17.24 68.05 5.22 12.00 8.31
+
+## 4. Experiments 
+
+4.1. Experimental Setup Datasets and LLMs. We fine-tune on Alpaca52k and HC3 (Taori et al., 2023), and evaluate zero-/few-shot on BoolQ (Clark et al., 2019), PIQA (Bisk et al., 2020), HellaSwag (Zellers et al., 2019), WinoGrande (Sakaguchi et al., 2021), ARC-E/ARC-C (Clark et al., 2018), OpenBookQA (Mi-haylov et al., 2018), and MMLU (Hendrycks et al., 2021). Backbones include LLaMA-3.1/3.2 (Grattafiori et al., 2024) and Qwen-2.5 (Qwen et al., 2025). 
+
+Baselines. We compare with LoRA (FP16) (Hu et al., 2022), QLoRA (4-bit) (Dettmers et al., 2023), AdaLoRA (Zhang et al., 2023), LoftQ (Li et al., 2023), and LQ-LoRA (Guo et al., 2024). To isolate the value of joint bit–rank alloca-tion, we further include a decoupled baseline that first runs an automatic mixed-precision quantization allocator AMQ (Lee et al., 2025) and then fine-tunes with either LoRA or AdaLoRA( AMQ+L , AMQ+AL ). 
+
+Implementation Details. All methods are implemented in PyTorch using the Transformers/PEFT/BitsAndBytes stack and run on NVIDIA A100 GPUs. Methods only differ in how they allocate per-layer (qℓ, r ℓ) under the same global memory budget Bmax . We describe the full AutoQRA search schedule (Phase I/II step ladder, low- vs. high-fidelity evaluations, and early stopping) in Appendix C. 
+
+4.2. Main Results 
+
+Table 1 reports the main results on four backbones. We summarize each method by (i) task-average accuracy and (ii) the resource triple (AvgBit, AvgRank, Mem) computed under the same memory accounting used by our implemen-tation. Overall, AutoQRA achieves the strongest accuracy– memory trade-off: under the AvgBit ≤ 4 regime, Auto-QRA consistently improves over uniform 4-bit baselines (QLoRA/AdaLoRA/LoftQ) while using lower effective pre-cision and a smaller footprint; when allowing mixed pre-cision under the same protocol, AutoQRA (optimal) sur-passes FP16 LoRA on all four backbones with substan-tially reduced weight precision. In particular, AutoQRA 
+
+Figure 3. Layer wise configurations found by AutoQRA show a compensation pattern. Layers assigned lower bit widths are often paired with higher ranks, suggesting that adapter capacity is reallocated to compensate for quantization noise. 
+
+(AvgBit ≤ 4) is the best-performing ≤4-bit method across all backbones, while reducing footprint by 12–22% rela-tive to uniform 4-bit baselines. It also achieves these gains with markedly smaller AvgRank, highlighting the benefit of coordinated bit–rank allocation under fixed memory. Im-portantly, decoupled pipelines remain suboptimal under the same memory budget Bmax . AMQ+LoRA/AdaLoRA first allocates bits by a static quantization objective and only then tunes ranks, which cannot exploit the compensatory interplay between quantization noise and adapter capacity. Per-task accuracies are reported in Appendix D. 
+
+Evidence of bit width and rank compensation. Figure 3 provides direct evidence for the compensation effect that motivates our joint search. Across models, AutoQRA as-signs high ranks to many of the layers that are quantized more aggressively, while keeping ranks small in layers that retain higher precision. This produces a consistent negative association between qℓ and rℓ across layers, despite simi-lar average bit widths across the compared models. These patterns indicate that better fine tuning performance under a fixed memory budget is achieved through coordinated al-location of bit widths and ranks, rather than by optimizing quantization error alone. 7Submission and Formatting Instructions for ICML 2026 
+
+Figure 4. Surrogate Quality. Surrogate accuracy improves with paired data and boosts top-3 promotion hit rate. 
+
+4.3. Screening surrogate quality. 
+
+We evaluate whether low-fidelity (LF) observations can be reliably mapped to performance at the highest-fidelity set-ting TS by our screening surrogate. Figure 4 (left) reports predictive quality as the amount of paired LF and TS data increases: both Spearman and Pearson correlations rise quickly and then stabilize. Figure 4 (right) summarizes how surrogate screening affects promotion decisions. Each box-plot aggregates the top-3 selection hit rate over repeated trials, where the hit rate measures how often the three candi-dates selected for promotion align with the oracle top per-formers judged at TS . Surrogate-guided promotion shifts the entire distribution upward and increases the mean hit rate from 44.7% (ranking by LF scores alone) to 67.3%, corresponding to a 50.8% relative improvement. 
+
+4.4. Search efficiency and sample complexity. 
+
+To validate the effectiveness of our optimization strategy, we benchmark AutoQRA against random search under the same < 4-bit memory constraint. Figure 5 (left) reports the best validation performance found as a function of the num-ber of HF evaluations at TS . AutoQRA improves rapidly, identifying strong configurations within the first few trials and then maintaining a stable trajectory. In contrast, ran-dom search shows large variance and struggles to locate high-performing regions in the combinatorial space. We further quantify this advantage in Figure 5 (right) by mea-suring the number of HF evaluations at TS required to reach a fixed performance target. Random search requires 107 evaluations to reach the target, whereas AutoQRA reaches the same target with 6 evaluations. 
+
+4.5. Ablation Study 
+
+We ablate key components of AutoQRA under a fixed mem-ory budget: (i) removing the warm-start / importance prior, (ii) disabling Phase I global search (BO only), (iii) disabling Phase II local refinement (EA only), (iv) optimizing only one axis (bit-only or rank-only), and (v) removing multi-fidelity and/or surrogate screening. Across tasks, the full system consistently yields the best accuracy–memory trade-off, while removing global exploration or feasibility-aware search degrades the frontier most severely. 
+
+Figure 5. Search efficiency analysis. (Left) Best validation perfor-mance versus the number of evaluations at the largest search bud-get bS . AutoQRA improves rapidly and consistently outperforms random search. (Right) Number of largest-budget evaluations re-quired to reach a target accuracy. AutoQRA needs 6 evaluations compared to 107 for random search, yielding an 18 × reduction in expensive evaluations. 17.1 17.2 17.3 17.4 17.5 17.6 17.7 
+
+> Memory (GB)
+> 62
+> 64
+> 66
+> 68
+> 70
+> Accuracy (%)
+> Full AutoQRA
+> no multi
+> no importance
+> w/o Phase1
+> w/o Phase2
+> only bit only rank
+> uniform
+> random
+
+Figure 6. Ablation. Accuracy vs. memory under the same Bmax ;the full method (green) dominates ablated variants (blue). 
+
+We find that without the feasibility projection REPAIR (·),a large fraction of generated candidates violate the hard memory budget, reducing effective search throughput and weakening Pareto coverage. Detailed diagnostics for repair behavior and a sensitivity study of key search hyperparame-ters are provided in Appendix E. 
+
+## 5. Conclusion 
+
+In this work, we introduce AutoQRA. This framework jointly allocates quantization bit-width and LoRA rank for each layer. Conventional pipelines optimize these factors sequentially. That approach ignores the compensatory inter-action between precision and adapter capacity. AutoQRA solves the discrete optimization problem using a coarse-to-fine strategy. The method combines multi-fidelity evolu-tionary search with trust-region Bayesian refinement. This design navigates the search space efficiently. Crucially, the search overhead is a one-time cost amortized over massive subsequent deployments. Extensive experiments validate our approach. AutoQRA consistently outperforms uniform 4-bit baselines on LLaMA and Qwen models. It matches full-precision performance while maintaining a lower aver-age bit-width. We also identify a key compensatory pattern. The search algorithm automatically assigns higher ranks to layers with lower precision. This mechanism maximizes the utility of the limited memory budget. AutoQRA establishes a new standard for memory-efficient fine-tuning. 8Submission and Formatting Instructions for ICML 2026 
+
+## Impact Statement 
+
+This paper presents work that advances the field of effi-cient LLM fine-tuning. Our primary goal is to enable high-performance model adaptation on consumer-grade hard-ware. AutoQRA significantly reduces the memory footprint required for training. This efficiency lowers the barrier for researchers and developers with limited computational budgets. It also contributes to environmental sustainability by decreasing the energy consumption of the adaptation process. We do not foresee specific negative societal con-sequences beyond the general risks associated with model compression and large language models. 
+
+## References 
+
+Bisk, Y., Zellers, R., Gao, J., Choi, Y., et al. Piqa: Reasoning about physical commonsense in natural language. In Pro-ceedings of the AAAI conference on artificial intelligence ,volume 34, pp. 7432–7439, 2020. Chang, Y., Wang, X., Wang, J., Wu, Y., Yang, L., Zhu, K., Chen, H., Yi, X., Wang, C., Wang, Y., et al. A survey on evaluation of large language models. ACM Transactions on Intelligent Systems and Technology , 15(3):1–45, 2024. Clark, C., Lee, K., Chang, M.-W., Kwiatkowski, T., Collins, M., and Toutanova, K. Boolq: Exploring the surprising difficulty of natural yes/no questions. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, Volume 1 (Long and Short Papers) , pp. 2924–2936, 2019. Clark, P., Cowhey, I., Etzioni, O., Khot, T., Sabharwal, A., Schoenick, C., and Tafjord, O. Think you have solved question answering? try arc, the ai2 reasoning challenge. 
+
+arXiv preprint arXiv:1803.05457 , 2018. Deb, K., Pratap, A., Agarwal, S., and Meyarivan, T. Afast and elitist multiobjective genetic algorithm: Nsga-ii. IEEE transactions on evolutionary computation , 6(2): 182–197, 2002. Dettmers, T., Pagnoni, A., Holtzman, A., and Zettlemoyer, L. Qlora: Efficient finetuning of quantized llms. arXiv preprint arXiv:2305.14314 , 2023. Eriksson, D., Pearce, M., Gardner, J. R., Turner, R., and Poloczek, M. Scalable global optimization via local bayesian optimization, 2020. URL https://arxiv. org/abs/1910.01739 .Falkner, S., Klein, A., and Hutter, F. Bohb: Robust and effi-cient hyperparameter optimization at scale, 2018. URL 
+
+https://arxiv.org/abs/1807.01774 .Frankle, J. and Carbin, M. The lottery ticket hypothesis: Finding sparse, trainable neural networks, 2019. URL 
+
+https://arxiv.org/abs/1803.03635 .Frankle, J., Dziugaite, G. K., Roy, D. M., and Carbin, M. Stabilizing the lottery ticket hypothesis, 2020. URL 
+
+https://arxiv.org/abs/1903.01611 .Frantar, E., Ashkboos, S., Hoefler, T., and Alistarh, D. Gptq: Accurate post-training quantization for generative pre-trained transformers. In The Eleventh International Con-ference on Learning Representations (ICLR) , 2023. Grattafiori, A., Dubey, A., Jauhri, A., and Abhinav Pandey, e. a. The llama 3 herd of models, 2024. URL https: //arxiv.org/abs/2407.21783 .Guo, H., Greengard, P., Xing, E., and Kim, Y. Lq-lora: Low-rank plus quantized matrix decomposition for efficient language model finetuning. ICLR 2024 , 2023. Guo, H., Greengard, P., Xing, E., and Kim, Y. LQ-loRA: Low-rank plus quantized matrix decomposition for ef-ficient language model finetuning. In The Twelfth In-ternational Conference on Learning Representations ,2024. URL https://openreview.net/forum? id=xw29VvOMmU .Hendrycks, D., Burns, C., Basart, S., Zou, A., Mazeika, M., Song, D., and Steinhardt, J. Measuring massive multitask language understanding. In International Conference on Learning Representations , 2021. URL https:// openreview.net/forum?id=d7KBjmI3GmQ .Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W. Lora: Low-rank adaptation of large language models. In Proceedings of ICLR , 2022. Huang, W., Qin, H., Liu, Y., Li, Y., Liu, Q., Liu, X., Benini, L., Magno, M., Zhang, S., and Qi, X. Slim-llm: Salience-driven mixed-precision quantization for large language models, 2025. URL https://arxiv.org/abs/ 2405.14917 .Jones, D. R., Schonlau, M., and Welch, W. J. Efficient global optimization of expensive black-box functions. 
+
+Journal of Global Optimization , 13(4):455–492, 1998. doi: 10.1023/A:1008306431147. URL https://doi. org/10.1023/A:1008306431147 .Lee, S., taek Woo, S., Jin, J., Lee, C., and Park, E. Amq: Enabling automl for mixed-precision weight-only quan-tization of large language models, 2025. URL https: //arxiv.org/abs/2509.12019 .Li, L., Jamieson, K., DeSalvo, G., Rostamizadeh, A., and Talwalkar, A. Hyperband: A novel bandit-based approach to hyperparameter optimization, 2018. URL https: //arxiv.org/abs/1603.06560 .9Submission and Formatting Instructions for ICML 2026 
+
+Li, Y., Yu, Y., Liang, C., He, P., Karampatziakis, N., Chen, W., and Zhao, T. Loftq: Lora-fine-tuning-aware quantization for large language models, 2023. URL 
+
+https://arxiv.org/abs/2310.08659 .Lin, J., Tang, J., Tang, H., Yang, S., Dang, X., and Han, S. Awq: Activation-aware weight quantization for llm compression and acceleration. arXiv preprint arXiv:2306.00978 , 2023. Makridakis, S., Petropoulos, F., and Kang, Y. Large lan-guage models: Their success and impact. Forecasting , 5 (3):536–549, 2023. Mihaylov, T., Clark, P., Khot, T., and Sabharwal, A. Can a suit of armor conduct electricity? a new dataset for open book question answering. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pp. 2381–2391, 2018. Qwen, :, Yang, A., Yang, B., Zhang, B., and Binyuan Hui, e. a. Qwen2.5 technical report, 2025. URL https: //arxiv.org/abs/2412.15115 .Raiaan, M. A. K., Mukta, M. S. H., Fatema, K., Fahad, N. M., Sakib, S., Mim, M. M. J., Ahmad, J., Ali, M. E., and Azam, S. A review on large language models: Ar-chitectures, applications, taxonomies, open issues and challenges. IEEE Access , 2024. Real, E., Aggarwal, A., Huang, Y., and Le, Q. V. Regularized evolution for image classifier architecture search, 2019. URL https://arxiv.org/abs/ 1802.01548 .Ru, B., Alvi, A. S., Nguyen, V., Osborne, M. A., and Roberts, S. J. Bayesian optimisation over multiple con-tinuous and categorical inputs, 2020. URL https: //arxiv.org/abs/1906.08878 .Sakaguchi, K., Bras, R. L., Bhagavatula, C., and Choi, Y. Winogrande: An adversarial winograd schema challenge at scale. Communications of the ACM , 64(9):99–106, 2021. Taori, R., Gulrajani, I., Zhang, T., Dubois, Y., Li, X., Guestrin, C., Liang, P., and Hashimoto, T. B. Stanford alpaca: An instruction-following llama model. Stan-ford CRFM , 2023. URL https://github.com/ tatsu-lab/stanford_alpaca .Wang, K., Liu, Z., Lin, Y., Lin, J., and Han, S. Haq: Hardware-aware automated quantization with mixed precision, 2019. URL https://arxiv.org/abs/ 1811.08886 .Xu, Y., Xie, L., Gu, X., Chen, X., Chang, H., Zhang, H., Chen, Z., Zhang, X., and Tian, Q. Qa-lora: Quantization-aware low-rank adaptation of large lan-guage models, 2023. URL https://arxiv.org/ abs/2309.14717 .Zellers, R., Holtzman, A., Bisk, Y., Farhadi, A., and Choi, Y. Hellaswag: Can a machine really finish your sentence? In Proceedings of the 57th Annual Meeting of the Asso-ciation for Computational Linguistics , pp. 4791–4800, 2019. Zhang, Q., Chen, M., Bukharin, A., Karampatziakis, N., He, P., Cheng, Y., Chen, W., and Zhao, T. Adalora: Adaptive budget allocation for parameter-efficient fine-tuning. arXiv preprint arXiv:2303.10512 , 2023. Zhao, J., Wang, M., Zhang, M., Shang, Y., Liu, X., Wang, Y., Zhang, M., and Nie, L. Benchmarking post-training quantization in llms: Comprehensive taxonomy, uni-fied evaluation, and comparative analysis, 2025. URL 
+
+https://arxiv.org/abs/2502.13178 .Zhou, C., Han, S., Yang, L., Zhou, Y., Cheng, X., Wang, Y., and Li, H. RankAdaptor: Hierarchical rank allocation for efficient fine-tuning pruned LLMs via performance model. In Chiruzzo, L., Ritter, A., and Wang, L. (eds.), Find-ings of the Association for Computational Linguistics: NAACL 2025 , pp. 5781–5795, Albuquerque, New Mex-ico, April 2025. Association for Computational Linguis-tics. ISBN 979-8-89176-195-7. doi: 10.18653/v1/2025. findings-naacl.321. URL https://aclanthology. org/2025.findings-naacl.321/ .Zitzler, E. and Thiele, L. Multiobjective evolutionary algo-rithms: A comparative case study and the strength pareto approach. IEEE Transactions on Evolutionary Computa-tion , 3(4):257–271, 1999. doi: 10.1109/4235.797969. Zoph, B. and Le, Q. V. Neural architecture search with reinforcement learning. arXiv preprint arXiv:1611.01578 ,2016. 10 Submission and Formatting Instructions for ICML 2026 
+
+## A. Orthogonal Sensitivity and Compensatory Potential. 
+
+While layer-wise heterogeneity is well-documented, the pri-mary rationale for joint optimization lies in the orthogonal-ity of sensitivity profiles. As illustrated in Figure 7, layers highly sensitive to quantization (requiring high bit-width) often differ from those requiring high adaptation capacity (requiring high rank). Conventional sequential pipelines overlook this nuance: a quantization-first approach might conservatively assign 4-bit precision to a sensitive layer, ignoring that a high-rank adapter could effectively compen-sate for the noise induced by aggressive 2-bit quantization. Conversely, independent optimization might allocate high ranks to layers robust to quantization but contributing little to task adaptation. Therefore, optimal allocation requires capturing this compensatory interplay : trading precision for learnability based on layer-specific joint sensitivity. 
+
+## B. Additional Details for Phase I 
+
+Exact memory decomposition. For feasibility checks we use the exact memory accounting implemented in our code, including quantization metadata such as scales and zero-points. For readability, the footprint can be decomposed as 
+
+M (C) = 
+
+> L
+
+X
+
+> ℓ=1
+
+
+
+mWℓ (qℓ) + mAℓ (rℓ) + mmeta  
+
+> ℓ
+
+(qℓ)
+
+
+
+, (21) where mWℓ is the quantized backbone storage, mAℓ is the adapter storage, and mmeta  
+
+> ℓ
+
+captures quantization metadata. Letting N (Wℓ) denote the number of backbone parameters at layer ℓ, we write 
+
+mWℓ (qℓ) = N (Wℓ) qℓ
+
+8 , mAℓ (rℓ) = N (Aℓ, r ℓ) pr
+
+8 ,
+
+(22) with pr = 16 for FP16 adapters. For LoRA applied to a set of linear maps Sℓ in layer ℓ, the adapter parameter count is 
+
+N (Aℓ, r ℓ) = X 
+
+> W∈S ℓ
+
+rℓ
+
+ din (W ) + dout (W ), (23) following the standard LoRA parameterization (Hu et al., 2022). 
+
+Importance signals for warm start and proposals. We define two layerwise signals used only for warm start and proposal distributions in Phase I (and for feasibility repair), not as substitutes for the final fine-tuning metric. For bit-width proposals, we use a gradient-weighted quantization residual on a small calibration set. Let SWℓ denote backbone matrices in layer ℓ, let qmin = min Q, and let Qqmin (·)
+
+denote quantization at qmin . With a diagonal Fisher proxy    
+
+> Figure 7. Orthogonal sensitivity profiles in Qwen3-1.7B. Nor-malized importance scores for quantization (backbone weight sen-sitivity, left) and adaptation (LoRA rank sensitivity, right). Cru-cially, these distributions diverge: layers requiring high precision to suppress quantization noise do not necessarily demand high-rank adapters for downstream tasks. This sensitivity mismatch
+> necessitates joint allocation, as independent optimization fails to capture these compensatory trade-offs.
+
+bFW ≈ E
+
+h  ∂L
+
+> ∂W
+
+⊙2i
+
+, we define 
+
+Iq (ℓ) = X 
+
+> W∈S Wℓ
+
+D bFW ,  W − Qqmin (W )⊙2E
+
+. (24) For rank proposals, we run a short probe fine-tuning for 
+
+K steps and collect the averaged gradient matrix for each LoRA-targeted projection W ∈ S ℓ:
+
+GW = 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+∂Lk
+
+∂W . (25) Let {σj (GW )} be the singular values of GW . We define the rank signal by the leading spectral energy: 
+
+Ir (ℓ) = X 
+
+> W∈S ℓ
+> J0
+
+X
+
+> j=1
+
+σj (GW )2, (26) where J0 is a small cutoff (e.g., J0 = 8 ) to emphasize dominant update directions. In Phase I we min–max normal-ize these scores across layers and use them for warm-start initialization, importance-guided proposals, and feasibility repair. 
+
+## C. Experimental Details 
+
+C.1. Phase I multi-fidelity step allocation 
+
+We use a Hyperband/SHA-style ladder with step counts 
+
+0 < T 1 < · · · < T S and pruning factor η. In our default setting, we evaluate NLF = 25 configurations at the low-est fidelity T1. Candidates are ranked for promotion using the surrogate screening model Φs (Eq. (10) ) when enough 1Submission and Formatting Instructions for ICML 2026 
+
+Table 2. Detailed Task-wise accuracy. Bold indicates best result per backbone. 
+
+Model Method Bit Rank Mem Avg ARC-C ARC-E BoolQ GSM8K HellaS OBQA PIQA WinoG LLaMA-3.1-8B 
+
+LoRA 16.00 16.00 20.50 69.94 56.14 83.88 83.37 54.06 79.44 45.60 82.10 74.90 
+
+QLoRA 4.00 16.00 15.22 67.45 54.15 82.20 81.95 44.15 78.50 43.60 81.40 73.64 AdaLoRA 4.00 15.84 14.92 66.36 52.40 81.65 81.50 42.80 78.10 40.80 81.10 72.55 LoftQ 4.00 16.00 15.13 68.65 54.80 82.65 82.15 51.10 78.65 45.00 81.45 73.40 LQ-LoRA 3.78 16.00 20.12 67.82 54.75 82.45 82.25 44.95 79.10 44.20 81.60 73.25 AMQ+L 3.88 16.00 14.45 67.75 54.55 82.60 82.40 44.50 78.90 44.00 81.42 73.61 AMQ+AL 3.93 10.18 14.40 67.63 54.45 82.35 82.15 44.25 78.60 43.80 81.76 73.69 
+
+AutoQRA (≤4b) 3.75 10.50 13.08 69.83 56.12 84.20 83.35 53.40 79.50 45.60 82.40 74.10 
+
+AutoQRA (Opt) 5.25 12.25 17.32 70.45 57.85 84.90 83.86 53.90 79.95 45.20 83.10 74.80 
+
+LLaMA-3.2-3B 
+
+LoRA 16.00 16.00 10.40 65.40 48.38 79.78 81.10 47.31 75.75 42.20 78.62 70.09 QLoRA 4.00 16.00 8.90 64.43 47.18 77.53 77.61 46.22 74.79 42.40 78.73 70.96 AdaLoRA 4.00 15.73 8.60 61.88 46.42 74.79 74.68 36.50 73.92 41.20 77.97 69.53 LoftQ 4.00 16.00 8.83 64.91 47.80 77.90 77.95 47.50 75.10 42.80 79.00 71.20 LQ-LoRA 3.85 16.00 7.12 63.63 51.45 79.20 79.05 36.40 75.25 40.40 78.20 69.10 AMQ+L 3.91 16.00 7.22 63.31 46.90 75.90 76.80 42.10 73.90 41.50 78.90 70.50 AMQ+AL 3.96 9.68 7.25 63.38 47.30 79.25 79.40 36.85 75.50 40.80 78.50 69.45 
+
+AutoQRA (≤4b) 3.64 11.14 6.72 65.58 47.97 78.96 78.59 48.93 76.97 42.80 79.15 71.20 
+
+AutoQRA (Opt) 5.14 12.57 8.41 66.16 48.00 79.60 79.70 49.72 77.29 43.80 79.40 71.80 Qwen-2.5-7B 
+
+LoRA 16.00 16.00 20.20 71.33 53.16 79.21 84.43 75.24 77.87 46.00 81.66 73.04 QLoRA 4.00 16.00 15.60 69.01 54.27 79.04 83.73 73.50 78.04 43.80 76.39 63.30 AdaLoRA 4.00 15.65 15.40 69.05 50.85 80.40 80.00 69.80 77.00 42.00 80.45 71.90 LoftQ 4.00 16.00 15.33 69.35 53.92 78.83 84.25 75.10 78.17 43.00 77.37 64.17 LQ-LoRA 3.85 16.00 18.52 66.91 53.70 81.70 81.25 44.00 77.80 43.80 80.50 72.55 AMQ+L 3.91 16.00 14.90 70.86 53.10 81.40 82.10 74.80 77.90 43.40 81.10 73.10 AMQ+AL 3.96 10.18 14.70 70.66 53.80 81.35 81.15 74.20 77.55 43.20 81.00 73.05 
+
+AutoQRA (≤4b) 3.71 8.57 10.57 71.35 54.30 81.26 83.74 74.86 78.46 43.60 81.30 73.30 
+
+AutoQRA (Opt) 5.36 13.18 12.70 73.19 55.75 82.93 85.86 76.28 79.33 46.80 83.43 75.12 Qwen-2.5-3B 
+
+LoRA 16.00 16.00 10.84 65.53 48.20 75.10 80.00 64.00 75.50 35.00 77.00 69.40 QLoRA 4.00 16.00 8.16 62.89 43.60 72.69 78.65 64.90 73.43 34.40 72.52 62.90 AdaLoRA 4.00 15.92 8.70 62.51 42.50 75.57 76.09 68.30 70.70 28.20 74.62 64.10 LoftQ 4.00 16.00 8.21 62.71 44.62 73.27 80.37 63.38 73.75 30.00 72.96 63.30 LQ-LoRA 3.63 16.00 7.05 62.86 50.50 78.30 78.30 35.25 74.60 40.00 77.40 68.50 AMQ+L 4.00 16.00 8.17 63.30 44.80 74.10 78.20 64.10 73.90 34.60 73.10 63.60 AMQ+AL 3.80 15.84 8.65 64.88 45.60 76.54 77.90 72.50 71.80 31.40 76.13 67.20 
+
+AutoQRA (≤4b) 3.72 9.78 6.45 66.33 46.35 77.23 80.12 72.88 75.19 35.20 75.60 68.09 
+
+AutoQRA (Opt) 5.22 12.00 8.31 68.05 47.31 79.32 82.21 74.00 77.52 36.80 76.86 70.40 
+
+paired data are available; otherwise we fall back to the mea-sured P (C; Ts). After successive halving, NHF = 3 con-figurations are promoted to the highest-fidelity step count 
+
+TS (high-fidelity, HF), continuing training from their check-points rather than restarting. All feasibility checks use the exact memory accounting in implementation. 
+
+C.2. Phase I termination 
+
+We terminate Phase I using the hypervolume-based criterion in Eq. (28) : if the relative improvement of dominated hyper-volume stays below ϵhv for ∆ consecutive generations, we stop and return the measured feasible non-dominated set P.After each generation, we update the population using NSGA-II with constrained domination: feasible candi-dates dominate infeasible ones; among infeasible candi-dates, lower constraint violation is preferred (Deb et al., 2002). To quantify progress of the feasible non-dominated set, we monitor the dominated hypervolume in the bi-objective space (maximize P , minimize M ). We map each configuration to a minimization vector f (C) =   −
+
+P (C; TS ), M (C) and define the hypervolume of a set A
+
+w.r.t. a reference pint r as 
+
+HV( A; r) = λ
+
+ [ 
+
+> a∈f(A)
+
+[a, r]
+
+ ,
+
+[a, r] = {z : ak ≤ zk ≤ rk, ∀k},
+
+(27) where λ(·) denotes the Lebesgue measure and f (A) = 
+
+{f (C) : C ∈ A} . We use the relative hypervolume im-provement 
+
+∆HV g = HV( Pg ; r) − HV( Pg−1; r)HV( Pg−1; r) + ϵden hv 
+
+, (28) 2Submission and Formatting Instructions for ICML 2026 
+
+Figure 8. Repair concentrates on robust layers. Layer-wise repair intensity versus layer sensitivity (revealed preference). Each point is a layer (color indicates layer index); the dashed line is a linear fit. Repair intensity is strongly negatively correlated with sensitivity ( ρ = −0.68 , p < 0.01 ), showing that REPAIR (·) pref-erentially applies downgrades to less sensitive layers to satisfy 
+
+M (C) ≤ Bmax .
+
+and stop Phase I if ∆HV g < ϵ hv for ∆ consecutive gen-erations. Here ϵden hv is a small constant to avoid numerical issues when the denominator is tiny. We return the final non-dominated feasible set P for Phase II. 
+
+C.3. Phase II TuRBO high-fidelity evaluation 
+
+Phase II initializes J trust regions from the NHF measured points returned by Phase I. At iteration t, we form a discrete candidate pool Ωt (Eqs. (14) – (15) ) and compute EI t(C) for all C ∈ Ωt using the GP posterior. Only the maximizer Ct+1 
+
+in Eq. (17) is evaluated at the highest-fidelity step count TS .We set a hard cap of Nmax Phase II iterations. Optionally, we also cap the number of accepted HF evaluations per trust region by N TR max (default N TR max = 5 ), so the worst-case additional HF evaluations in Phase II is at most J · N TR max ,but typically much smaller due to early stopping. 
+
+C.4. Phase II early stopping 
+
+We stop Phase II when either (i) max C∈Ωt EI t(C) < ϵ ei 
+
+(Eq. (20)), or (ii) the hard cap Nmax is reached. 
+
+## D. Task-wise Accuracy Breakdown and Discussion 
+
+Table 2 breaks down accuracy by task for all four backbones. Averaged scores can hide where methods actually win or lose, so here we focus on the “shape” of the gains: which tasks are stable under aggressive compression, and which 0.000 0.005 0.010 0.015 0.020 0.025 0.030 0.035 0.040 0.045  
+
+> Sensitivity (Performance Range)
+> Promotion Count (k)
+> Population Size
+> Phase II Iterations
+> Generations
+> Trust Region Size
+> Pruning Factor ( )
+> 0.036
+> 0.034
+> 0.031
+> 0.027
+> 0.021
+> 0.015
+> Hyperparameter Sensitivity Ranking
+
+Figure 9. Hyperparameter sensitivity ranking. Sensitivity is measured as S(h) in Eq. (29) (max–min performance across the sweep of h); larger values indicate higher sensitivity. 
+
+ones are the first to fall apart. 
+
+First takeaway: the uniform 4-bit baselines fail in very specific ways, and AutoQRA mostly fixes those fail-ures. Across backbones, QLoRA/AdaLoRA/LoftQ are often fairly close on the easier or more pattern-heavy tasks, but they can drop sharply on a few tasks that are more brittle to quantization noise. The cleanest example is Qwen-2.5-7B : QLoRA collapses on PIQA (76.39) and especially 
+
+WinoGrande (63.30), even though its average is not catas-trophically low. AutoQRA ( ≤4b) brings these back to 81.30 and 73.30, essentially recovering the FP16 behavior (81.66 / 73.04) while staying in the low-precision regime. So the main story is not that AutoQRA gives tiny uniform gains everywhere—it prevents the “one or two tasks tank” pattern that you get with a rigid allocation. 
+
+LLaMA-3.1-8B: AutoQRA ( ≤4b) is basically “FP16-like” on most tasks, with the biggest win on GSM8K. 
+
+On this backbone, the uniform 4-bit methods lose most no-ticeably on GSM8K (e.g., QLoRA 44.15 vs. LoRA 54.06), while other tasks move less. AutoQRA ( ≤4b) almost fully closes that gap (53.40), and it does so without trading away the rest: ARC-E (84.20 vs. 83.88), HellaSwag (79.50 vs. 79.44), and PIQA (82.40 vs. 82.10) are all on par with or slightly above FP16 LoRA. Interestingly, OpenBookQA 
+
+is basically flat across strong methods (AutoQRA ( ≤4b) 45.60, LoRA 45.60), which suggests OBQA is not where the low-precision decisions are biting most for this model. 
+
+LLaMA-3.2-3B: the gains are smaller and less uniform, but the “compensation” pattern still shows up where it matters. For the smaller LLaMA, AutoQRA ( ≤4b) still improves GSM8K (48.93 vs. QLoRA 46.22 / LoRA 47.31), 
+
+HellaSwag (76.97 vs. 74.79 / 75.75), and WinoGrande 
+
+(71.20 vs. 70.96 / 70.09). At the same time, BoolQ drops for most low-precision methods and does not fully recover (AutoQRA (Opt) 79.70 vs. LoRA 81.10). This is a useful sanity check: once the backbone is small, you cannot expect 3Submission and Formatting Instructions for ICML 2026 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0                                   
+
+> Population Size
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> Normalized Performance
+> Best: 12
+> (a) Phase I: Population Size
+> 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+> Generations
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> Normalized Performance
+> Converged
+> (b) Phase I: Generations
+> 0123456
+> Top-k Promoted
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> Normalized Performance
+> k=3 ( =3)
+> (c) Phase I: Promotion Count
+> 1.5 2.0 2.5 3.0 3.5 4.0 4.5
+> Pruning Factor ( )
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> Normalized Performance
+> =3 (standard)
+> (d) Hyperband: Pruning Factor
+> 012345678
+> Phase II Iterations
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> Normalized Performance
+> Optimal: 3-5
+> (e) Phase II: Local Search Iterations
+> 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+> Trust Region Samples
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> 1.01
+> 1.02
+> 1.03
+> Normalized Performance
+> k=10
+> (f) Phase II: Trust Region Size
+
+Figure 10. One-factor hyperparameter sweeps. Each panel varies one hyperparameter while keeping all others fixed. The dashed vertical line denotes the default setting used in all experiments; curves show mean performance. 
+
+“free lunch” behavior. Joint allocation helps, but some tasks remain sensitive to the exact capacity/precision trade, and the optimizer will sometimes take a small hit on one task to buy larger gains elsewhere (because the search objective is the post-finetuning average). 
+
+Qwen-2.5-3B: AutoQRA’s gains look like a re-prioritization toward multi-step reasoning. This back-bone shows one of the clearest shifts on GSM8K : AutoQRA (≤4b) reaches 72.88, substantially above LoRA (64.00) and well above uniform 4-bit baselines. At the same time, improvements on some other tasks are more modest (e.g., ARC-E 77.23 vs. 75.10, BoolQ 80.12 vs. 80.00), and a cou-ple of tasks can move slightly in the opposite direction (e.g., PIQA 75.60 vs. 77.00). The overall picture matches the intended behavior of AutoQRA: it is not “just quantize less everywhere,” but rather it reallocates capacity so that the tasks that are most disrupted by quantization noise are the ones that get the most help from rank. 
+
+AutoQRA ( ≤4b) vs. AutoQRA (Opt): what the extra precision buys. The (Opt) setting consistently raises the ceiling, but the pattern of gains matters. On Qwen-2.5-7B ,the jump from AutoQRA ( ≤4b) to (Opt) is broad and clean (Avg 71.35 → 73.19), and it also improves the previously brittle tasks further (e.g., WinoGrande 73.30 → 75.12, PIQA 81.30 → 83.43). On LLaMA-3.1-8B , the (Opt) gains are more concentrated (ARC-C 56.12 → 57.85, ARC-E 84.20 
+
+→ 84.90), while most other tasks are already near saturation under the ≤4b regime. So in practice, (Opt) mostly helps when you have headroom to push the “hard reasoning” tasks above an already-strong baseline, whereas ≤4b is doing the heavy lifting for robustness under strict compression. 
+
+Bottom line. The per-task breakdown supports the core motivation: mixed bit-width choices that look acceptable in aggregate can still be fragile on specific tasks, and the joint bit–rank search largely removes these fragilities. Where the backbone has enough capacity (8B/7B), AutoQRA ( ≤4b) behaves like a drop-in replacement for FP16 LoRA on most tasks while avoiding the sharp failure modes of uniform 4-bit methods. Where the backbone is small (3B), the trade-offs become more visible, but the improvements still show up consistently on the tasks that are typically hardest to preserve under quantization. 
+
+## E. Additional Ablations 
+
+E.1. Feasibility Repair Analysis 
+
+Figure 8 gives a layer-level view of what REPAIR (·) is actu-ally doing when it projects an infeasible configuration back into the feasible set. For each layer, we plot its sensitivity score (x-axis; a revealed-preference measure) against the 4Submission and Formatting Instructions for ICML 2026 
+
+corresponding repair intensity (y-axis; how strongly that layer tends to be hit by discrete downgrades during repair). The pattern is very clear: repair intensity is strongly nega-tively correlated with sensitivity ( ρ = −0.68 , p < 0.01 ). In other words, layers that are more sensitive are systematically protected, while the “damage” is concentrated on layers that are relatively robust. This is exactly the behavior encouraged by Eq. (8) . When 
+
+M (C) > B max , REPAIR looks for the downgrade that re-moves the most memory for the least expected loss, i.e., small sensitivity-per-saved-memory. The scatter plot shows that this heuristic translates into a consistent, global pref-erence rather than a few hand-picked cases: across depth (color-coded layer index), repair pressure shifts toward low-sensitivity layers, effectively using them as a buffer to satisfy the hard constraint without repeatedly harming fragile lay-ers. A few outliers (e.g., the labeled layers) are expected in a discrete ladder setting: if a particular layer offers an unusually favorable memory drop for a single step on either the bit or rank ladder, it can be selected more/less often even when its sensitivity is not extreme. Overall, the takeaway is that REPAIR (·) is not just “making things feasible”—it enforces feasibility in a way that preserves trainability by avoiding heavy edits on sensitive layers. 
+
+E.2. Search-Protocol Hyperparameter Sensitivity 
+
+AutoQRA contains several discrete hyperparameters that control (i) Phase I multi-fidelity evolutionary search (e.g., population size, number of generations, promotion rule, and pruning factor η), and (ii) Phase II local refinement (e.g., EI iteration budget, scalarization weight α, and the neighbor-hood size in discrete trust regions). We assess robustness via a one-factor-at-a-time sweep: for each hyperparameter h,we vary h over a candidate set Ξh while fixing all other hy-perparameters to their default values (marked by the dashed vertical line in the sweep plots). For each setting, we run the full AutoQRA pipeline under the same evaluation budget and report the resulting final performance (e.g., averaged task score; mean ± std over seeds). To summarize sensitivity in a comparable scalar form, we define 
+
+S(h) ≜ max 
+
+> ξ∈Ξh
+
+P ⋆(ξ) − min 
+
+> ξ∈Ξh
+
+P ⋆(ξ), (29) where P ⋆(ξ) denotes the best measured final score returned by AutoQRA under setting h = ξ. Figure 9 ranks hyperpa-rameters by S(h), while Figure 10 shows the full response curves for each sweep. 
+
+Takeaway. Across the tested ranges, AutoQRA is gener-ally stable around the default settings. We use the ranking (Fig. 9) to highlight which knobs matter most in practice, and use the sweep curves (Fig. 10) to make the directionality of each effect explicit. 5

@@ -1,0 +1,1889 @@
+Title: HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation
+
+URL Source: https://arxiv.org/pdf/2603.04996v1
+
+Published Time: Fri, 06 Mar 2026 01:49:10 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+## HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Yifan Zhu 1 Guanting Chen 1 Bing Wei 3 Haoran Luo 2,†
+
+1Beijing University of Posts and Telecommunications 2Nanyang Technological University 3Hainan University 
+
+yifan zhu@bupt.edu.cn, cgt@bupt.edu.cn, haoran.luo@ieee.org 
+
+Abstract 
+
+Large language models perform well in short text generation but still struggle with long text gen-eration, particularly under complex constraints. Such tasks involve multiple tightly coupled ob-jectives, including global structural consistency, local semantic coherence, and constraint feasibil-ity, forming a challenging constrained optimiza-tion problem. Existing approaches mainly rely on static planning or offline supervision, limiting effective coordination between global and local objectives during generation. To address these challenges, we propose HiFlow, a hierarchical feedback-driven optimization framework for con-strained long text generation. HiFlow formulates generation as a two-level optimization process, consisting of a planning layer for global structure and constraint modeling, and a generation layer for conditioned text generation. By incorporating constraint-aware plan screening and closed-loop feedback at both levels, HiFlow enables joint op-timization of planning quality and generation be-havior, progressively guiding the model toward high-quality, constraint-satisfying outputs. Exper-iments on multiple backbones confirm HiFlow’s effectiveness over baseline methods. 
+
+1. Introduction 
+
+Large language models (LLMs) (Zhao et al., 2023) perform well in short-form text generation (Radford et al., 2019; Brown et al., 2020; Achiam et al., 2023), but struggle with constrained long-form generation (Bai et al., 2025; Xia et al., 2025; Xi et al., 2025; You et al., 2023; Lee et al., 2025; Liang et al., 2024b). These tasks require jointly optimizing global structure, local coherence, and constraint satisfaction, which are tightly coupled and difficult to balance (Cho et al., 2019). As shown in Figure 1, constrained long-form generation fol-lows a multi-stage, feedback-driven workflow integrating user goals, structural planning, and segment-level genera-
+
+> †
+
+Corresponding author. Objective & Constraints               
+
+> Objective:
+> Build a commuity
+> garden
+> (1) Limited budget (Single)
+> (2) Must be completed
+> (3) Weekly maintenance
+> within 3 months (Range)
+> every Saturday (Periodic)
+> Constraints
+> Candidate Plans
+> plan A plan B
+> plan C plan D
+> Vegetable
+> Garden
+> Flower
+> Garden
+> Mixed
+> Garden
+> Leisure
+> Area
+> Decision Filter
+> Final Generation Execution Generation Reward Evaluation
+> Plan A: Rejected (Cost ↑)
+> Plan B: Low Impact
+> Plan C: Selected
+> Plan D: Low Engagement
+> Plan C: 0.8
+> (Highest Score)
+> Community Impart Score
+> Plan Representation
+> Plan C: 0.8
+> (Higest Score)
+> (1) Cost Estimate
+> (2) Time Requirement
+> (3) Maintenance Load
+> (4) Community Reach
+> (1) Condition on Plan C
+> (2) Prefer best plans
+> (3) Suppress weak patterns
+> (4) Align with preferences
+> (5) Reinforce high-reward signals
+> Optimization objective:
+> πθ(y ⁺| x) > πθ(y ⁻| x)
+> Preference-aligned generation: Final output:
+> Final writing
+> plan completed!
+> Provides a complete and
+> structu-red writing outcome.
+> (1) Execution plan
+> (2) Task schedule
+> (3) Maintenance guidelines
+> (4) Monitoring & feedback
+
+Figure 1. An example of constrained long-form text generation in HiFlow, coordinating planning, generation, and feedback. 
+
+tion (Wang & Atanasova, 2025; Han et al., 2025; Luo et al., 2025a). This process further requires models to coordi-nate planning and generation across multiple stages while preserving consistency with high-level objectives. Despite recent advances, existing long-form text gener-ation methods struggle to jointly optimize structural co-herence, semantic fidelity, and constraint satisfaction in practice due to interdependent objectives across generation stages (Xia et al., 2025; Cho et al., 2019; Liu et al., 2024). Prior work mainly follows two directions: data-centric ap-proaches based on large-scale data augmentation and prefer-ence optimization, and planning-based frameworks with hi-erarchical or multi-agent structures (Bai et al., 2025; Wang & Atanasova, 2025; He et al., 2024; Zhong et al., 2025; Rafailov et al., 2023; Yao et al., 2023; Shinn et al., 2023; You et al., 2023; Wan et al., 2025). Both adopt loosely coupled planning and generation, limiting explicit feedback-driven optimization across levels (Zhang et al., 2025b). However, from an optimization perspective, several chal-lenges remain: (i) Constraint-Aware Workflow Modeling: 
+
+Constrained long-form generation jointly optimizes struc-tural coherence, semantic fidelity, and constraint satisfac-tion, yet existing workflows lack principled mechanisms for 1
+
+> arXiv:2603.04996v1 [cs.CL] 5 Mar 2026
+
+HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation A detailed  
+
+> writing plan
+> Building
+> Constraint
+> Writing
+> Objective
+> Planning Module
+> Generate
+> Text
+> Gen for
+> Trainning
+> Generation Module
+> Final
+> Generation
+> Plan
+> Generator
+> Generate
+> Sub-Plan
+> Plan for
+> Trainning
+> Via feedback Via feedback
+> Writing
+> Objective
+> (c) HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation (ours)
+> Plan 1
+> (b) CogWriter WorkFlow (a) LongWriter WorkFlow
+> Planning
+> Agent
+> Final
+> Generation
+> Plan 2
+> Plan 3
+> Plan 4
+> Gen 1
+> Gen 2
+> Gen 3
+> Gen 4
+> Paragraph Writing
+> Objective
+> Structure
+> and word
+> Writing
+> Agent
+> Building
+> Constraint
+> Generate
+> Generate
+> Generate
+> Generate
+> Merge
+> all text
+> Final
+> Generation
+> Execute
+> Execute
+> Execute
+> Execute
+> Text
+> Generator
+
+Figure 2. Framework comparison of HiFlow, LongWriter, and CogWriter, highlighting key differences in planning, reviewing, and generation for producing coherent, high-quality long-form text. 
+
+cross-stage constraint propagation (Bonlarron et al., 2025). 
+
+(ii) Adaptive Workflow Optimization: Most approaches rely on static supervision or costly post-generation refine-ment, limiting adaptability to evolving requirements and motivating feedback-driven optimization (Zhu et al., 2025; Luo et al., 2025b). (iii) Feedback-Coupled Coordination: 
+
+Planning, generation, and alignment are loosely coupled, with feedback applied post hoc, limiting effectiveness in guiding planning and local generation (Gul & Artzi, 2024). Addressing challenges requires modeling the workflow as an optimizable process rather than a fixed pipeline. To address these challenges, we propose HiFlow, a workflow optimization framework for constrained long-form text gen-eration that formulates generation as a closed-loop process jointly planning, decision-making, generation, and feedback. HiFlow decomposes high-level objectives into constraint-aware sub-plans via hierarchical planning, while decision-and reward-based filtering leverages constraint satisfaction and quality signals to guide local generation and global doc-ument assembly (Wan et al., 2025; Wang et al., 2025). By integrating constraint signals and feedback throughout the workflow (Wu et al., 2025a; Zhang et al., 2025b), HiFlow enables coordinated optimization across stages and adopts a workflow-centric, feedback-driven paradigm. We evaluate HiFlow on constrained long-form generation across backbone models, including the Qwen2.5 (Yang et al., 2024) series and LLaMA3.1-8B-Instruct (Team, 2024), and compare it with proprietary and open-source baselines such as GPT-4o-mini, as well as workflow-based and data-centric methods including CogWriter (Wan et al., 2025) and Long-Writer (Bai et al., 2025). Across metrics covering constraint satisfaction, structural and semantic coherence, and genera-tion quality, HiFlow consistently outperforms all baselines, demonstrating the effectiveness of adaptive workflow opti-mization with integrated constraint signals and feedback. 
+
+2. Related Work 
+
+Constrained Long-Form Text Generation. Constrained long-form text generation aims to generate coherent long texts under task-specific requirements such as content, style, and explicit constraints (Shi et al., 2025; Pynadath & Zhang, 2025). Prior work mainly falls into two paradigms (Liang et al., 2024a): controllable generation via explicit constraint modeling (Long et al., 2025; Pham et al., 2024; Chen & Wan, 2023; Yao et al., 2024; Luo et al., 2025c), and planning-based approaches that leverage outlines or retrieval to im-prove global coherence (Wan et al., 2025; Shao et al., 2024; Gu et al., 2025). Despite progress, these methods typically adopt a pipeline design with loosely coupled planning and generation, limiting adaptive integration of constraint satis-faction and feedback during generation (Liang et al., 2024a; Shao et al., 2024; Gu et al., 2025; Wan et al., 2025). 
+
+Agentic Workflows. Recent work increasingly frames com-plex generation as agentic or workflow-based processes, decomposing generation into coordinated stages or interact-ing agents (Liu et al., 2025; Yuan et al., 2025; Lin et al., 2025). Prior studies explore automated workflow construc-tion via modular design, search, or evolutionary strategies, as well as explicit workflow orchestration for multi-step reasoning (Zhang et al., 2025c;a; Niu et al., 2025; Fan et al., 2025), while other approaches investigate multi-agent col-laboration through end-to-end training or distillation (Li et al., 2025; Cheng et al., 2025). In parallel, planning-based paradigms have been applied to long-form text generation via agent-based decomposition, hierarchical planning, or staged prompting to improve length and coherence (Bai et al., 2025; Liang et al., 2024b; Que et al., 2024). De-spite their effectiveness, these methods largely emphasize workflow construction or decomposition and lack dynamic, adaptive, and constraint-aware end-to-end feedback-coupled optimization that jointly governs planning and generation. 2HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation Generate 
+
+> Sub-Plan
+> Final
+> Generation
+
+Main WorkFlow Single Constraint 
+
+Range Constraint 
+
+Periodic Constraint  
+
+> To Support Defined
+
+Planning Trainer Candidate Plans 
+
+Generation 
+
+Trainer      
+
+> Plan 1 Plan 2
+> Plan 3 Plan 4
+> Training
+> Plan for
+> Input Training Plan
+> Gen 1 Gen 2
+> Gen 3 Gen 4
+
+Planning Trainer Generation Trainer 
+
+> Training
+> Gen for
+
+Evaluate Plan 
+
+(YES/NO) 
+
+𝐀 𝐀𓰀𝐀𙐀  
+
+> 𝐀
+
+: 𝐀𓐀 
+
+𝐀 𝐀𓰀𝐀𙐀  
+
+> 𝐀
+
+: 𝐀𖀀𝐀 
+
+𝐀 𝐀𓰀𝐀𙐀  
+
+> 𝐀
+
+: 𝐀𓐀 
+
+Filtered 
+
+Candidate Plans 
+
+Reward function 
+
+evaluation 
+
+Plan 1 
+
+Plan 2 
+
+Plan 3 
+
+Plan 4 
+
+Generator 
+
+> Input
+> accept
+
+𝐀 𝐀𓰀𝐀𙐀  
+
+> 𝐀
+
+: 𝐀𖀀𝐀 
+
+> accept
+> reject
+> reject
+
+Plan 1' 
+
+Plan 2' 
+
+Plan 3' 
+
+Plan 4' 
+
+> eval
+> eval
+
+R(Plan 1', 𝐀 𝐀𓰀𝐀𙐀  
+
+> 𝐀
+
+)
+
+= 0.7 
+
+R(Plan 2', 𝐀 𝐀𓰀𝐀𙐀  
+
+> 𝐀
+
+)
+
+= 0.9 
+
+Reward Scoring 
+
+> feedback
+
+Generator 
+
+Reward Scoring 
+
+Reward function 
+
+evaluation 
+
+R(Gen 1', 𝐀 𝐀 𝐀 𝐀  
+
+> 𝐀
+
+)
+
+= 0.4 
+
+R(Gen 2', 𝐀 𝐀 𝐀 𝐀  
+
+> 𝐀
+
+)
+
+= 0.8 
+
+> Reward-based selection
+> Probability Comparison
+> Probability
+> Comparison
+> Reward-based
+> selection
+> feedback
+> Input
+
+Plan Text 
+
+Single explicit requirement 
+
+Bounded structural span 
+
+Fixed periodic recurrence 
+
+Writing 
+
+Objective 
+
+Building 
+
+Constraint 
+
+> Reward-based plan
+> filtering and selection
+> Reward-based gen
+> filtering and selection
+
+Generation 
+
+Decision Filter    
+
+> Max P(YES > No|Plan, Plan 2') ,
+> P(YES > NO|Plan, Plan 1') Max P(YES > No|Plan, Plan 2') ,
+> P(YES > NO|Plan, Plan 1')
+
+Gen 2 
+
+Gen 1 
+
+Figure 3. Overview of the HiFlow framework: a constrained generation process guided by reward signals, ensuring high-quality outputs, task-specific coherence, and structural consistency. 
+
+3. Preliminaries 
+
+This section presents HiFlow: constrained generation, roll-out reward evaluation, and Direct Preference Optimization. 
+
+(i) Constrained Long-Form Text Generation. The task generates text satisfying constraints using controllable gen-eration or fine-tuning (Bastan et al., 2023; Chen et al., 2022). 
+
+(ii) Rollout-Based Reward Evaluation. We evaluate partial outputs or sub-plans by estimating long-term rewards via rollout-based simulated continuations (Wang et al., 2024). 
+
+r(z) = 1
+
+> NN
+
+X
+
+> i=1
+
+R z ⊕ ˆY (i)
+
+> rollout
+
+, (1) where N is the count of rollouts, R(·) rates satisfaction and coherence, and z ⊕ ˆY (i) 
+
+> rollout
+
+joins z with i-th rollout. 
+
+(iii) Direct Preference Optimization. DPO aligns pref-erences by optimizing the likelihood of higher and lower-preference outputs z+ and z− based on rollout rewards. 
+
+∆( z+, z −) = β log πθ (z+ | x) πref (z− | x)
+
+πθ (z− | x) πref (z+ | x) . (2) 
+
+LDPO (θ) = −E(z+,z −)∼D
+
+log σ ∆( z+, z −) . (3) Here, x is the prompt. z+ and z− denote higher and lower-preference outputs. r(·) is the rollout reward. πθ and πref 
+
+are the policy and reference models. β is the temperature. 
+
+σ is the sigmoid. (z+, z −) ∼ D are preference pairs. 
+
+4. Methodology: HiFlow 
+
+In this section, as illustrated in Figure 3, we present Hi-Flow, a hierarchical optimization framework that integrates Constraint-Aware Hierarchical Plan Modeling, Binary Rele-vance Filtering, and Reward-Guided Optimization. 
+
+4.1. Constraint-Aware Hierarchical Plan Modeling 
+
+As shown in Figure 3, this stage models global planning as a hierarchical, constraint-aware process, generating high-quality plans via candidate generation and refinement. Rather than treating planning as a single-shot prediction, we represent a global plan as an ordered sequence of sub-plans: 
+
+p = ( s1, s 2, . . . , s m), (4) where each sub-plan represents a localized planning deci-sion. In long-form generation, a document-level plan con-sists of constraint-aware sub-plans conditioned on the task and prior sub-plans to preserve inter-section coherence. To incorporate constraint awareness, we adopt localized re-finement: when constraints are violated, only the offending sub-plan is revised, preserving the remaining structure: 
+
+p′ = ( s1, . . . , s k−1, s ′
+
+> k
+
+, s k+1 , . . . , s m). (5) This localized refinement acts as a constrained repair op-erator, yielding a structured and feasible global plan for subsequent screening and reward-guided optimization. 3HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Proposition 1. Constraint-aware hierarchical global plan-ning improves structural validity and increases the likeli-hood of satisfying task constraints in candidate plans. Proof. We provide experimental evidence in Section 5.4 and theoretical analysis in Appendix B.1. 
+
+4.2. Binary Relevance Filtering 
+
+As shown in Figure 3, we apply a relevance-based screening mechanism for plan-level filtering, acting as a feasibility gate beyond structural planning to enforce task validity. In contrast to hierarchical planning, this stage evaluates plan validity using a lightweight evaluation to filter misaligned plans and better coordinate global planning and generation. Given the refined candidate set Pfinal = p1, . . . , p N , each plan is evaluated using a task-specific relevance criterion defined by pfilter , and assigned a binary relevance indicator: 
+
+δi = 1relevant (pi) = 
+
+(
+
+1, if R(pi) = true ,
+
+0, otherwise , (6) where δi = 1 denotes a plan satisfying task-level require-ments, and R(·) is the relevance function defined by pfilter .Plans satisfying R(pi) = true are retained for sub-plan decomposition and subsequent generation, while infeasible candidates are discarded or regenerated. We model this screening process as a Bernoulli random variable: 
+
+δi ∼ Bernoulli   Pr( δi = 1 | pi, p filter ). (7) We aggregate task-inherent criteria in pfilter , including rele-vance, completeness, coherence, efficiency, specificity, and consistency, into a factorized feasibility score for screening. 
+
+Pr( δi = 1 | pi, p filter ) = 
+
+> 6
+
+Y
+
+> k=1
+
+pi,k . (8) This formulation serves as a strict feasibility-oriented scor-ing function, penalizing plans that violate any individual criterion, rather than attempting to model a true joint proba-bility. Consequently, the filtered plan set is defined as: 
+
+Pfiltered = {pi ∈ Pfinal | δi = 1 }, (9) ensuring that only structurally and semantically valid plans proceed to generation-level optimization, improving overall coordination between global planning and generation. 
+
+Proposition 2. Feasibility-oriented plan screening based on task-inherent relevance criteria improves overall planning quality by reducing the propagation of severely misaligned plans to downstream generation. Proof. We provide experimental evidence in Section 5.4 and theoretical analysis in Appendix B.2. 
+
+4.3. Reward-Guided Optimization 
+
+After plan screening, HiFlow jointly optimizes planning and generation under a unified reward-guided DPO framework. 
+
+Plan-Level Reward Modeling. At the planning level, each sub-plan Sj represents a global structure. Sub-plan quality is evaluated via plan-level rollouts that generate continuations and compute rewards without full generation. For candidate sub-plans S+ 
+
+> j
+
+and S− 
+
+> j
+
+, the preference probability: 
+
+P (S+ 
+
+> j
+
+≻ S− 
+
+> j
+
+| x) = σ r(S+ 
+
+> j
+
+) − r(S− 
+
+> j
+
+), (10) where σ(·) denotes the sigmoid function and r(Sj ) is the reward for sub-plan Sj , estimated via multiple rollouts: 
+
+r(Sj ) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+R Sj ⊕ bY (i)
+
+> rollout
+
+, (11) where N denotes the number of rollouts, R(·) evaluates structural coherence and constraint satisfaction, and Sj ⊕
+
+bY (i) 
+
+> rollout
+
+denotes concatenation with the i-th rollout. Based on these rewards, we define the preference contrast as 
+
+∆( S+ 
+
+> j
+
+, S − 
+
+> j
+
+) = β log πθ (S+ 
+
+> j
+
+| x) πref (S− 
+
+> j
+
+| x)
+
+πθ (S− 
+
+> j
+
+| x) πref (S+ 
+
+> j
+
+| x) , (12) and optimize the planning module using the DPO objective: 
+
+Lplan DPO (θ) = −E(S+  
+
+> j,S −
+> j)∼Dplan
+
+log σ ∆( S+ 
+
+> j
+
+, S − 
+
+> j
+
+) , (13) where Dplan denotes the plan-level preference dataset. 
+
+Generation-Level Reward Modeling. At the generation stage, sub-plans are expanded into text segments. For G+
+
+> k
+
+and G− 
+
+> k
+
+, the pairwise preference probability is defined as: 
+
+P (G+ 
+
+> k
+
+≻ G− 
+
+> k
+
+| x) = σ r(G+ 
+
+> k
+
+) − r(G− 
+
+> k
+
+), (14) where r(Gk) denotes reward for segment Gk, computed as 
+
+r(Gk) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+R Gk ⊕ bY (i)
+
+> rollout
+
+, (15) where R(·) evaluates semantic coherence, generation qual-ity, and constraint adherence of the rollout continuation. The corresponding preference contrast is given by 
+
+∆( G+ 
+
+> k
+
+, G − 
+
+> k
+
+) = β log πθ (G+ 
+
+> k
+
+| x) πref (G− 
+
+> k
+
+| x)
+
+πθ (G− 
+
+> k
+
+| x) πref (G+ 
+
+> k
+
+| x) , (16) and the generation-level DPO objective is defined as 
+
+Lgen DPO (θ) = −E(G+  
+
+> k,G −
+> k)∼Dgen
+
+log σ ∆( G+ 
+
+> k
+
+, G − 
+
+> k
+
+) .
+
+(17) 
+
+Proposition 3. Reward-guided optimization aligns sub-plans and segments with task objectives through preference modeling. Proof. See empirical evidence in Section 5.5 and theoretical analysis in Appendix B.3. 4HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Table 1. Comparison of narrative-level text quality and constraint-following accuracy across different methods. 
+
+Method Text Quality Constraint Accuracy Narr. Memory Temporal Affect. Avg. Once Range Peri. Avg. Qwen2.5-0.5B-Instruct 66.44 ±0.25 66.13 ±0.62 64.88 ±1.90 76.13 ±0.01 68.39 ±1.01 23.46 ±1.59 16.60 ±1.52 15.69 ±0.54 18.58 ±0.75 
+
++ CogWriter 74.75 ±0.54 75.13 ±0.82 72.19 ±0.47 90.38 ±0.91 78.11 ±0.63 26.61 ±0.98 19.50 ±0.30 17.70 ±0.24 20.78 ±0.21 
+
++ LongWriter 74.63 ±0.76 74.88 ±0.39 71.69 ±0.68 90.00 ±0.55 77.80 ±0.84 21.01 ±0.30 19.29 ±0.11 15.83 ±0.20 18.71 ±0.13 
+
++ HiFlow (ours) 75.13 ±0.42 74.88 ±0.61 73.19 ±0.35 90.88 ±0.48 78.52 ±0.27 28.01 ±0.55 18.53 ±0.10 15.80 ±0.28 22.11 ±0.31 
+
+Qwen2.5-1.5B-Instruct 70.13 ±0.51 69.50 ±0.92 67.13 ±0.43 81.50 ±0.78 72.06 ±0.36 23.30 ±1.43 22.22 ±0.28 12.12 ±0.60 19.22 ±0.77 
+
++ CogWriter 74.88 ±0.64 75.13 ±0.37 71.81 ±0.85 89.44 ±0.59 77.81 ±0.72 31.66 ±3.09 25.76 ±0.91 17.79 ±0.22 25.07 ±1.41 
+
++ LongWriter 75.00 ±0.83 74.75 ±0.56 70.94 ±0.29 89.38 ±0.81 77.52 ±0.44 42.67 ±0.36 28.17 ±1.16 41.24 ±0.49 37.36 ±0.44 
+
++ HiFlow (ours) 75.19 ±0.32 74.88 ±0.47 72.38 ±0.53 90.31 ±0.39 78.19 ±0.28 49.01 ±0.16 38.88 ±0.13 42.93 ±0.30 43.61 ±0.20 
+
+Qwen2.5-7B-Instruct 72.25 ±0.73 76.11 ±0.48 63.69 ±0.94 88.25 ±0.51 78.00 ±0.66 41.83 ±6.33 39.63 ±0.28 26.74 ±0.06 36.06 ±2.22 
+
++ CogWriter 73.44 ±0.85 80.31 ±0.39 66.75 ±0.62 89.63 ±0.77 78.03 ±0.43 42.05 ±0.91 56.65 ±0.35 27.90 ±0.43 42.20 ±0.56 
+
++ LongWriter 72.44 ±0.57 77.69 ±0.82 65.38 ±0.41 86.31 ±0.69 75.45 ±0.88 27.23 ±0.17 32.48 ±1.07 27.91 ±0.26 29.21 ±0.50 
+
++ HiFlow (ours) 75.31 ±0.36 80.13 ±0.52 67.88 ±0.47 91.00 ±0.25 78.58 ±0.31 62.01 ±1.33 61.29 ±0.00 48.83 ±0.06 57.38 ±0.47 
+
+LLaMA3.1-8B-Instruct 74.63 ±0.49 74.69 ±0.86 72.13 ±0.37 89.38 ±0.72 77.88 ±0.55 31.51 ±0.84 27.87 ±0.43 21.02 ±0.39 26.80 ±0.55 
+
++ CogWriter 74.69 ±0.68 75.31 ±0.41 73.25 ±0.59 88.63 ±0.83 77.97 ±0.32 43.12 ±0.11 48.77 ±0.07 33.80 ±0.07 41.89 ±0.08 
+
++ LongWriter 75.13 ±0.57 74.88 ±0.78 72.38 ±0.44 90.25 ±0.61 78.16 ±0.87 41.01 ±0.30 49.29 ±0.11 32.83 ±0.20 41.04 ±0.20 
+
++ HiFlow (ours) 75.38 ±0.34 80.56 ±0.52 66.38 ±0.81 90.75 ±0.27 78.27 ±0.46 45.94 ±1.26 53.27 ±1.05 46.44 ±1.28 48.55 ±1.20 
+
+gpt-4o-mini 75.10 ±0.43 75.60 ±0.86 63.70 ±0.51 90.10 ±0.74 76.13 ±0.39 46.20 ±0.21 48.85 ±0.11 36.10 ±0.30 43.72 ±0.13 
+
++ CogWriter 75.30 ±0.62 76.80 ±0.27 64.80 ±0.85 90.60 ±0.41 76.88 ±0.56 51.08 ±0.24 51.63 ±0.98 34.99 ±0.20 45.90 ±0.30 
+
+Table 2. Ablation study of Planning and Generation modules in HiFlow (Qwen2.5-7B). 
+
+Method Text Quality Constraint Accuracy Narr. Memory Temporal Affect. Avg. Once Range Peri. Avg. 
+
+Base Model 54.20 ±0.48 36.45 ±0.91 28.30 ±0.37 29.10 ±0.64 37.01 ±0.53 43.79 ±0.42 48.07 ±0.81 28.30 ±0.36 40.05 ±0.57 
+
++ Planning 58.15 ±0.72 38.20 ±0.41 35.60 ±0.86 32.45 ±0.29 41.10 ±0.67 65.20 ±0.64 58.45 ±0.49 55.12 ±0.73 59.59 ±0.31 
+
++ Generation 65.40 ±0.55 46.15 ±0.83 38.90 ±0.46 38.20 ±0.79 47.16 ±0.34 51.25 ±0.55 52.30 ±0.28 35.40 ±0.62 46.32 ±0.47 
+
+Full HiFlow 69.80 ±0.27 48.95 ±0.51 43.60 ±0.38 41.25 ±0.44 50.90 ±0.32 70.59 ±0.33 61.73 ±0.52 64.43 ±0.38 65.58 ±0.41 
+
+4.4. Main Workflow 
+
+Figure 3 summarizes HiFlow’s complete end-to-end work-flow framework. During training, global plans are generated, filtered, reward-optimized, and expanded into text segments. During inference, the system generates and filters plans, executing the selected plan to produce the final output while ensuring structural coherence and constraint satisfaction. 
+
+5. Experiments 
+
+This section presents the experimental setup, main results, and analysis of our approach. We address the following re-search questions (RQs): RQ1: How much does HiFlow im-prove model performance over baseline approaches? RQ2: 
+
+How effective are HiFlow’s key components, as shown by ablation studies? RQ3: How does constraint-aware work-flow design enhance constraint satisfaction? RQ4: How does adaptive workflow optimization improve robustness under evolving constraints? RQ5: How does feedback-coupled coordination improve generation quality? 
+
+5.1. Experimental Setup Baseline. We compare HiFlow with CogWriter (Wan et al., 2025), LongWriter (Bai et al., 2025), and GPT-4o-mini across three Qwen2.5 (Yang et al., 2024) scales (0.5B, 1.5B, 7B) and LLaMA3.1-8B. Details are provided in Appendix E. 
+
+Evaluation Metrics. We evaluate model performance on LongGenBench along two axes of evaluation. Instruc-tion Following Accuracy measures compliance with sin-gle, range-based, and periodic constraints, reporting both category-wise and overall accuracy. Text Quality is assessed across narrative coherence, memory consistency, temporal grounding, and affective consistency, using an aggregated 5HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation Qwen-0.5B 
+
+> Qwen-1.5B
+> Qwen-7B
+> Llama-8B
+
+60 
+
+65 
+
+70 
+
+75 
+
+80 
+
+85 
+
+> Avg. Text Quality Score  Base
+> CogWriter
+> LongWriter
+> HiFlow
+
+(a) Text Quality Evaluation Qwen-0.5B 
+
+Qwen-1.5B 
+
+Qwen-7B 
+
+Llama-8B 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8  
+
+> Avg. Constraint Accuracy  Base
+> CogWriter
+> LongWriter
+> HiFlow
+
+(b) Constraint Accuracy 20 30 40 50 60 
+
+Accuracy Score  
+
+> Once
+> Range
+> Periodic
+> Average
+> Constraint Type
+> Q2.5-0.5B /w Log
+> Q2.5-0.5B /w Cog
+> Q2.5-0.5B /w HiF
+> Q2.5-1.5B /w Log
+> Q2.5-1.5B /w Cog
+> Q2.5-1.5B /w HiF
+> Q2.5-7B /w Log
+> Q2.5-7B /w Cog
+> Q2.5-7B /w HiF
+> gpt-4o-mini /w Cog
+
+(c) Ablation on Constraints Once Range Peri. Avg.              
+
+> Base Plan Gen Full
+> 41.20 46.50 26.40 38.03
+> 63.15 57.20 53.80 58.05
+> 49.80 51.10 34.20 45.03
+> 69.20 60.50 62.15 63.95 30
+> 40
+> 50
+> 60
+> Accuracy Rate
+
+(d) Qwen Constraint Narr. Mem Temp Aff. Avg.                  
+
+> Base Plan Gen Full
+> 54.20 36.45 28.30 29.10 37.01
+> 58.15 38.20 35.60 32.45 41.10
+> 65.40 46.15 38.90 38.20 47.16
+> 69.80 48.95 43.60 41.25 50.90
+> 30
+> 40
+> 50
+> 60
+> Accuracy Rate
+
+(e) Qwen Quality Once Range Peri. Avg.              
+
+> Base Plan Gen Full
+> 44.10 47.90 28.30 40.10
+> 61.80 58.60 55.10 58.50
+> 52.60 53.40 36.80 47.60
+> 71.40 63.20 66.50 67.70
+> 30
+> 40
+> 50
+> 60
+> 70
+> Accuracy Rate
+
+(f) LLaMA Constraint Narr. Mem Temp Aff. Avg.                  
+
+> Base Plan Gen Full
+> 56.80 37.90 30.10 30.40 38.80
+> 60.20 40.10 36.90 33.80 42.75
+> 66.10 46.80 40.20 39.40 48.13
+> 71.20 50.30 45.10 43.20 52.45
+> 40
+> 50
+> 60
+> 70
+> Accuracy Rate
+
+(g) LLaMA Quality 
+
+Figure 4. Results across backbone models. (a) Text quality evaluation. (b) Constraint-following accuracy. (c) Ablation study on constraint components. (d–e) Constraint accuracy and text quality on Qwen2.5-7B-Instruct. (f–g) Constraint accuracy and text quality on LLaMA3. 
+
+score. Additional details are provided in Appendix F. 
+
+Implementation Details. We implement HiFlow following the LongGenBench (Wu et al., 2025b) framework, incor-porating components for training and optimization. All experiments run on 3 NVIDIA A40 GPUs (48GB), enabling scalable distributed computation. Details are in Appendix G. 
+
+5.2. Main Results (RQ1) 
+
+As shown in Table 1 and Figure 4, we compare HiFlow with the base model and strong workflow-based baselines, including CogWriter and LongWriter, across multiple back-bone models on (a) average text quality and (b) constraint-following accuracy. Across all evaluated backbones, HiFlow consistently achieves superior performance on both metrics, demonstrating its effectiveness in jointly optimizing content generation and constraint satisfaction under a unified work-flow framework. (a) Text Quality. Figure 4a illustrates that HiFlow consistently yields the highest text quality across all backbone settings. Compared with CogWriter and Long-Writer, HiFlow produces outputs that are more fluent, coher-ent, and structurally well-organized. This improvement can be attributed to workflow-level optimization, where explicit planning and generation coordination enables the model to better maintain global structure and logical consistency, particularly for longer and more complex responses. No-tably, the gains become more pronounced as model capac-ity increases, suggesting that HiFlow effectively leverages stronger backbones to realize higher-quality generation. (b) Constraint-Following Accuracy. Figure 4b shows that HiFlow substantially outperforms all baselines in constraint-following accuracy across all backbones. While CogWriter and LongWriter already improve over the base model by introducing workflow structures, HiFlow further enhances constraint satisfaction by integrating reward-driven opti-mization across planning and generation stages. The per-formance gap is especially evident on medium and large models, indicating that HiFlow enables more effective uti-lization of structured guidance in complex and long-horizon scenarios. These results highlight HiFlow’s robustness and scalability in practical settings where both strict constraint adherence and high-quality generation are required. 
+
+5.3. Ablation Study on the Effectiveness of HiFlow’s Key Components (RQ2) 
+
+Table 2 and Figure 4 present an ablation study of HiFlow’s Planning and Generation modules on Qwen2.5-7B-Instruct and LLaMA3.1-8B thus, demonstrating respective roles. 
+
+Generation Is Essential Constraint Satisfaction. Train-ing the Generation module reliably improves constraint-following accuracy across most constraint types (Fig-ures 4d, 4f), while the Planning-only variant yields weaker performance, indicating high-level plans alone are limited for achieving robust and consistent constraint satisfaction. This highlights the necessity of generation-level optimiza-6HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation HiFlow | Qwen2.5-0.5B 
+
+Prompt 
+
+Week 1 (January 1st - January 7th) 
+
+• Event: Launched the New Year menu featuring luxurious and festive dishes including 
+
+Lobster Thermidor, Shrimp Cocktail, and Stuffed Mushrooms. 
+
+• Impact: Set a high standard for the year’s gourmet experiences, combining classic 
+
+techniques with innovative flavors to delight guests and establish culinary excitement 
+
+for 2018. 
+
+Week 2 (January 8th - January 14th) 
+
+• Event: Featured a cozy winter menu with dishes emphasizing family and comfort, 
+
+including Real Chicken Bun with Sriracha, Sushi Rolls with Soy-based Butter, and 
+
+Margherita Pizza. 
+
+• Impact: Enhanced guest satisfaction through comforting, flavorful options while 
+
+maintaining a balance of creativity and approachability in the menu offerings. 
+
+Week 3 (January 15th - January 21st) 
+
+• Event: Introduced diverse main courses such as Spaghetti Carbonara, Chicken Fried 
+
+Rice, and Thyme Chicken Stew, paired with inventive sides like Italian Rice and 
+
+Pineapple Weather. 
+
+• Impact: Expanded the culinary variety of the menu, promoting continued engagement 
+
+and excitement among diners, and demonstrating versatility in gourmet offerings. 
+
+HiFlow | Qwen2.5-1.5B 
+
+Prompt 
+
+A weekly diary of Liam’s life in 2018 with 52 entries (≥100 words 
+
+each), covering family events, a martial arts camp in China, 
+
+regular jazz club visits, weather, work, and family life. 
+
+A weekly diary of Liam’s life in 2018 with 52 entries (≥100 words each), 
+
+covering family events, a martial arts camp in China, regular jazz club 
+
+visits, weather, work, and family life. 
+
+Week 17 (April 23 – April 29) 
+
+• Event: Liam experienced a significant career transition during this period, 
+
+while also celebrating family birthdays and his child’s school anniversary. 
+
+• Impact: This phase marked a fresh start and helped clarify his future goals. 
+
+By navigating the uncertainties that had lingered since winter, Liam 
+
+strengthened his personal resilience, adaptability, and overall sense of 
+
+fulfillment. 
+
+Week 37 (September 8 – September 14) 
+
+• Event: Liam participated in a martial arts training camp held in China. 
+
+• Impact: The experience provided him with inner peace and mental clarity, 
+
+reinvigorating his sense of purpose and injecting renewed energy into his 
+
+personal and professional life direction. 
+
+Week 38 (September 15 – September 21) 
+
+• Event: Liam celebrated the New Year and engaged in various cultural 
+
+activities, including attending a jazz appreciation club. 
+
+• Impact: Despite the lower temperatures, these activities strengthened family 
+
+bonds and fostered a shared sense of excitement and optimism for the year 
+
+ahead. 
+
+HiFlow | Qwen2.5-7B 
+
+Prompt 
+
+A weekly diary of Liam’s life in 2018 with 52 entries (≥100 words 
+
+each), covering family events, a martial arts camp in China, 
+
+regular jazz club visits, weather, work, and family life. 
+
+Week 1 (January 1st - January 7th) 
+
+• Event: Started the new year with family reflection, goal setting, and 
+
+balancing work and home life. 
+
+• Impact: Laid a strong foundation for personal and professional growth while 
+
+fostering family warmth and togetherness. 
+
+Week 2 (January 8th - January 14th) 
+
+• Event: Celebrated husband’s birthday and engaged in family activities while 
+
+managing work challenges. 
+
+• Impact: Strengthened family bonds, promoted joy and shared experiences, 
+
+and maintained a positive and resilient mindset at work. 
+
+Week 3 (January 15th - January 21st) 
+
+• Event: Maintained daily routines, family bonding activities, and professional 
+
+learning amid cold winter days. 
+
+• Impact:: Reinforced family stability and education, while ensuring 
+
+continued personal and professional development. 
+
+(a) Case study on generation quality under a representative constraint prompt, comparing different Qwen2.5 model variants. Narr. 
+
+Memory 
+
+Temporal 
+
+Affect. 
+
+Avg.(TQ) Once 
+
+Range 
+
+Peri. 
+
+Avg.(CA) 
+
+> 20
+> 40
+> 60
+> 80
+
+Base Model 
+
+w/ CogWriter 
+
+w/ HiFlow (Ours) 
+
+(b) Performance comparison. Stage 1 Stage 2 Stage 3 Stage 4 
+
+Evaluation Stage 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Accuracy Score
+
+Q2.5-0.5B /w HiFlow 
+
+Q2.5-1.5B /w HiFlow 
+
+Q2.5-7B /w HiFlow (Full) 
+
+Planning only 
+
+Generation only (c) Accuracy across stages. Base w/ Cog w/ HiFlow 
+
+0
+
+5
+
+10 
+
+15 
+
+20 
+
+> Total Time (Hours)
+
+Time: Qwen 
+
+Time: Llama 
+
+Acc: Qwen 
+
+Acc: Llama 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 
+
+70  
+
+> Avg. Accuracy (%)
+
+(d) Efficiency–accuracy trade-off. 
+
+Figure 5. Comprehensive analysis of HiFlow. (a) Case study illustrating generation quality under a representative constraint prompt. (b) Multi-dimensional performance comparison. (c) Accuracy evolution across evaluation stages. (d) Efficiency–accuracy trade-off. 
+
+tion for enforcing fine-grained constraints, which are often difficult to fully capture through planning alone. 
+
+Joint Optimization Achieves the Best Results. Jointly training Planning and Generation yields the highest and sta-ble constraint accuracy across both backbones, demonstrat-ing their complementary roles in global structuring and local execution for effective constraint-following performance. 
+
+No Trade-off with Text Quality. Models with a trained Generation module keep or improve text quality. Figure 4e, 4g showing that stronger constraint enforcement does not hurt fluency or coherence in long-form generation overall. 
+
+5.4. Constraint-Aware Workflow Design (RQ3) 
+
+As shown in Figure 4c, constraint-aware workflow design clearly improves model performance across different con-straint types, including Once, Range, and Periodic. Com-pared with models without HiFlow, we observe clear gains under more challenging constraints such as Range and Pe-riodic , where naive approaches often suffer degradation overall in both accuracy and stability across settings. This highlights the importance of constraint-aware workflows. 
+
+Workflow Integration Improves Accuracy. Across all constraint types, HiFlow yields stable accuracy gains, espe-cially under complex constraints. Integrating planning and generation in a constraint-aware workflow strengthens local compliance and overall accuracy consistently in practice. 
+
+Generalizable Across Constraint Types. These results confirm that constraint-aware workflow integration ad-dresses challenge (iii) and generalizes across settings, en-abling reliable generation in tasks requiring strict constraint adherence under diverse and complex instruction scenarios. 
+
+5.5. Adaptive Workflow Optimization (RQ4) 
+
+Figure 5d compares inference time and average constraint-following accuracy across different model configurations, demonstrating the effectiveness of workflow optimization in balancing efficiency and constraint-following performance. 
+
+Improved Accuracy with Moderate Overhead. HiFlow improves constraint-following accuracy across Qwen2.5-7B and LLaMA3.1-8B backbones compared to base model and CogWriter. Although HiFlow introduces additional infer-ence cost from planning and refinement, overhead remains moderate relative to accuracy gains, indicating an effective 7HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 0 100 200 300 
+
+> Evaluation Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Plan Reward Score
+> Metric
+> Original
+> Smoothed
+
+(a) Plan Conv: LLaMA3.1-8B 0 50 100 150 200 250  
+
+> Generation Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Generate Reward Score  Metric
+> Gen Original
+> Gen Smoothed
+
+(b) Gen Conv: LLaMA3.1-8B 0 50 100 150 200  
+
+> Evaluation Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Plan Reward Score
+> Metric
+> Original
+> Smoothed
+
+(c) Plan Conv: Qwen2.5-7B 0 50 100 150 200 250  
+
+> Generation Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Generate Reward Score  Metric
+> Gen Original
+> Gen Smoothed
+
+(d) Gen Conv: Qwen2.5-7B 0.2 0.4 0.6 0.8 
+
+> Reward Score
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Constraint Satisfaction Accuracy
+> Constraint Type
+> Once
+> Range
+> Periodic
+
+(e) Response: Qwen2.5-0.5B 0.2 0.4 0.6 0.8  
+
+> Reward Score
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Constraint Satisfaction Accuracy
+> Constraint Type
+> Once
+> Range
+> Periodic
+
+(f) Response: Qwen2.5-1.5B 0.2 0.4 0.6 0.8  
+
+> Reward Score
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Constraint Satisfaction Accuracy
+> Constraint Type
+> Once
+> Range
+> Periodic
+
+(g) Response: Qwen2.5-7B 0.2 0.4 0.6 0.8  
+
+> Reward Score
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Constraint Satisfaction Accuracy
+> Constraint Type
+> Once
+> Range
+> Periodic
+
+(h) Response: LLaMA3.1-8B 
+
+Figure 6. Experimental analysis across backbone models. (a–d) Planning-stage and generation-stage reward convergence on LLaMA3.1-8B and Qwen2.5-7B, showing stable optimization in both stages. (e–h) Relationship between reward scores and constraint satisfaction accuracy across different backbones, illustrating a consistent positive correlation between reward signals and constraint-aware responses. 
+
+accuracy–efficiency trade-off in deployment scenarios. 
+
+Adaptive Optimization Outperforms Static Pipelines. 
+
+Compared to CogWriter’s static pipeline, HiFlow achieves higher constraint accuracy with similar inference time, indi-cating that adaptive coordination of planning and generation improves constraint enforcement efficiency for practical deployment in real-world settings at scale efficiently yet. 
+
+5.6. Feedback-Coupled Coordination (RQ5) 
+
+Figure 5c illustrates performance evolution across four train-ing stages(initialization, planning, generation, and refine-ment), highlighting the impact of effective feedback-coupled coordination on performance gains overall well. 
+
+Feedback Coupling Enables Stable Stage-wise Improve-ment. The full HiFlow model shows steady gains across stages, while models without feedback coupling exhibit fluc-tuations, particularly between Stage 2 and Stage 3. This highlights the importance of real-time feedback for coordi-nating planning and generation under increasing constraints. 
+
+Reward Dynamics Explain Coordinated Gains. As shown in Figure 6, reward signals in both planning and generation converge smoothly under feedback coupling (Fig-ures 6a– 6d), indicating stable coordination between stages. Moreover, higher reward values correlate with improved constraint-following accuracy across different backbones (Figures 6e–6h), demonstrating effective alignment between reward signals and model behavior in practice. 
+
+5.7. Case Study: Prompt-Based Generation Across Qwen2.5 Variants (RQ6) 
+
+We present a comparative case study using three Qwen2.5 variants (0.5B, 1.5B, and 7B) under identical prompts to gen-erate life narratives. As shown in Figure 5a, the 7B model produces narratives with depth, stronger cross-paragraph consistency, and fewer logical breaks than smaller variants, reflecting improved reasoning and awareness. In contrast, smaller models often struggle with long-range coherence, resulting in fragmented narratives. These qualitative obser-vations align with our quantitative results, underscoring the importance of model scaling for long-form generation. 
+
+6. Conclusion 
+
+In this work, we introduce HiFlow, a workflow-optimized framework for constrained long-form text generation. By decomposing the writing objective into structured sub-plans, applying binary filtering and reward-guided optimization, and generating text segment by segment, HiFlow tightly integrates planning and generation under a unified rein-forcement and preference learning paradigm. A consistent rollout-based reward mechanism ensures that only high-quality sub-plans and generations are reinforced, while low-quality outputs are suppressed, enabling more stable opti-mization over long horizons. Experiments across diverse long-context benchmarks demonstrate that HiFlow clearly robustly outperforms strong baselines in constraint satisfac-tion, coherence, and overall generation quality overall. 8HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Impact Statement 
+
+This work proposes HiFlow, a hierarchical feedback-driven framework for constrained long-form text generation that improves structural coherence and constraint satisfaction through coordinated planning and generation. While effec-tive, the approach introduces modest additional computa-tional overhead, which does not significantly increase the computational cost. All experiments are conducted using publicly available or synthetically generated data, without in-volving personal or sensitive information. This work raises no ethical concerns and aims to support reliable and con-trollable long-form text generation for positive applications such as structured writing and planning tasks. 
+
+References 
+
+Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F. L., Almeida, D., Altenschmidt, J., Altman, S., Anadkat, S., et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. Bai, Y., Zhang, J., Lv, X., Zheng, L., Zhu, S., Hou, L., Dong, Y., Tang, J., and Li, J. Longwriter: Unleashing 10, 000+ word generation from long context llms. In The Thirteenth International Conference on Learning Rep-resentations, ICLR 2025, Singapore, April 24-28, 2025 .OpenReview.net, 2025. URL https://openreview. net/forum?id=kQ5s9Yh0WI .Bastan, M., Surdeanu, M., and Balasubramanian, N. NEU-ROSTRUCTURAL DECODING: neural text generation with structural constraints. In Rogers, A., Boyd-Graber, J. L., and Okazaki, N. (eds.), Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023 , pp. 9496–9510. Association for Computational Linguistics, 2023. doi: 10.18653/ V1/2023.ACL-LONG.528. URL https://doi.org/ 10.18653/v1/2023.acl-long.528 .Bonlarron, A., R ´egin, F., Maria, E. D., and R ´egin, J. Large language model meets constraint propagation. In Pro-ceedings of the Thirty-Fourth International Joint Con-ference on Artificial Intelligence, IJCAI 2025, Montreal, Canada, August 16-22, 2025 , pp. 10036–10044. ijcai.org, 2025. doi: 10.24963/IJCAI.2025/1115. URL https: //doi.org/10.24963/ijcai.2025/1115 .Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D. M., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., and Amodei, D. Language models are few-shot learners. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.), Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual , 2020. Chen, H., Li, H., Chen, D., and Narasimhan, K. Con-trollable text generation with language constraints. 
+
+CoRR , abs/2212.10466, 2022. doi: 10.48550/ARXIV. 2212.10466. URL https://doi.org/10.48550/ arXiv.2212.10466 .Chen, X. and Wan, X. Evaluating, understanding, and improving constrained text generation for large language models. arXiv preprint arXiv:2310.16343 , 2023. Cheng, Y., Cai, L., Peng, C., Xu, Y., Bie, R., and Zhao, Y. Creagentive: An agent workflow driven multi-category creative generation engine. CoRR , abs/2509.26461, 2025. doi: 10.48550/ARXIV.2509.26461. URL https:// doi.org/10.48550/arXiv.2509.26461 .Cho, W. S., Zhang, P., Zhang, Y., Li, X., Galley, M., Brock-ett, C., Wang, M., and Gao, J. Towards coherent and cohesive long-form text generation. In Proceedings of the First Workshop on Narrative Understanding , pp. 1–11, 2019. Fan, S., Cong, X., Fu, Y., Zhang, Z., Zhang, S., Liu, Y., Wu, Y., Lin, Y., Liu, Z., and Sun, M. Workflowllm: Enhancing workflow orchestration capability of large lan-guage models. In The Thirteenth International Confer-ence on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. URL https: //openreview.net/forum?id=3Hy00Wvabi .Gu, H., Li, D., Dong, K., Zhang, H., Lv, H., Wang, H., Lian, D., Liu, Y., and Chen, E. RAPID: efficient retrieval-augmented long text generation with writing planning and information discovery. In Che, W., Nabende, J., Shutova, E., and Pilehvar, M. T. (eds.), Findings of the Association for Computational Linguistics, ACL 2025, Vienna, Austria, July 27 - August 1, 2025 , pp. 16742–16763. Association for Computational Linguis-tics, 2025. URL https://aclanthology.org/ 2025.findings-acl.859/ .Gul, M. O. and Artzi, Y. Cogen: Learning from feed-back with coupled comprehension and generation. In Al-Onaizan, Y., Bansal, M., and Chen, Y. (eds.), Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing, EMNLP 2024, Miami, FL, USA, November 12-16, 2024 , pp. 12966–12982. Association for Computational Linguistics, 2024. doi: 10.18653/V1/ 2024.EMNLP-MAIN.721. URL https://doi.org/ 10.18653/v1/2024.emnlp-main.721 .9HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Han, J., Wang, X., Zhao, H., Li, T., Jiang, Z., Jiang, S., Liang, J., Lin, X., Zhou, W., Sun, Z., Yu, F., and Xiao, Y. A stitch in time saves nine: Proactive self-refinement for language models. CoRR , abs/2508.12903, 2025. doi: 10.48550/ARXIV.2508.12903. URL https://doi. org/10.48550/arXiv.2508.12903 .He, J., Yuan, H., and Gu, Q. Accelerated prefer-ence optimization for large language model alignment. 
+
+CoRR , abs/2410.06293, 2024. doi: 10.48550/ARXIV. 2410.06293. URL https://doi.org/10.48550/ arXiv.2410.06293 .Lee, Y., Ka, S., Son, B., Kang, P., and Kang, J. Navi-gating the path of writing: Outline-guided text genera-tion with large language models. In Chen, W., Yang, Y., Kachuee, M., and Fu, X. (eds.), Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguis-tics: Human Language Technologies, NAACL 2025 -Volume 3: Industry Track, Albuquerque, New Mexico, USA, April 30, 2025 , pp. 233–250. Association for Com-putational Linguistics, 2025. doi: 10.18653/V1/2025. NAACL-INDUSTRY.20. URL https://doi.org/ 10.18653/v1/2025.naacl-industry.20 .Li, W., Lin, J., Jiang, Z., Cao, J., Liu, X., Zhang, J., Huang, Z., Chen, Q., Sun, W., Wang, Q., Lu, H., Qin, T., Zhu, C., Yao, Y., Fan, S., Li, X., Wang, T., Liu, P., Zhu, K., Zhu, H., Shi, D., Wang, P., Guan, Y., Tang, X., Liu, M., Jiang, Y. E., Yang, J., Liu, J., Zhang, G., and Zhou, W. Chain-of-agents: End-to-end agent foundation models via multi-agent distillation and agentic RL. CoRR , abs/2508.13167, 2025. doi: 10.48550/ARXIV.2508.13167. URL https: //doi.org/10.48550/arXiv.2508.13167 .Liang, X., Wang, H., Wang, Y., Song, S., Yang, J., Niu, S., Hu, J., Liu, D., Yao, S., Xiong, F., and Li, Z. Controllable text generation for large language mod-els: A survey. CoRR , abs/2408.12599, 2024a. doi: 10.48550/ARXIV.2408.12599. URL https://doi. org/10.48550/arXiv.2408.12599 .Liang, Y., Wu, Y., Zhuang, H., Chen, L., Shen, J., Jia, Y., Qin, Z., Sanghai, S., Wang, X., Yang, C., and Bender-sky, M. Integrating planning into single-turn long-form text generation. CoRR , abs/2410.06203, 2024b. doi: 10.48550/ARXIV.2410.06203. URL https://doi. org/10.48550/arXiv.2410.06203 .Lin, Y., Chen, K., Li, Z., Wu, T., Wu, T., Chen, K., Lee, H., and Chen, Y. Creativity in llm-based multi-agent systems: A survey. CoRR , abs/2505.21116, 2025. doi: 10.48550/ARXIV.2505.21116. URL https://doi. org/10.48550/arXiv.2505.21116 .Liu, H., Li, R., Xiong, W., Zhou, Z., and Peng, W. Work-team: Constructing workflows from natural language with multi-agents. In Chen, W., Yang, Y., Kachuee, M., and Fu, X. (eds.), Proceedings of the 2025 Con-ference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, NAACL 2025 - Volume 3: Industry Track, Albuquerque, New Mexico, USA, April 30, 2025 , pp. 20–35. Association for Compu-tational Linguistics, 2025. doi: 10.18653/V1/2025. NAACL-INDUSTRY.3. URL https://doi.org/ 10.18653/v1/2025.naacl-industry.3 .Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., and Liang, P. Lost in the middle: How language models use long contexts. Trans. Assoc. Comput. Linguistics , 12:157–173, 2024. doi: 10.1162/TACL \ A\
+
+00638. URL https://doi.org/10.1162/tacl_ a_00638 .Long, D. X., Yen, D. N., Trong, D. X., Luu, A. T., Kawaguchi, K., Joty, S., Kan, M., and Chen, N. F. Beyond in-context learning: Aligning long-form gen-eration of large language models via task-inherent at-tribute guidelines. In Che, W., Nabende, J., Shutova, E., and Pilehvar, M. T. (eds.), Findings of the As-sociation for Computational Linguistics, ACL 2025, Vienna, Austria, July 27 - August 1, 2025 , pp. 3377–3411. Association for Computational Linguistics, 2025. URL https://aclanthology.org/2025. findings-acl.176/ .Luo, H., E, H., Chen, G., Lin, Q., Guo, Y., Xu, F., Kuang, Z., Song, M., Wu, X., Zhu, Y., and Tuan, L. A. Graph-r1: Towards agentic graphrag framework via end-to-end reinforcement learning, 2025a. URL https://arxiv. org/abs/2507.21892 .Luo, H., E, H., Chen, G., Zheng, Y., Wu, X., Guo, Y., Lin, Q., Feng, Y., Kuang, Z., Song, M., Zhu, Y., and Tuan, L. A. Hypergraphrag: Retrieval-augmented gen-eration via hypergraph-structured knowledge represen-tation, 2025b. URL https://arxiv.org/abs/ 2503.21322 .Luo, H., E, H., Guo, Y., Lin, Q., Wu, X., Mu, X., Liu, W., Song, M., Zhu, Y., and Luu, A. T. KBQA-o1: Agentic knowledge base question answering with Monte Carlo tree search. In Singh, A., Fazel, M., Hsu, D., Lacoste-Julien, S., Berkenkamp, F., Maharaj, T., Wagstaff, K., and Zhu, J. (eds.), Proceedings of the 42nd International Con-ference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pp. 41177–41199. PMLR, 13–19 Jul 2025c. URL https://proceedings. mlr.press/v267/luo25d.html .10 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Niu, B., Song, Y., Lian, K., Shen, Y., Yao, Y., Zhang, K., and Liu, T. Flow: A modular approach to automated agentic workflow generation. CoRR , abs/2501.07834, 2025. doi: 10.48550/ARXIV.2501.07834. URL https: //doi.org/10.48550/arXiv.2501.07834 .Pham, C., Sun, S., and Iyyer, M. Suri: Multi-constraint instruction following in long-form text generation. In Al-Onaizan, Y., Bansal, M., and Chen, Y. (eds.), Find-ings of the Association for Computational Linguis-tics: EMNLP 2024, Miami, Florida, USA, November 12-16, 2024 , pp. 1722–1753. Association for Compu-tational Linguistics, 2024. doi: 10.18653/V1/2024. FINDINGS-EMNLP.94. URL https://doi.org/ 10.18653/v1/2024.findings-emnlp.94 .Pynadath, P. and Zhang, R. Controlled LLM decoding via discrete auto-regressive biasing. In The Thirteenth Inter-national Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. URL https://openreview.net/forum? id=Duuerhutvq .Que, H., Duan, F., He, L., Mou, Y., Zhou, W., Liu, J., Rong, W., Wang, Z. M., Yang, J., Zhang, G., Peng, J., Zhang, Z., Zhang, S., and Chen, K. Hellobench: Evaluating long text generation capabilities of large language models. 
+
+CoRR , abs/2409.16191, 2024. doi: 10.48550/ARXIV. 2409.16191. URL https://doi.org/10.48550/ arXiv.2409.16191 .Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I., et al. Language models are unsupervised multitask learners. OpenAI blog , 1(8):9, 2019. Rafailov, R., Sharma, A., Mitchell, E., Manning, C. D., Ermon, S., and Finn, C. Direct preference optimiza-tion: Your language model is secretly a reward model. 
+
+Advances in neural information processing systems , 36: 53728–53741, 2023. Shao, Y., Jiang, Y., Kanell, T. A., Xu, P., Khattab, O., and Lam, M. S. Assisting in writing wikipedia-like articles from scratch with large language models. In Duh, K., G ´omez-Adorno, H., and Bethard, S. (eds.), Pro-ceedings of the 2024 Conference of the North Ameri-can Chapter of the Association for Computational Lin-guistics: Human Language Technologies (Volume 1: Long Papers), NAACL 2024, Mexico City, Mexico, June 16-21, 2024 , pp. 6252–6278. Association for Compu-tational Linguistics, 2024. doi: 10.18653/V1/2024. NAACL-LONG.347. URL https://doi.org/10. 18653/v1/2024.naacl-long.347 .Shi, Y., Luo, Y., Gong, Y., and Lin, C. Hicam: Ahierarchical-causal modification framework for long-form text modification. CoRR , abs/2505.24319, 2025. doi: 10.48550/ARXIV.2505.24319. URL https:// doi.org/10.48550/arXiv.2505.24319 .Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K., and Yao, S. Reflexion: Language agents with verbal rein-forcement learning. Advances in Neural Information Processing Systems , 36:8634–8652, 2023. Team, L. The llama 3 herd of models. CoRR ,abs/2407.21783, 2024. doi: 10.48550/ARXIV.2407. 21783. URL https://doi.org/10.48550/ arXiv.2407.21783 .Wan, K., Mu, H., Hao, R., Luo, H., Gu, T., and Chen, X. A cognitive writing perspective for constrained long-form text generation. In Che, W., Nabende, J., Shutova, E., and Pilehvar, M. T. (eds.), Findings of the Association for Computational Linguistics, ACL 2025, Vienna, Austria, July 27 - August 1, 2025 , pp. 9832–9844. Association for Computational Linguistics, 2025. URL https://aclanthology.org/2025. findings-acl.511/ .Wang, C., Zhou, H., Hu, Y., Huo, Y., Li, B., Liu, T., Xiao, T., and Zhu, J. ESRL: efficient sampling-based reinforcement learning for sequence generation. In Wooldridge, M. J., Dy, J. G., and Natarajan, S. (eds.), 
+
+Thirty-Eighth AAAI Conference on Artificial Intelligence, AAAI 2024, Thirty-Sixth Conference on Innovative Appli-cations of Artificial Intelligence, IAAI 2024, Fourteenth Symposium on Educational Advances in Artificial Intelli-gence, EAAI 2014, February 20-27, 2024, Vancouver, Canada , pp. 19107–19115. AAAI Press, 2024. doi: 10.1609/AAAI.V38I17.29878. URL https://doi. org/10.1609/aaai.v38i17.29878 .Wang, Q., Hu, J., Li, Z., Wang, Y., Li, D., Hu, Y., and Tan, M. Generating long-form story using dynamic hierarchi-cal outlining with memory-enhancement. In Chiruzzo, L., Ritter, A., and Wang, L. (eds.), Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, NAACL 2025 - Volume 1: Long Papers, Albuquerque, New Mexico, USA, April 29 - May 4, 2025 , pp. 1352–1391. Association for Com-putational Linguistics, 2025. doi: 10.18653/V1/2025. NAACL-LONG.63. URL https://doi.org/10. 18653/v1/2025.naacl-long.63 .Wang, Y. and Atanasova, P. Self-critique and refine-ment for faithful natural language explanations. In Christodoulopoulos, C., Chakraborty, T., Rose, C., and Peng, V. (eds.), Proceedings of the 2025 Conference on Empirical Methods in Natural Language Process-ing , pp. 8481–8507, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main. 11 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+427. URL https://aclanthology.org/2025. emnlp-main.427/ .Wu, Y., Bai, Y., Hu, Z., Li, J., and Lee, R. K. Super-writer: Reflection-driven long-form generation with large language models. CoRR , abs/2506.04180, 2025a. doi: 10.48550/ARXIV.2506.04180. URL https://doi. org/10.48550/arXiv.2506.04180 .Wu, Y., Hee, M. S., Hu, Z., and Lee, R. K. Longgen-bench: Benchmarking long-form generation in long con-text llms. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025b. URL https: //openreview.net/forum?id=3A71qNKWAS .Xi, Z., Yin, W., Fang, J., Wu, J., Fang, R., Jiang, Y., Xie, P., Huang, F., Chen, H., and Zhang, N. OmniThink: Expand-ing knowledge boundaries in machine writing through thinking. In Christodoulopoulos, C., Chakraborty, T., Rose, C., and Peng, V. (eds.), Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pp. 956–976, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main. 50. URL https://aclanthology.org/2025. emnlp-main.50/ .Xia, H., Peng, H., Qi, Y., Xu, B., Li, J., Hou, L., and Wang, X. Storywriter: A multi-agent framework for long story generation. In Cha, M., Park, C., Park, N., Yang, C., Roy, S. B., Li, J., Kamps, J., Shin, K., Hooi, B., and He, L. (eds.), Proceedings of the 34th ACM In-ternational Conference on Information and Knowledge Management, CIKM 2025, Seoul, Republic of Korea, November 10-14, 2025 , pp. 6559–6563. ACM, 2025. doi: 10.1145/3746252.3761616. URL https://doi. org/10.1145/3746252.3761616 .Yang, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Li, C., Liu, D., Huang, F., Wei, H., Lin, H., Yang, J., Tu, J., Zhang, J., Yang, J., Yang, J., Zhou, J., Lin, J., Dang, K., Lu, K., Bao, K., Yang, K., Yu, L., Li, M., Xue, M., Zhang, P., Zhu, Q., Men, R., Lin, R., Li, T., Xia, T., Ren, X., Ren, X., Fan, Y., Su, Y., Zhang, Y., Wan, Y., Liu, Y., Cui, Z., Zhang, Z., and Qiu, Z. Qwen2.5 technical report. 
+
+CoRR , abs/2412.15115, 2024. doi: 10.48550/ARXIV. 2412.15115. URL https://doi.org/10.48550/ arXiv.2412.15115 .Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T. L., Cao, Y., and Narasimhan, K. Tree of thoughts: Deliberate problem solving with large language models, 2023. URL https://arxiv. org/abs/2305.10601 , 3:1, 2023. Yao, S., Chen, H., Hanjie, A. W., Yang, R., and Narasimhan, K. R. COLLIE: systematic construction of constrained text generation tasks. In The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net, 2024. URL https://openreview.net/forum? id=kxgSlyirUZ .You, W., Wu, W., Liang, Y., Mao, S., Wu, C., Cao, M., Cai, Y., Guo, Y., Xia, Y., Wei, F., and Duan, N. Eipe-text: Evaluation-guided iterative plan extraction for long-form narrative text generation. CoRR , abs/2310.08185, 2023. doi: 10.48550/ARXIV.2310.08185. URL https: //doi.org/10.48550/arXiv.2310.08185 .Yuan, S., Song, K., Chen, J., Tan, X., Li, D., and Yang, D. Evoagent: Towards automatic multi-agent genera-tion via evolutionary algorithms. In Chiruzzo, L., Rit-ter, A., and Wang, L. (eds.), Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, NAACL 2025 - Volume 1: Long Papers, Albuquerque, New Mexico, USA, April 29 - May 4, 2025 , pp. 6192–6217. Association for Com-putational Linguistics, 2025. doi: 10.18653/V1/2025. NAACL-LONG.315. URL https://doi.org/10. 18653/v1/2025.naacl-long.315 .Zhang, G., Chen, K., Wan, G., Chang, H., Cheng, H., Wang, K., Hu, S., and Bai, L. Evoflow: Evolving diverse agentic workflows on the fly. CoRR , abs/2502.07373, 2025a. doi: 10.48550/ARXIV.2502.07373. URL https://doi. org/10.48550/arXiv.2502.07373 .Zhang, J., Hou, Z., Lv, X., Cao, S., Hou, Z., Niu, Y., Hou, L., Dong, Y., Feng, L., and Li, J. Longreward: Improving long-context large language models with AI feedback. In Che, W., Nabende, J., Shutova, E., and Pilehvar, M. T. (eds.), Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2025, Vienna, Austria, July 27 - August 1, 2025 , pp. 3718–3739. Association for Computational Linguistics, 2025b. URL https: //aclanthology.org/2025.acl-long.187/ .Zhang, J., Xiang, J., Yu, Z., Teng, F., Chen, X., Chen, J., Zhuge, M., Cheng, X., Hong, S., Wang, J., Zheng, B., Liu, B., Luo, Y., and Wu, C. Aflow: Automating agentic work-flow generation. In The Thirteenth International Confer-ence on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025c. URL https: //openreview.net/forum?id=z5uVAKwmjf .Zhao, W. X., Zhou, K., Li, J., Tang, T., Wang, X., Hou, Y., Min, Y., Zhang, B., Zhang, J., Dong, Z., et al. A survey of large language models. arXiv preprint arXiv:2303.18223 ,1(2), 2023. 12 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Zhong, H., Shan, Z., Feng, G., Xiong, W., Cheng, X., Zhao, L., He, D., Bian, J., and Wang, L. DPO meets PPO: re-inforced token optimization for RLHF. In Forty-second International Conference on Machine Learning, ICML 2025, Vancouver, BC, Canada, July 13-19, 2025 . OpenRe-view.net, 2025. URL https://openreview.net/ forum?id=IfWKVF6LfY .Zhu, R., Jiang, B., Mei, L., Yang, F., Wang, L., Gao, H., Bai, F., Zhao, P., Lin, Q., Rajmohan, S., and Zhang, D. Adaptflow: Adaptive workflow optimization via meta-learning. CoRR , abs/2508.08053, 2025. doi: 10.48550/ ARXIV.2508.08053. URL https://doi.org/10. 48550/arXiv.2508.08053 .13 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+A. Prompts Used in HiFlow 
+
+A.1. Plan Construction Prompt Week Plan Prompt. The Week Plan Construction Prompt guides the model to create a 52-week plan based on user requirements. It identifies special events and their exact weeks, including periodic events. The model generates a structured weekly plan in JSON format, and a revision step ensures all events strictly follow user specifications. ---- Goal ----
+
+---- Role ----
+
+You are an expert planner with perfect attention to detail. Create a precise 52-week plan that EXACTLY matches ALL user requirements. User requirements: {prompt} 
+
+Think step by step. Analyse the user requirements to identify special events and their exact week and list them in "special_events". If the event is periodic, list them seperately by number and specify which weeks they will be in (e.g. 1st [event_name]). Then follow your analysis to create a weekly plan for each week. 
+
+Here is an example of the output format: {{ 
+
+"analysis": "", 
+
+"special_events": [ 
+
+{{ 
+
+"event_name": "Husband's Birthday", 
+
+"week_numb": "May 13th, Week 19" 
+
+}} 
+
+... 
+
+], 
+
+"weekly_plan": [ 
+
+{{ 
+
+"week_id": "Week 1 (January 1st - January 7th)", 
+
+"events": "New Year celebrations and family gathering" 
+
+}}, 
+
+... 
+
+]}} 
+
+---- Output Format ----
+
+Return your analysis and plan in ONLY this exact json format: {{ 
+
+"analysis": "", 
+
+"special_events": [ 
+
+{{ 
+
+"event_name": "event_name", 
+
+"week_numb": "date and week number", 
+
+}} 
+
+], 
+
+# Strictly follow the special_events for specific weeks 
+
+"weekly_plan": [ 
+
+{{ 
+
+"week_id": "Week 1 (January 1st - January 7th)", 
+
+"events": "Brifly list special events of this week" 
+
+}}, 
+
+... 
+
+]
+
+---- Return ----
+
+Figure 7. Plan Construction Prompt illustration 
+
+Floor Plan Prompt. The Floor Plan Prompt instructs the model to create a detailed floor-by-floor plan for a skyscraper. Special facilities are assigned to specific floors, including recurring ones, and the plan is output in JSON format. ---- Goal ----
+
+---- Role ----
+
+You are an expert planner with perfect attention to detail. Create a precise 52-week plan that EXACTLY matches ALL user requirements. 
+
+CRITICAL ANALYSIS INSTRUCTIONS: 1. Identify EVERY specific floor mentioned in user requirements 2. Note EXACT purposes, facilities, or special features for each floor 3. Pay attention to floor numbers and their designated uses 4. Identify any special requirements for specific floors 5. Ensure all mentioned facilities are included in the correct floors 
+
+---- Prompt ----
+
+User requirements: {prompt} 
+
+Return your analysis and plan in this EXACT format: {{ 
+
+"analysis": "Detailed analysis of every floor requirement in the user prompt", 
+
+"special_floors": [ 
+
+{{ 
+
+"floor_number": "Floor number as specified", 
+
+"purpose": "Exact purpose/use from requirements", 
+
+"special_features": "Any special features mentioned" 
+
+}} 
+
+], 
+
+"floor_plan": [ 
+
+{{ 
+
+"floor_id": "Floor 1", 
+
+"purpose": "Exact purpose matching user requirements" 
+
+}} 
+
+]}} 
+
+Figure 8. Floor Plan Prompt illustration 
+
+14 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Menu Plan Prompt. The Menu Plan Prompt generates a 52-week menu schedule, assigning special dishes to specific weeks, including periodic ones.  
+
+> Figure 9. Menu Plan illustration
+
+Block Plan Prompt. The Block Plan Prompt guides the design of a 10×10 city block grid, assigning special uses to specific blocks and handling periodic patterns.  
+
+> Figure 10. Block Plan Prompt illustration
+
+15 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+A.2. Writing Prompt Weekly Diary Prompt. The Weekly Diary Prompt guides the model to write a 200-word diary entry for a given week. It incorporates weekly events, ensures coherence with the overall yearly plan, and checks user requirements for special events. The model outputs a structured JSON containing the week identifier, a reasoning check, and the diary entry text. ---- Goal ----
+
+---- Role ----
+
+Write a 200-word weekly diary entry for the week of {week_id}. The events for this week are: {events} You should consider the coherence of the diary entry referring to the plan of the whole year: {weekly_plan} You should consider the user requirements: {prompt} Check from the user requirements if there are any special events that should be included in the diary entry. If there are, include them in the diary entry. If there are no special events, write a general diary entry for the week. 
+
+---- Return ----
+
+You are an expert writer. 
+
+Return the diary entry in the following json format: {{ 
+
+"week_id": "{week_id}", 
+
+"check": "reason and check if the user requirements are met", 
+
+"diary_entry": "Your 200-word diary entry here" }} 
+
+Figure 11. Weekly Diary Prompt 
+
+Skyscraper Floor Plan Prompt. The Skyscraper Floor Plan Prompt guides the model to design a 150-word floor plan for a specific skyscraper floor. It considers the floor’s purpose, maintains coherence with the overall skyscraper plan, and verifies any special requirements from the user. The output is a structured JSON including the floor identifier, a reasoning check, and the generated floor plan. ---- Goal ----
+
+---- Role ----
+
+Write a 150-word skyscraper floor plan for the floor of {floor_id}. The purpose for this floor is: {purpose} You should consider the coherence of the floor plan by referring to the plan of the whole skyscraper: {floor_plan} You should consider the user requirements: {prompt} Check from the user requirements if there are any special requirement that should be included in the floor plan. If there are, include them in the floor plan. If there are no special events, write a general floor plan. Return the floor plan for the floor of {floor_id} in the following json format: 
+
+---- Return ----
+
+You are an expert designer. 
+
+Return the floor plan for the floor of {floor_id} in the following json format: {{ 
+
+"floor_id": "{floor_id}", 
+
+"check": "reason and check if the user requirements are met", 
+
+"plan": "Your 150-word floor plan here" }} 
+
+Figure 12. Skyscraper Floor Plan Prompt 
+
+16 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+Weekly Menu Plan Prompt. The Weekly Menu Plan Prompt guides the model to create a 200-word menu plan for a given week. It incorporates provided dishes, ensures coherence with the yearly menu plan, and verifies special dishes from the user requirements. The model returns a structured JSON with the week identifier, a reasoning check, and the weekly menu plan. ---- Goal ----
+
+---- Role ----
+
+Write a 200-word weekly menu plan for the week of {week_id}. The dishes for this week are: {dishes_str} You should consider the coherence of the menu plan referring to the plan of the whole year: {weekly_plan} You should consider the user requirements: {prompt} Check from the user requirements if there are any special dishes that should be included in the menu plan. If there are, include them in the menu plan. If there are no special dishes, write a general menu plan for the week. 
+
+---- Return ----
+
+You are an expert chef. 
+
+Return the menu plan in the following json format: {{ 
+
+"week_id": "{week_id}", 
+
+"check": "reason and check if the user requirements are met", 
+
+"week_menu": "Your 200-word menu plan here" }} 
+
+Figure 13. Weekly Menu Plan Prompt 
+
+City Block Plan Prompt. The City Block Plan Prompt guides the model to design a 150-word city block plan. It considers the intended use of the block, ensures coherence with the overall city plan, and checks for any special user requirements. The generated output is returned in JSON format, including the block identifier, a reasoning check, and the block plan. ---- Goal ----
+
+---- Role ----
+
+Write a 150-word city block plan for the block of {block_id}. The use for this block is: {use} You should consider the coherence of the block plan by referring to the plan of the whole city: {block_plan} You should consider the user requirements: {prompt} Check from the user requirements if there are any special requirement that should be included in the block plan. If there are, include them in the block plan. If there are no special events, write a general block plan. 
+
+---- Return ----
+
+You are an expert designer. 
+
+Return the block plan for the block of {block_id} in the following json format: {{ 
+
+"block_id": "{block_id}", 
+
+"check": "reason and check if the user requirements are met", 
+
+"plan": "Your 150-word block plan here" }} 
+
+Figure 14. City Block Plan Prompt 
+
+17 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+A.3. Binary decisions Prompt 
+
+As shown as Figure 15, a prompt template for binary evaluation of a plan’s relevance to a given question. The judgment (YES/NO) is based on six criteria: direct relevance, completeness, logical coherence, efficiency, specificity, and consistency with the prompt context. Examples illustrate common failures—such as irrelevant steps, missing actions, or illogical order. The structured format includes the prompt, the plan, and the binary relevance label, enabling systematic assessment of planning quality. ---- Goal----
+
+Given the following prompt and plan, retur YES if the plan is relevant to the question and NO if it isn't. A plan is considered relevant only if it meets of the following criteria: 
+
+1. Direct Relevance: The plan must directly address the question posed in the prompt. lt should not deviate from the main objective. 2. Completeness: The plan must include all necessary steps to achieve the goal described in the prompt. Missing critical steps wil result in the planbeing deemed irrelevant. 3. Logical Coherence: The plan must folow a logical sequence of actions. ach step should clearly lead to the next, and there should be no logical gap or contradictions. 4. Efficiency: The plan should not include unnecessary or redundant steps. Each step must contribute directly to the final goal. 5. Specificity: The plan must be specific and actionable. Vague or overly broad steps will not be considered relevant. 6. Contextual Consistency. The plan must be consistent with the context provided in the prompt. Any steps that are in consistent with the background information or constraints will be deemed irrelevant. 
+
+- Irelevant Content:If the prompt asks for a plan to "design an experiment to test plant photosynthesis," but the plan includes steps like "build 
+
+a rocket model," this plan will be rejected. - Incomplete Plan: If the plan omits critical steps, such as“measure the photosynthesis rate,” it will be considered irrelevant. - logicalSequence:If the steps in the plan do not followa logical order, such as“measure plant growth first, then plant the seeds, the plan will be  rejected. 
+
+---- Eample of lrrelewant Plans ----
+
+---- Prompt ----
+
+{prompts} 
+
+---- Plan----
+
+{weekly_plan} / {floor_plan} / {menu_weekly_plan} / (block_plan} 
+
+---- Relevant----
+
+(YES / NO) 
+
+Figure 15. Prompt for binary decisions 
+
+18 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+B. Theoretical Proof 
+
+B.1. Proof of Proposition 1 Proposition 1. Constraint-aware hierarchical global planning improves structural validity and ensures constraint satisfac-tion in candidate plans. Proof. To formalize the analysis, we introduce a mild and sufficient assumption on the refinement operator. 
+
+Assumption 1 (Monotonic Improvement under Constraint-Aware Refinement). Let p denote a hierarchical plan and 
+
+R the refinement operator described in Section 4.1. We assume that there exists a plan quality function f (p) ∈ R, measuring constraint satisfaction and structural validity, such that 
+
+Ef (R(p)) | p ≥ f (p). (18) This assumption does not claim that arbitrary refinement steps improve plan quality. Instead, it formalizes a sufficient condition satisfied by our constraint-aware hierarchical refinement, as shown below. Let a hierarchical plan be decomposed into sub-plans 
+
+pi = {si, 1, s i, 2, . . . , s i,m i }, si,j ∈ S , (19) where each sub-plan si,j is associated with local constraints T local  
+
+> i,j
+
+⊆ T and local conditions Clocal  
+
+> i,j
+
+⊆ C.We define the plan quality function as an additive decomposition over sub-plans: 
+
+f (pi) = 
+
+> mi
+
+X
+
+> j=1
+
+fj
+
+ si,j | T local  
+
+> i,j
+
+, C local 
+
+> i,j
+
+ , (20) where each local score fj (·) is nonnegative and evaluates the constraint satisfaction and structural validity of sub-plan si,j .At each refinement step, the hierarchical planner identifies a violating sub-plan si,k and applies a localized revision, producing an updated sub-plan s′ 
+
+> i,k
+
+while leaving all other sub-plans unchanged: 
+
+p′ 
+
+> i
+
+= {si, 1, . . . , s i,k −1, s ′
+
+> i,k
+
+,si,k +1 , . . . , s i,m i }. (21) Consequently, the change in plan quality depends only on the revised sub-plan: 
+
+E[f (p′
+
+> i
+
+) | pi] − f (pi)= Efk(s′
+
+> i,k
+
+) | si,k 
+
+ − fk(si,k ). (22) Since the refinement operator R is constraint-aware and employs validity filtering and top-K selection (Section 4.1), refinements that reduce local validity or violate constraints are rejected with high probability. Therefore, 
+
+Efk(s′
+
+> i,k
+
+) | si,k 
+
+ ≥ fk(si,k ), (23) which implies 
+
+E[f (p′
+
+> i
+
+) | pi] ≥ f (pi). (24) By iteratively applying hierarchical refinement, the expected plan quality is non-decreasing. Since f (pi) upper-bounds both constraint satisfaction and structural validity, the refinement process yields candidate plans that satisfy all constraints and structural requirements with high probability. We emphasize that this argument relies critically on hierarchical decomposition and localized refinement. For flat planning or unconstrained revision processes, modifying one component may arbitrarily affect others, and the above analysis no longer holds. 19 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+B.2. Proof of Proposition 2 Proposition 2. Feasibility-oriented plan screening based on task-inherent relevance criteria improves overall planning quality by reducing the propagation of severely misaligned plans to downstream generation. Proof. Let Pfinal = {p1, . . . , p N } be the set of candidate plans after refinement. Each plan pi is evaluated by a template-driven, feasibility-oriented screening mechanism and assigned a binary acceptance indicator 
+
+δi = 1relevant (pi) ∈ { 0, 1}, (25) where δi = 1 indicates that the plan satisfies the task-inherent relevance criteria defined in Section 4.2, and δi = 0 otherwise. The filtered plan set is given by 
+
+Pfiltered = {pi ∈ Pfinal | δi = 1 }. (26) Let ϕ(p) ≥ 0 denote a nonnegative violation score measuring the degree to which plan p violates task constraints or semantic requirements, with ϕ(p) = 0 indicating full validity. We do not assume that the plan generator produces valid plans with high probability, nor that the screening mechanism perfectly separates high- and low-quality plans. Instead, we impose a minimal and realistic assumption on the feasibility-oriented screening process. 
+
+Assumption 2 (Non-trivial Rejective Power). There exist constants τ > 0 and η > 0 such that for any plan p with 
+
+ϕ(p) ≥ τ ,
+
+Pr( δ = 0 | p) ≥ η. (27) That is, plans exhibiting sufficiently large violations are rejected with non-zero probability. Here, the probability notation abstracts over the stochasticity introduced by the template-driven LLM evaluator and decoding process, rather than assuming a calibrated probabilistic classifier. This assumption is weak and does not require perfect discrimination; it only formalizes that the screening mechanism has some ability to reject clearly invalid plans. Under this assumption, the probability that a retained plan exhibits a large violation is bounded as 
+
+Pr  ϕ(p) ≥ τ | δ = 1  ≤ Pr  ϕ(p) ≥ τ (1 − η)Pr( δ = 1) . (28) Since 1 − η < 1, the relative frequency of severely violating plans in Pfiltered is strictly lower than that in the unfiltered candi-date set Pfinal . Therefore, feasibility-oriented plan screening reduces the risk of propagating highly invalid or semantically misaligned plans to downstream generation, even when the underlying plan generator is imperfect. This completes the proof. 
+
+B.3. Proof of Propositions 3 Proposition 3. Reward-guided optimization effectively aligns sub-plans and segments with task-specific objectives and quality through preference modeling. Proof. After binary relevance filtering, each plan is decomposed into sub-plans for optimization, followed by content generation guided by the sub-plan. For each candidate X (a sub-plan Sj or a generated segment Gk), define its reward by rollout evaluation: 
+
+r(X) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+R X ⊕ bX(i)
+
+> rollout
+
+, p reward 
+
+, (29) where bX(i) 
+
+> rollout
+
+are rollouts used to estimate the downstream quality of X. For a pair (X+, X −) with r(X+) > r (X−), DPO models the preference probability as 
+
+P (X+ ≻ X− | x) = σ r(X+) − r(X−), (30) 20 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+with σ(z) = 1 /(1 + e−z ).Recall the DPO objective used in the paper: 
+
+∆( X+, X −) = β log πθ (X+ | x)
+
+πref (X+ | x)
+
+− β log πθ (X− | x)
+
+πref (X− | x) ,
+
+LDPO (θ) = −E(X+,X −)∼D
+
+h
+
+log σ ∆( X+, X −)i
+
+.
+
+(31) This objective encourages the model policy πθ to increase the relative log-probability ratio for higher-reward candidates 
+
+(X+) and decrease it for lower-reward candidates (X−), proportionally to the preference signal induced by the reward difference. To see that optimizing LDPO increases the probability of selecting higher-reward candidates, note that for a fixed pair the inner term can be viewed as a logistic regression log-likelihood where the “feature” is the log-probability ratio 
+
+∆θ (X) ≜ β log πθ (X|x) 
+
+> πref (X|x)
+
+and the label is determined by the reward difference. Gradient ascent on the expected log-sigmoid term will increase ∆θ (X+) and decrease ∆θ (X−) in expectation whenever r(X+) − r(X−) > 0. Concretely, the gradient of the loss w.r.t. ∆θ yields a term proportional to 
+
+σ −∆θ (X+) + ∆ θ (X−)
+
+− σ r(X+) − r(X−), (32) which is negative when ∆θ underestimates the reward-induced preference and thus drives updates that align ∆θ with the reward signal. Under regularity conditions standard in stochastic optimization (bounded gradients, appropriate learning rates), repeated updates therefore increase the expected logit gap ∆θ (X+) − ∆θ (X−), which in turn increases the model probability ratio 
+
+πθ (X+ | x)
+
+πθ (X− | x) (33) and hence the selection probability of X+ relative to X−.Under the mild Reward Smoothness assumption (see main text / Appendix) which bounds reward changes under small output perturbations, meaningful reward differences imply meaningful preference signals. Therefore, DPO optimization systematically shifts model likelihood toward higher-reward candidates, aligning generation with task-specific objectives and improving overall generation quality. 21 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+C. HiFlow Algorithm Details 
+
+The HiFlow algorithm presents an adaptive workflow optimization framework designed for generating constrained long-form content. It operates in four stages: (1) Hierarchical planning decomposes the writing prompt into sub-plans, applying constraint-aware planning for each. (2) Adaptive workflow execution generates plans, evaluates quality, and refines them based on thresholds. (3) Reward-based filtering ranks and selects the best sub-plan for the final output. (4) End-to-end policy optimization (DPO) improves the generation process by updating the policy through trajectory sampling and reward-based advantage calculation. 
+
+Algorithm 1 HiFlow: Adaptive Workflow Optimization for Constrained Long-form Generation 
+
+Require: Writing prompt p, task-specific constraints T , policy πθ , reward function R(τ )
+
+Ensure: Generated long-form content y
+
+1: // 1: Hierarchical Planning 
+
+2: Decompose writing prompt p into sub-plans P = {p1, p 2, . . . , p n}
+
+3: for each sub-plan pi ∈ P do 
+
+4: Apply constraint-aware planning to pi
+
+5: Generate sub-plan: pgen  
+
+> i
+
+∼ πθ (pi | T )
+
+6: Apply adaptive decision-making to refine pgen 
+
+> i
+
+7: end for 
+
+8: // 2: Adaptive Workflow Execution 
+
+9: Initialize state s1 ← p, trajectory τ ← ∅ 
+
+10: for t = 1 to T do 
+
+11: Generate adaptive plan: aplan  
+
+> t
+
+∼ πθ (· | st)
+
+12: Evaluate plan quality: qt = Quality (aplan  
+
+> t
+
+, T )
+
+13: if qt ≥ threshold then 
+
+14: Execute plan: yt = Generate (pt, aplan  
+
+> t
+
+)
+
+15: Add result to trajectory: τ ← τ ∪ { (st, aplan  
+
+> t
+
+, y t)}
+
+16: else 
+
+17: Refine plan: aplan  
+
+> t
+
+∼ πθ (· | st, T )
+
+18: end if 
+
+19: end for 
+
+20: // 3: Reward-based Filtering and Decision Making 
+
+21: Compute reward for trajectory τ :
+
+R(τ ) = constraint satisfaction + coherence score + fidelity score 22: Rank sub-plans based on reward: 
+
+afinal  
+
+> t
+
+= Top-k (R(τ )) 
+
+23: Select best plan for final output: y ← afinal 
+
+> t
+
+24: // 4: End-to-end Policy Optimization (DPO) 
+
+25: Sample N trajectories {τi} ∼ πθold 
+
+26: for each τi do 
+
+27: Compute reward: 
+
+R(τi) = Rformat (τi) + Rquality (τi)
+
+28: Compute advantage: 
+
+ˆA(τi) = R(τi) − mean ({R(τj )})
+
+std ({R(τj )})
+
+29: end for 
+
+30: Update policy via DPO: 
+
+JDPO ∼
+
+> N
+
+X
+
+> i=1
+> |τi|
+
+X
+
+> t=1
+
+min 
+
+
+
+ρθ (a(i) 
+
+> t
+
+) ˆA(τi), clip (ρθ (a(i) 
+
+> t
+
+), 1 ± ϵ) ˆA(τi)
+
+
+
+31: where 
+
+ρθ (a(i) 
+
+> t
+
+) = πθ (a(i) 
+
+> t
+
+| s(i)
+
+> t−1
+
+)
+
+πθold (a(i) 
+
+> t
+
+| s(i)
+
+> t−1
+
+)
+
+22 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+D. Dataset Details 
+
+Our dataset is constructed based on the official LongGenBench codebase, following the methodology described in Section 3 of the main paper. It comprises 400 synthetic long-form planning and generation tasks , spanning diverse domains such as weekly event planning, architectural floor designs, menu organization, and city block descriptions. Each task instance is automatically paired with structured prompts, hierarchical global plans, task-specific constraints (single, range, or periodic), and evaluation prompts, enabling the dataset to jointly capture global planning information and local generation requirements. Each sample includes (i) a global hierarchical plan, (ii) embedded structural constraints, (iii) sub-plan prompts used for preference optimization, and (iv) the final generation targets. On average, global plans contain 250–300 words, while individual generated segments contain 150–200 words depending on the task type. Although the dataset is synthetically generated, this construction is both appropriate and necessary for our benchmark. Real-world human-authored corpora rarely contain explicit structural constraints—such as hierarchical outlines, length-range specifications, and periodic content formats—at the scale and diversity required for systematic evaluation. Synthetic generation enables precise and reproducible control over constraint complexity, ensuring consistent coverage across task categories without compromising the realism of the structural patterns. Importantly, the dataset serves as a task specification 
+
+rather than a corpus for style imitation: HiFlow learns to follow constraints, not to mimic LLM-produced writing styles. Since the model never encounters test instances during training and DPO relies solely on preference signals rather than memorizing dataset patterns, the synthetic origin does not introduce leakage or closed-loop issues. Moreover, the structural constraints modeled in this dataset—such as multi-level sectioning, fixed-length segments, and periodic organization—naturally occur in real-world long-form writing, including reports, educational documents, and technical manuals, making the resulting capabilities directly transferable to human-authored scenarios. This dataset is used for both training and evaluation under controlled settings, and all 400 samples are included when com-paring different model backbones (Qwen2.5, GPT-4o-mini, LLaMA3.1) as reported in Section 5. To ensure reproducibility, we adopt identical seeds and sampling parameters to those in the official LongGenBench implementation. Since all samples are generated from synthetic prompts and LLM-produced outputs, the dataset contains no personally identifiable information (PII) or sensitive content and is intended solely for academic research on long-form planning and generation. 
+
+E. Baseline Details 
+
+GPT-4o-mini. In our experiments, we evaluate the proposed HiFlow framework against several strong baselines across different model backbones and task scenarios. For models based on GPT-4o-mini, we include CogWriter , a multi-step cognitive planning and generation framework specifically designed for long-form text. CogWriter performs hierarchical planning to structure content and leverages GPT-4o-mini for each generation step, allowing it to handle complex long-form tasks with temporal and spatial constraints. We additionally include LongWriter , a data-centric long-form generation method that extends context length and improves coherence through large-scale long-text training, serving as a strong baseline without explicit planning or workflow optimization. 
+
+Qwen2.5. For models based on Qwen2.5 across multiple scales (0.5B, 1.5B, and 7B), we also compare against both 
+
+CogWriter and LongWriter . In this setting, CogWriter utilizes Qwen2.5 as the generation backbone, employing hierarchical planning and sub-plan guided generation to produce coherent outputs for long-form scenarios such as diary writing, menu design, skyscraper floor planning, and urban block layouts. LongWriter, by contrast, relies on extended-context training and direct generation without explicit planning. Including these baselines across different model capacities enables a systematic evaluation of how HiFlow improves over strong planning-augmented and data-centric long-form generation methods under varying model scales. 
+
+LLaMA3.1-8B. To further assess the generality of HiFlow across model families, we include experiments based on LLaMA3.1-8B. For this backbone, we compare HiFlow against CogWriter and LongWriter as a representative strong long-form generation baseline, as well as the base LLaMA3.1-8B model without workflow augmentation. This setting allows us to evaluate whether HiFlow’s workflow-level planning and reward-guided optimization consistently improve long-form generation quality beyond architecture-specific or data-centric approaches. 23 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+F. Evaluation Details 
+
+For each constraint type, we compute accuracy as the fraction of prompts for which the model output satisfies the constraint: 
+
+(a) Single (Once) constraints: checks adherence to individual constraints. Acc once =
+
+PNonce  
+
+> i=1
+
+Ri
+
+Nonce 
+
+(34) 
+
+(b) Range constraints: checks adherence to constraints that span multiple blocks or a specified range. Acc range =
+
+PNrange  
+
+> i=1
+
+Ri
+
+Nrange 
+
+(35) 
+
+(c) Periodic constraints: checks adherence to recurring constraints across periodic intervals. Acc periodic =
+
+PNperiodic  
+
+> i=1
+
+Ri
+
+Nperiodic 
+
+(36) Here, Ri = 1 if the model’s output satisfies the corresponding constraint and Ri = 0 otherwise; Nonce , N range , N periodic 
+
+denote the total number of prompts for each constraint type. 
+
+Average Accuracy (Avg. Acc) The Average Accuracy is defined as the mean of the three type-specific accuracies: Avg. Acc = Acc once + Acc range + Acc periodic 
+
+3 (37) This provides an overall measure of the model’s adherence to all constraint types. 
+
+Narrative-level Text Quality Metrics. We assess narrative-level text quality using an LLM-as-a-judge framework rather than human annotation. The judge model evaluates generated narratives along four dimensions. Narrative Continuity 
+
+measures whether the text maintains coherent storylines and logical progression across paragraphs. Memory Persistence 
+
+evaluates the consistency of entity references, events, and factual details over long contexts. Temporal Groundedness 
+
+assesses whether temporal relations and event ordering remain consistent throughout the narrative. Affective Consistency 
+
+examines the stability and appropriateness of emotional tone across extended generations. Each dimension is scored independently by the judge model, and the average score is reported as the overall text quality metric. 
+
+G. Implementation Details 
+
+All baselines and HiFlow are implemented based on the LongGenBench framework. Experiments are conducted on 3NVIDIA A40 GPUs (48 GB each) , with typical runtime reported for different model scales (0.5B / 1.5B / 7B) and average GPU memory usage during training and inference. 
+
+Training Hyper-parameters. We use the AdamW optimizer with learning rate, weight decay, warmup steps, and LR decay schedules specified per model. Per-GPU batch size, global batch size, and gradient accumulation steps are recorded, with total training steps/epochs reported for both planning and generation stages. Gradient clipping is applied when necessary. 
+
+Model Fine-tuning. Models are trained in bf16 precision, with LoRA adapters applied when applicable (rank, scaling factor, target modules). Maximum sequence length, tokenizer version, and vocabulary are specified to ensure reproducibility. 
+
+Dataset and Evaluation. Exact training, validation, and test splits are provided. All experiments use fixed random seeds, and evaluation frequency, checkpointing strategy, and metric computation scripts are clearly defined. Results are reproducible using the same seeds and sampling parameters as in LongGenBench. These additions provide complete details on hardware, hyper-parameters, model fine-tuning, and evaluation protocol, enabling precise replication of our results. 24 HiFlow: Hierarchical Feedback-Driven Optimization for Constrained Long-Form Text Generation 
+
+H. Limitations and Future Work 
+
+While HiFlow demonstrates strong performance in constrained long-form text generation, it is not without limitations. First, the hierarchical planning and reward-guided optimization processes introduce additional computational overhead, resulting in longer generation times compared to single-pass or naive generation methods. This increased latency may limit real-time applications or scenarios requiring rapid content generation. Second, although HiFlow effectively handles diverse constraints and maintains structural coherence, extremely complex tasks with highly interdependent constraints may still challenge the planning and filtering modules, occasionally leading to sub-optimal sub-plan selection. Third, our current evaluation focuses on four representative long-form scenarios; generalization to other domains, such as multi-modal content or highly specialized professional texts, remains to be investigated. For future work, we aim to explore strategies to reduce computational cost without sacrificing output quality, such as model distillation, parallelized sub-plan generation, or more efficient reward evaluation mechanisms. Additionally, integrating more advanced constraint representation and reasoning techniques could further improve performance on highly interdependent or domain-specific tasks. Finally, extending HiFlow to multi-modal long-form generation and interactive adaptive workflows may broaden its applicability and provide more flexible solutions for real-world content creation. 25

@@ -1,0 +1,660 @@
+Title: Beyond Short-Horizon: VQ-Memory for Robust Long-Horizon Manipulation in Non-Markovian Simulation Benchmarks
+
+URL Source: https://arxiv.org/pdf/2603.09513v1
+
+Published Time: Wed, 11 Mar 2026 00:57:31 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Beyond Short-Horizon: VQ-Memory for Robust Long-Horizon Manipulation in Non-Markovian Simulation Benchmarks 
+
+## Honghui Wang 1†, Zhi Jing 2,3, Jicong Ao 3, Shiji Song 1, Xuelong Li 3, Gao Huang 1B, Chenji Bai 3B
+
+> 1
+
+## Tsinghua University, 2Fudan University 
+
+> 3
+
+## Institute of Artificial Intelligence (TeleAI), China Telecom 
+
+## Abstract 
+
+The high cost of collecting real-robot data has made robotic simulation a scalable platform for both evaluation and data generation. Yet, most existing benchmarks concen-trate on simple manipulation tasks like pick-and-place, fail-ing to capture the non-Markovian characteristics of real-world tasks and the complexity of articulated object inter-actions. To address this limitation, we present RuleSafe, a new articulated manipulation benchmark built upon a scalable, LLM-aided simulation framework. RuleSafe fea-tures safes with diverse unlocking mechanisms—such as key, password, and logic locks—that require distinct multi-stage reasoning and manipulation strategies. These LLM-generated rules yield non-Markovian, long-horizon tasks that demand temporal modeling and memory-based rea-soning. We further propose VQ-Memory, a compact and structured temporal representation that leverages vector-quantized variational autoencoders (VQ-VAEs) to encode past proprioceptive states into discrete latent tokens. This representation effectively filters low-level noise while pre-serving high-level task-phase context, providing lightweight yet robust temporal cues that are compatible with existing Vision-Language-Action models (VLA). Extensive experi-ments on state-of-the-art VLA models and diffusion poli-cies demonstrate that VQ-Memory consistently improves long-horizon planning, enhances generalization to unseen configurations, and achieves more efficient manipulation with reduced computational cost. Project page is https: //vqmemory.github.io .
+
+## 1. Introduction 
+
+Robotic simulation has recently achieved remarkable progress, establishing itself as a scalable platform for both evaluation and data generation [23, 24, 29]. This advance-            
+
+> †This work is done when Honghui Wang is intern at TeleAI.
+> BCorresponding authors: Chenjia Bai (baicj@chinatelecom.cn), Gao Huang (gaohuang@tsinghua.edu.cn)
+
+ment has been driven by innovations such as leveraging large language models (LLMs) for automated data gener-ation [7], employing data augmentation to narrow the sim-to-real gaps [4], and incorporating complex embodiments like dual-arm and humanoid robots [9]. However, existing simulation benchmarks still predominantly focus on short-horizon tasks and simple manipulations (e.g., pick-and-place), resulting in limited diversity of object interactions. Critically, articulated objects—such as doors, drawers, and cabinets—are ubiquitous in real-world environments and introduce substantial manipulation complexity, yet they re-main underexplored in current benchmarks. Previous articulated manipulation benchmarks [6, 31, 35] have concentrated on evaluating a model’s ability to in-fer affordances and joint constraints of unseen objects from visual observations. Crucially, these studies rarely account for inter-joint dependencies or the interplay among multiple kinematic components of the same object. This omission significantly limits the diversity and complexity of possi-ble actions. For instance, while manipulating a door of-ten only involves simple opening or closing motions, intro-ducing a door lock immediately expands the action space, demanding sequential reasoning over both unlocking and subsequent opening. Although some efforts have incorpo-rated such mechanisms (e.g., door locks to control object states [15, 33]), these approaches rely on manually scripted rules for trajectory collection. This manual process inher-ently constrains their extensibility and scalability compared to benchmarks utilizing LLM-aided generation, and ulti-mately results in the predominance of short-horizon tasks. In this paper, we introduce RuleSafe , a new articulated manipulation benchmark built upon a scalable, LLM-aided simulation framework. RuleSafe features a collection of safes equipped with diverse unlocking mechanisms, such as key locks, password locks, and logic locks, each demand-ing distinct reasoning and manipulation strategies. These mechanisms are governed by rules systematically designed based on (1) the part-phases of articulated components, de-fined as discrete states (e.g., open or closed) derived from their kinematic states, such as rotation angles or translation 1
+
+> arXiv:2603.09513v1 [cs.RO] 10 Mar 2026
+
+distances, and (2) the task-phase , which tracks the progress of the multi-stage process. By imposing these multi-step dependencies, RuleSafe significantly expands the planning space and enables the robust evaluation of policies’ ability to plan and execute long-horizon interactions. To ensure scalability and minimize manual effort, these rules are pre-dominantly generated by LLMs from only a few examples. RuleSafe distinguishes itself from prior benchmarks as a challenge platform demanding temporal modeling. Specif-ically, the non-Markovian nature of the tasks arises be-cause the current task stage and the joint states of the safe components cannot be inferred from a single visual ob-servation. Consequently, successful manipulation requires policies to reason over temporal sequences and maintain memory. Through extensive evaluations of state-of-the-art Vision-Language-Action (VLA) models [1, 12, 19] and dif-fusion policies [36], we observe a consistent failure pattern: policies relying solely on the current visual frame struggle to differentiate visually similar yet semantically distinct ma-nipulation stages. While incorporating visual history miti-gates this, it introduces significant computational overhead and scalability concerns. Conversely, using a history of raw robot joint states (i.e., the robot’s proprioceptive states rep-resenting each joint configuration) provides a lightweight temporal cue but is susceptible to low-level noise and prone to overfitting specific trajectories. To address these limitations, we propose VQ-Memory, a compact and structured temporal representation that leverages vector-quantized variational autoencoders (VQ-VAEs) [28, 37] to encode raw joint-state sequences into dis-crete latent tokens. These discrete memory representations effectively filter out irrelevant low-level variations while preserving high-level phase context, enabling the policy to maintain robust stage awareness. Notably, VQ-Memory is model-agnostic and can be incorporated into a variety of VLA models and diffusion policies, demonstrating its generality across different architectures. Empirically, VQ-Memory enhances long-horizon planning, improves gener-alization to unseen configurations, and achieves efficient manipulation with reduced computational cost. In summary, the key contributions of this paper are: • We introduce RuleSafe , a novel, LLM-aided articulated manipulation benchmark featuring non-Markovian tasks that demand long-horizon planning. • We propose VQ-Memory , a compact and structured tem-poral memory using VQ-VAEs to robustly encode high-level task phase context from noisy joint-state histories. • We demonstrate that VQ-Memory is a model-agnostic module that significantly enhances the long-horizon plan-ning and generalization capabilities of various VLA. 
+
+## 2. Related Works 
+
+2.1. Robotic Simulation Benchmarks 
+
+Recent advances in robotic simulation have established it as a powerful and scalable environment for systematic eval-uation and large-scale data generation [8, 23, 24, 29, 30], largely fueled by LLMs. Benchmarks such as GenSim [29] and RoboCasa [24] enrich the task diversity by lever-aging LLMs to automatically generate task descriptions. RoboTwin [4, 23] broadens the scope to dual-arm manip-ulation and improves sim-to-real transfer through domain randomization, while HumanoidGen [9] further advances this paradigm by introducing complex embodiments such as humanoid robots. Despite these efforts, most existing benchmarks still focus on short-horizon or low-level tasks (e.g., pick-and-place). GenSim2 [7] incorporates articu-lated objects to increase task variety. However, the in-teractions remain constrained to simple motion primitives, mostly achieved through arm translation, and lack precise part-specific interactions (e.g., rotating knobs). Building upon the HumanoidGen framework, our work focuses on fine-grained manipulation of articulated objects and lever-ages multi-joint dependencies to design multi-stage tasks. 
+
+2.2. Articulated Object Manipulation 
+
+Several benchmarks have been proposed for articulated ob-ject manipulation [6, 15, 31, 35]. PartNet-Mobility [35] provides multiple categories of articulated objects derived from PartNet [21]. GAPartNet [6] emphasizes part-level de-tails, offering rich, fine-grained annotations for individual object components. UniDoorManip [15] targets door en-vironments, encompassing diverse door bodies and handle types to support more varied interaction scenarios. These benchmarks are predominantly designed to assess a model’s capacity for cross-object generalization, specifically its pro-ficiency in inferring visual affordances and joint constraints for novel articulated objects. A significant limitation, how-ever, is their confinement to single-joint motions, thereby constraining the action diversity within the evaluated tasks. Although AdaManip [33] increases task complexity by in-corporating multi-joint dependencies like lock mechanisms, its reliance on manually scripted trajectories limits scala-bility and hinders the creation of long-horizon tasks. We tackle this limitation by creating diverse unlocking rules to broaden the planning space and employing an LLM-aided framework for scalable, long-horizon data generation. 
+
+2.3. Temporal Modeling in Robotic Policies 
+
+Manipulating articulated objects with multi-step dependen-cies requires temporal reasoning, as the current observa-tion alone is insufficient to gauge task progress. Such long-horizon dependencies pose a particular challenge for Vision-Language-Action (VLA) models [2, 10, 14, 40]. Re-2cent works like Octo [20], RDT [19], and RoboVLM [13] incorporate historical visual observations to enhance tem-poral reasoning. MindExplore [11] further leverages mem-ory for feedback and error correction. However, using raw visual observations as memory entails substantial computa-tional costs. MemoryVLA [26] addresses this by compress-ing historical information into a fixed-size memory bank. In contrast, TraceVLA [39] represents past states as trajecto-ries overlaid on the current frame, which is efficient but lim-ited in long-context capture. Alternatively, AdaManip [33] proposes augmenting diffusion policies with historical joint states. Although joint-state sequences provide a lightweight form of temporal context, we find they are noise-sensitive and can cause overfitting to training sequences. Our pro-posed VQ-Memory addresses this by discretizing past joint states into structured tokens via a VQ-VAE [28], providing a compact, robust, and model-agnostic temporal memory. 
+
+## 3. RuleSafe 
+
+Existing simulation environments for articulated manipula-tion are typically hindered by two major limitations: their lack of multi-step, interdependent action sequences needed to capture realistic processes, and their heavy reliance on manual task logic, which severely restricts diversity and scalability. To address these challenges, we introduce Rule-Safe, a scalable and systematically structured benchmark for long-horizon manipulation. RuleSafe provides a diverse suite of articulated locking mechanisms (Sec. 3.1), includ-ing key, password, and logic locks, and employs an LLM-aided data generation pipeline (Sec. 3.2) to ensure both scal-ability and diversity. See Appendix A for more details. 
+
+3.1. Locking Mechanism Generation 
+
+The design of locking mechanisms in RuleSafe is driven by the need to support multi-step, interdependent manipulation tasks. To systematically construct such mechanisms, we base the designs on two types of latent variables: the part-phase of articulated objects and the task-phase that repre-sents execution progress. These latent variables provide the underlying structure to define complex dependencies be-tween object components and multi-stage actions, enabling diverse and challenging manipulation tasks. 
+
+Part-Phase The part-phase captures the configuration of an object’s articulated components as discrete states (e.g., open or closed) derived from their underlying kinematic states, such as the rotation of a knob or the translation of a drawer. By tracking the states of individual parts, we can define sequential dependencies between actions as shown in Fig. 1(a). For instance, a simple key-lock can be rep-resented as a specific part reaching a target angle. More complex structures, such as a chained key-lock (e.g., knob rule_001: The safe door unlocks after the knob and handle are open .                         
+
+> pull handle knob handle handle
+> knob handle handle knob
+> rule_020: The safe door unlocks after entering password “11”.
+> knob opened=1, knob closed=0; handle open=record, handle close=unlock.
+> pull handle knob handle
+> (a) Part -Phase
+> (b) Task -Phase
+> ①record on ②ad d’1’ ③record off ④skip ‘0’
+> ⑤record on ⑥add ‘1’ ⑦unlock ⑧open
+
+Figure 1. Locking rules from the RuleSafe Benchmark, struc-tured by (a) part phase (knob/handle) and (b) task phase (password cache). Because these governing variables are not directly observ-able from visual input, the tasks exhibit a non-Markovian property. 
+
+open → handle open → door open), require actions to be executed in a precise order across multiple joints. 
+
+Task-Phase The task-phase provides a higher-level ab-straction that tracks progress across multi-step tasks. Un-like part-phase, it does not directly correspond to individual joint configurations, but instead encodes whether specific stages of a task have been completed. Task-phase enables the creation of more flexible locking mechanisms, such as password locks or logic locks, where the unlocking con-dition may depend on combinations of multiple actions or input sequences, as shown in Fig. 1(b). For example, a pass-word lock may require the agent to manipulate several ob-ject parts following specific rules in order to enter the pass-word. A logic lock, on the other hand, could enforce a re-lational constraint — for instance, the total number of knob and handle rotations must equal a target value. 
+
+LLM-Aided Lock Design To efficiently generate a wide variety of locking mechanisms, we leverage LLMs to design locks centered around both part-phase and task-phase spec-ifications. We first manually design a set of reference ex-amples, which serve as guidance for the LLM. Given these examples, the LLM outputs two components for each lock: (1) a description of the rules, which can later be used as a prompt for manipulation policies, and (2) an executable pro-gram that determines whether the unlocking conditions are met (see Appendix Listing 1). We also provide a template for the unlocking judgment program, which uses updates 3in the part-phase to check whether the task-phase should be updated, and ultimately verifies whether the task has been successfully completed. This approach significantly reduces manual effort while maintaining scalability and di-versity in the types of locks available within the benchmark. 
+
+3.2. Demonstration Generation 
+
+Demonstrations in RuleSafe are generated by extending the capabilities of the HumanoidGen [9] framework on articu-lated manipulation. The process involves spatial annotation of atomic operations and assets, as well as task decomposi-tion for long-horizon manipulation. 
+
+Task Decomposition For each lock rule, an LLM-based planner decomposes the manipulation task into a sequence of action operations S = {S1, S 2, . . . , S n}, where each step Si is either a hand operation Ai or an arm move-ment Mi. This decomposition is performed via code gen-eration [16, 22] (see Appendix Listing 2). A hand opera-tion Ai is drawn from a library of atomic actions Ahand =
+
+{Apinch , A grasp , . . . , A rotate }. An arm movement Mi is for-mulated as a constrained optimization problem, with the constraints generated by the LLM to specify the target end-effector pose. During simulation, the actual goal pose of the end-effector is obtained by solving this optimization prob-lem and is allowed to deviate from the target pose within a tolerance range for improved flexibility. Intermediate poses between the current and goal configurations are then gener-ated using an OMPL-based motion planner [27]. 
+
+Spatial Annotation Spatial annotation specifies the inter-action of dexterous hands with articulated assets by defining the geometric constraints on arm movements. Specifically, each arm movement Mi is formulated with two types of spatial constraints: point constraints and axis constraints. To enable these constraints, both the hand’s atomic op-erations and the articulated assets are spatially annotated with corresponding key points and axes, as shown in Ap-pendix Fig. 6. For each hand atomic operation, we anno-tate key points and axes that represent the contact locations and motion directions of the fingers. Similarly, for each manipulable joint of an articulated asset, we annotate key points and axes that indicate its operational interfaces. The spatial relationship is established by aligning these anno-tated components. Key points enforce positional correspon-dence via point constraints, while axes regulate orientation (such as parallel or perpendicular alignment) via axis con-straints. Collectively, these annotations ensure that the op-timized arm movement is physically plausible and geomet-rically consistent across diverse tasks. 
+
+Benchmark Details RuleSafe uses the SAPIEN simula-tion engine [35] and comprises 20 lock rules executed with Inspire hands on the arms of the Unitree H1-2 humanoid robot, which provides 7 DoFs per arm and 6 DoFs per hand (13-dimensional action space). We collect RGB images from first- and third-person views, along with point clouds. 
+
+## 4. Methods 
+
+4.1. Preliminaries 
+
+Problem Formulation We consider a sequential decision-making problem in which an embodied agent interacts with its environment through visual observations and task-specific or language-based instructions. The objective is to learn a policy π(at|ot) that predicts a chunk of future actions [38] at = {at, a t+1 , . . . , a t+H−1} con-ditioned on the current observation ot. Each observation 
+
+ot = {I1 
+
+> t
+
+, I 2 
+
+> t
+
+, l t, qt} comprises two RGB images I1 
+
+> t
+
+and I2
+
+> t
+
+captured from different viewpoints, a language instruction 
+
+lt, and the robot’s proprioceptive state qt.
+
+Temporal Modeling with Memory Tokens The formu-lation of π(at|ot) inherently assumes a Markovian decision process, where the current observation ot is sufficient to de-termine the optimal action. However, this assumption often fails in real-world embodied tasks that exhibit partial ob-servability (part-phase) and long-horizon temporal depen-dencies (task-phase) as characterized in our benchmark. A natural solution is to extend the policy to incorporate addi-tional historical context, resulting in a memory-augmented formulation π(at|ot, mt), where mt denotes a set of mem-ory tokens that encode information from previous timesteps. Previous studies have explored different forms of mem-ory representations. Some approaches [13, 20] leverage past visual frames as memory inputs, which integrate nat-urally with the VLM framework but require maintaining a large number of tokens, leading to substantial computa-tional overhead. In contrast, representing memory through past joint states [33] is far more efficient, as the robot’s joint states are low-dimensional. Motivated by this efficiency ad-vantage, we focus exclusively on joint-state memory, which offers a lightweight yet expressive way to retain temporal context without inflating token length or computation cost. However, as joint-state sequences are continuous signals, they are inherently susceptible to noise and can easily cause overfitting, especially in long-horizon tasks. 
+
+4.2. VQ-Memory 
+
+To address these limitations, we propose VQ-Memory, which learns a compact and semantically structured mem-ory representation from joint-state sequences by combining discrete tokenization with a post-hoc clustering mechanism, enabling efficient temporal reasoning while mitigating over-fitting from noisy continuous joint-state sequences. 4Action Expert   
+
+> noise "open safe according
+> to the rule …"
+
+𝑞 !
+
+𝑎 ! 𝑎 !"# 𝑎 !"$…
+
+> memory token
+> Pretrained VLM
+
+Figure 2. Overview of the memory-augmented policy formulation. The pretrained Vision-Language Model encodes current observations and task instructions, while the memory tokens mt provide additional historical context from previous timesteps. The combined represen-tation is fed into the Action Expert, which predicts the future action sequence conditioned on the state qt and injected noise. knob handle knob knob handle handle handle pull handle       
+
+> traj 1
+> traj 2
+> traj 3
+> traj 1
+> traj 2
+> traj 3
+
+Figure 3. Visualization of discrete tokens of joint trajectories with ( Bottom : vocabulary size = 4) and without clustering ( Top : vocabulary size = 256). Each column represents a time step, and each row corresponds to one of three different trajectories, where different colors indicate different tokens. Without clustering, high-level temporal regularities are obscured by fine-grained variations, whereas clustering emphasizes shared semantic patterns across trajectories, enabling clearer identification of task execution stages. 
+
+Discrete Joint-State from VQVAE We employ a Vector-Quantized Variational Autoencoder (VQVAE) [28] to learn a discrete and structured representation of the joint-state sequence. Given a continuous joint-state trajectory Qt =
+
+{qt−W +1 , . . . , qt−1, qt}, the encoder maps it into a latent embedding zt = E(Qt), which is then quantized to the nearest codebook entry ekt in a learned dictionary E =
+
+{e1, e2, . . . , eK }. The decoder reconstructs the original joint states ˆQt = D(ekt ) from the quantized embedding, en-suring the learned codebook captures the essential motion primitives underlying the task. This framework is trained to minimize the reconstruction loss Lrecon and the commit-ment loss Lcommit , formulated as 
+
+L = Lrecon + λL commit 
+
+= ∥Qt − ˆQt∥22 + λ(∥zt − sg( ekt )∥22 + ∥sg( zt) − ekt ∥22),
+
+where sg( ·) denotes the stop-gradient operation, and the balancing coefficient λ is set to 4. While the previous study [34] employed VQVAE as a tokenizer for action sequences, its primary goal was to use discrete tokens in the policy’s output space to improve op-timization efficiency and accurately reconstruct the contin-uous action. To maintain reconstruction fidelity, it typically adopts a small window size W with an equal stride, result-ing in a low token compression ratio (e.g., 5:4, where five action steps are converted into four tokens). In contrast, our method leverages these discrete tokens solely as auxiliary inputs to provide temporal context, without requiring exact reconstruction of the raw signals. Therefore, we adopt a larger window and stride to reduce the token count and en-hance computational efficiency. In practice, we set the win-dow size to 50 and the stride to 20, achieving approximately a 20× compression ratio. 
+
+Compact Memory via Clustering While the VQVAE transforms continuous joint trajectories into a finite discrete space, it cannot fully resolve the overfitting issue. The learned codebook often contains redundant entries, leading to fine-grained variations in discrete token sequences that obscure high-level temporal regularities, as shown in Fig. 3. To address this, we apply a simple yet effective clustering step to the codebook after the training of VQVAE. Specif-ically, we perform K-means clustering over the learned codebook {ek}Kk=1 to merge redundant codes and form a more compact vocabulary {cj }Jj=1 , where J < K . The 5001  
+
+> 002
+> 003
+> 004
+> 005
+> 006
+> 007
+> 008
+> 009
+> 010
+> 011
+> 012
+> 013
+> 014
+> 015
+> 016
+> 017
+> 018
+> 019
+> 020
+> Task ID
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Success Rate (%)
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Average Frames Figure 4. Statistics of Demonstration Generation in RuleSafe: Success Rate and Average Frames.
+
+optimization objective follows the standard formulation: 
+
+min 
+
+> cj
+> K
+
+X
+
+> k=1
+
+min  
+
+> j
+
+∥ek − cj ∥22. (1) Each original code ek is then reassigned to its nearest clus-ter centroid cj , effectively yielding a coarser but semanti-cally consistent representation. For a joint-state sequence Qt, we first obtain its latent embedding zt = E(Qt) and the corresponding quantized codes ekt . Each quantized code is then mapped to its nearest centroid, and the centroid index j serves as the final discrete token representing the sequence Qt. This post-hoc cluster-ing reduces redundancy and emphasizes high-level seman-tic patterns shared across trajectories, rather than low-level variations, as illustrated in Fig. 3. Consequently, these clus-tered tokens yield a compact memory representation 
+
+## 5. Experiments 
+
+We conduct a series of experiments to assess the effective-ness, generality, and robustness of VQ-Memory under dif-ferent learning scenarios. Specifically, we aim to answer three key questions: (1) How effective and general is VQ-Memory when applied to various model architectures in single-task settings? (Sec. 5.2) (2) Can VQ-Memory effec-tively improve learning performance in multi-task settings? (Sec. 5.3) (3) How do the main hyperparameters of VQ-Memory affect its performance? (Sec. 5.4) 
+
+5.1. Experimental Setup 
+
+Overview of the RuleSafe Benchmark RuleSafe con-sists of 20 lock rules of varying complexity and 10 types of safes (See Appendix A for more details). During demon-stration generation, the initial location and pose of each safe are randomly varied. In simulation, the environment runs at 100 Hz, while data is collected at 10 Hz. Fig. 4 presents the success rate for generating demonstrations for each rule, along with the average demonstration length. Across all rules, the mean success rate is 71.7% with an average tra-jectory length of 638 frames. We evaluate both single-task and multi-task settings. In the single-task experiments, we focus on two representa-tive rules shown in Fig. 1. For clarity, we denote the part-phase-based rule as rule 001 and the task-phase-based rule as rule 020 . Each task/rule in the single-task setting is trained with 100 demonstrations. In the multi-task exper-iments, all 20 tasks are trained simultaneously with a total of 1000 trajectories (50 trajectories per task). Performance is measured using success rate (SR) and 
+
+process score (PS). The success rate represents the propor-tion of task executions that are fully successful, while the process score reflects the overall percentage of task steps that are correctly completed. 
+
+Base Models We evaluate VQ-Memory across several representative model architectures: • DP3 [36] is a dif-fusion policy [5] that takes point cloud features as input. 
+
+• RDT [19] is a large diffusion Transformer [25] guided by image and language embeddings, employing an alter-native injection strategy. • CogACT [12] is a diffusion Transformer driven by a cognition token produced by a vision-language model (VLM). • π0 [1] is a flow-matching model [17, 18] built upon a pre-trained VLM using a mixture-of-experts framework. To integrate VQ-Memory with DP3, we add a small convolutional network to map the discrete memory tokens into a latent embedding, which is then used as input to DP3. For other models, we treat the discrete memory tokens as special language tokens. This is achieved by mapping the VQ-Memory’s dedicated vocabu-lary (of size N ) to a corresponding set of IDs at the tail end of the VLM’s original vocabulary. Specifically, a memory token with index j is represented by the VLM’s token ID 
+
+Vsize − N + j. The resulting sequence of memory tokens is then concatenated with the policy’s existing language to-kens before being processed by the Transformer encoder. 
+
+Implementation Details All experiments are conducted on 4 NVIDIA A100 GPUs. For each model, we evaluate its performance with and without VQ-Memory under identical settings, using the default configurations of each method. DP3 takes as input 1024 points representing the point cloud and outputs 13-DoF actions. It is trained with a batch size of 256 for 200k steps. RDT, CogACT, and π0 take as input two RGB images of size 224 × 224 from different view-points along with text tokens, and produce 13-DoF actions. These models are fine-tuned from their released pretrained weights for 30k steps, using a batch size of 8 for RDT and 32 for CogACT and π0. All policies predict a 50-step ac-tion chunk. VQ-Memory is configured with a vocabulary size of 4, clustered from an original vocabulary of 256, and a memory token length of 40. 6Table 1. Single-task performances of different memory types. “Raw memory” refers to using raw joint-state sequences as mem-ory tokens. We report success rate (SR) and process score (PS). Method rule 001 rule 020                  
+
+> SR (%) PS (%) SR (%) PS (%)
+> π030.0 56.7 0.0 10.6
+> π0+ raw memory 55.0 70.1 0.0 16.3
+> π0+ VQ-memory 80.0 89.3 45.0 67.3
+
+5.2. Effectiveness and Generality of VQ-Memory in Single-Task Setting 
+
+We first evaluate the effectiveness of VQ-Memory in pro-viding temporal context for robust decision-making, while mitigating the overfitting issues associated with using raw joint-state sequences as memory tokens. Specifically, we assess the performance of π0 [1] on rule 001 and 
+
+rule 020 under the single-task setting, where rule 001 
+
+involves a short three-step operation and rule 020 re-quires completing a longer eight-step sequence. As shown in Tab. 1, the non-Markovian RuleSafe tasks pose a sub-stantial challenge for the π0 policy when it relies solely on current observations. For example, when approaching a handle, the policy often struggles to determine whether it should pull or rotate , as the current visual observation alone does not reveal the underlying task stage. Introducing raw historical joint states as memory tokens initially improves short-horizon planning accuracy for the 
+
+rule 001 task. However, the performance becomes unsta-ble on the long-horizon complex rule 020 task. We hy-pothesize that this instability arises from the continuous na-ture of raw joint states, which makes them highly sensitive to variations and noise. These fluctuations lead to a distri-bution shift between training and test-time state sequences, causing the model to overfit specific trajectories rather than learning robust and generalizable temporal patterns. In contrast, when we replace raw joint states with VQ-Memory tokens, the model demonstrates substantial im-provements across both tasks. This improvement indicates that VQ-Memory effectively mitigates overfitting while pre-serving essential temporal information. Moreover, we further examine whether the benefits of VQ-Memory generalize beyond the π0 policy by integrating it into different model architectures, including DP3, RDT, and CogACT. As summarized in Tab. 2, VQ-Memory con-sistently enhances the performance across all baselines on the challenging rule 020 task. These results confirm that VQ-Memory provides a versatile and architecture-agnostic mechanism for improving temporal understanding in non-Markovian manipulation tasks.                   
+
+> Table 2. Effect of VQ-Memory across models. Method rule 020
+> Success Rate (%) Process Score (%) DP3 5.0 14.1 + VQ-memory 45.0 70.4 RDT 0.0 13.6 + VQ-memory 35.0 61.2 CogACT 0.0 9.7 + VQ-memory 20.0 50.4
+> π00.0 10.6 + VQ-memory 45.0 67.3
+
+5.3. Multi-Task Learning with VQ-Memory 
+
+After confirming the benefits of VQ-Memory in the single-task setting, we further evaluate its effectiveness under the 
+
+multi-task learning scenario. We train the π0 policy with and without VQ-Memory on the full set of RuleSafe tasks, using a batch size of 64 for 60k training steps. This config-uration differs from the single-task setting, as the multi-task setting involves a larger data volume and task diversity. 
+
+Main Results As shown in Tab. 3, π0 exhibits strong per-formance on relatively simple tasks such as rule 002 and 
+
+rule 003 . We attribute this to two factors: (1) these tasks involve fewer operation steps, which limits tempo-ral ambiguity; and (2) the specific safe assets used in these tasks contain joints whose rotation angles can be directly inferred from visual cues, enabling π0 to infer task progress based solely on the current observation. However, in long-horizon, π0 struggles severely, often yielding near-zero suc-cess rates. In contrast, integrating VQ-Memory leads to consistent and substantial improvements across nearly all tasks. Notably, VQ-Memory improves the average success rate from 25.0% to 56.3% and the process score from 48.8% to 76.5%, indicating its strong capability to capture tempo-ral dependencies and maintain robust performance across diverse non-Markovian manipulation tasks. 
+
+Possible Causes of Remaining Failures Although VQ-Memory substantially improves temporal reasoning and task planning, the overall success rate (56.3%) indicates that precise action execution remains a key bottleneck. We observe that the policy often generates correct high-level plans—accurately reasoning about unlocking and opening sequences—but occasionally fails to execute individual op-erations with sufficient precision, resulting in finger mis-alignment, slipping, or incomplete rotations. This limitation is primarily due to the limited number of demonstrations for each safe instance. While the dataset includes multiple 7Table 3. Performance of π0 with and without VQ-Memory on the multi-task setting. We report success rate (%) and process score (%). Success Process Success Process Success Process Rate Score Rate Score Rate Score 
+
+rule 001 rule 002 rule 003 
+
+π0 35.0 61.7 π0 80.0 85.0 π0 75.0 87.5 +VQ-Memory 60.0 73.3 +VQ-Memory 90.0 90.0 +VQ-Memory 95.0 97.5 
+
+rule 004 rule 005 rule 006 
+
+π0 35.0 58.3 π0 30.0 48.8 π0 0.0 25.7 +VQ-Memory 50.0 66.7 +VQ-Memory 45.0 56.3 +VQ-Memory 60.0 83.6 
+
+rule 007 rule 008 rule 009 
+
+π0 65.0 87.5 π0 10.0 48.8 π0 25.0 48.0 +VQ-Memory 75.0 87.5 +VQ-Memory 40.0 66.3 +VQ-Memory 45.0 82.0 
+
+rule 010 rule 011 rule 012 
+
+π0 0.0 18.1 π0 0.0 53.3 π0 40.0 45.6 +VQ-Memory 20.0 59.4 +VQ-Memory 60.0 91.7 +VQ-Memory 45.0 57.5 
+
+rule 013 rule 014 rule 015 
+
+π0 15.0 42.0 π0 55.0 72.5 π0 5.0 35.6 +VQ-Memory 35.0 54.0 +VQ-Memory 70.0 85.0 +VQ-Memory 50.0 82.5 
+
+rule 016 rule 017 rule 018 
+
+π0 5.0 45.0 π0 20.0 45.0 π0 0.0 18.6 +VQ-Memory 80.0 96.3 +VQ-Memory 75.0 90.0 +VQ-Memory 30.0 70.7 
+
+rule 019 rule 020 Average 
+
+π0 0.0 40.0 π0 5.0 9.4 π0 25.0 48.8 +VQ-Memory 65.0 83.3 +VQ-Memory 35.0 55.6 +VQ-Memory 56.3 (+31.3) 76.5 (+27.7) 
+
+Table 4. Ablation on number of clusters and memory length. We report the success rate (%) and process score (%) on rule 020 .Variant Success Rate Process Score Number of Clusters 256 20.0 47.5 32 35.0 57.5 4 45.0 67.3 
+
+2 30.0 54.4 Memory Length 20 25.0 53.8 40 45.0 67.3 
+
+60 40.0 65.4 
+
+safes with diverse geometries and joint tolerances, the per-configuration data is insufficient for the model to fully adapt its control policy to such heterogeneous dynamics. Expand-ing the data per safe or applying targeted fine-tuning could further improve low-level manipulation accuracy. 
+
+5.4. Ablation Studies 
+
+To understand the impact of key hyperparameters in VQ-Memory, we perform ablation experiments on rule 020 .
+
+Number of Clusters As shown in Table 4, clustering plays a key role in making the memory tokens more com-pact and reducing overfitting. When no clustering is applied and the memory uses a vocabulary of 256 codes, perfor-mance is limited, achieving only a 20% success rate due to redundant and noisy memory representations. Reducing the number of clusters improves generalization, with the best result achieved at 4 clusters, where the success rate rises to 45%. Further decreasing the cluster count to 2 slightly degrades performance, suggesting that overly coarse clus-tering merges distinct stage-level patterns, hindering the model’s capacity to differentiate task progression. 
+
+Memory Length We further examine the effect of mem-ory length, varying it from 20 to 60 tokens. A shorter mem-ory (20) fails to capture long-term dependencies, resulting in a low success rate of 25.0%. Increasing the length from 20 to 40 considerably improves performance, while further increasing it to 60 brings negligible benefits, indicating that the improvement has reached saturation. Hence, we set the memory length to 40 in our experiments for an optimal trade-off between efficiency and temporal coverage. 
+
+## 6. Conclusion 
+
+We presented RuleSafe and VQ-Memory , two comple-mentary contributions for long-horizon articulated manip-ulation. RuleSafe provides a scalable benchmark with non-8Markovian, multi-stage tasks for evaluating temporal rea-soning and planning. To address the temporal challenges posed by these tasks, we proposed VQ-Memory , a compact and structured memory module that encodes past joint states into discrete latent tokens via vector quantization. This de-sign filters out low-level noise while preserving stage-level context, enabling efficient and robust long-horizon control. Future work includes scaling RuleSafe with more rules and objects, as well as expanding VQ-Memory to encode addi-tional sensory inputs, such as learning adaptive features [32] or latent action embeddings [3] from video. 
+
+## References 
+
+[1] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, et al. π0: A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164 , 2024. 2, 6, 7 [2] Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Joseph Dabis, Chelsea Finn, Keerthana Gopalakr-ishnan, Karol Hausman, Alexander Herzog, Jasmine Hsu, et al. Rt-1: Robotics transformer for real-world control at scale. Robotics: Science and Systems XIX , 2023. 2 [3] Qingwen Bu, Yanting Yang, Jisong Cai, Shenyuan Gao, Guanghui Ren, Maoqing Yao, Ping Luo, and Hongyang Li. Univla: Learning to act anywhere with task-centric latent ac-tions. arXiv preprint arXiv:2505.06111 , 2025. 9 [4] Tianxing Chen, Zanxin Chen, Baijun Chen, Zijian Cai, Yibin Liu, Zixuan Li, Qiwei Liang, Xianliang Lin, Yiheng Ge, Zhenyu Gu, et al. Robotwin 2.0: A scalable data gen-erator and benchmark with strong domain randomization for robust bimanual robotic manipulation. arXiv preprint arXiv:2506.18088 , 2025. 1, 2 [5] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action dif-fusion. The International Journal of Robotics Research , 44 (10-11):1684–1704, 2025. 6 [6] Haoran Geng, Helin Xu, Chengyang Zhao, Chao Xu, Li Yi, Siyuan Huang, and He Wang. Gapartnet: Cross-category domain-generalizable object perception and manipulation via generalizable and actionable parts. In CVPR , pages 7081–7091, 2023. 1, 2 [7] Pu Hua, Minghuan Liu, Annabella Macaluso, Yunfeng Lin, Weinan Zhang, Huazhe Xu, and Lirui Wang. Gensim2: Scal-ing robot data generation with multi-modal and reasoning llms. In CoRL , pages 5030–5066. PMLR, 2025. 1, 2 [8] Wenlong Huang, Chen Wang, Yunzhu Li, Ruohan Zhang, and Li Fei-Fei. Rekep: Spatio-temporal reasoning of re-lational keypoint constraints for robotic manipulation. In 
+
+CoRL , pages 4573–4602. PMLR, 2025. 2 [9] Zhi Jing, Siyuan Yang, Jicong Ao, Ting Xiao, Yugang Jiang, and Chenjia Bai. Humanoidgen: Data generation for biman-ual dexterous manipulation via llm reasoning. In NeurIPS ,2025. 1, 2, 4 [10] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan P Foster, Pannag R Sanketi, Quan Vuong, et al. Openvla: An open-source vision-language-action model. In CoRL , 2024. 2[11] Daixun Li, Yusi Zhang, Mingxiang Cao, Donglai Liu, Weiy-ing Xie, Tianlin Hui, Lunkai Lin, Zhiqiang Xie, and Yun-song Li. Towards long-horizon vision-language-action sys-tem: Reasoning, acting and memory. In ICCV , 2025. 3 [12] Qixiu Li, Yaobo Liang, Zeyu Wang, Lin Luo, Xi Chen, Mozheng Liao, Fangyun Wei, Yu Deng, Sicheng Xu, Yizhong Zhang, et al. Cogact: A foundational vision-language-action model for synergizing cognition and action in robotic manipulation. arXiv preprint arXiv:2411.19650 ,2024. 2, 6 [13] Xinghang Li, Peiyan Li, Minghuan Liu, Dong Wang, Jirong Liu, Bingyi Kang, Xiao Ma, Tao Kong, Hanbo Zhang, and Huaping Liu. Towards generalist robot policies: What matters in building vision-language-action models. arXiv preprint arXiv:2412.14058 , 2024. 3, 4 [14] Xinghang Li, Minghuan Liu, Hanbo Zhang, Cunjun Yu, Jie Xu, Hongtao Wu, Chilam Cheang, Ya Jing, Weinan Zhang, Huaping Liu, et al. Vision-language foundation models as effective robot imitators. In ICLR , 2024. 2 [15] Yu Li, Xiaojie Zhang, Ruihai Wu, Zilong Zhang, Yiran Geng, Hao Dong, and Zhaofeng He. Unidoormanip: Learn-ing universal door manipulation policy over large-scale and diverse door manipulation environments. arXiv preprint arXiv:2403.02604 , 2024. 1, 2 [16] Jacky Liang, Wenlong Huang, Fei Xia, Peng Xu, Karol Hausman, Pete Florence, Andy Zeng, et al. Code as poli-cies: Language model programs for embodied control. In 
+
+Workshop on Language and Robotics at CoRL 2022 , 2022. 4 [17] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximil-ian Nickel, and Matthew Le. Flow matching for generative modeling. In ICLR , 2023. 6 [18] Qiang Liu. Rectified flow: A marginal preserving approach to optimal transport. arXiv preprint arXiv:2209.14577 , 2022. 6[19] Songming Liu, Lingxuan Wu, Bangguo Li, Hengkai Tan, Huayu Chen, Zhengyi Wang, Ke Xu, Hang Su, and Jun Zhu. Rdt-1b: a diffusion foundation model for bimanual manipu-lation. In ICLR , 2024. 2, 3, 6 [20] Oier Mees, Dibya Ghosh, Karl Pertsch, Kevin Black, Homer Rich Walke, Sudeep Dasari, Joey Hejna, Tobias Kreiman, Charles Xu, Jianlan Luo, et al. Octo: An open-source generalist robot policy. In First Workshop on Vision-Language Models for Navigation and Manipulation at ICRA 2024 , 2024. 3, 4 [21] Kaichun Mo, Shilin Zhu, Angel X Chang, Li Yi, Subarna Tripathi, Leonidas J Guibas, and Hao Su. Partnet: A large-scale benchmark for fine-grained and hierarchical part-level 3d object understanding. In CVPR , 2019. 2 [22] Yao Mu, Junting Chen, Qinglong Zhang, Shoufa Chen, Qiaojun Yu, Chongjian GE, Runjian Chen, Zhixuan Liang, Mengkang Hu, Chaofan Tao, et al. Robocodex: multi-modal code generation for robotic behavior synthesis. pages 36434–36454, 2024. 4 
+
+9[23] Yao Mu, Tianxing Chen, Shijia Peng, Zanxin Chen, Zeyu Gao, Yude Zou, Lunkai Lin, Zhiqiang Xie, and Ping Luo. Robotwin: Dual-arm robot benchmark with generative digi-tal twins (early version). In ECCV , pages 264–273. Springer, 2024. 1, 2 [24] Soroush Nasiriany, Abhiram Maddukuri, Lance Zhang, Adeet Parikh, Aaron Lo, Abhishek Joshi, Ajay Mandlekar, and Yuke Zhu. Robocasa: Large-scale simulation of every-day tasks for generalist robots. In RSS 2024 Workshop: Data Generation for Robotics , 2024. 1, 2 [25] William Peebles and Saining Xie. Scalable diffusion models with transformers. In ICCV , pages 4195–4205, 2023. 6 [26] Hao Shi, Bin Xie, Yingfei Liu, Lin Sun, Fengrong Liu, Tiancai Wang, Erjin Zhou, Haoqiang Fan, Xiangyu Zhang, and Gao Huang. Memoryvla: Perceptual-cognitive memory in vision-language-action models for robotic manipulation. 
+
+arXiv preprint arXiv:2508.19236 , 2025. 3 [27] Ioan A. S ¸ ucan, Mark Moll, and Lydia E. Kavraki. The Open Motion Planning Library. IEEE Robotics & Automa-tion Magazine , 19(4):72–82, 2012. https://ompl. kavrakilab.org . 4 [28] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. In NeurIPS , 2017. 2, 3, 5 [29] Lirui Wang, Yiyang Ling, Zhecheng Yuan, Mohit Shridhar, Chen Bao, Yuzhe Qin, Bailin Wang, Huazhe Xu, and Xiao-long Wang. Gensim: Generating robotic simulation tasks via large language models. In ICLR , 2024. 1, 2 [30] Yufei Wang, Zhou Xian, Feng Chen, Tsun-Hsuan Wang, Yian Wang, Katerina Fragkiadaki, Zackory Erickson, David Held, and Chuang Gan. Robogen: Towards unleashing infi-nite data for automated robot learning via generative simula-tion. 2024. 2 [31] Yufei Wang, Ziyu Wang, Mino Nakura, Pratik Bhowal, Chia-Liang Kuo, Yi-Ting Chen, Zackory Erickson, and David Held. Articubot: Learning universal articulated object ma-nipulation policy via large scale simulation. arXiv preprint arXiv:2503.03045 , 2025. 1, 2 [32] Yulin Wang, Yang Yue, Yang Yue, Huanqian Wang, Haojun Jiang, Yizeng Han, Zanlin Ni, Yifan Pu, Minglei Shi, Rui Lu, Qisen Yang, Andrew Zhao, Zhuofan Xia, Shiji Song, and Gao Huang. Emulating human-like adaptive vision for efficient and flexible machine visual perception. Nature Ma-chine Intelligence , 2025. 9 [33] Yuanfei Wang, Xiaojie Zhang, Ruihai Wu, Yu Li, Yan Shen, Mingdong Wu, Zhaofeng He, Yizhou Wang, and Hao Dong. Adamanip: Adaptive articulated object manipulation envi-ronments and policy learning. In ICLR , 2025. 1, 2, 3, 4 [34] Yating Wang, Haoyi Zhu, Mingyu Liu, Jiange Yang, Hao-Shu Fang, and Tong He. Vq-vla: Improving vision-language-action models via scaling vector-quantized action tokenizers. In ICCV , 2025. 5 [35] Fanbo Xiang, Yuzhe Qin, Kaichun Mo, Yikuan Xia, Hao Zhu, Fangchen Liu, Minghua Liu, Hanxiao Jiang, Yifu Yuan, He Wang, et al. Sapien: A simulated part-based interactive environment. In CVPR , pages 11097–11107, 2020. 1, 2, 4 [36] Yanjie Ze, Gu Zhang, Kangning Zhang, Chenyuan Hu, Muhan Wang, and Huazhe Xu. 3d diffusion policy: General-izable visuomotor policy learning via simple 3d representa-tions. In 2nd Workshop on Dexterous Manipulation: Design, Perception and Control (RSS) , 2024. 2, 6 [37] Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco Tagliasacchi. Soundstream: An end-to-end neural audio codec. IEEE/ACM Transactions on Au-dio, Speech, and Language Processing , 30:495–507, 2021. 2[38] Tony Z Zhao, Vikash Kumar, Sergey Levine, and Chelsea Finn. Learning fine-grained bimanual manipulation with low-cost hardware. arXiv preprint arXiv:2304.13705 , 2023. 4[39] Ruijie Zheng, Yongyuan Liang, Shuaiyi Huang, Jianfeng Gao, Hal Daum´ e III, Andrey Kolobov, Furong Huang, and Jianwei Yang. Tracevla: Visual trace prompting enhances spatial-temporal awareness for generalist robotic policies. In 
+
+ICLR , 2025. 3 [40] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, et al. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In CoRL , pages 2165–2183. PMLR, 2023. 2 
+
+10 Beyond Short-Horizon: VQ-Memory for Robust Long-Horizon Manipulation in Non-Markovian Simulation Benchmarks 
+
+# Supplementary Material 
+
+## A. RuleSafe Benchmark Details 
+
+Rule Description Tab. 5 lists the 20 rule-based manipu-lation tasks used in our experiments. Each task defines a unique temporal or logical dependency between the knob, handle, and safe door. These rules vary in structure—from simple joint-state conditions (e.g., both components open) to multi-step temporal dependencies requiring password-like input sequences. Such diversity enables systematic evaluation of reasoning and planning. 
+
+Object Set Fig. 5 summarizes the ten objects used in the benchmark. Objects vary in geometry, articulation type, and visual appearance, introducing additional diversity. Each object instance preserves the same functional semantics (knob–handle–door) but differs in physical configuration, enabling systematic evaluation of perception generalization. 
+
+Figure 5. List of 10 object instances used in RuleSafe. 
+
+Figure 6. Annotation example. For hands, we annotate contact points and motion directions. For articulated components such as knobs, we label key points and axes representing their operational interfaces. 
+
+1Table 5. Descriptions of all 20 rules in the RuleSafe benchmark. 
+
+Rule ID Description 
+
+rule 001 The safe door remains locked unless both the knob and handle are open. 
+
+rule 002 The safe door remains locked unless the knob is open. 
+
+rule 003 The safe door remains locked unless the handle is open. 
+
+rule 004 The safe door remains locked unless both the knob and handle are open. Additionally, the knob cannot be opened unless the handle is open. 
+
+rule 005 The safe door remains locked unless the password ’001’ is entered. Chang-ing the knob’s state from open to closed (or vice versa) inputs a ’0’, while changing the handle’s state inputs a ’1’. 
+
+rule 006 The safe door remains locked unless the password ’010’ is entered. When handle is open, changing the knob’s state from open to closed (or vice versa) inputs a ’0’; otherwise it inputs a ’1’. 
+
+rule 007 The safe door unlocks when the knob and handle are in opposite states (one open, one closed). Both must have been toggled at least once. 
+
+rule 008 The safe door unlocks only if the knob is open and the handle has been toggled an even number of times greater than one. 
+
+rule 009 The safe door unlocks after receiving binary input ’1001’. Knob state change = ’1’, handle state change = ’0’. Input buffer holds last 4 digits. 
+
+rule 010 The safe door unlocks when the password ’0110’ is entered. Handle state change while knob is open inputs ’0’, handle change while knob closed inputs ’1’. 
+
+rule 011 The safe door unlocks after the password ’1010’ is entered. Knob state open →closed = ’1’, closed →open = ’0’. Handle changes ignored. 
+
+rule 012 The safe door unlocks after knob and handle have been in all possible state combinations (open/open, open/closed, closed/open, closed/closed). 
+
+rule 013 The safe door unlocks when the handle is open and the knob has changed state a non-zero number of times that is divisible by 3. 
+
+rule 014 The safe door remains locked unless the knob is closed and the handle is open. Additionally, the handle cannot be opened unless the knob is open. 
+
+rule 015 The safe door unlocks when knob open count equals handle close count (minimum 2 each). Counts reset if either reaches 3. 
+
+rule 016 The safe door unlocks after the password ’1110’ is entered. Closing the knob inputs ’1’, opening the handle inputs ’0’. Input buffer holds last 4 digits. 
+
+rule 017 The safe door unlocks when the product of the knob and handle toggle counts equals 4. A toggle is defined as any state change. 
+
+rule 018 The safe door unlocks when the password ’123’ is entered. A knob state change increments a counter, a handle state change appends the counter value to the buffer and resets the counter. The counter starts at 1. The buffer holds the last 3 digits. 
+
+rule 019 The safe door unlocks after entering the password ’01’ via knob interac-tions (0 = knob closes, 1 = knob opens). Knob events are recorded only when the handle is open. The door unlocks only when the handle is closed after the correct password has been entered. 
+
+rule 020 The safe door unlocks after entering the password ’11’ via knob interac-tions (0 = knob closes, 1 = knob opens). Knob events are recorded only when the handle is open. The door unlocks only when the handle is closed after the correct password has been entered. 2Listing 1. Lock checking logic for rule 001 and rule 020 generated by LLM in Python code form.  
+
+> 1
+
+# rule_001  
+
+> 2
+
+# Rule Description: The safe door unlocks after both the knob and handle are open.  
+
+> 3
+
+def check_lock(self):  
+
+> 4
+
+# Query the open status of each component of the safe  
+
+> 5
+
+is_knob_open = self.is_open(obj_name=’safe’, link_name=’knob’)  
+
+> 6
+
+is_handle_open = self.is_open(obj_name=’safe’, link_name=’handle’)  
+
+> 7
+
+is_door_open = self.is_open(obj_name=’safe’, link_name=’door’)  
+
+> 89
+
+# If either the knob or handle is not open,  
+
+> 10
+
+# the door remains locked; otherwise, it can be unlocked  
+
+> 11
+
+if (not is_knob_open or not is_handle_open):  
+
+> 12
+
+self.set_lock(obj_name=’safe’, link_name=’door’, lock=True)  
+
+> 13
+
+else:  
+
+> 14
+
+self.set_lock(obj_name=’safe’, link_name=’door’, lock=False)  
+
+> 15 16
+
+# rule_020  
+
+> 17
+
+# Rule Description: The safe door unlocks after entering the password "11" via knob interactions  
+
+> 18
+
+# (0 = knob closes, 1 = knob opens). Knob events are recorded only when the handle is open.  
+
+> 19
+
+# The door unlocks only when the handle is closed after the correct password has been entered.  
+
+> 20
+
+def check_lock(self):  
+
+> 21
+
+# Query the open states of knob, handle, and door  
+
+> 22
+
+knob = self.is_open(obj_name=’safe’, link_name=’knob’)  
+
+> 23
+
+handle = self.is_open(obj_name=’safe’, link_name=’handle’)  
+
+> 24
+
+door = self.is_open(obj_name=’safe’, link_name=’door’)  
+
+> 25 26
+
+# Initialize task state if not already created  
+
+> 27
+
+if not hasattr(self, ’_mech_state’):  
+
+> 28
+
+self._mech_state = {}  
+
+> 29 30
+
+state = self._mech_state  
+
+> 31
+
+state.setdefault(’last_knob’, knob)  
+
+> 32
+
+state.setdefault(’input_buffer’, [])  
+
+> 33 34
+
+# Allow password input only when the handle is open  
+
+> 35
+
+if handle:  
+
+> 36
+
+# Record knob rotation events ("1" for open, "0" for close)  
+
+> 37
+
+if knob != state[’last_knob’]:  
+
+> 38
+
+event = ’1’ if knob else ’0’  
+
+> 39
+
+state[’input_buffer’].append(event)  
+
+> 40
+
+state[’input_buffer’] = state[’input_buffer’][-2:] # Keep last two events only  
+
+> 41 42
+
+# Unlock the door if correct input ("11") is entered and handle is closed,  
+
+> 43
+
+# or if the door is already open  
+
+> 44
+
+if (’’.join(state[’input_buffer’]) == ’11’ and not handle) or door:  
+
+> 45
+
+self.set_lock(obj_name=’safe’, link_name=’door’, lock=False)  
+
+> 46
+
+else:  
+
+> 47
+
+self.set_lock(obj_name=’safe’, link_name=’door’, lock=True)  
+
+> 48 49
+
+# Update the last knob state  
+
+> 50
+
+state[’last_knob’] = knob 
+
+Listing 2. Task decomposition for rule 001 generated by LLM in Python code form, which serves as the foundation of the demonstration generation pipeline.  
+
+> 1
+
+# Step 1: rotate knob counterclockwise  
+
+> 2
+
+### Hand operation: pre pinch  
+
+> 3
+
+planner.hand_pre_pinch("right")  
+
+> 4
+
+### Arm movement: move to knob  
+
+> 5
+
+constraint_left = planner.generate_constraints(obj_name="safe", target_link="knob")  
+
+> 6
+
+_, target_effector_pose = planner.generate_end_effector_pose(constraint_left)  
+
+> 7
+
+planner.move_to_pose(target_effector_pose)  
+
+> 8
+
+### Hand operation: pinch knob  
+
+> 9
+
+planner.hand_pinch("right", pinch_object="safe")  
+
+> 10
+
+### Hand operation: rotate  
+
+> 11
+
+planner.rotate_hand(hand="right", angle=-60) 
+
+312 13 # Step 2: rotate handle counterclockwise  
+
+> 14
+
+### Hand operation: release fingers  
+
+> 15
+
+planner.hand_pre_pinch("right")  
+
+> 16
+
+### Arm movement: move to handle  
+
+> 17
+
+constraint_left = planner.generate_constraints(obj_name="safe", target_link="handle")  
+
+> 18
+
+_, target_effector_pose = planner.generate_end_effector_pose(constraint_left, hand_name="right")  
+
+> 19
+
+planner.move_to_pose(target_effector_pose)  
+
+> 20
+
+### Hand operation: pinch handle  
+
+> 21
+
+planner.hand_pinch("right", pinch_object="safe")  
+
+> 22
+
+### Hand operation: rotate  
+
+> 23
+
+planner.rotate_hand(hand="right", angle=-60)  
+
+> 24 25
+
+# Step 3: pull handle  
+
+> 26
+
+### Arm movement: move to the target pose corresponding to the door state with openness = 1 
+
+> 27
+
+constraint_left = planner.generate_constraints(obj_name="safe", target_link="handle", state_link=" door", openness=1)  
+
+> 28
+
+_, target_effector_pose = planner.generate_end_effector_pose(constraint_left)  
+
+> 29
+
+planner.move_to_pose(target_effector_pose) 
+
+4

@@ -1,0 +1,2616 @@
+Title: SEAR: Sample Efficient Action Chunking Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2603.01891v1
+
+Published Time: Tue, 03 Mar 2026 04:13:30 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+## SEAR: Sample Efficient Action Chunking Reinforcement Learning 
+
+C F Maximilian Nagy 1 2 Onur Celik 1 Emiliyan Gospodinov 1 Florian Seligmann 1 Weiran Liao 1
+
+Aryan Kaushik 1 Gerhard Neumann 1 2 
+
+Abstract 
+
+Action chunking can improve exploration and value estimation in long horizon reinforcement learning, but makes learning substantially harder since the critic must evaluate action sequences rather than single actions, greatly increasing ap-proximation and data efficiency challenges. As a result, existing action chunking methods, primar-ily designed for the offline and offline-to-online settings, have not achieved strong performance in purely online reinforcement learning. We intro-duce SEAR, an off policy online reinforcement learning algorithm for action chunking. It ex-ploits the temporal structure of action chunks and operates with a receding horizon, effectively com-bining the benefits of small and large chunk sizes. SEAR outperforms state of the art online rein-forcement learning methods on Metaworld, train-ing with chunk sizes up to 20. 
+
+1. Introduction 
+
+Action chunking has seen remarkable success in imitation learning (IL) (Chi et al., 2024; Zhao et al., 2023a; Reuss et al., 2025; Black et al., 2024; Intelligence et al., 2025; Li et al., 2025d; Zheng et al., 2025; Nikolov et al., 2025; Lee et al., 2025b). There, a policy is trained to predict a sequence of future actions instead of a single action, which are then executed in an open-loop manner, enabling the policy to capture coherent multi-step behaviors. Building on these results, a growing line of work explores action chunking reinforcement learning (RL) (Li et al., 2025a;c;b; Yang et al., 2025; Park et al., 2025; Seo & Abbeel, 2025). For reinforcement learning, action chunking enables faster and more stable reward propagation through unbiased N step returns computed over executed chunks, which is particularly beneficial in long horizon and sparse 
+
+> 1
+
+Autonomous Learning Robots, Karlsruhe Institute of Technol-ogy 2FZI Forschungszentrum Informatik, Karlsruhe. Correspon-dence to: C F Maximilian Nagy <nagy@fzi.de >.
+
+Preprint. March 3, 2026. 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> # Samples 1e6
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> SEAR (Ours)
+> SimbaV2
+> SimbaV2 (Chunked)
+> CQN-AS
+
+Figure 1. Action Chunking increases sample efficiency in on-line reinforcement learning. The figure visualizes the aggregated performances on 20 hard Metaworld environments. Naively ap-plying action chunking to state-of-the-art RL methods (SimbaV2 (Chunked)) yields degraded performance compared to the single step policy (SimbaV2) (Lee et al., 2025a). Applying recent action chunking methods (CQN-AS) (Seo & Abbeel, 2025), specifically designed for the offline2online setting, fails to improve the suc-cess rate over the single-step policy. SEAR (with chunksize 10 )improves performance significantly while being more sample ef-ficient, showing that action chunking with a transformer critic ,
+
+multi-horizon targets , and random replanning yields efficient and stable training with action chunking policies. 
+
+reward settings(Li et al., 2025c;b). By operating over tempo-rally extended action sequences, action chunking facilitates the discovery of meaningful skills and improves exploration by sampling coherent action trajectories rather than relying on single time step random walk noise. This structured ex-ploration leads to more consistent state space coverage and can substantially reduce exploration burden. Additionally, action chunking provides a natural interface for incorporat-ing offline data when available, allowing learned temporal patterns to be reused effectively during online learning (Li et al., 2025c). However, action chunking significantly increases the ac-tion space of the policy, requiring the critic to evaluate chunks rather than individual actions. In this enlarged ac-tion space, critic approximation errors can lead to poor actor updates (Seo & Abbeel, 2025), requiring careful algorithm design. In particular, naively applying action chunking to 1
+
+> arXiv:2603.01891v1 [cs.LG] 2 Mar 2026
+
+SEAR: Sample Efficiency in Action Chunking Reinforcement Learning Causal Transformer   
+
+> Bellman Errors
+> Update
+> Replay Buffer ... ...
+> Critic
+
+(a) Critic Update Replay Buffer   
+
+> Causal Transformer
+> ... ...
+> MaxEnt
+> Objective
+> Update
+> Critic
+> Actor
+> MLP
+
+(b) Actor Update 
+
+Figure 2. Overview of SEAR’s (a) critic and (b) actor updates. The critic function expects the state st and an action chunk at:t+N of chunk size N as argument. During the critic update (a) , these training points are sampled from the replay buffer and the causal transformer critic predicts Q-values Q(1) (st, a t), Q (2) (st, a t:t+1 ), ..., Q (N )(st, a t+N −1) for all action chunk prefixes at:t+n, n ∈ { 0, ..., N − 1}
+
+thereby generating multi-horizon predictions leading to an increased amount of training data for the subsequent critic update. The subfigure (b) visualizes the actor update. Given a state st, the actor predicts an action chunk at:t+N −1 of size N that is subsequently passed to the causal transformer to obtain the expected Q-value prediction Q(N )(st, a t:t+N −1), which is then used to update the actor’s parameters based on the maximum entropy RL objective. 
+
+off-the-shelf single-action RL algorithms significantly re-duces performance, as shown in Figure 1. Moreover, executing N actions in an open-loop manner re-duces the policy’s decision frequency, as the policy is only executed every N steps. This has two consequences: Firstly, it requires the predicted action sequence to be highly accu-rate since errors cannot be corrected during execution (Li et al., 2025b). Secondly, this reduces the policy’s “state-action coverage” especially if the initial state distribution is narrow (Figure 3). A common way to restore policy reactivity is receding hori-zon control, where the policy predicts an action chunk of length N but executes only a prefix of k actions before re-planning. While this strategy is widely used in imitation learning to balance long horizon planning with closed-loop control, it has so far not been explored in the context of re-inforcement learning. However, applying receding horizon control in reinforcement learning is nontrivial, as executing shorter prefixes at evaluation time introduces a distribution shift from training on fixed length action chunks. We introduce Sample Efficient Action Chunking Reinforce-ment Learning (SEAR) , an off-policy online RL algorithm that learns action chunking policies from scratch, without relying on prior data. SEAR uses a multi-horizon critic target that captures the causal relation between a chunk’s ac-tion while providing per-action training targets. Combined with a causal transformer critic, this enables stable learning even for large chunk sizes without prior data. Furthermore, SEAR improves the state-action coverage of the actor using 
+
+random replanning , where only a random prefix of each chunk is executed during data collection. We demonstrate that random replanning and multi-horizon targets are key to using receding horizons effectively. Notably, even with a receding horizon of k = 1 , SEAR’s policies achieved higher success rates than the state-of-the-art non-chunked SimbaV2 method. We evaluate SEAR on the challenging Metaworld (Yu et al., 2021) benchmark. SEAR achieves a substantial improve-ment of over 20% IQM success rate (Agarwal et al., 2021b) compared to previous methods among the 20 Metaworld hardest environments, as shown in Figure 1. Through exten-sive ablation studies, we highlight the impact of each design decision of our approach, such as using a causal transformer critic with and without multi-horizon targets, and random replanning (Figure 4). We further evaluate the impact of different chunk sizes (Figure 5). In particular, we demon-strate that receding-horizon control, which is used for the first time for RL in our work, is only effective if the main components of our algorithms are used, i.e., multi-horizon targets, causal transformer critics and random replanning during training. We summarize our contributions as follows: • We introduce SEAR, an off-policy online RL approach for action chunking grounded in the maximum-entropy RL framework. • We incorporate a causal transformer critic, improving the sample-efficiency by using multi-horizon N-step returns. • We increase the state-action coverage by executing only a random prefix of each action chunk before replanning, 2SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+complementing a receding-horizon execution mode for fast reactivity. • Through extensive experiments, we demonstrate that SEAR consistently improves the performance with over 20% IQM success on the 20 hardest Metaworld environments and is able to learn diverse manipula-tion behaviors. In ablations, we show the importance and performance impact of all design decisions of our action chunking approach. 
+
+2. Related Work 
+
+In robotic learning, action chunking agents generate multi-ple consecutive actions at once. This was first introduced in the context of imitation learning by Zhao et al. (2023b) and was widely adopted by other imitation learning ap-proaches (Chi et al., 2024; Zhao et al., 2023a; Reuss et al., 2025; Black et al., 2024; Intelligence et al., 2025; Li et al., 2025d; Zheng et al., 2025; Nikolov et al., 2025; Lee et al., 2025b) 
+
+N-step Returns in Reinforcement Learning In reinforce-ment learning, N-step returns have a long history as a com-promise between unbiased, high-variance Monte-Carlo re-turns and high-bias, low-variance TD returns (Sutton et al., 1998). A fundamental problem of applying N-step returns to off-policy algorithms is that the action-, and therefore also the reward-distribution, of the replay buffer differs from that of the current policy. The standard way to mitigate this issue is importance sampling, where care must be taken to reduce variance (Munos et al., 2016). A principled way to avoid this bias is to use an action-chunk-conditioned critic where the N-step return is com-puted over the given chunk. This was first proposed in the TOP-ERL (Li et al., 2025a) algorithm for the episodic re-inforcement learning setting and has since been adapted to traditional single-action policies (Tian et al., 2025) and ac-tion chunking policies (Li et al., 2025c;b; Yang et al., 2025; Park et al., 2025; Seo & Abbeel, 2025). 
+
+Multi-Target Updates for Action Chunking Critics Afundamental aspect of learning Q-functions with action chunking is the increased dimensionality of the resulting action space, rendering Q-function approximation more dif-ficult. Most action chunking methods use critics that map from this extended action space to a single Q-target (Li et al., 2025c;b; Yang et al., 2025; Park et al., 2025). For these methods, increasing the chunk size N increases the action space dimension without introducing new training targets. Experimental evidence suggests that these critic fitting ap-proaches are unsuitable for online RL (cf Section 5.4, (Seo & Abbeel, 2025)). However, in the offline and offline2online RL setting, where demonstration data is available as a prior for learning, this approach can be used effectively (Li et al., 2025c;b; Yang et al., 2025; Park et al., 2025). When the critic instead learns a Q-target for each action of a chunk S × A N 7 → RN , the ratio between action space dimension and number of training targets becomes independent of the chunk size N . This kind of multi-horizon critic was first proposed in the episodic RL setting by TOP-ERL (Li et al., 2025a). TOP-ERL uses a trajectory generator to generate actions for the whole episode at once. Segments of these trajectories are then used for off-policy updates using the reparametrization trick (Haarnoja et al., 2018). For each prefix of these segments, an N-step Q-target is calculated and used for critic updates. In contrast to the action chunking setting, the segment length in TOP-ERL can be varied without affecting the action space dimension. T-SAC (Tian et al., 2025) adapts TOP-ERL’s critic for standard policies without action chunking. CQN-AS (Seo & Abbeel, 2025) is the only previous action-chunking method that uses a multi-target critic. Its critic is trained to predict the N-step returns of each individual action instead of the N-step return of the combined actions. They also do not employ multi-horizon targets. SEAR is the first method that fully exploits the temporal structure of action chunks by adapting TOP-ERL’s critic structure into the action chunking setting. This allows SEAR to be used for online RL, in contrast to methods that treat each chunk as a single data point. These methods are typically confined to the offline-2-online RL case and do not work well for online RL. In contrast to CQN-AS, SEAR explicitly models the causal dependencies between actions. 
+
+Exploration in RL Balancing exploration and exploita-tion is a fundamental challenge in continuous reinforce-ment learning. Some algorithms employ state-independent, fixed exploration noise on top of an otherwise deterministic policy (Lillicrap et al., 2015; Fujimoto et al., 2018; Yang et al., 2025; Seo & Abbeel, 2025). A common way to in-troduce state-dependent exploration are Maximum-Entropy approaches, that learn when and how to explore (Haarnoja et al., 2018; Ball et al., 2023; Celik et al., 2025). Another approach to state-dependent exploration is to use an expres-sive imitation learning policy to guide exploration (Li et al., 2025c). SEAR is the first online RL algorithm that learns an action chunking policy in the maximum entropy setting. 
+
+3. Preliminaries 
+
+Notation. We aim to train a reinforcement learning policy 
+
+π : S ×A → R+ in the continuous state-action space S ×A 
+
+using the Markov decision process (MDP) formalization. The MDP is defined by the tuple (S, A, P, r, γ, ρ 0), where 
+
+γ ∈ [0 , 1) is the discount factor, P : S × A × S → R+ is the transition probability function returning the likelihood 3SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+for transitioning to state st+1 ∈ S when executing action 
+
+at ∈ A in state st ∈ S and r : S × A → [rmin , r max ] is the bounded reward function. The initial state distribution 
+
+ρ0 : S → R+ denotes the probability of starting at state 
+
+s0 ∈ S . Similar to Haarnoja et al. (2018), we denote ρπ
+
+as the state or state-action distribution under the current policy π and denote the time step of a (random) variable with a subscript. This subscript applies to the reward in the sense that rt ≜ r(st, a t), which allows for a more compact notation. We extend the single-step setup to a multi-step action chunk-ing setup, where we overload the subscript notation when referring to a chunksize of N by writing at:t+N , which denotes the sequence of N actions (at, a t+1 , ..., a t+N −1).Additionally, we refer to ρ as the state-action distribution induced by the action chunking policy π(at:t+N |st) and which provides the density of a sequence of state-action chunks. Naturally, the dimensionality of the chunk-extended action space grows linearly with chunk size N following 
+
+dim( at:t+N ) = N dim( at).
+
+Maximum Entropy Reinforcement Learning. We consider the maximum entropy reinforcement learning (MaxEnt-RL) setup that augments the reward function with the entropy of the current policy, leading to the objective 
+
+J(π) = 
+
+> ∞
+
+X
+
+> t=0
+
+γtEρπ [rt + αH(π(at|st))] . (1) Here, α ∈ R+ is a scaling factor that trade-offs maximiz-ing the entropy H(π(a|s)) = − R π(a|s) log π(a|s) against maximizing the task return and thereby plays a crucial role in exploration control. This objective also leads to an en-tropy augmented definition of the Q-function under the cur-rent policy πQπ (st, a t) = rt +
+
+> ∞
+
+X
+
+> i=1
+
+γiEρπ [rt+i + αH(π(at+i|st+i))] ,
+
+(2) with Qπ : S × A 7 → R. The MaxEnt-RL objective (Ziebart et al., 2008; Ziebart, 2010; Haarnoja et al., 2017) has several benefits over the standard RL objective (Sutton et al., 1998), among which improved exploration is the key reason we base our method on it. 
+
+4. Sample Efficient Action Chunking RL 
+
+Naively applying action chunking to a policy does not yield satisfying results (see Figure 1 and Seo & Abbeel (2025)). This section introduces SEAR’s elementary algorithmic and design choices that are required to obtain action-chunking policies that are sample efficient and achieve high rates of success. We start by formalizing the MaxEnt RL objective for action chunking policies, which we use to define the action-chunk-conditioned Q-function. Based on this defi-nition, we introduce multi-horizon Q-function targets that effectively increase the number of target points for train-ing the respective Q-function. This Q-function allows for straightforward policy updates, which we present in the sub-sequent section. Finally, we propose random replanning that plays a significant role in state coverage and receding hori-zon replaning. Figure 2 summarizes the update procedure for the critic and actor. 
+
+4.1. Action Chunking Maximum Entropy RL 
+
+We aim to optimize an action chunking policy π(at:t+N | st)
+
+that predicts an action sequence at:t+N of length N given the current state st. For this, we start by formalizing the infinite horizon MaxEnt-RL objective with action chunk size N by introducing the objective 
+
+J(π) = Es0∼ρ0 V π (s0), (3) where V π (st) is defined as 
+
+V π (st) := 
+
+> ∞
+
+X
+
+> k=0
+
+Eρπ γkrt+k − α log π(at+k | st+⌊k/N ⌋).
+
+(4) For a given state st, the whole action chunk at:t+N is sam-pled from the policy π(at:t+N |st). Thus, starting from time step t, action at+k only depends on the last step dividable by 
+
+N , ie. st+⌊N/k ⌋. The sampled action chunk st:t+N is then executed in an open-loop fashion in the environment. All intermediate states and values are saved in the replay buffer and used for the critic and actor updates (see Figure 2). The objective in Equation 3 generalizes the known MaxEnt-RL objective in Equation 1 to the action chunking case. The entropy bonus is calculated and discounted for every action separately. Therefore, the optimal policy is independent of the chunk size, which would not be the case if the entropy bonus was calculated using the joint likelihood of a chunk’s actions. The generalization can be easily verified by setting the chunk size to N = 1 , which recovers Objective 1. 
+
+Action Chunk Extended Q-function. Objective 3 naturally leads to an action chunk extended Q-function 
+
+Qπ (st, a t:t+N ) = rt + Ep
+
+" NX
+
+> n=1
+
+γnrt+n + γN V π (st+N )
+
+#
+
+(5) As opposed to the common definition of the Q-function, here, the action chunk at:t+N is passed as an argument to the Q-function instead of a single action at (Li et al., 2025c; Tian et al., 2025). These actions are fixed and executed in the environment in an open-loop manner, leading to the state sequence st+1: t+N and the corresponding reward val-ues rt+1: t+N . We indicate this open-loop execution of the 4SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+action chunk using the first expectation under the state tran-sition probability p. Please note that this distribution is opposed to the expectation over ρπ in V π (st) (Equation 4) that explicitly follows from executing the stochastic policy 
+
+π rather than a fixed action sequence. Intuitively, the extended Q-function measures the expected return when executing the action chunk at:t+N in state st
+
+and following the action chunking policy π thereafter. This aligns with the general definition of the Q-function, but extends it to the action chunking case, which can be easily verified by setting the action chunk length N = 1 and thereby recovering the regular Q-function of MaxEnt-RL (cf. Equation 2). 
+
+4.2. Multi-Horizon Q-Function Targets 
+
+A significant advantage of the Q-function definition in Equa-tion 5 is that the temporal structure of the action sequence can be leveraged for off-policy updates without requiring any importance weights (Munos et al., 2016) to account for the bias induced by using off-policy data in the Q-value targets. More concretely, we define the Q-value target G(N ) as 
+
+G(N )(st, a t:t+N ) =  
+
+> N−1
+
+X
+
+> i=0
+
+γi rt+i
+
+| {z }
+
+> N-step return
+
++γN ˆQ(N )¯ϕ (s˜t, a ˜t:˜ t+N ),
+
+(6) where ˜t = t + N and the target value are computed using target parameters ¯ϕ and sampled next-state action chunk 
+
+a˜t:˜ t+N ∼ πθ
+
+ · | s˜t
+
+ as 
+
+ˆQ(N )¯ϕ (s˜t, a ˜t:˜ t+N ) = min 
+
+> j∈{ 1,2}
+
+"
+
+Q(N )¯ϕj
+
+(s˜t, a ˜t:˜ t+N ) − α 
+
+> N−1
+
+X
+
+> i=0
+
+γi log πθ
+
+ a˜t+i | s˜t
+
+#
+
+.
+
+(7) However, simply using G(N ) to train the Q-function does not exploit the available data effectively because informa-tion is lost while adding up the chunk’s N rewards in Equa-tion 5. Therefore, we train the critic on all target values 
+
+G(1) , G (2) , ..., G (N ) (calculated from the chunk’s prefixes) in parallel when updating the network parameters ϕ. As seen in Figure 2a, each target value is calculated using Equa-tion 6, but with varying horizons N , such that multi-horizon targets are calculated. These multi-horizon targets were also recently proposed by Li et al. (2025a), but in the episode-based RL framework with finite time horizon tasks, and by Tian et al. (2025), but not in the Max-Ent RL setting, and importantly, without an action chunking policy and its extended action space. Causal models such as transformers suit this target well, as the k-step target G(k) only depends on the first k actions of a chunk. We therefore follow Li et al. (2025a) and use a causal transformer critic to effec-tively handle multi-horizon targets. The final objective for updating the parameters ϕ is then given by 
+
+J(ϕ) = 12N 
+
+> N−1
+
+X
+
+> k=0
+
+
+
+Q(k) 
+
+> ϕ
+
+(st, a t:t+k) − G(k)(st, a t:t+k)
+
+2
+
+,
+
+(8) where the data is sampled from the replay buffer D. Fig-ure 2a visualizes the critic update. 
+
+4.3. Optimizing the Action Chunking Policy 
+
+With the Q-function Qϕ from Section 4.2 we can easily update the chunking policy πθ (at:t+N |st) following recent MaxEnt-RL approaches (Haarnoja et al., 2017; 2018) by using the reverse KL divergence 
+
+J(π) = ED
+
+h
+
+KL 
+
+
+
+πθ (· | st) exp  Q(N ) 
+
+> ϕ
+
+(st, a t:t+N )/α 
+
+Z(st)
+
+i 
+
+,
+
+(9) where the states st are sampled from the replay buffer D, as shown in Figure 2b. 
+
+4.4. State Coverage in Action Chunking RL 
+
+Like most action chunking RL methods, we split the data of the replay buffer into new chunks for the policy and actor update. The policy and critic are thus updated on chunks that may start in arbitrary time steps. However, an action chunking policy with fixed chunk size N is only evaluated at every N -th state of the underlying MDP. Particularly in environments with deterministic or narrowly distributed initial states and chunk sizes N , it can happen that the policy is rarely evaluated on large parts of the state space. This effect is illustrated in the top panel of Fig. 3 for N =3, where rectangles denote replanning states and circles indicate intermediate states visited only during open-loop execution. As shown in Section 5, we identify this as a key limitation of fixed-size action chunking. To address it, we propose random replanning : During data collection, we only execute a random prefix of each chunk. This increases the actor’s state coverage, leading to more reliable updates for both the critic and the actor. 
+
+5. Experiments 
+
+In this section, we will experimentally study SEAR’s perfor-mance. In our experiments, we aim to answer the following research questions: • How does SEAR compare to state-of-the-art single-step and action chunking RL methods? 5SEAR: Sample Efficiency in Action Chunking Reinforcement Learning Standard Action Chunking   
+
+> Random Replanning
+> Figure 3. Improved state coverage by randomized replanning.
+> The figure visualizes trajectories of point-mass agents moving left-to-right. All agents employ action chunking with chunk size
+> N= 4 . The states in which the policy is evaluated are marked as a rectangle. In the top row, all actions sampled from the action chunking policy are executed. This causes the policy to only be evaluated on subsets of the state-space (rectangles). If receding horizons are used with such a policy it will be evaluated out-of-distribution, resulting in subpar performance. Instead, we propose to only execute a random prefix of each action chunk (bottom row), which leads to a more diversified state coverage on which the policy is evaluated.
+
+• How do SEAR’s design choices influence its perfor-mance? • What is needed to use receding horizons in action chunking RL? 
+
+5.1. Experiment Setup 
+
+For evaluating SEAR, we chose the Metaworld ML1 Bench-mark (Yu et al., 2021) that features a diverse set of 50 manip-ulation tasks. We follow Agarwal et al. (2021a) and report the IQM success and bootstrap 95% confidence intervals. Following prior work on Metaworld (Tian et al., 2025; Li et al., 2025a; 2024; Joshi et al., 2025), we only consider episodes to be successful if the success condition holds in the episode’s last time step. This increases the task complex-ity and forces longer-term and stable behavior. Even with these stricter success criteria, many Metaworld tasks remain trivially solveable. For the results in the main section of this paper, we therefore focus on the 20 hardest tasks in metaworld, as measured by SimbaV2’s performance. For transparency, the IQM results for all 50 tasks are included in Appendix F. All SEAR and SimbaV2 experiments were conducted with 10 seeds, while CQN-AS was evaluated on 5 seeds. Unless otherwise noted, we report the success after 1 million environment steps. Notably, we analyze SEAR with varying chunk sizes of 5,10 and 20 and consider SEAR with chunk size 1 as the one-step baseline. Furthermore, we compare SEAR against SimbaV2, the state-of-the-art off-policy RL method that improves SAC (Haarnoja et al., 2018) by introducing a special MLP architecture with hyperspherical normalization. Moreover, we consider CQN-AS (Seo & Abbeel, 2025) as the state-of-the-art action chunking method for online RL with chunk sizes 5 and 10. All action chunking policies were evaluated using a receding horizon length of 5. For chunk size 5 policies, this has no effect, easing comparison to prior methods without receding horizons. Implementation details and hyperparameters are provided in Appendix D. 
+
+5.2. How does SEAR compare to state-of-the-art single-step and action chunking RL methods? 
+
+Figure 1 compares the learning curves for SEAR with an action chunking size 10 (SEAR-10) against SimbaV2 and the action chunking baseline CQN-AS on the aggregated results. Notably, SEAR-10 converges to a success rate of around 90%, whereas SimbaV2 and CQN-AS reach around 60% after 1 million environment interactions. Figure 1 also demonstrates that naively applying action chunking does not yield well-performing policies (SimbaV2 Chunked). Notably, SEAR exhibits both higher final performance and faster convergence speed. 
+
+5.3. What is the Effect of Chunk Size N on SEAR’s Performance? 
+
+Next, we analyze the effect of the chunk size length on SEAR’s performance. Figure 5a shows the aggregated learn-ing curves on the metaworld tasks for varying chunk sizes. While SimbaV2 and SEAR-1 show similar learning behav-ior and reach roughly the same end performance of 60% with similar convergence speed, the end-performance of the chunking policies converge to a similar success rate of around 80%. Notably, a chunk size of 10 performs partic-ularly well in terms of convergence speed, where a chunk size of 5 converges slightly faster than the chunk size of 20. This behavior shows that SEAR’s final performance is quite robust w.r.t. the chunk size choice. 
+
+5.4. What impact do SEAR’s design decisions have on its performance? 
+
+To analyze the different design choices, next we consider SEAR-10 with an action chunk size of 10 as the base per-formance and compare the learning curves when disabling the design choices in Figure 4. First, we note that train-ing the transformer critic with multi-horizon targets is cru-cial, improving the performance significantly by around 50%. When the causal structure is not leveraged, we have 6SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> # Samples 1e6
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> SEAR-10
+> No Random Replanning
+> No Action Chunking
+> MLP Critic
+> No Multi-Horizon
+> Naive Chunking
+
+(a) Sample Efficiency 1 2 3 4 5 6 7 8 9 10  
+
+> Replanning Interval
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> SEAR-10
+> No Random Replanning
+> MLP Critic
+> No Multi-Horizon
+> Naive Chunking
+> CQN-AS
+
+(b) Effect of Receding Horizon 
+
+Figure 4. Performance analysis on design choices (a) and receding horizon (b). We compare SEAR-10 as the base performance to its design choices (a) . Naive Chunking without SEAR’s features does not yield good performance, whereas discarding Multi-Horizon leads to the highest performance drop. Simply replacing SEAR’s transformer critic with an MLP Critic while keeping the other features is still better than discarding multi-horizon targets, but still leads to a significant performance drop. Only discarding Random Replanning is the closest to the standard one-step RL policy (No Action Chunking), but still worse than SEAR’s base performance. (b) analyzes the effect of receding horizon when discarding SEAR’s key algorithmic features. While receding horizon yields improved performance for smaller chunk sizes for the base performance SEAR-10, the MLP Critic, and the action chunking baseline CQN-AS, it does not seem to have a big effect when discarding multi-horizon targets and when random replanning is not enabled. Receding horizon seems to harm the naive chunking policy’s performance. 
+
+a worse training signal affecting the learning speed of the policy (no multi-horizon). Similarly, we note that the critic’s transformer architecture is a critical design choice. Simply replacing it with the MLP critic architecture proposed by SimbaV2 leads to a significant performance drop of 30% highlighting that capturing the causality is crucial for pre-cise critic learning and therefore also for action chunking policies (MLP Critic). However, a good state coverage is essential so that both the critic and the policy can generalize well. We demonstrate this by training a policy without ran-dom replanning (no random replanning). While the respec-tive learning curve still performs reasonably well, achieving around 70% success rate, random replanning boosts per-formance by 20% while being very sample efficient. This result emphasizes that ensuring state coverage is essential for performance. Finally, we evaluate SEAR-10’s action chunking critic with a one-step policy, similar to T-SAC (Tian et al., 2025). This achieves a success rate of 70%. This performance indicates that the causal transformer with multi-target training is a suitable choice for off-policy RL. It is however, noticeably worse that SEAR-10 with an action chunking policy, even with a receding horizon of k = 1 .
+
+5.5. What is the effect of receding horizons on SEAR’s policies? 
+
+In Figure 5b, we compare SEAR’s success rate as a function of different replanning intervals k at evaluation time. Only executing a single action before generating a new chunk (k = 1 ) is suboptimal for all policies. Furthermore, per-formance decreases consistently as k approaches the chunk size N . The optimal value for k appears to be around 4, in-dependent of the policy’s chunk size. Interestingly, training a policy with a larger chunk size and evaluating it with a receding horizon leads to better performance than directly training with a shorter chunk length. For example, at k = 5 ,i.e. SEAR-5’s chunk length, SEAR-10 has a better perfor-mance and similarly, at k = 10 , i.e., SEAR-10’s chunk length, SEAR-20 performs better. 
+
+5.6. What is needed to use receding horizons in RL? 
+
+Similar to Figure 5b we plot the performances of differ-ent RL algorithm variants as a function of the different replanning intervals k in Figure 4b. SEAR-10’s success rate improves considerably with receding horizons, from around 60% at k = 10 to over 80% at k = 4 . Without the causal transformer backbone, the effect is even more pronounced where the performance improves from around 20% at k = 10 to almost 60% at k = 4 .Using random replanning during training does not degrade the performance without a receding horizon, as seen when comparing “SEAR-10” and “No random chunks” at k = 10 .However, when training without either a multi-horizon tar-get or random replanning, receding horizons have no signif-icant effect on the success rate. For naive policies that were trained without multi-horizon targets, random replanning, and a causal transformer critic, a receding horizon even has a negative impact, with a k = 10 
+
+success rate of around 30% and a k = 4 success rate just 7SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> # Samples 1e6
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> SEAR-1
+> SEAR-5
+> SEAR-10
+> SEAR-20
+> SimbaV2
+
+(a) Sample Efficiency 1 3 5 7 9 11 13 15 17 19  
+
+> Replanning Interval
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> SEAR-1
+> SEAR-5
+> SEAR-10
+> SEAR-20
+
+(b) Effect of receding horizons 
+
+Figure 5. Varying chunk sizes and their effect on the sample efficiency (a) and the receding horizon performance (b). An action chunk size of N = 1 (SEAR-1) matches SimbaV2’s (Lee et al., 2025a) performance on Metaworld’s 20 hardest tasks, while there seems to be a sweet spot for a chunk size of N = 10 (SEAR-10), which outperforms SEAR-5 and SEAR-20 (a) . (b) visualizes SEAR’s performance as a function of different replanning intervals k for varying chunk sizes. A replanning horizon of k = 4 shows the optimal performance independent of the chunk size N . Larger chunk size policies evaluated with a receding horizon lead to a better performance than training smaller chunk size policies. For example, SEAR-20 with a chunksize N = 20 performs better than SEAR-10 at a replanning interval k = 10 .
+
+under 20%. CQN-AS-10 also responds positively to receding horizons with success rates improving from around 30% at k = 10 
+
+to over 50% at k = 3 . That is however still less than CQN-AS-5 with k = 5 (cf Figure 1). 
+
+6. Discussion 
+
+This work introduced SEAR, an action chunking algorithm for the online RL setting. We demonstrated how multi-horizon critic updates and random replanning can be used to train policies that perform well in a receeding horizon set-ting. This allows SEAR to enjoy the benefits of long chunk sizes such as long-range value propagation while avoiding a low decision frequency at evaluation time. Combining these algorithmic features allows SEAR to achieve superior sample efficiency and final performance compared to both action chunking and non-action chunking RL methods. Our experiments demonstrate that SEAR performs well on online RL tasks. An interesting research question is how SEAR’s insights transfer to other RL settings such as offline-to-online, where prior data can be leveraged before gathering data based on environment interaction. While SEAR demonstrates remarkable performance across differ-ent chunk sizes, the chunk size remains a hyper parameter that needs to be chosen. An area for future research could be optimizing the chunk size as part of the RL process, similar to (Biedenkapp et al., 2021). This could even be extended to state-dependent replanning, where the receding horizon is updated mid-episode or even mid-chunk. This would enable the use of action chunking methods in previously unsuitable domains such as locomotion. Finally, recent work demonstrated that expressive diffusion policies can be effective in online RL (Celik et al., 2025; Zhang et al., 2026). Their ability to model multi-modal distributions could work nicely with the extended planning horizon of action chunking policies. 
+
+Acknowledgements 
+
+The research presented in this paper was funded by the Hori-zon Europe Project XSCAVE under Grant 101189836. This work was further supported by the European Research Coun-cil (ERC) under the European Union’s Horizon Europe pro-gramme through the project SMARTI 3 (Grant Agreement No. 101171393). The authors gratefully acknowledge the computing time provided on the high-performance computer HoreKa by the National High-Performance Computing Cen-ter at KIT (NHR@KIT). This center is jointly supported by the Federal Ministry of Education and Research and the Ministry of Science, Research and the Arts of Baden-W ¨urttemberg, as part of the National High-Performance Computing (NHR) joint funding program (https://www.nhr-verein.de/en/our-partners). HoreKa is partly funded by the German Research Foundation (DFG). This work has been supported by the German Federal Ministry of Research, Technology, and Space (BMFTR) under the Robotics Insti-tute Germany (RIG). 
+
+Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 8SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+References 
+
+Agarwal, R., Schwarzer, M., Castro, P. S., Courville, A., and Bellemare, M. G. Deep reinforcement learning at the edge of the statistical precipice. In Beygelzimer, A., Dauphin, Y., Liang, P., and Vaughan, J. W. (eds.), 
+
+Advances in Neural Information Processing Systems ,2021a. URL https://openreview.net/forum? id=uqv8-U4lKBe .Agarwal, R., Schwarzer, M., Castro, P. S., Courville, A., and Bellemare, M. G. Deep reinforcement learning at the edge of the statistical precipice. Advances in Neural Information Processing Systems , 2021b. Ball, P. J., Smith, L., Kostrikov, I., and Levine, S. Ef-ficient online reinforcement learning with offline data. In International Conference on Machine Learning , pp. 1577–1594. PMLR, 2023. Biedenkapp, A., Rajan, R., Hutter, F., and Lindauer, M. Temporl: Learning when to act. In International Confer-ence on Machine Learning , pp. 914–924. PMLR, 2021. Black, K., Brown, N., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Groom, L., Hausman, K., Ichter, B., et al. 
+
+π0: A vision-language-action flow model for general robot control. corr, abs/2410.24164, 2024. doi: 10.48550. 
+
+arXiv preprint ARXIV.2410.24164 , 2024. Celik, O., Li, Z., Blessing, D., Li, G., Palenicek, D., Peters, J., Chalvatzaki, G., and Neumann, G. DIME: Diffusion-based maximum entropy reinforcement learning. In Forty-second International Conference on Machine Learning ,2025. URL https://openreview.net/forum? id=Aw6dBR7Vxj .Chi, C., Feng, S., Du, Y., Xu, Z., Cousineau, E., Burch-fiel, B. C., and Song, S. Diffusion Policy: Visuomotor Policy Learning via Action Diffusion. In Proceedings of Robotics: Science and Systems , Daegu, Republic of Korea, July 2024. doi: 10.15607/RSS.2023.XIX.026. Fujimoto, S., Hoof, H., and Meger, D. Addressing function approximation error in actor-critic methods. In Interna-tional conference on machine learning , pp. 1587–1596. PMLR, 2018. Haarnoja, T., Tang, H., Abbeel, P., and Levine, S. Rein-forcement learning with deep energy-based policies. In 
+
+International conference on machine learning , pp. 1352– 1361. PMLR, 2017. Haarnoja, T., Zhou, A., Abbeel, P., and Levine, S. Soft actor-critic: Off-policy maximum entropy deep reinforce-ment learning with a stochastic actor. In International conference on machine learning , pp. 1861–1870. Pmlr, 2018. Intelligence, P., Amin, A., Aniceto, R., Balakrishna, A., Black, K., Conley, K., Connors, G., Darpinian, J., Dha-balia, K., DiCarlo, J., Driess, D., Equi, M., Esmail, A., Fang, Y., Finn, C., Glossop, C., Godden, T., Goryachev, I., Groom, L., Hancock, H., Hausman, K., Hussein, G., Ichter, B., Jakubczak, S., Jen, R., Jones, T., Katz, B., Ke, L., Kuchi, C., Lamb, M., LeBlanc, D., Levine, S., Li-Bell, A., Lu, Y., Mano, V., Mothukuri, M., Nair, S., Pertsch, K., Ren, A. Z., Sharma, C., Shi, L. X., Smith, L., Sprin-genberg, J. T., Stachowicz, K., Stoeckle, W., Swerdlow, A., Tanner, J., Torne, M., Vuong, Q., Walling, A., Wang, H., Williams, B., Yoo, S., Yu, L., Zhilinsky, U., and Zhou, Z. π∗
+
+> 0.6
+
+: a vla that learns from experience, 2025. URL 
+
+https://arxiv.org/abs/2511.14759 .Joshi, V., Xu, Z., Liu, B., Stone, P., and Zhang, A. Bench-marking massively parallelized multi-task reinforcement learning for robotics tasks. ArXiv , abs/2507.23172, 2025. URL https://api.semanticscholar. org/CorpusID:280401281 .Lee, H., Lee, Y., Seno, T., Kim, D., Stone, P., and Choo, J. Hyperspherical normalization for scalable deep rein-forcement learning. In Forty-second International Con-ference on Machine Learning , 2025a. URL https: //openreview.net/forum?id=kfYxyvCYQ4 .Lee, J., Duan, J., Fang, H., Deng, Y., Liu, S., Li, B., Fang, B., Zhang, J., Wang, Y. R., Lee, S., Han, W., Pumacay, W., Wu, A., Hendrix, R., Farley, K., VanderBilt, E., Farhadi, A., Fox, D., and Krishna, R. Molmoact: Action reasoning models that can reason in space, 2025b. URL https: //arxiv.org/abs/2508.07917 .Li, G., Zhou, H., Roth, D., Thilges, S., Otto, F., Lioutikov, R., and Neumann, G. Latent space exploration and tra-jectory space update in temporally-correlated episodic reinforcement learning. In ICRA 2024 Workshop—Back to the Future: Robot Learning Going Probabilistic ,2024. URL https://openreview.net/forum? id=e8dcuniLcA .Li, G., Tian, D., Zhou, H., Jiang, X., Lioutikov, R., and Neumann, G. TOP-ERL: Transformer-based off-policy episodic reinforcement learning. In The Thirteenth In-ternational Conference on Learning Representations ,2025a. URL https://openreview.net/forum? id=N4NhVN30ph .Li, Q., Park, S., and Levine, S. Decoupled q-chunking, 2025b. URL https://arxiv.org/abs/2512. 10926 .Li, Q., Zhou, Z., and Levine, S. Sample-efficient reinforce-ment learning with action chunking. In The Exploration in AI Today Workshop at ICML 2025 , 2025c. URL https: //openreview.net/forum?id=7m4G6cYJ0w .9SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+Li, Y., Ma, X., Xu, J., Cui, Y., Cui, Z., Han, Z., Huang, L., Kong, T., Liu, Y., Niu, H., Peng, W., Qiao, J., Ren, Z., Shi, H., Su, Z., Tian, J., Xiao, Y., Zhang, S., Zheng, L., Li, H., and Wu, Y. Gr-rl: Going dexterous and precise for long-horizon robotic manipulation, 2025d. URL https: //arxiv.org/abs/2512.01801 .Lillicrap, T. P., Hunt, J. J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., and Wierstra, D. Continuous control with deep reinforcement learning. arXiv preprint arXiv:1509.02971 , 2015. Munos, R., Stepleton, T., Harutyunyan, A., and Bellemare, M. Safe and efficient off-policy reinforcement learning. In Lee, D., Sugiyama, M., Luxburg, U., Guyon, I., and Garnett, R. (eds.), Advances in Neural Information Processing Systems , volume 29. Curran Associates, Inc., 2016. URL https://proceedings.neurips. cc/paper_files/paper/2016/file/ c3992e9a68c5ae12bd18488bc579b30d-Paper. pdf .Nikolov, N., Albanese, G., Dey, S., Yanev, A., Gool, L. V., Zaech, J.-N., and Paudel, D. P. Spear-1: Scaling beyond robot demonstrations via 3d understanding, 2025. URL 
+
+https://arxiv.org/abs/2511.17411 .Park, K., Park, S., Lee, Y., and Levine, S. Scalable offline model-based rl with action chunks, 2025. URL https: //arxiv.org/abs/2512.08108 .Reuss, M., Pari, J., Agrawal, P., and Lioutikov, R. Effi-cient diffusion transformer policies with mixture of ex-pert denoisers for multitask learning. In The Thirteenth International Conference on Learning Representations ,2025. URL https://openreview.net/forum? id=nDmwloEl3N .Seo, Y. and Abbeel, P. Coarse-to-fine q-network with action sequence for data-efficient reinforcement learn-ing. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL https: //openreview.net/forum?id=VoFXUNc9Zh .Sutton, R. S., Barto, A. G., et al. Reinforcement learning: An introduction , volume 1. MIT press Cambridge, 1998. Tian, D., Li, G., Zhou, H., Celik, O., and Neumann, G. Chunking the critic: A transformer-based soft actor-critic with n-step returns, 2025. URL https://arxiv. org/abs/2503.03660 .Yang, J., Zhu, B., Chen, J., and Jiang, Y.-G. Actor-critic for continuous action chunks: A reinforcement learning framework for long-horizon robotic manipulation with sparse reward. arXiv preprint arXiv:2508.11143 , 2025. Yu, T., Quillen, D., He, Z., Julian, R., Narayan, A., Shively, H., Bellathur, A., Hausman, K., Finn, C., and Levine, S. Meta-world: A benchmark and evaluation for multi-task and meta reinforcement learning, 2021. URL https: //arxiv.org/abs/1910.10897 .Zhang, Y., Yu, S., Zhang, T., Guang, M., Hui, H., Long, K., Wang, Y., Yu, C., and Ding, W. Sac flow: Sample-efficient reinforcement learning of flow-based policies via velocity-reparameterized sequential modeling, 2026. URL https://arxiv.org/abs/2509.25756 .Zhao, T. Z., Kumar, V., Levine, S., and Finn, C. Learn-ing Fine-Grained Bimanual Manipulation with Low-Cost Hardware. In Proceedings of Robotics: Science and Systems , Daegu, Republic of Korea, July 2023a. doi: 10.15607/RSS.2023.XIX.016. Zhao, T. Z., Kumar, V., Levine, S., and Finn, C. Learn-ing Fine-Grained Bimanual Manipulation with Low-Cost Hardware. In Proceedings of Robotics: Science and Systems , Daegu, Republic of Korea, July 2023b. doi: 10.15607/RSS.2023.XIX.016. Zheng, J., Li, J., Wang, Z., Liu, D., Kang, X., Feng, Y., Zheng, Y., Zou, J., Chen, Y., Zeng, J., Zhang, Y.-Q., Pang, J., Liu, J., Wang, T., and Zhan, X. X-vla: Soft-prompted transformer as scalable cross-embodiment vision-language-action model, 2025. URL https:// arxiv.org/abs/2510.10274 .Ziebart, B. D. Modeling purposeful adaptive behav-ior with the principle of maximum causal entropy. 2010. URL https://api.semanticscholar. org/CorpusID:11919065 .Ziebart, B. D., Maas, A. L., Bagnell, J. A., Dey, A. K., et al. Maximum entropy inverse reinforcement learning. In 
+
+Aaai , volume 8, pp. 1433–1438. Chicago, IL, USA, 2008. 10 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+A. Appendix B. Algorithm 
+
+B.1. Pseudocode Algorithm 1 Sample Efficient Action Chunking RL (SEAR) 
+
+1: Initialize actor parameters θ, critic parameters ϕ1, ϕ 2, target critic parameters ¯ϕ1 ← ϕ1, ¯ϕ2 ← ϕ2
+
+2: for step = 1 , 2, . . . do 
+
+3: # Data collection with random prefix execution 
+
+4: if |D| < step then 
+
+5: Sample action chunk at:t+N ∼ πθ (· | st)
+
+6: Sample random prefix length k ∼ Uniform (1 , N )
+
+7: for i = 0 to k − 1 do 
+
+8: Execute at+i in environment, observe rt+i, s t+i+1 
+
+9: Add transition (st+i, a t+i, r t+i, s t+i+1 ) to D
+
+10: end for 
+
+11: end if 
+
+12: # Update Networks 
+
+13: Sample batch of chunks (st, a t:t+N , r t:t+N , s t+N ) from D
+
+14: Update critics by minimizing J(ϕ1,2) (Equation 8) 
+
+15: Update actor by minimizing J(θ) (Equation 9) 
+
+16: update α with Htarget = N ∗ dim A (Haarnoja et al., 2018) 
+
+17: # Update target networks 
+
+18: ¯ϕj ← τ ϕ j + (1 − τ ) ¯ϕj for j ∈ { 1, 2}
+
+19: end for 
+
+C. Implementation Details 
+
+An implementation of our algorithm is provided as part of the Supplementary Material. 
+
+D. Experiment Details 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+> SimbaV2 UTD1 (Ours)
+> SimbaV2 UTD1 (Reference Implementation)
+> SimbaV2 UTD2 (Reference Implementation)
+
+Figure 6. Comparison between our SimbaV2 implementation and the reference implementation. 
+
+For SimbaV2, we use our reimplementation within the same training pipeline as SEAR and disable the reference reward scaling, since Meta-World rewards are already on a consistent scale across tasks, while keeping all other components and techniques described in Section 4 of SimbaV2 (Lee et al., 2025a). For transparency, we also report results with the original 11 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+implementation, shown in Fig. 6. 
+
+D.1. Hyperparameter values 
+
+Table 1 gives an overview of the hyperparameters that we use for SEAR and baselines. Below, we provide further details on the specific hyperparameter choices. The full hyperparameters and algorithm-specific options can be found as part of the Supplementary Material.      
+
+> Table 1. Hyperparameters used in our experiments. CQN-AS has no actor component. S IMBA V2-MLP denotes the MLP head used in SimbaV2, including its spherical normalization. dim( A)denotes the dimensionality of a single action, and Nis the chunk size.
+
+Component SEAR CQN-AS SimbaV2 
+
+Actor 
+
+architecture SimbaV2-MLP N/A SimbaV2-MLP hidden dimension 512 N/A 512 number of blocks 1 N/A 2
+
+Critic 
+
+architecture Transformer MLP + GRU SimbaV2-MLP number of bins 101 101 101 value range [0 , 1000] [0 , 1000] [0 , 1000] 
+
+hidden dimension 512 1024 512 number of heads 16 N/A N/A number of blocks 2 1 2
+
+Algorithm 
+
+total timesteps 1,000 ,000 1,000 ,000 1,000 ,000 
+
+seed timesteps 0 4,000 0
+
+update-to-data ratio (UTD) 1 1 1chunk size 1 / 5 / 10 / 20 5 / 10 1batch size 256 256 256 discount γ 0.99 0.99 0.99 
+
+target critic update ratio 5 · 10 −2 1.0 5 · 10 −2
+
+target entropy − dim( AN ) N/A − dim( A)
+
+Optimization 
+
+critic optimizer AdamW AdamW AdamW learning rate 3 · 10 −4 5 · 10 −5 3 · 10 −4
+
+weight decay 1 · 10 −4 0.1 1 · 10 −4
+
+β1 0.9 0.9 0.9
+
+β2 0.999 0.999 0.999 
+
+CQN-AS As the authors of (Seo & Abbeel, 2025) neither evaluate on nor provide hyperparameters for Metaworld (Yu et al., 2021), we tuned the hyperparameters of CQN-AS specifically for the 20 hardest MetaWorld task. Note that, since we operate in a purely online RL setting, we do not use the behavior cloning component of CQN-AS. We use an exploration noise schedule that linearly decreases from 0.1 to 0.01 until step 500 , 000 , and is then kept constant for the remaining training time. We also adopt the dueling Q-networks and distributional critic that (Seo & Abbeel, 2025) use only for vision-based environments, as we found it to improve performance. To align CQN-AS with SEAR, we fix the update-to-data at one. We further tuned the learning rate and batch size, although both had only a minor impact on the final success rate in our experiments. All other hyperparameters were adopted from the state-based tasks of (Seo & Abbeel, 2025). We found that a larger critic or using more bins or levels for the coarse-to-fine action selection algorithm does not improve the success rate on Metaworld. See Table 1 for a summary of the hyperparameters. 12 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+D.2. Sample Efficiency Comparison of SEAR, SimbaV2, and CQN-AS 
+
+Here, we provide further details on the experimental setup for the comparison of the sample efficiency of SEAR and baseline methods in Figure 1. The naively chunked SimbaV2 baseline uses action chunking for the actor and critic, but without multi-horizon returns and random replanning. SEAR and the naively chunked SimbaV2 baseline use a chunk size of 10 with a receding horizon of 5 during evaluation, which performs best according to the ablations in Section 5.4. CQN-AS uses a chunk size of 5, which performed better than 10 in our experiments, and no receding horizon control. 
+
+E. Evalution 
+
+E.1. Metaworld  
+
+> Figure 7. All tasks in the Metaworld benchmark (Yu et al., 2021)
+
+Metaworld (Yu et al., 2021) is an open-source benchmark for meta-reinforcement learning and multi-task robotic manipula-tion. It contains 50 diverse manipulation tasks that span skills such as grasping, pushing, insertion, and object placement. Unlike benchmarks focused on a narrow task distribution, Metaworld provides a broad and challenging testbed for algorithms that aim to generalize across behaviors. Figure 7 illustrates the full MT50 suite, highlighting the variety and complexity of the tasks. 13 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> # Samples 1e6
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> IQM Success over all Metaworld tasks, UTD=1
+> SEAR-1
+> SEAR-5
+> SEAR-10
+> SEAR-20
+> SimbaV2
+
+(a) Sample Efficiency 1 3 5 7 9 11 13 15 17 19  
+
+> Replanning Interval
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Success
+> SEAR-1
+> SEAR-5
+> SEAR-10
+> SEAR-20
+
+(b) Effect of receding horizons 
+
+Figure 8. The experiments of 5, but over all 50 Metaworld environments, not just the 20 hardest that were used in the main text. SEAR still reaches a higher success rate than SimbaV2. The effect of a receding horizon is very similar to the result of the main text: k = 1 is suboptimal, as is k = N . The optimal value is around k = 4 independent of chunk size. 
+
+F. Extended Results 
+
+As Metaworld contains a number of very simple tasks, we focus our analysis in the main text on a set of the 20 hardest tasks as measured by SimbaV2’s performance. In this section we provide the per-environment performance of the methods discussed in the main text. Table 3 provides a list of the 20 hard tasks used in the main text and the per-task performance of SEAR-10, CQN-AS and SimbaV2. Table 4 contains the tasks that were not used for the main text along with the per-task performance of SEAR-1,5,10,20 and SimbaV2. To demonstrate that the key results of the main text, namely SEAR’s superior sample efficiency and its effectiveness when using receding horizons are not dependent on the choice of tasks, we reproduced Figure 5 of the main text over all 50 tasks in Figure 8. Finally, we include learning curves for all environments in Figure 9. 14 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+SEAR-1 SEAR-5 SEAR-10 SEAR-20 Average 0.57 +0 .07  
+
+> −0.08
+
+0.84 +0 .03  
+
+> −0.04
+
+0.84 +0 .04  
+
+> −0.05
+
+0.70 +0 .06 
+
+> −0.07
+
+pick-place-wall-v3 0.00 +0 .00  
+
+> −0.00
+
+0.00 +0 .02  
+
+> −0.00
+
+0.00 +0 .01  
+
+> −0.00
+
+0.00 +0 .00 
+
+> −0.00
+
+pick-place-v3 0.27 +0 .28  
+
+> −0.21
+
+0.63 +0 .16  
+
+> −0.12
+
+0.90 +0 .07  
+
+> −0.10
+
+0.74 +0 .18 
+
+> −0.37
+
+shelf-place-v3 0.00 +0 .17  
+
+> −0.00
+
+0.38 +0 .45  
+
+> −0.38
+
+0.22 +0 .45  
+
+> −0.22
+
+0.00 +0 .12 
+
+> −0.00
+
+basketball-v3 0.01 +0 .15  
+
+> −0.01
+
+0.69 +0 .17  
+
+> −0.20
+
+0.97 +0 .03  
+
+> −0.06
+
+0.97 +0 .03 
+
+> −0.11
+
+coffee-push-v3 0.67 +0 .18  
+
+> −0.33
+
+0.70 +0 .09  
+
+> −0.10
+
+0.80 +0 .08  
+
+> −0.05
+
+0.76 +0 .12 
+
+> −0.09
+
+stick-pull-v3 0.08 +0 .36  
+
+> −0.08
+
+0.53 +0 .31  
+
+> −0.40
+
+0.79 +0 .08  
+
+> −0.40
+
+0.55 +0 .27 
+
+> −0.35
+
+lever-pull-v3 0.72 +0 .12  
+
+> −0.17
+
+0.76 +0 .17  
+
+> −0.16
+
+0.60 +0 .17  
+
+> −0.23
+
+0.53 +0 .23 
+
+> −0.15
+
+coffee-pull-v3 0.92 +0 .06  
+
+> −0.40
+
+0.94 +0 .04  
+
+> −0.08
+
+0.97 +0 .03  
+
+> −0.07
+
+0.81 +0 .08 
+
+> −0.08
+
+stick-push-v3 0.09 +0 .46  
+
+> −0.04
+
+0.73 +0 .17  
+
+> −0.28
+
+0.47 +0 .29  
+
+> −0.26
+
+0.12 +0 .48 
+
+> −0.12
+
+soccer-v3 0.42 +0 .17  
+
+> −0.19
+
+0.61 +0 .08  
+
+> −0.07
+
+0.72 +0 .13  
+
+> −0.20
+
+0.80 +0 .08 
+
+> −0.08
+
+disassemble-v3 0.14 +0 .38  
+
+> −0.14
+
+0.44 +0 .40  
+
+> −0.40
+
+0.00 +0 .01  
+
+> −0.00
+
+0.00 +0 .17 
+
+> −0.00
+
+assembly-v3 0.20 +0 .43  
+
+> −0.20
+
+0.00 +0 .00  
+
+> −0.00
+
+0.00 +0 .00  
+
+> −0.00
+
+0.00 +0 .17 
+
+> −0.00
+
+button-press-v3 1.00 +0 .00  
+
+> −0.05
+
+0.96 +0 .03  
+
+> −0.18
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.01
+
+hammer-v3 1.00 +0 .00  
+
+> −0.17
+
+0.99 +0 .01  
+
+> −0.16
+
+1.00 +0 .00  
+
+> −0.30
+
+1.00 +0 .00 
+
+> −0.17
+
+peg-unplug-side-v3 0.97 +0 .03  
+
+> −0.06
+
+0.88 +0 .06  
+
+> −0.07
+
+0.99 +0 .01  
+
+> −0.05
+
+0.98 +0 .02 
+
+> −0.08
+
+hand-insert-v3 0.71 +0 .09  
+
+> −0.10
+
+0.75 +0 .18  
+
+> −0.20
+
+0.93 +0 .07  
+
+> −0.25
+
+0.66 +0 .17 
+
+> −0.12
+
+push-back-v3 0.82 +0 .18  
+
+> −0.47
+
+0.97 +0 .03  
+
+> −0.05
+
+0.97 +0 .03  
+
+> −0.20
+
+0.99 +0 .01 
+
+> −0.17
+
+push-v3 0.62 +0 .26  
+
+> −0.33
+
+0.82 +0 .12  
+
+> −0.15
+
+0.96 +0 .04  
+
+> −0.09
+
+0.99 +0 .01 
+
+> −0.04
+
+pick-out-of-hole-v3 0.99 +0 .01  
+
+> −0.03
+
+0.96 +0 .03  
+
+> −0.08
+
+1.00 +0 .00  
+
+> −0.03
+
+1.00 +0 .00 
+
+> −0.19
+
+handle-pull-v3 0.94 +0 .02  
+
+> −0.11
+
+0.78 +0 .14  
+
+> −0.25
+
+0.95 +0 .05  
+
+> −0.30
+
+0.54 +0 .33 
+
+> −0.42
+
+Table 2. IQM success with 95% bootstrapped confidence interval across the 20 hardest Metaworld tasks, comparing SEAR with various chunk sizes. The best result is highlighted, results that are non-significantly worse that the best are lightly highlighted. All policies except for SEAR-1 use a fixed receding horizon of five actions during evaluation. On average, SEAR-5 and SEAR-10 perform best, with SEAR-10 outperforming SEAR-5 on individual environments. 
+
+15 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+SEAR-10 CQN-AS-5 CQN-AS-10 SimbaV2 Average 0.84 +0 .04  
+
+> −0.05
+
+0.61 +0 .04  
+
+> −0.05
+
+0.47 +0 .06  
+
+> −0.06
+
+0.62 +0 .05 
+
+> −0.06
+
+pick-place-wall-v3 0.00 +0 .01  
+
+> −0.00
+
+0.12 +0 .30  
+
+> −0.12
+
+0.18 +0 .24  
+
+> −0.18
+
+0.00 +0 .33 
+
+> −0.00
+
+pick-place-v3 0.90 +0 .07  
+
+> −0.10
+
+0.58 +0 .18  
+
+> −0.17
+
+0.48 +0 .22  
+
+> −0.40
+
+0.00 +0 .17 
+
+> −0.00
+
+shelf-place-v3 0.22 +0 .43  
+
+> −0.22
+
+0.43 +0 .40  
+
+> −0.33
+
+0.00 +0 .00  
+
+> −0.00
+
+0.30 +0 .37 
+
+> −0.30
+
+basketball-v3 0.97 +0 .03  
+
+> −0.06
+
+0.25 +0 .03  
+
+> −0.10
+
+0.15 +0 .03  
+
+> −0.07
+
+0.27 +0 .36 
+
+> −0.17
+
+coffee-push-v3 0.80 +0 .08  
+
+> −0.05
+
+0.43 +0 .15  
+
+> −0.08
+
+0.37 +0 .18  
+
+> −0.13
+
+0.38 +0 .37 
+
+> −0.22
+
+stick-pull-v3 0.79 +0 .08  
+
+> −0.39
+
+0.37 +0 .05  
+
+> −0.22
+
+0.32 +0 .20  
+
+> −0.29
+
+0.50 +0 .25 
+
+> −0.32
+
+lever-pull-v3 0.60 +0 .14  
+
+> −0.20
+
+0.42 +0 .08  
+
+> −0.18
+
+0.12 +0 .23  
+
+> −0.07
+
+0.45 +0 .17 
+
+> −0.12
+
+coffee-pull-v3 0.97 +0 .03  
+
+> −0.08
+
+0.60 +0 .15  
+
+> −0.13
+
+0.55 +0 .03  
+
+> −0.00
+
+0.88 +0 .10 
+
+> −0.20
+
+stick-push-v3 0.47 +0 .29  
+
+> −0.27
+
+0.45 +0 .12  
+
+> −0.25
+
+0.62 +0 .18  
+
+> −0.33
+
+0.25 +0 .47 
+
+> −0.17
+
+soccer-v3 0.72 +0 .13  
+
+> −0.19
+
+0.48 +0 .08  
+
+> −0.22
+
+0.32 +0 .12  
+
+> −0.13
+
+0.52 +0 .16 
+
+> −0.02
+
+disassemble-v3 0.00 +0 .01  
+
+> −0.00
+
+0.92 +0 .07  
+
+> −0.62
+
+0.35 +0 .58  
+
+> −0.35
+
+0.62 +0 .08 
+
+> −0.42
+
+assembly-v3 0.00 +0 .00  
+
+> −0.00
+
+0.88 +0 .05  
+
+> −0.03
+
+0.60 +0 .20  
+
+> −0.35
+
+0.92 +0 .08 
+
+> −0.08
+
+button-press-v3 1.00 +0 .00  
+
+> −0.00
+
+0.43 +0 .42  
+
+> −0.30
+
+0.15 +0 .20  
+
+> −0.15
+
+0.95 +0 .03 
+
+> −0.07
+
+hammer-v3 1.00 +0 .00  
+
+> −0.30
+
+0.98 +0 .02  
+
+> −0.07
+
+1.00 +0 .00  
+
+> −0.03
+
+0.97 +0 .03 
+
+> −0.05
+
+peg-unplug-side-v3 0.99 +0 .01  
+
+> −0.04
+
+0.85 +0 .07  
+
+> −0.08
+
+0.88 +0 .12  
+
+> −0.13
+
+0.72 +0 .05 
+
+> −0.22
+
+hand-insert-v3 0.93 +0 .07  
+
+> −0.24
+
+0.73 +0 .10  
+
+> −0.15
+
+0.72 +0 .17  
+
+> −0.55
+
+0.53 +0 .32 
+
+> −0.22
+
+push-back-v3 0.97 +0 .03  
+
+> −0.19
+
+0.90 +0 .08  
+
+> −0.07
+
+0.97 +0 .03  
+
+> −0.65
+
+0.90 +0 .08 
+
+> −0.30
+
+push-v3 0.96 +0 .04  
+
+> −0.09
+
+0.70 +0 .05  
+
+> −0.30
+
+0.57 +0 .03  
+
+> −0.05
+
+0.65 +0 .16 
+
+> −0.12
+
+pick-out-of-hole-v3 1.00 +0 .00  
+
+> −0.02
+
+0.57 +0 .22  
+
+> −0.12
+
+0.62 +0 .05  
+
+> −0.32
+
+0.68 +0 .08 
+
+> −0.17
+
+handle-pull-v3 0.95 +0 .05  
+
+> −0.31
+
+0.98 +0 .02  
+
+> −0.05
+
+0.98 +0 .02  
+
+> −0.03
+
+0.80 +0 .08 
+
+> −0.27
+
+Table 3. IQM success rate with 95% bootstrapped confidence interval across the 20 hardest Metaworld tasks, comparing SEAR-10, the best performing SEAR variant, with baselines. The best result is highlighted, results that are non-significantly worse that the best are lightly highlighted. All policies except for SimbaV2 use a fixed receding horizon of five actions during evaluation. CQN-AS performs better with chunk size five (CQN-AS-5) than with chunk size ten (CQN-AS-10). Overall, SEAR-10 performs best. 
+
+16 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 
+
+SEAR-1 SEAR-5 SEAR-10 SEAR-20 SimbaV2 Average 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+reach-wall-v3 0.98 +0 .02  
+
+> −0.03
+
+0.98 +0 .02  
+
+> −0.04
+
+0.98 +0 .02  
+
+> −0.08
+
+0.96 +0 .03  
+
+> −0.16
+
+0.97 +0 .03 
+
+> −0.05
+
+button-press-wall-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.18
+
+1.00 +0 .00  
+
+> −0.01
+
+0.98 +0 .02 
+
+> −0.09
+
+handle-press-v3 1.00 +0 .00  
+
+> −0.03
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00 
+
+> −0.03
+
+handle-pull-side-v3 1.00 +0 .00  
+
+> −0.03
+
+0.92 +0 .07  
+
+> −0.12
+
+1.00 +0 .00  
+
+> −0.17
+
+1.00 +0 .00  
+
+> −0.03
+
+0.98 +0 .02 
+
+> −0.03
+
+plate-slide-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+faucet-open-v3 1.00 +0 .00  
+
+> −0.03
+
+0.98 +0 .02  
+
+> −0.09
+
+1.00 +0 .00  
+
+> −0.03
+
+1.00 +0 .00  
+
+> −0.13
+
+1.00 +0 .00 
+
+> −0.07
+
+button-press-topdown-v3 1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00  
+
+> −0.03
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+0.98 +0 .02 
+
+> −0.03
+
+window-open-v3 1.00 +0 .00  
+
+> −0.01
+
+0.99 +0 .01  
+
+> −0.03
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+faucet-close-v3 1.00 +0 .00  
+
+> −0.03
+
+1.00 +0 .00  
+
+> −0.04
+
+1.00 +0 .00  
+
+> −0.06
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+door-unlock-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.03
+
+plate-slide-back-side-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.03
+
+door-close-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+handle-press-side-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.06
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+button-press-topdown-wall-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+window-close-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.02
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+coffee-button-v3 1.00 +0 .00  
+
+> −0.03
+
+1.00 +0 .00  
+
+> −0.02
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+plate-slide-back-v3 1.00 +0 .00  
+
+> −0.00
+
+0.97 +0 .03  
+
+> −0.26
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+drawer-open-v3 0.22 +0 .50  
+
+> −0.22
+
+0.83 +0 .17  
+
+> −0.39
+
+0.27 +0 .50  
+
+> −0.27
+
+0.94 +0 .06  
+
+> −0.42
+
+1.00 +0 .00 
+
+> −0.00
+
+drawer-close-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.02
+
+1.00 +0 .00  
+
+> −0.01
+
+1.00 +0 .00 
+
+> −0.00
+
+door-lock-v3 1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00  
+
+> −0.02
+
+1.00 +0 .00  
+
+> −0.00
+
+1.00 +0 .00 
+
+> −0.00
+
+Table 4. IQM success rate with 95% bootstrapped confidence interval across the 30 easiest Metaworld tasks, comparing SEAR variants with a non-chunking SimbaV2 baseline. On nearly all tasks, the policies achieve close to a perfect success rate. We therefore exclude these environments from our other experiments. 
+
+17 SEAR: Sample Efficiency in Action Chunking Reinforcement Learning 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+assembly-v3 
+
+> Chunksize 1
+> Chunksize 5
+> Chunksize 10
+> Chunksize 20
+> SimbaV2
+
+0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+basketball-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+bin-picking-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+box-close-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+button-press-topdown-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+button-press-topdown-wall-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+button-press-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+button-press-wall-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+coffee-button-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+coffee-pull-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+coffee-push-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+dial-turn-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+disassemble-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+door-close-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+door-lock-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+door-open-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+door-unlock-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+drawer-close-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+drawer-open-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+faucet-close-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+faucet-open-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+hammer-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+hand-insert-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+handle-press-side-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+handle-press-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+handle-pull-side-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+handle-pull-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+lever-pull-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+peg-insert-side-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+peg-unplug-side-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+pick-out-of-hole-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+pick-place-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+pick-place-wall-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+plate-slide-back-side-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+plate-slide-back-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+plate-slide-side-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+plate-slide-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+push-back-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+push-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+push-wall-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+reach-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+reach-wall-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+shelf-place-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+soccer-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+stick-pull-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+stick-push-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+sweep-into-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+sweep-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+window-close-v3 0.00 0.25 0.50 0.75 1.00 
+
+# Samples 1e6 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> IQM Success
+
+window-open-v3 
+
+Figure 9. Learning curves for all 50 Metaworld Environments. 
+
+18

@@ -1,0 +1,430 @@
+Title: Impact of Markov Decision Process Design on Sim-to-Real Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2603.09427v2
+
+Published Time: Fri, 13 Mar 2026 01:12:55 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Impact of Markov Decision Process Design on Sim-to-Real Reinforcement Learning 
+
+Tatjana Krau, Jorge Mandlmaier, Tobias Damm, Frieder Heieck 
+
+Abstract — Reinforcement Learning (RL) has demonstrated strong potential for industrial process control, yet policies trained in simulation often suffer from a significant sim-to-real gap when deployed on physical hardware. This work system-atically analyzes how core Markov Decision Process (MDP) design choices—state composition, target inclusion, reward formulation, termination criteria, and environment dynamics models—affect this transfer. Using a color mixing task, we evaluate different MDP configurations and mixing dynamics across simulation and real-world experiments. We validate our findings on physical hardware, demonstrating that physics-based dynamics models achieve up to 50% real-world success under strict precision constraints where simplified models fail entirely. Our results provide practical MDP design guidelines for deploying RL in industrial process control. 
+
+I. INTRODUCTION Reinforcement Learning (RL) provides a structured ap-proach for sequential decision-making in settings where explicit system models are unavailable or difficult to con-struct [1]. Model-free RL methods derive policies directly from interaction data, making them suitable for nonlinear and stochastic systems with complex dynamics [1]. Recent developments in deep RL extend these techniques to high-dimensional continuous state and action spaces, enabling applications in robotics, energy management, and industrial process control. Despite these advances, policies trained in simulation frequently exhibit significant performance degradation when deployed on physical systems. This sim-to-real gap arises from discrepancies between simulated and real-world en-vironments, causing policies to yield suboptimal or unsafe behavior [2]. For industrial process control, these factors are particularly consequential: safety-critical constraints pre-clude extensive real-world exploration, and stringent preci-sion requirements amplify the impact of even small policy errors. To investigate strategies for bridging this gap, we adopt 
+
+color mixing as a physical testbed that enables controlled, re-producible experiments on real hardware. Unlike simulation-only studies, we validate the findings through hardware                
+
+> This work was supported by the Federal Ministry of Education and Research Germany under the project iCARus (13GW0657B). This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version may no longer be accessible. T. Krau, J. Mandlmaier, F. Heieck are with Insti-tute of Production and Informatics, 87527 Sonthofen, Germany
+
+[tatjana.krau,jorge.mandlmaier, frieder.heieck]@hs-kempten.de             
+
+> T. Damm is with the Department of Mathematics, RPTU University Kaiserslautern-Landau, 67663 Kaiserslautern, Germany
+
+t.damm@rptu.de 
+
+deployment, directly measuring the theory-to-practice gap that limits industrial RL adoption. Real-world variations in lighting, pigment properties, and dispensing accuracy create a substantial sim-to-real gap even for this apparently simple task. A target application motivating this work is CAR-T cell therapy, where RL could automate aspects of the costly, patient-specific treatment process—goals pursued by the research project iCARus 1. The analogy is instructive: just as base colors are combined in precise proportions to achieve a target color, CAR-T production involves the controlled mixing of fluids with specific concentrations to reach optimal cellular conditions. Achieving a target color in the testbed thus mirrors the precision required in cell culture preparation. This research focuses exclusively on RL methodology development and does not involve biological systems. Predominant approaches to reducing the sim-to-real gap focus on transition dynamics : domain randomization trains policies across simulator parameter distributions [2], while system identification methods align dynamics models. How-ever, these approaches hold other Markov Decision Process (MDP) components fixed. Yet an MDP comprises not only transition probabilities but also states, rewards, and termina-tion criteria [1]. Prior work on reward shaping, curriculum learning, and state abstraction has examined these compo-nents for learning efficiency, but with limited analysis of their effect on sim-to-real transfer . Recently, Sch¨ afer et al. [3] highlighted the crucial role of systematic MDP formulation for real-world RL and validated their insights on physical hardware. Inspired by this concept, we adapt the idea of structured MDP analysis to our color-mixing testbed. 
+
+Scope and Positioning. This work is primarily empirical and application-driven. While theoretical analyses of sim-to-real transfer require restrictive assumptions on dynamics mis-match [4], [5], our contribution lies in extracting actionable design principles from systematic hardware experiments. The color mixing domain provides a controlled setting where the sim-to-real gap is measurable and reproducible. This enables a systematic study of how different MDP design choices affect transfer performance. Accordingly, we ask: How do MDP design choices influence the transferabil-ity of MDP policies from simulation to physical systems? 
+
+We address this through a structured empirical study with the following contributions: 1) We systematically study how MDP design choices—state representation, reward shaping, 
+
+> 1https://kefis.fza.hs-kempten.de/de/forschungsprojekt/507-icarus
+> arXiv:2603.09427v2 [cs.LG] 12 Mar 2026
+
+termination criteria, and dynamics fidelity—-affect training stability and sim-to-real transfer in a color-mixing testbed. 2) We empirically quantify the sim-to-real gap across these configurations, revealing which design factors most strongly impact transfer performance. 3) We identify MDP design patterns that improve policy transferability and expose failure modes caused by formulation-induced overfitting, providing actionable guidance for real-world RL. II. BACKGROUND We formalize the color mixing task as a finite-horizon MDP defined by the tuple (S, A, P, R, T ), where S ⊆ Rd
+
+denotes the state space, A = {1, . . . , |A|} a finite action space, P : S × A × S → [0 , 1] the transition probability function, R : S × A → R the reward function, and T ∈ N
+
+the termination horizon . The specific formulations of S, A,and R constitute the primary experimental variables of this study and are detailed in Sec. III. 
+
+A. Color Mixing as a Reinforcement Learning Task 
+
+We formulate color mixing as an episodic RL task fol-lowing the setup introduced in [6]. All colors are repre-sented in the RGB color space as vectors c ∈ [0 , 255] 3.The agent incrementally mixes three physical printer inks, commercially labeled as cyan, magenta, and yellow, with the objective of reproducing a predefined target color. When measured and expressed in the RGB color space, these inks correspond to fixed empirical color vectors, namely cyan 
+
+[42 , 57 , 101] , magenta [101 , 54 , 71] , and yellow [184 , 181 , 97] 
+
+(see Fig. 1). Importantly, these values do not represent idealized RGB primaries but capture the non-ideal, real-world pigment characteristics of the inks. The similarity between the current mixture ccurrent and the target color ctarget is quantified using the Euclidean distance in RGB space: 
+
+d = ∥ccurrent − ctarget ∥2 (1) We use Euclidean distance in RGB space rather than percep-tually uniform metrics (e.g., CIELAB ∆E) for two reasons: (i) RGB values are directly measured by our camera without colorimetric transformations that introduce calibration errors, and (ii) RGB distance is consistent between simulation and hardware, enabling direct gap quantification. The target color is considered reached if the absolute deviation in each RGB channel is below the tolerance τ :
+
+|(ccurrent )k − (ctarget )k| ≤ τ, ∀k ∈ { R, G, B }. (2) 
+
+Fig. 1: Visual representation of the three base ink colors: cyan, magenta and yellow. 
+
+B. Color Prediction Models 
+
+Predicting the resulting color from mixing multiple pig-ments is non-trivial, as color blending is inherently non-linear due to light absorption and scattering effects. To study the influence of color modeling fidelity on RL performance, we compare three color prediction models with increasing physical realism:  
+
+> •
+
+Linear Interpolation (Lerp) : A simple linear interpo-lation model serving as a computationally cheap but physically unrealistic baseline [7].  
+
+> •
+
+Kubelka-Munk (KM) : A physics-based model derived from the KM theory, capturing absorption and scattering in diffusely reflective materials [7]. We implement this model using the Mixbox library 2, which provides a practical approximation suitable for real-time simula-tion.  
+
+> •
+
+Weighted Geometric Mean (WGM) : A purely subtrac-tive spectral mixing model based on the weighted geo-metric mean of reflectance spectra [8]. For n colors with mixing volumes Vi and spectral representations Si(λ),
+
+λ ∈ [380 , 780] nm, the mixed spectrum at wavelength λ
+
+is given by: 
+
+Smixed (λ) = 
+
+> n
+
+Y
+
+> i=1
+
+Si(λ)wi , where wi = Vi
+
+Pnj=1 Vj
+
+.
+
+(3) 
+
+C. Robustness Mechanisms 
+
+To support stable sim-to-real transfer, we include two fixed robustness mechanisms, kept constant across all MDP formu-lations. First, we add small channel-wise perturbations to the RGB observations. The per-channel standard deviations are estimated from repeated real-world measurements of static color targets and kept fixed during training. This exposes the agent to realistic measurement noise, including slight varia-tion across steps. Second, we apply a lightweight adversarial perturbation scheme inspired by Adversarial Reinforcement Learning (ARL) [9]. Instead of training a separate adversarial policy, we inject bounded worst-case perturbations into the RGB observation with probability padv = 0 .8 per step. 
+
+D. Metrics 
+
+We employ separate metrics for simulation training and real-world evaluation to capture both learning efficiency and transfer quality. 
+
+1) Simulation Metrics: Each configuration is evaluated using four metrics derived from the episode reward mean curve over training:  
+
+> •
+
+Final Performance (FP): Mean episode reward over the last 10% of training steps, capturing asymptotic policy quality.  
+
+> •
+
+Time-to-7.5 Performance (T7.5): Number of training steps required to reach a mean reward of 7.5, measuring sample efficiency.  
+
+> 2https://github.com/scrtwpns/mixbox •
+
+Coefficient of Variation (CV): Ratio of standard de-viation to mean reward over the last 20% of training, quantifying late-stage stability.  
+
+> •
+
+Non-Monotonicity (NM): Number of reward drops exceeding 5% between consecutive 5000-step windows, measuring susceptibility to catastrophic forgetting. To rank configurations, we computed a weighted Composite Score (CS). FP (40%) and CV (30%) were prioritized due to their relevance for sim-to-real transfer, followed by T7.5 (20%) and NM (10%). 
+
+2) Real-world Metrics: Hardware experiments are evalu-ated using:  
+
+> •
+
+RGB Distance (dR): Euclidean distance between the achieved and target RGB values per Eq. (1), capturing final color accuracy.  
+
+> •
+
+Steps-to-Target (sR): Number of interaction steps re-quired to reach the target color, measuring real-world efficiency.  
+
+> •
+
+Success : Proportion of episodes achieving the tolerance criterion. III. SYSTEMATIC MDP OPTIMIZATION We adopt a phase-wise optimization strategy to system-atically improve MDP design. Each phase isolates specific design choices—reward functions, state composition, episode parameters, and dynamics models allowing us to attribute performance improvements to individual components. 
+
+A. Phase 1: Component Selection Objective: Evaluate how state composition, target state inclusion, and reward design affect learning stability and generalization. 
+
+Fixed Parameters: To minimize computational cost and focus on structural effects, we fix:  
+
+> •
+
+Dynamics model: Lerp  
+
+> •
+
+Termination horizon T : 20 steps  
+
+> •
+
+Tolerance τ : 10, Eq. (2)  
+
+> •
+
+Observation robustness: channel-wise noise and adver-sarial perturbations (see Sec. II-C)  
+
+> •
+
+Total training time: 500k steps 
+
+Target State Inclusion 
+
+Since each episode samples a different target color ctarget ,we investigate the effect of including it in the observations. This design choice has theoretical implications rooted in the Markov property and goal-conditioned RL [1], [10]. 
+
+Theoretical Motivation. Consider a reward function 
+
+r(st, a t, g ) that evaluates performance relative to a goal 
+
+g ∈ G . When g is not included in the agent’s state, the policy π(a|s) cannot condition on the goal. The agent must therefore optimize the expected return marginalized over the goal distribution: 
+
+J(π) = Eg∼p(g)
+
+"
+
+Eτ ∼π
+
+" TX
+
+> t=0
+
+γtr(st, a t, g )
+
+## 
+
+. (4) By linearity of expectation, this is equivalent to optimizing the average reward function ¯r(s, a ) = Eg [r(s, a, g )] . The TABLE I: State representations evaluated in this study. All states include ccurrent ∈ [0 , 255] 3 and the volume encoding. States with target inclusion additionally contain ctarget ∈
+
+[0 , 255] 3. Example mixture: 200 μl Cyan + 20 μl Magenta.                          
+
+> ID Volume Encoding Example Description 0Vsum 200 μlAbsolute total volume 1[V1, V 2, V 3][200 ,20 ,0] μlAbsolute per-channel 2Vsum ,rel 1.1Relative total volume 3[V1,rel , V 2,rel , V 3,rel ][1 .0,10 .1,0] Relative per-channel 4[V1,ratio , V 2,ratio , V 3,ratio ] [0 .909 ,0.091 ,0] Normalized ratios
+
+resulting policy converges to a single compromise behavior that performs moderately across all goals but cannot achieve any specific goal optimally [11]. In contrast, including g in the state space yields ˜S = S×G ,enabling goal-conditioned policies π(a|s, g ). The agent can then learn distinct optimal strategies for each target [10]. 
+
+H1: Target State Inclusion 
+
+Including the target color in the state is essential for sim-to-real transfer. Omitting ctarget violates the Markov property—the reward depends on information unavailable in the state—transforming the MDP into a POMDP [12] and causing the agent to learn a compromise policy that fails under real-world dynamics. We test this hypothesis by comparing two variants: one where ctarget is part of the state, and one where it is omitted. 
+
+State Composition 
+
+The volume representation in the state space is critical, as it determines how the agent perceives mixing ratios. 
+
+H2 (State Representation) 
+
+State representations encoding relative color proportions generalize better than absolute volume representations, as ratio-based encodings are invariant to scale and total volume. We evaluate five state variants (Table I). Based on the state representation, the finite action space consists of selecting one of three colors with either absolute volumes ( 20 –200 μlin increments of 20) for states representation 0 and 1, or relative fractions ( 0.1–1.0) for states representations 2–4. 
+
+Reward Functions 
+
+We evaluate three reward formulations. In all cases, the agent receives an additional bonus of +10 whenever the target color is reached: 
+
+a) R1 (Normalized Euclidean distance): 
+
+rt = − ∥ccurrent − ctarget ∥2
+
+dmax 
+
++ 1success · 10 
+
+where dmax = √3 · 255 ≈ 441 .7 is the maximum possible Euclidean distance in RGB space. This reward encourages the agent to approach the target color by directly reflecting the distance in the RGB space. b) R2–R3 (Action Penalty): 
+
+rt = − ∥cadded − ctarget ∥2
+
+D · V 2 + 1success · 10 
+
+Both variants additionally penalize large dispensing volumes and suboptimal color choices. The normalization constant D
+
+differs: for R2, D = max j,k djk (maximum pairwise distance between base colors); for R3, D = max j dj (maximum distance from any base color to the target). To compare how the complexity of the reward function af-fects training stability and sim-to-real transfer, we formulate the following hypothesis: 
+
+H3 (Reward Complexity) 
+
+Simple, distance-based reward functions yield more stable training and superior sim-to-real transfer than action-penalized rewards, which introduce inductive bias that may overfit to simulation-specific dynamics. 
+
+B. Phase 2: Episode Design Optimization Objective: Identify optimal termination horizon T and distance tolerance τ in simulation to balance convergence speed and precision. 
+
+Fixed Parameters: To isolate the effect of episode design, we fix:  
+
+> •
+
+Best-performing state representation, reward function, and target inclusion from Phase 1  
+
+> •
+
+Dynamics model, observation noise and ARL un-changed  
+
+> •
+
+Total training time: 250k steps, since Phase 2 investi-gates local effects of termination and tolerance param-eters and does not require full policy relearning. 
+
+Parameters Tested:  
+
+> •
+
+Termination T ∈ { 5, 10 , 20 , 30 } 
+
+> •
+
+Tolerance τ ∈ { 2.5, 5, 7.5}, compared to Eq. (2) Based on these tests, we hypothesize the following rela-tionship between training thresholds and performance: 
+
+H4 (Termination and Tolerance Criteria) 
+
+Strict training thresholds reduce success but promote pre-cision, while relaxed deployment thresholds accommodate real-world noise and variability. 
+
+C. Phase 3: Dynamics Robustness Objective: Test whether the optimized MDP general-izes to more realistic prediction models, specifically KM from Sec. II-B. 
+
+Fixed Parameters:  
+
+> •
+
+Best-performing configurations from Phase 1 and 2  
+
+> •
+
+Total training time: 500k steps 
+
+Parameters Tested:  
+
+> •
+
+Dynamics model: KM TABLE II: Overview of experimental phases. Left col-umn lists parameters, middle column shows tested values, right column indicates selected configuration for subsequent phases.                                        
+
+> Phase 1 Tested Selected
+> Fixed: Lerp, Noise, ARL, T=20 ,τ=10
+> Target inclusion yes / no yes State 0 / 1 / 2 / 3 / 4 2, 3, 4 Reward R1 / R2 / R3 R1, R2
+> Phase 2 Tested Selected
+> Fixed: Lerp, Noise, ARL, Target yes, State ∈ { 2,3,4}, Reward ∈ { R1,R2 }
+> Termination T5 / 10 / 20 / 30 5Tolerance τ2.5 / 5 / 7.5 7.5
+> Phase 3 Tested Selected
+> Fixed: Noise, ARL, Target yes, State ∈ { 2,3,4}, Reward ∈ { R1,R2 },
+> T=5 ,τ=7 .5
+> Dynamics KM R1, State 4
+> Final Config. Noise, ARL, State 4, R1, Target=yes, T=5 ,
+> τ=7 .5, WGM
+
+H5 (Dynamics Model) 
+
+Realistic mixing models increase task complexity but better reflect real-world behavior; success under complex dynamics indicates robustness when transferred to phys-ical experiments. 
+
+IV. EXPERIMENTAL SETUP 
+
+A. Simulation Environment 
+
+Table II summarizes the progression through all optimiza-tion phases and the resulting final configuration. The sim-ulation setup used to evaluate these configurations follows the workflow in [6]: starting from the base color (out of the three available) with the smallest Euclidean distance to the target color and the same amount, the agent incremen-tally adds one of three base colors, predicts the resulting mixture (Sec. II-B), and receives rewards (Sec. III-A). In this work, we additionally inject camera noise and ARL to evaluate robustness (Sec. II-C). Training uses Proximal Pol-icy Optimization (PPO) [13], a policy gradient method that constrains policy updates for stable learning, implemented in Stable-Baselines3 with default hyperparameters [14]. 
+
+B. Hardware Evaluation Protocol 
+
+For real-world evaluation, the agent executes actions on a controlled setup: the selected base color is added to the current mixture on a flat surface using a standardized pipetting and stirring procedure. Images are captured under a webcam in a light-controlled photo box to ensure consistent illumination, and RGB values are measured after a fixed time interval. Each episode starts from the base color closest to the target and proceeds for a maximum of five mixing steps with a tolerance of τ = 7 .5.Each policy is tested on 4 target colors with 4 repetitions. Targets cover diverse chromatic regions: C1 [128,91,67], C2 TABLE III: Models evaluated on hardware. Phase indicates where the configuration was determined. The remaining columns show the training parameters.                                             
+
+> Model Phase Target State Termination TTolerance τReward Dynamics Model
+> M1 1Yes 420 10 R1 Lerp M2 1No 420 10 R1 Lerp M3 2Yes 457.5 R1 Lerp M4 3Yes 457.5 R1 KM M5 3Yes 457.5 R1 WGM
+
+[42,76,66], C3 [39,52,56], and C4 [67,64,75], pre-mixed to ensure physical achievability. Only the configuration listed in Table III is evaluated on hardware. V. RESULTS 
+
+A. Simulation 
+
+Based on the metrics defined in Sec. II-D, we evaluated all configurations from Table II. Table IV reports the perfor-mance metrics for key configurations discussed below. 
+
+1) H1 (Target State Inclusion): M1 (target included) achieves higher FP and substantially lower CV than M2 (target excluded). 
+
+H1 Verdict: Supported. Target inclusion improves learn-ing stability and convergence. 
+
+2) H2 (State Representation) & H3 (Reward Complexity): 
+
+Under KM dynamics, State 4 with a simple Euclidean reward (R1) led to stable learning, whereas other state representa-tions or action-penalized rewards often resulted in unstable policies or near-complete failure. 
+
+H2 Verdict: Supported. Normalized ratio-based represen-tations (State 4) generalize best. 
+
+H3 Verdict: Supported. Simple distance-based rewards outperform action-penalized alternatives under complex dy-namics. 
+
+3) H4 (Termination and Tolerance Criteria): Stricter thresholds (T = 5, τ = 7.5) reduce training success compared to relaxed settings ( T = 10 , τ = 7 .5), with FP dropping from 9.14 ±0.06 to 7.30 ±0.14 . However, we adopt the stricter configuration to prepare the agent for precision requirements in deployment. 
+
+H4 Verdict: Partially supported. Stricter criteria reduce simulation success. 
+
+4) H5 (Dynamics Model): Table IV shows that Lerp converges fastest (T7.5 ≈ 15k), while KM is slowest (T7.5 >
+
+200k) with higher instability. WGM offers a middle ground (T7.5 ≈ 56k). 
+
+H5 Verdict: Supported. Complex dynamics slow learning but may improve transfer (evaluated in Sec. V-B). 
+
+B. Reality 
+
+Table VI summarizes hardware performance across all models from Table III and target colors. Due to space lim-itations, the table reports only the representative constraint settings C1 and C4, reflecting medium and highly restrictive control regimes, respectively. The intermediate settings C2 and C3 are omitted for brevity, as C2 was consistently solved across models and C3 exhibited failure behavior comparable TABLE IV: Simulation performance metrics for key config-urations based on episode reward mean. ↑: higher is better; 
+
+↓: lower is better.                                                                     
+
+> Phase FP ↑CV ↓T7.5 ↓NM ↓CS ↑
+> 1 - Target yes 9.75 ±0.02 0.0119 15,018 00.998 1 - Target no 6.99 ±0.23 0.07 178,858 20 0.93 2 - 10, 7.5 9.14 ±0.06 0.03 28,672 1.7 0.94 2 - 5, 7.5 7.3 ±0.14 0.06 92,842 14 0.75 3 - R1, State 4 6.81 ±0.02 0.06 209,578 20.7 0.77 3 - R2 6.01 ±0.05 0.08 –21.3 0.71 3 - State 2 0.04 ±0.02 0.19 –34 0.19 3 - State 3 -0.18 ±0.05 0.98 –4.3 0.54 Final Parameters 7.38 ±0.01 0.05 55,978 17 0.5
+
+to C4. The Avg column reflects the aggregated performance across all constraint settings (C1–C4). 
+
+1) H1: Target State Inclusion: M2 fails entirely de-spite moderate simulation performance, while M1 achieves 43.75% success. This dramatic gap confirms the theoretical prediction from Eq. (4): without access to ctarget , M2 learned a policy optimizing for the average target color. In simulation, where dynamics match exactly, this compromise policy still accumulates reasonable rewards. However, when real-world dynamics shift the achievable color space, the agent lacks the goal information needed to adapt its strategy, causing complete failure. 
+
+H1 Verdict: Strongly supported. Moderate simulation per-formance does not guarantee transfer when goal information is not provided. This finding aligns with goal-conditioned RL theory [10], [11]. 
+
+2) H4: Termination and Tolerance: H4 hypothesizes that stricter episode parameters promote precision but may reduce success. This is observed for low-fidelity dynamics (M3), which fail under strict settings, but enable moderate success with the same dynamics and relaxed parameters. This indi-cates a clear relationship between termination and tolerance values and the underlying dynamics: in contrast to Lerp, higher-fidelity models (M4 and M5) perform well under strict parameters. 
+
+H4 Verdict: Partially supported; effects depend on dy-namics model. The key insight is that episode design interacts with dynamics fidelity: strict thresholds are beneficial only if the model can support precise control. 
+
+3) H5: Dynamics Model Fidelity: H5 states that physics-based dynamics improve sim-to-real transfer. M4 and M5 outperform Lerp (M3) under identical strict parameters, with higher success and lower variability. M1 (Lerp with re-laxed parameters) performs comparably, showing that relaxed episode constraints can partially offset simple dynamics. 
+
+H5 Verdict: Supported. Physically grounded models en-able robust transfer under precision constraints. 
+
+4) Color Spectrum Reachability: A systematic analysis of the simulation models reveals a fundamental limitation: the four target colors used in hardware experiments lie 
+
+outside the producible range of all three dynamics models in simulation. For each model, we performed an exhaustive search over all possible mixing weight combinations to find the closest achievable color to each target. Table V shows the minimum per-channel tolerance τmin required for each target to be considered “reached” under each dynamics model. TABLE V: Minimum required tolerance τmin for each target color to be reachable under each dynamics model. 
+
+Target Lerp KM WGM 
+
+C1 11.3 15.0 13.0 C2 30.0 32.0 26.0 C3 36.6 40.0 33.0 C4 11.5 11.0 9.0 
+
+All values exceed τ = 7.5, confirming that no target is reachable in simulation. Interestingly, WGM yields the smallest τmin for most targets, yet KM achieves the high-est real-world success (M4: 50%), indicating that transfer depends on dynamics accuracy, not just spectrum coverage. VI. CONCLUSION AND FUTURE WORK Our study demonstrates that MDP formulation is a crucial factor for sim-to-real transfer in color mixing, complement-ing dynamics-focused approaches. The key findings are:  
+
+> •
+
+Target state inclusion is essential for meaningful trans-fer.  
+
+> •
+
+Physically motivated dynamics models (KM,WGM) enable robust real-world performance under precision constraints.  
+
+> •
+
+Simple, distance-based rewards and relative state representations stabilize learning and improve gener-alization.  
+
+> •
+
+Episode parameters interact with dynamics fidelity: strict settings fail for low-fidelity models but succeed with high-fidelity models. 
+
+Limitations. Analysis is limited to a single task domain. Color dominance can make the closest RGB start color suboptimal, and composite scoring weights need further val-idation. Target colors in hardware lie outside the simulation range, preventing direct sim-to-real evaluation. 
+
+Future Work. Future work includes calibrating dynamics models to reduce simulation bias. Studies should focus on reachable targets or alternative gap metrics that do not rely on exact target attainment. Additionally, curricu-lum learning-—gradually increasing task complexity during training-—may improve sample efficiency and robustness in transfer. REFERENCES [1] R. S. Sutton and A. G. Barto, Reinforcement learning: an introduc-tion . Adaptive computation and machine learning series, Cambridge, Massachusetts: The MIT Press, second edition ed., 2018. [2] S. H¨ ofer, K. Bekris, A. Handa, J. Higuera, M. Mozifian, F. Golemo, C. Atkeson, D. Fox, K. Goldberg, J. Leonard, C. Liu, J. Peters, S. Song, P. Welinder, and M. White, “Sim2Real in Robotics and Automation: Applications and Challenges,” IEEE Transactions on Automation Science and Engineering , vol. 18, pp. 398–400, 2021. [3] G. Sch¨ afer, T. Krau, J. Rehrl, S. Huber, and S. Hirlaender, “The Crucial Role of Problem Formulation in Real-World Reinforcement Learning,” 2025. Accepted at ICPS 2025. 
+
+TABLE VI: Sim-to-Real Transfer Results. ¯dR ±σ: Mean final distance to target with the standard deviation, sR: Steps taken in reality, Succ: Success in each run in %. 
+
+Model Metric C1 C4 Avg 
+
+M1 
+
+¯dR ± σ 12.98 ± 2.28 42.32 ± 2.62 17.10 ±14.95 
+
+sR 5 5 4
+
+Succ (%) 0 0 43.75 
+
+M2 
+
+¯dR ± σ 108.62 ± 1.86 46.74 ± 3.39 54.39 ±32.45 
+
+sR 5 5 5
+
+Succ (%) 0 0 0
+
+M3 
+
+¯dR ± σ 94.29 ± 1.83 38.20 ± 1.98 47.90 ±27.93 
+
+sR 5 5 5
+
+Succ (%) 0 0 0
+
+M4 
+
+¯dR ± σ 11.97 ± 1.18 26.99 ± 1.55 12.72 ±8.74 
+
+sR 5 5 3.55 
+
+Succ (%) 0 0 50 
+
+M5 
+
+¯dR ± σ 7.14 ±2.15 20.16 ±1.60 12.74 ±6.56 
+
+sR 4.5 5 3.93 
+
+Succ (%) 50 0 31.25 
+
+[4] B. Recht, “A tour of reinforcement learning: The view from contin-uous control,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 2, pp. 253–279, 2019. [5] S. Gros and M. Zanon, “Data-driven economic NMPC using rein-forcement learning,” IEEE Transactions on Automatic Control , vol. 65, no. 2, pp. 636–648, 2020. [6] T. Krau, G. Sch¨ afer, T. Damm, and F. Heieck, “Exploring variance in reinforcement learning environment to bridge the sim-to-real gap: A case study in color mixing,” pp. 150–157, 05 2025. [7] ˇS. Sochorov´ a and O. Jamriˇ ska, “Practical pigment mixing for digital painting,” ACM Transactions on Graphics , vol. 40, no. 6, pp. 1–11, 2021. [8] L. Simonot and M. H´ ebert, “Between additive and subtractive color mixings: intermediate mixing models,” Journal of the Optical Society of America A , vol. 31, pp. 58–66, 2014. [9] S. Huang, N. Papernot, I. Goodfellow, Y. Duan, and P. Abbeel, “Adversarial Attacks on Neural Network Policies,” Feb. 2017. arXiv:1702.02284 [cs]. [10] T. Schaul, D. Horgan, K. Gregor, and D. Silver, “Universal value function approximators,” in Proceedings of the 32nd International Conference on Machine Learning (ICML) , pp. 1312–1320, PMLR, 2015. [11] L. P. Kaelbling, “Learning to achieve goals,” in Proceedings of the 13th International Joint Conference on Artificial Intelligence (IJCAI) ,pp. 1094–1098, 1993. [12] D. Ghosh, J. Rahme, A. Kumar, A. Zhang, R. P. Adams, and S. Levine, “Why Generalization in RL is Difficult: Epistemic POMDPs and Implicit Partial Observability,” in Advances in Neural Information Processing Systems (NeurIPS) , pp. 25502–25515, 2021. [13] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal Policy Optimization Algorithms,” 2017. [14] A. Raffin, A. Hill, A. Gleave, A. Kanervisto, M. Ernestus, and N. Dormann, “Stable-baselines3: Reliable reinforcement learning im-plementations,” Journal of Machine Learning Research , vol. 22, pp. 1– 8, 2021.

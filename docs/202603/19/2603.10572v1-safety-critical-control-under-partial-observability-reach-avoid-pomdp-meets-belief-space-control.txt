@@ -1,0 +1,1206 @@
+Title: Safety-critical Control Under Partial Observability: Reach-Avoid POMDP meets Belief Space Control
+
+URL Source: https://arxiv.org/pdf/2603.10572v1
+
+Published Time: Thu, 12 Mar 2026 00:54:01 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+> 1
+
+# Safety-critical Control Under Partial Observability: Reach-Avoid POMDP meets Belief Space Control 
+
+Matti Vahs, Joris Verhagen and Jana Tumova 
+
+Abstract —Partially Observable Markov Decision Processes (POMDPs) provide a principled framework for robot decision-making under uncertainty. Solving reach-avoid POMDPs, how-ever, requires coordinating three distinct behaviors: goal reach-ing, safety, and active information gathering to reduce un-certainty. Existing online POMDP solvers attempt to address all three within a single belief tree search, but this unified approach struggles with the conflicting time scales inherent to these objectives. We propose a layered, certificate-based control architecture that operates directly in belief space, decoupling goal reaching, information gathering, and safety into modular components. We introduce Belief Control Lyapunov Functions (BCLFs) that formalize information gathering as a Lyapunov convergence problem in belief space, and show how they can be learned via reinforcement learning. For safety, we develop Belief Control Barrier Functions (BCBFs) that leverage conformal prediction to provide probabilistic safety guarantees over finite horizons. The resulting control synthesis reduces to lightweight quadratic programs solvable in real time, even for non-Gaussian belief representations with dimension > 10 4. Experiments in sim-ulation and on a space-robotics platform demonstrate real-time performance and improved safety and task success compared to state-of-the-art constrained POMDP solvers. 
+
+I. I NTRODUCTION 
+
+Uncertainty is a defining challenge in real-world robotic systems. Robots operate with noisy sensors, partial observ-ability, and imperfect models of their own dynamics and environments. As a result, the true system state is rarely known exactly and must instead be inferred from noisy observations. Deploying robots under such uncertainties requires decision-making that accounts for incomplete state information and actively reasons about how uncertainty evolves over time. A natural framework for reasoning under such uncer-tainty is the Partially Observable Markov Decision Process (POMDP)[1]. A POMDP maintains a belief, i.e. a probability distribution over states, and seeks a policy that maps this belief directly to control actions. In this work, we focus on reach-avoid POMDPs, in which the robot must reach a desired goal set while avoiding unsafe states with high probability. Fig.1 illustrates such a scenario: starting from an uncertain position (any blue particle), the robot must navigate to the goal region (green) without entering unsafe areas (red).      
+
+> This work was partially supported by the Wallenberg AI, Autonomous Systems and Software Program (WASP) funded by the Knut and Alice Wallenberg Foundation. This research has been carried out as part of the Vinnova Competence Center for Trustworthy Edge Computing Systems and Applications at KTH Royal Institute of Technology. The authors are with the Division of Robotics, Perception and Learning, KTH Royal Institute of Technology, Stockholm, Sweden and also affiliated with Digital Futures. Mail addresses: {
+
+vahs, jorisv, tumova }
+
+@kth.se      
+
+> Fig. 1. Illustration of our hardware experiments on a space-robotics platform. The robot starts from an unknown initial position that is located somewhere in the initial belief b0and has to navigate to the goal region Sgwithout entering the avoid region Sa. The robot can localize itself in a map by detecting impacts with the walls. Two runs with different initial conditions are shown.
+
+However, under partial observability, neither objective can be achieved reliably when the robot’s uncertainty about its own state is too large: it can neither certify that it has reached the goal nor guarantee that it will remain safe. To resolve this, the robot must actively gather information to reduce its uncertainty to a level at which both objectives can be ensured. Information gathering is therefore not a third objective that we impose, but one that the problem itself demands, turning the two objectives of the reach-avoid problem into three distinct control behaviors that must be coordinated during execution. Existing state-of-the-art online POMDP solvers attempt to address all three behaviors within a single belief tree search, encoding performance, safety, and information gathering into one optimization problem [2], [3], [4]. While this unified formulation is very general, it introduces fundamental prac-tical challenges. The different behaviors required in reach-avoid POMDPs operate on conflicting time scales. Satisfying safety constraints demands high-frequency, reactive control to prevent constraint violations in continuous time, whereas performance objectives such as goal reaching and information gathering benefit from longer planning horizons and coarser temporal abstraction. Encoding these competing requirements into a single online planning process leads to scalability issues and makes it difficult to deploy such solvers reliably in safety-critical robotic systems. If the planning time step is chosen to be small, the robot can react quickly and remain safe but lacks foresight, leading to overly conservative or short-sighted behavior. Conversely, larger planning time steps enable long-horizon information gathering and goal-reaching behavior, but at the cost of reduced reactivity and weaker safety assurances. In contrast, classic robotics pipelines have long relied on 
+
+> arXiv:2603.10572v1 [cs.RO] 11 Mar 2026 2
+
+layered control architectures to manage complex tasks [5]. By decomposing an overall problem into smaller subproblems, such as high-level planning, motion planning, and low-level control, these architectures allow each component to operate at an appropriate frequency while maintaining modularity and robustness. A similar decomposition in belief space would al-low safety to be enforced at high frequency while information gathering and goal reaching operate on longer time scales, directly addressing existing shortcomings. However, designing such architecture is challenging because the control-theoretic tools that enable layered designs in state space do not readily extend to belief spaces. This motivates the central question of this paper: can we design a layered control architecture directly in belief space for solving reach-avoid POMDPs, and what are the missing components to do so? 
+
+Control theory offers principled tools for realizing the individual layers of such an architecture through control cer-tificates. Control Lyapunov Functions (CLFs) [6] and control barrier functions (CBFs) [7], [8] provide formal guarantees for stability and safety. Recent work has begun to extend CBF-based safety filters to belief spaces, enabling risk-aware safety guarantees under partial observability [9], [10]. However, there is no straightforward way to design certificate-based controllers for information gathering, which is essential for reducing uncertainty and enabling reliable goal reaching. In this work, we propose a control architecture that explicitly decouples goal reaching, safety, and information gathering, allowing robots to reach their goals safely while providing probabilistic guarantees associated with each certificate. This modular design has several advantages. An information-gathering controller in belief space can be reused across different reach-avoid objectives without redesign. Goal-reaching controllers can be designed using standard state-based techniques, and existing belief-space CBF methods can be leveraged for safety enforcement. At the same time, our approach overcomes a key limitation of prior belief-space safety filters by moving beyond pointwise-in-time guarantees and enabling probabilistic safety guarantees over finite horizons. Together, these ideas lead to a scalable and flexible framework for solving reach-avoid POMDPs and deploying them on hardware. 
+
+A. Contributions 
+
+We propose Belief Control Lyapunov and Barrier Functions (BCLF and BCBF, respectively) in a layered control archi-tecture for solving reach-avoid POMDPs through belief-space control. Specifically, we make the following contributions: 1) We formalize information gathering as the problem of finding a valid CLF in a non-Gaussian belief space, framing it as an enabling behavior for both goal reaching and safety; 2) We present a method for learning belief CLFs through reinforcement learning and establish theoretical condi-tions under which RL value functions constitute valid stochastic and finite-time CLFs; 3) We develop a risk-aware safety filter as a belief CBF that provides probabilistic safety guarantees over a finite horizon, moving beyond pointwise-in-time assurances; 4) We show that the resulting modular architecture, com-bining state-based reference controllers, BCLFs, and BCBFs, improves both safety and task performance over state-of-the-art constrained POMDP solvers; 5) We validate our approach on a space robotics hardware platform in multiple challenging scenarios with non-Gaussian beliefs, synthesizing control inputs in real time for belief states with dimension > 10 4.This work expands on initial results on Belief Control Barrier Functions [9], [10], which designed risk-aware safety filters in Gaussian and non-Gaussian belief spaces. We provide both practical and theoretical advancements of belief space safety filters suitable for reach-avoid POMDPs. Furthermore, the design of Belief Control Lyapunov Functions for information gathering has not been considered before. II. R ELATED WORK 
+
+A. POMDP Solvers 
+
+Offline POMDP solvers compute a policy prior to execution by approximating the optimal value function over the belief space. Classical point-based methods [11], [12], [13], [14], [15] are effective for small, discrete problems but require significant offline computation and memory. They do not scale well to large or continuous state and observation spaces, limiting their applicability in robotics [1]. Online POMDP solvers address these limitations by in-terleaving planning and execution. Rather than computing a global policy, they build a belief tree from the current belief using online tree search and Monte Carlo sampling, selecting actions that maximize expected reward over a finite, receding horizon. Recent online solvers leverage particle-based beliefs and generative models to handle continuous state and observation spaces [16], [17], [18], [19], [20], [21]. Despite their improved scalability, standard online POMDP solvers are primarily designed for maximizing expected re-ward. This formulation is not straightforward to apply in safety-critical settings, where violations may be rare but catastrophic. To address this, constrained POMDP (cPOMDP) formulations have been proposed, in which reward maximiza-tion is subject to safety constraints. Some works enforce con-straints in expectation [22], [23], [24], while others consider probabilistic or chance-constrained formulations that explicitly bound the probability of constraint violation [2], [3], [4]. A fundamental challenge shared by these approaches is that online POMDP solvers attempt to encode both performance objectives and safety requirements within a single tree search. These objectives can be conflicting: safety often requires high-frequency control, whereas performance benefits from longer planning horizons and coarser temporal abstraction. To mitigate this issue, recent work has explored hierarchical POMDP solvers, where higher-level planning is performed over abstract actions or skills [25]. 
+
+B. Belief Space Control 
+
+Although POMDP solvers operate on beliefs, they primarily rely on belief tree search. In contrast, belief space planning 3
+
+and control strategies explicitly model belief dynamics and synthesize plans or policies directly in the belief space. This line of work originates in belief space planning (BSP), which formulates trajectory optimization problems over belief states. Early BSP methods adopt Gaussian belief representa-tions, propagating uncertainty through linearized dynamics and Gaussian filters. Foundational work formulates trajectory optimization directly in this belief space, allowing robots to balance task performance with information gathering and, in some cases, incorporate probabilistic safety constraints [26], [27], [28], [29]. Although computationally efficient, these ap-proaches are constrained by relying on Gaussian assumptions. To address more complex beliefs, non-Gaussian BSP meth-ods have been proposed. In particular, particle-based belief representations are used to capture multi-modal uncertainty, and planning is formulated as a reachability or trajectory optimization problem in belief space [30], [31]. These methods seek information-gathering actions by ruling out competing hypotheses, but still primarily produce offline belief space plans rather than feedback policies. A key limitation of BSP is that it generates a belief space plan that is not explicitly adapted online as new observations arrive. This has motivated online belief space control strate-gies, which compute control inputs directly as a function of the current belief. A subset of this literature focuses on controlling an external belief, such as a map, a field, or moving targets in the environment using information-theoretic objectives to reduce uncertainty [32], [33], [34], [35]. Related work learns policies directly from Gaussian belief states for tasks such as active target tracking [34]. Bridging POMDPs and control theory, [36] propose aformalism that treats POMDPs as hybrid systems and de-fines Lyapunov- and barrier-like certificates in belief space to characterize reachable belief sets and verify safety properties. While this work establishes an important theoretical connec-tion, it focuses on verification rather than control synthesis. In contrast, our work aims to directly synthesize control laws and certificates in belief space. In this direction, belief space safety filters based on control barrier functions (CBFs) have been proposed. For Gaussian belief states, belief CBFs enforce probabilistic safety con-straints pointwise-in-time using EKF-based belief dynamics [9], with extensions to state-dependent noise in [37]. These ideas have been further generalized to non-Gaussian belief spaces using particle filters [10], [38]. A major advantage of these methods is scalability, as control synthesis reduces to solving a single quadratic program. This can be done efficiently in real-time even for belief representations with thousands of particles [10]. However, existing work focuses on risk-aware safety guarantees and does not address the synthesis of other belief space certificates for performance objectives. Finally, early information-theoretic control approaches de-fine Lyapunov-like objectives over belief uncertainty, such as mutual information, to guide exploration in POMDPs [39], [40]. These methods optimize only one-step uncertainty re-duction, which can result in greedy behavior and convergence to local minima. 
+
+C. Learning Control Certificates 
+
+Since our architecture relies on constructing CLFs and CBFs in belief space, we review methods for learning such certifi-cates. CLFs characterize stability by certifying the existence of control inputs that drive the system toward a desired equilib-rium [6], while CBFs encode safety as forward invariance of a safe set [7], [8]. Despite their strong theoretical foundations, constructing suitable certificates for general nonlinear and stochastic systems remains a largely open problem. Data-driven approaches have emerged that learn continuous-time certificates using neural networks, typically by uniformly sampling the state space and enforcing Lyapunov or barrier conditions at sampled points [41], [42], [43]. Similar ideas have been applied to learning barrier functions from obser-vations [44], [45]. Extensions to stochastic systems include distributionally robust Lyapunov functions [46], [47], stochas-tic CLFs [48], [49], and stochastic CBFs [50], [51]. While these methods alleviate the design of control certificates, they scale poorly to high dimensions due to their reliance on dense uniform sampling over the state space. A complementary line of work draws connections between control certificates and value functions. In continuous time, [52] establish a relationship between CBFs and value func-tions, while in discrete time, [53] show that an RL value function can directly serve as a CBF under a suitable reward structure. Earlier work [54] argues that value functions can act as CLFs for deterministic systems, though precise conditions are not fully specified. More recently, several works have linked RL with Hamilton–Jacobi reachability to learn safety value functions [55], [56] and latent-space CBFs [57]. Finally, [58] propose a Lyapunov–barrier actor–critic method that couples policy learning with certificate satisfaction. Overall, existing learning-based certificate methods per-form well in low-dimensional deterministic settings but face challenges in high-dimensional belief spaces with stochastic dynamics. This motivates our approach of learning certificates via reinforcement learning in belief space, for which we provide conditions under which a value function exhibits the same theoretical properties as stochastic CLFs. III. P RELIMINARIES 
+
+A. Stochastic Control Barrier Functions 
+
+Consider the continuous-time stochastic dynamical system in control affine form 
+
+dx = ( f (x) + g (x) u) d t + σ (x) d W (1) where x ∈ X ⊆ Rnx is the state, u ∈ U ⊆ Rm is the control input, W ∈ Rq is q-dimensional Brownian motion and σ (x)
+
+is a diffusion term. Next, we present the necessary theory to ensure set invariance under stochastic dynamics. Let 
+
+Cx = {x ∈ X | hx (x) ≥ 0} (2) be a safe set in which we want the state to remain in. Stochastic CBFs have been proposed in [59], [60] which render the safe set Cx forward invariant. 4
+
+Definition 1. Given a safe set Cx defined by (2) , the function 
+
+Bx (x) is a stochastic reciprocal control barrier function (RCBF) if 
+
+1) there exist class-κ functions 1 α1 and α2 such that 
+
+1
+
+α1 (hx (x)) ≤ Bx (x) ≤ 1
+
+α2 (hx (x)) , (3) 2) there exists a class-κ function α3 and a u ∈ U such that 
+
+∂B x
+
+∂x (f (x) + g (x) u) + 12 tr 
+
+
+
+σT ∂2Bx
+
+∂x2 σ
+
+
+
+≤ α3(hx (x)) .
+
+Theorem 1 (Thm. 2 in [59]) . If Bx is a RCBF as in Def. 1 for the continuous-time system (1) and at each time t, u(t)
+
+satisfies Def. 1, then Pr [ x(t) ∈ C x, ∀t ≥ t0] = 1 , provided that x(t0) ∈ C x.B. Stochastic Lyapunov Theory 
+
+Consider the discrete-time stochastic dynamical system 
+
+xk+1 = F (xk, uk, wk) (4) where w ∈ Rq is a random variable distributed according to 
+
+wk ∼ p(w). Subsequently, we introduce the necessary theory to guarantee convergence to a goal set G ⊂ X in state space. 
+
+Definition 2. A function W : X 7 → R is a stochastic Control Lyapunov Function (SCLF) for the dicrete-time system (4) and the goal set G ⊂ X if it satisfies 
+
+W (x) ≤ 0 ∀x ∈ G 
+
+W (x) > 0 ∀x ∈ X \ G ∃u ∈ U : E {W (F (xk, uk, wk)) } ≤ cW (xk) ∀x /∈ G ,
+
+for some c ∈ (0 , 1) .
+
+Theorem 2 (Thm. 2.3 in [61]) . If W (x) is a SCLF as in Def. 2 and the control input satisfies Def. 2, then 
+
+lim 
+
+> k→∞
+
+W (xk) = 0 (5) 
+
+almost surely which implies that the state asymptotically converges to the goal set almost surely. 
+
+Definition 3. A function W : X 7 → R is a finite-time stochas-tic Control Lyapunov Function (FSCLF) for the discrete-time system (4) and the goal set G ⊂ X if it satisfies 
+
+W (x) ≤ 0 ∀x ∈ G (6) 
+
+W (x) > 0 ∀x ∈ X \ G (7) 
+
+∃u ∈ U : ∆W ≤ − min( W (x) , η ) ∀x ∈ X /∈ G , (8) 
+
+with ∆W = E {W (F (xk, uk, wk)) } − W (x) and for some 
+
+η > 0.
+
+Theorem 3 (Thm. 4.2 in [62]) . If W (x) is a FSCLF as in Def. 3 and the control input satisfies Def. 3 then there exists an almost surely finite stochastic settling time K(x0) such that the state reaches G in finite time, i.e. 
+
+Pr W (xK(x0)) = 0  = 1 (9) 
+
+with E{K(x0)} ≤ ⌈ W (x0)/η⌉.         
+
+> 1A function α:R7→Ris class-κif it is strictly increasing and α(0) = 0
+
+C. Conformal Prediction 
+
+Conformal Prediction (CP) is a lightweight statistical tool for uncertainty quantification that can enable practical safety guarantees for autonomous systems [63], [64]. 
+
+Lemma 1. Let Z, Z (1) , . . . , Z (k) be k + 1 independent and identically distributed (i.i.d.) real-valued random variables. Let Z(1) , . . . , Z (k) be sorted in non-decreasing order and define Zk+1 := ∞. For δ ∈ (0 , 1) , it holds that 
+
+Pr Z ≤ ¯Z ≥ 1 − δ
+
+where ¯Z = Z(r) with r = ⌈(k + 1)(1 − δ)⌉ and where ⌈·⌉ is the ceiling function. 
+
+The minimum number of required samples to provide a probabilistic guarantee is given by k ≥ 1−δδ . The variable 
+
+Z is usually referred to as the non-conformity score .IV. P ROBLEM SETTING 
+
+This paper is concerned with the problem of making a robot reach a desired goal set in state space while avoiding a set of unsafe states when the initial state is uncertain and can only be estimated based on noisy partial observations. We consider continuous-time systems whose nonlinear dynamics are described by stochastic differential equations (SDEs) in control-affine form as in Eq. (1). At discrete time steps tk, the robot makes an observation z
+
+that is a nonlinear stochastic function of the state 
+
+ztk = ℓ (xtk , vtk ) (10) with measurement noise vtk ∼ p(v). Measurements only occur at discrete timesteps t1, . . . , t k due to limited update rates of sensors. Thus, the exact state at time t is unknown, but a Bayesian posterior p (xt | zt1:tk ), for tk ≤ t < t k+1 
+
+describes the probability distribution over states conditioned on past measurements. In its most general form, the evolution of the posterior distribution can be seen as a stochastic hybrid system that has two different evolutions: 1) In periods where no measurements are available, the be-lief evolves according to the Fokker-Planck partial differential equation 
+
+∂p (xt | zt1:tk )
+
+∂t = −∇ (p(xt | zt1:tk )( f (x) + g (x) u))+ 12 ∇2 
+
+p(xt | zt1:tk )σ (x) σ (x)T 
+
+(11) where ∇ and ∇2 denote the gradient and hessian, respec-tively [65]. 2) Whenever a new measurement is available, the state distribution is updated using Bayes’ rule 
+
+p(xt | zt1:tk+1 ) = p(ztk+1 | xt)p(xt | zt1:tk )
+
+p(ztk+1 | zt1:tk ) . (12) However, in general, neither the continuous evolution nor the discrete update admit closed-form solutions for nonlinear system which is why a variety of approximations have been proposed [66], [67]. 5       
+
+> Fig. 2. Illustration of our proposed control architecture on the example of a free floating robot platform that uses impact detections as measurements. The robot uses measurements zto update a particle filter belief bat time t. Based on the current belief, the reference controller obtains an input based on the mean state μ, the belief CLF serves as information gathering controller and the belief CBF minimally corrects all unsafe control inputs.
+
+The approach taken in this work is to model the reach-avoid problem in belief space and to use finite sample guarantees on the resulting belief states. Thus, we seek to find the sets in belief space such that convergence to that set implies the robot reaching its goal set, denoted by Sg ⊂ X , with desired probability while ensuring that the state does not enter a set of unsafe states denoted by Sa ⊂ X . Formally, we define the problem hereafter. 
+
+Problem 1 (Reach-Avoid POMDP) . Given a nonlinear stochastic system in Eq. (1) and stochastic measurements according to Eq. (10) with a goal set Sg ⊂ X and avoid set Sa ⊂ X , find control inputs u ∈ U such that for all states starting from a given initial distribution x0 ∼ p(x0)
+
+the resulting trajectory satisfies 
+
+reach : ∃t ≥ 0 s.t Pr[ xt ∈ S g ] ≥ 1 − δg (13) 
+
+avoid : Pr[ xt /∈ S a, ∀t ∈ [0 , T ]] ≥ 1 − δa (14) 
+
+with user defined probability thresholds δg and δa.
+
+Here, we want to emphasize that our problem setting is a subset of a general POMDP since both problems are concerned with the control of partially observable systems. In the more general POMDP setting, the objective is to maximize the expected cumulative discounted reward. Specifically, our problem can be seen as a special case of a constrained POMDP with set-based reach and avoid objectives. Addition-ally, POMDPs are typically defined in discrete-time while we consider the continuous-discrete setting commonly arising in robotics and control problems. 
+
+A. Overview 
+
+To address Problem 1, we formulate a belief space control problem which is composed of different control strategies that are combined into one control architecture depicted in Fig. 2. First, we introduce a continuous-discrete particle filter as approximated belief dynamics model of the general posterior evolution in Eq. (11) and (12). Then, we decompose the overall control strategy into three modules that address different subproblems of the reach-avoid POMDP. We argue that, e.g., information gathering only needs to happen at the frequency of measurements while the safety filter needs high frequency updates to ensure that the continuous-time system does not enter the avoid set. Specifically, we make the following design choices: 1) A state-based reference controller is used which acts on the mean state of the particle filter belief and drives the mean state towards the goal region. 2) An information gathering controller (BCLF) is used to actively reduce uncertainty in the robot’s belief in the direction of the state-based reference. If the IG controller localizes the state sufficiently well, the robot will reach its desired goal location. 3) A belief safety filter (BCBF) that ensures that the probability of entering the avoid set is bounded during operation. This safety filter corrects all po-tentially unsafe controls obtained by the reference and IG controllers. In the control design of the IG controller and the safety filter, we specifically design certificate-based controllers, i.e. we show how information gathering can be interpreted as finding a valid Control Lyapunov Function and how risk-aware safety boils down to finding a Control Barrier Function in belief space. V. B ELIEF SPACE MODEL 
+
+The general Bayesian posterior p(xt | zt1:tk ) evolves according to the Fokker–Planck PDE between measurements and a nonlinear Bayes update at measurement times (Eqs. (11) & (12)). For nonlinear, continuous-time systems, this belief evolution is intractable to compute or propagate in closed form, and its infinite-dimensional nature prohibits direct use in control synthesis. To obtain a tractable yet expressive approximation, we represent the belief with a continuous– discrete particle filter, which provides a sample-based approx-imation of the posterior while preserving non-Gaussian struc-ture. Under this approximation, the belief dynamics become a high-dimensional stochastic hybrid system in which particles follow the continuous-time SDE (1) between measurements and undergo a discrete Bayesian update through weighting and resampling when new observations arrive. This representation enables explicit belief-space control design while maintaining the ability to capture multimodal and highly nonlinear uncer-tainties inherent in our setting. PF techniques stem from the idea of approximating the Bayesian posterior by means of a finite set of N weighted samples, i.e. particles, {(x(i) 
+
+> t
+
+, w (i) 
+
+> t
+
+)}Ni=1 , where w(i) 
+
+> t
+
+∈ R≥0.The PF is a non-parametric approach that approximates the true posterior as 
+
+p (xt) ≈
+
+> N
+
+X
+
+> i=1
+
+w(i) 
+
+> t
+
+δ
+
+
+
+xt − x(i)
+
+> t
+
+
+
+where δ(·) denotes the Dirac delta function. It is known that as N → ∞ , the approximated posterior converges to the true posterior [68]. Thus, we define a belief state 
+
+bt =
+
+h
+
+x(1)  
+
+> t
+
+. . . x(N )
+
+> t
+
+iT
+
+∈ RN ·nx .6
+
+which describes the current PF belief at time t as a collection of all particles. The continuous time dynamics of the belief state b during the period where no observations are available is obtained by propagating each particle through the nonlinear SDE in Eq. (1), resulting in 
+
+dbt =
+
+
+
+f
+
+
+
+x(1) 
+
+> t
+
+
+
+...
+
+f
+
+
+
+x(N )
+
+> t
+
+ +
+
+
+
+g
+
+
+
+x(1) 
+
+> t
+
+
+
+...
+
+g
+
+
+
+x(N )
+
+> t
+
+ u
+
+ dt +
+
+
+
+σ dW (1) 
+
+> t
+
+...
+
+σ dW (N )
+
+> t
+
+
+
+:= ( fb (b) + gb (b) u) d t + Σ d ˜W (15) where Σ = BD  {σ}Ni=1 
+
+ is a block diagonal matrix and ˜W
+
+is a Brownian motion of dimension N · q. Note that, although the belief dynamics are of high dimension, the individual state particles are entirely decoupled which means that the SDE in Eq. (15) can be solved efficiently using parallelization. Further, the belief dynamics stay control-affine which alleviates the control design under high-dimensional belief states. At discrete times tk = t+ 
+
+> k
+
+where observations are available, the PF belief is conditioned on the most recent measurement which leads to a discrete update of the belief state, i.e. 
+
+b(t+ 
+
+> k
+
+) = ∆(b(t− 
+
+> k
+
+), zk) where t− 
+
+> k
+
+is infinitesimally smaller than t+ 
+
+> k
+
+. This discrete map ∆(·), however, cannot be obtained in closed form and is performed as a stochastic resampling step. Specifically, each particle x(i) 
+
+> t
+
+is weighted and resampled according to its observation likelihood w(i) 
+
+> t
+
+= p(zt | x(i) 
+
+> t
+
+).We perform low-variance resampling, which reduces particle impoverishment and yields a more stable approximation of the posterior distribution. For a detailed description of this step, the reader is referred to [69]. Finally, combining the SDE in Eq. (15) with the discrete-time measurement update leads to a hybrid system formulation 
+
+S =
+
+( ˙b = fb (b) + gb (b) u, ∀t ∈ [tk−1, t k)
+
+b+ = ∆ (b−, zk) t = tk, (16) describing the evolution of the robot’s belief over time. 
+
+Assumption 1. Throughout this paper, we assume that the resampled particles after a measurement update consist of N
+
+i.i.d. samples from the true belief. 
+
+While this assumption does not hold for a small number of particles, we know that the resampled particles become asymp-totically i.i.d. from the true distribution as N → ∞ . We rely on this assumption to make statistical statements about safety and performance using Conformal Prediction. Additionally, different resampling schemes such as independent resampling, proposed in [70], [71], can be used to make the resampling step independent. 
+
+A. Uncertainty Quantification Of The Belief 
+
+In order to design a controller that actively gathers in-formation through measurements, we first need to be able to quantify what information means in this context. Various information theoretic measures have been proposed in the past and have been adopted for informative path planning in different applications. A widely used uncertainty measure for continuous probability distributions is the differential entropy 
+
+H (x) = −
+
+Z
+
+> X
+
+p (x) log( p (x)) dx (17) which quantifies the spread of a continuous random variable x
+
+based on its probability density function. Differential entropy has been used in many planning and control problems under uncertainty, also in combination with particle filters [39]. How-ever, when substituting the unweighted particle filter belief it becomes apparent that the entropy approximates as 
+
+H (x) ≈ − 
+
+> N
+
+X
+
+> i=1
+
+1
+
+N log 
+
+ 1
+
+N
+
+
+
+= const. (18) which does not capture any information during a continuous time period. Even if a weighted formulation of the particle filter is used, the discrete approximation fails to capture the spatial distribution of particles but only depends on the weights, i.e. the observation likelihood of particles [72]. Thus, using differential entropy as a uncertainty quantification is avoided in this work since it is poorly approximated in particle filter beliefs. To that end, we introduce a new measure of uncertainty tailored to PF-based beliefs. The key idea builds on the assumption that the particle filter provides independent sam-ples from the underlying belief distribution. To characterize how concentrated this belief is, we consider a ball of radius 
+
+ε around the mean state estimate whose size reflects our uncertainty: the smaller the ball, the more confidently the robot is localized. Conformal prediction applied to the particle samples enables us to construct such a ball with a guaranteed probability of containing the true state, thereby providing a distribution-free measure of uncertainty. We define the nonconformity score 
+
+ρ (x) = ∥x − E{x}∥ 2 (19) which, if smaller than some user-defined threshold ε, would imply that the state is contained in an ε ball around the mean state estimate. However, as the state is not observ-able, we rely on probabilistic statements using conformal prediction. By Assumption 1, we can propagate all particles through the nonlinear function (19) to obtain i.i.d. samples 
+
+ρ(x(1) ), . . . , ρ (x(N )) sorted in non-decreasing order. Then, by application of Lemma 1, we obtain ˆε = ρ(x(r)) with 
+
+r = ⌈(N + 1)(1 − δl)⌉ such that 
+
+Pr [ ∥x − E{x}∥ 2 ≤ ˆε] ≥ 1 − δl (20) given a desired probability threshold δl on the localization of the state. Finally, we define our measure of uncertainty of the particle filter belief b as 
+
+Rε(b) = ˆ ε(b) − ε (21) with a desired size of the ball ε. In turn our measure satisfies the property Rε(b) ≤ 0 = ⇒ Pr [ ∥x − E{x}∥ 2 ≤ ε] ≥ 1−δl.We illustrate our proposed uncertainty quantification on a toy example. 7      
+
+> Fig. 3. Illustration of an example with a one dimensional state space. In this environment, the state can be accurately localized in a sensing region
+> {x∈R| | x| ≤ 0.1}around the origin. The true state evolves according to a continuous-time SDE. The bottom plot shows the proposed uncertainty quantification as well as the belief empirical standard deviation over time.
+
+Example 1. Consider a robot operating in one dimension with dynamics d x = u dt + 0 .3 dW where the robot is moving to the right with u = 0 .1 as shown in Fig. 3. At |x| ≤ 0.1
+
+is a sensing region that provides a binary measurement, i.e. 
+
+z = 1 if |x| ≤ 0.1 and z = 0 otherwise. The initial state distribution is given as a uniform distribution U(−1, 1) . We use N = 2000 particles to approximate the true posterior and, thus, obtain the constant entropy approximation H ≈ 7.6
+
+which does not capture any meaningful information. In Fig. 3, we further visualize our proposed uncertainty quantification metric R0.1 which shortly after 4 seconds (after the robot receives a measurement) becomes negative meaning that the true state is contained within a ball B0.1(E{x}) around the mean state with a desired probability of 95% . We also plot the empirical standard deviation over time which follows a similar trend as R0.1 but does not admit a statement about the true state in the non-gaussian case. 
+
+VI. B ELIEF SPACE LYAPUNOV CONTROL 
+
+In this section, we propose our Lyapunov inspired controller for information gathering. Thus, we will tackle the problem of reaching the goal set in state space with desired probability by designing a Lyapunov function in belief space that enforces convergence to a set of localized beliefs .Let us first formally define the goal of information gather-ing: we seek to find control inputs u such that the belief b
+
+will end up in the belief goal set 
+
+Sb =
+
+n
+
+b ∈ B | R ε(b) ≤ 0 ^ Bϵ (E{x}) ⊆ S g
+
+o
+
+(22) which is the set of all belief states for which the true state x
+
+will be contained in an ε ball around the mean state estimate with desired probability and this ball being contained in the goal set in state space. Thus, we get the relationship b ∈Sb =⇒ Pr[ x ∈ S g ] ≥ 1 − δl which is the reach objective formulated in Problem 1. When further inspecting the goal set in belief space, we can see that it consists of two conceptually distinct requirements: first, the belief must be sufficiently concentrated so that the true state lies inside an ε–ball around the mean with the desired probability, and second, this ball must itself lie inside the state–space goal set. This observation allows us to decouple the information-gathering objective from the goal-reaching objective. The first requirement concerns only the uncertainty of the belief, whereas the second concerns the location of the mean state estimate. This decoupling enables a modular control design. We can construct a controller whose sole purpose is to drive the belief toward informative regions, that is, regions where Rε(b)
+
+becomes negative. This motivates the design of a stochastic Lyapunov function in belief space that ensures convergence toward such informative areas. Independently of this, we can employ a separate state-based controller that drives the mean state estimate toward the goal region Sg whenever the uncertainty is sufficiently low. In the subsequent sections, we formalize this decomposition. We first design an information-gathering controller that renders the uncertainty component of Sb attractive. Then, we combine it with a goal-reaching controller that enforces progress to-ward Sg while gathering information. The resulting modular architecture allows us to guarantee the reach objective with desired probability while keeping information gathering and goal reaching cleanly separated in the control design. Since information can only be gathered through measure-ments, we design a controller for a time-discretized system of the hybrid system in Eq. (16). Here, we apply an Euler inte-gration scheme to obtain the stochastic difference equations 
+
+¯bk+1 = bk + δt (fb(bk) + gb(bk)uk) + pδt Wkσ(bk)
+
+(23) 
+
+bk+1 = ∆( ¯bk+1 , zk+1 ) := F (bk, uk, wk) (24) which we summarize as the overall discrete-time dynamical system bk+1 = Fb(bk, uk, wk) where the random variable wk
+
+combines the stochasticity arising from both, the motion noise 
+
+Wk and the stochasticity in resampling after a measurement 
+
+zk+1 . For this discrete-time dynamical system, we seek to design a stochastic CLF acting on the belief state. 
+
+Definition 4. A function Wb : B 7 → R is a belief Con-trol Lyapunov Function (CLF) for the the system bk+1 =
+
+Fb(bk, uk, wk) if it satisfies 
+
+Wb(b) ≤ 0 ∀b : Rε(b) ≤ 0 (25) 
+
+Wb(b) > 0 ∀b : Rε(b) > 0 (26) 
+
+E {W (Fb(bk, uk, wk)) } ≤ cW (bk) ∀b : Rε(b) > 0, (27) 
+
+for some c ∈ (0 , 1) .
+
+A Belief CLF provides a systematic way to drive the belief toward regions where the state can be estimated with the desired accuracy, i.e. a region in belief space in which the true state will be contained in an ε-ball around the mean state. Once such a function is available, we can determine at each measurement step how to control the discrete-time system to asymptotically reach the set of localized beliefs. 8 
+
+> Fig. 4. Exemplary visualization of a belief CLF. The blue surface depicts the Lyapunov function with the current belief shown in grey. The maximum information gathering control input is the steepest direction on the BCLF, the reference control input points in a direction where the BCLF value increases and the optimized information gathering control input moves in the direction of the reference while enforcing convergence to the set of localized beliefs.
+
+To implement the goal-reaching component, we assume access to a state–based reference controller uref ( ˆ x) that would reach Sg if the estimation error were within the ε–ball. This controller encodes the nominal task objective and is independent of the belief. The Belief CLF then ensures that we guide the information gathering towards regions that will end up close to the goal. We combine these two elements through the optimization problem 
+
+uIG = arg min   
+
+> uk∈U
+
+∥uk − uref ∥
+
+s.t. E {Wb(F (bk, uk, wk)) } ≤ cW b(bk) if Rε(b) > 0.
+
+(28) In words, if the belief state is not inside the goal set in belief space, we try to minimally deviate from the state-based reference control input while still gathering information. If the goal set Sb is reached, we switch to the reference controller 
+
+uref . This control strategy is conceptually visualized in Fig. 4. 
+
+Theorem 4. Suppose a Belief CLF Wb exists for the belief dynamics in Eq. (24) , and suppose the reference controller 
+
+uref renders the state–space goal set Sg reachable whenever the estimation error is bounded by ε. Then the closed-loop control law uIG defined in (28) ensures 
+
+lim  
+
+> k→∞
+
+Pr[ xk ∈ S g ] ≥ 1 − δl,
+
+i.e. the state converges asymptotically to the goal set in state space with desired probability. Proof. Since Wb is a Belief CLF, the control law uIG (bk)
+
+obtained from (28) ensures that the BCLF decrease condition of Definition 4 holds whenever Rε(bk) > 0. By Theorem 2, this implies Wb(bk) → 0 almost surely as k → ∞ and, consequently, 
+
+lim  
+
+> k→∞
+
+Pr[ ∥xk − E{xk}∥ ≤ ε] ≥ 1 − δl
+
+almost surely. That is, asymptotically, the true state remains in an ε–ball around the mean with probability at least 1 − δl.Whenever Rε(bk) ≤ 0, the assumption on the reference controller guarantees that uref drives the mean state estimate 
+
+E{xk} toward the goal region Sg . Hence, asymptotically the mean and the corresponding ε–ball around E{xk} are fully contained within Sg . Therefore, 
+
+lim  
+
+> k→∞
+
+Pr[ xk ∈ S g ] ≥ 1 − δl.
+
+We want to highlight that this decoupling of information gathering and goal reaching allows us to reuse a BCLF for different reach objectives as we only need to ensure a Lyapunov decrease while we minimize the deviation from a reference control input. 
+
+A. Finite-Time Convergence 
+
+In many applications, it is desirable to ensure that the state will reach the goal set within finite time. To capture this behavior, we introduce a finite-time analogue of Belief CLFs that directly parallels the finite-time stochastic CLF condition of Definition 3. 
+
+Definition 5. A function Wb : B 7 → R is a finite-time Belief Control Lyapunov Function (FBCLF) for the system (24) if it satisfies 
+
+Wb(b) ≤ 0 ∀b : Rε(b) ≤ 0,Wb(b) > 0 ∀b : Rε(b) > 0,
+
+∃ u ∈ U : ∆Wb ≤ − min  Wb(b), η  ∀b : Rε(b) > 0,
+
+for some η > 0.
+
+This decrease condition ensures that the value of Wb cannot remain positive indefinitely. Instead, it must reach zero in finite time, implying that the belief satisfies Rε(bk) ≤ 0 within a finite number of measurement steps. The result below follows directly from the finite-time stochastic Lyapunov theorem 3. 
+
+Corollary 1. Suppose Wb is a finite-time Belief CLF accord-ing to Definition 5, and the reference controller uref ( ˆ x) ren-ders the state-space goal set Sg finite-time reachable whenever 
+
+Rε(b) ≤ 0. Then there exists a finite time T (b0) > 0 such that 
+
+Pr[ xT ∈ S g ] ≥ 1 − δl
+
+almost surely. 
+
+This result directly follows from the previous theorem with a reference controller that can drive the state with localization error ε to the goal set in finite time. 
+
+B. Learning a Belief CLF 
+
+While the previous section has introduced the necessary requirements and their implications, finding a valid belief CLF is notoriously difficult. This is for several reasons: 1) the belief space is of very large dimension, 2) the belief dynamics are highly nonlinear and stochastic and 3) the belief space is unintuitive which complicates the design of handcrafted belief CLFs. Recent literature has shown that certificates such as Lyapunov or Barrier functions can be learned from data. The majority of proposed methods for learning certificates are based on sampling data points from the state space and minimizing a loss that violates the Lyapunov conditions at all data points. While this has proven effective in relatively small 9
+
+state spaces, it is not straightforward to apply these to high dimensional belief spaces. Reinforcement learning (RL) offers an appealing alternative. Unlike supervised certificate learning methods that require evaluating Lyapunov conditions across many points in the state space, RL methods learn value functions through trajectories that visit only a small subset of the space. This makes them well suited for high-dimensional systems such as belief dynamics, where exhaustive sampling is impossible. This motivates a connection between value functions arising in RL and stochastic CLFs. Both quantify progress toward a desirable outcome: a Lyapunov function measures progress toward a goal set by decreasing along system trajectories, while a value function measures expected cumulative reward under a learned policy. The structural similarity between these two notions suggests that an optimal RL value function may itself satisfy the conditions of a stochastic CLF. To make this connection explicit, consider the standard infinite-horizon discounted RL problem 
+
+V ∗(x) = max  
+
+> π∈Π
+
+E
+
+( ∞X
+
+> k=0
+
+γkr(xk, uk)
+
+)
+
+s.t. xk+1 = F (xk, uk, wk), wk ∼ p(w)
+
+(29) where we seek to find the optimal policy π∗ : X 7 → U which maximizes the sum of discounted rewards r(·) given a discount factor γ.It is well known that the optimal policy satisfies the stochas-tic Bellman equation 
+
+V ∗ (x) = max  
+
+> u
+
+Ew {r(x, u) + γV ∗(F (x, u, w)} (30) where V ∗(x) denotes the optimal value function. In the following we show the relation between V ∗ and a stochastic CLF W . To the best of our knowledge, this specific result has not been reported in the literature. 
+
+Remark 1. Note that we use a general state x in our theo-retical analysis which aligns with the RL literature. However, the state x can also be chosen as the belief state b.
+
+Theorem 5. Let γ ∈ (0 , 1) and suppose the goal set Sg ⊂X is absorbing and yields zero reward. Assume that outside 
+
+G, the one-step reward satisfies r(x, u) ≤ Rmax < 0. Let 
+
+V ∗ (x) denote the optimal discounted value function of (29) 
+
+and define W (x) := −V ∗(x). Then W (x) is a local stochastic Control Lyapunov Function on the set 
+
+D = { x /∈ S g | 0 < W (x) ≤ Wmax }
+
+for any constant 
+
+c ∈ [cmin , 1) , cmin = 1
+
+γ
+
+
+
+1 + Rmax 
+
+Wmax 
+
+
+
+< 1,
+
+provided Wmax < |Rmax | 
+
+> 1−γ
+
+.Proof. See Sec. X-A 
+
+Theorem 6. Under the same conditions of Theorem 5, the function W (x) = −V ∗ (x) is a local fixed-time stochastic CLF on the set 
+
+D = {x̸ ∈ S g | 0 < W (x) ≤ Wmax } (31)        
+
+> Fig. 5. Visualization of the network architecture used to learn a belief control lyapunov function. The encoder and MLP are denoted by eψand gθwith learnable parameters ψand θ, respectively.
+
+for η ∈ (0 , |Rmax |] provided that Wmax < |Rmax |− γη  
+
+> 1−γ
+
+.Proof. See Sec. X-B These results can be readily extended to algorithms where an optimal action-value function Q∗(x, u) is available. In this setting, it follows directly from Thm. 5 that W (x) = 
+
+−max  
+
+> u
+
+Q∗(x, u) is a valid stochastic CLF and the decrease condition can be checked via 
+
+E{W (F (x, uk, w)} = 1
+
+γ (r(x, uk) − Q∗(x, uk)) !
+
+≤ cW (x)
+
+from which we can directly check if a control input uk satisfies the expected decrease condition or not, without propagating the dynamics. The theoretical results presented here are central to our method because they provide a principled mechanism for constructing stochastic CLFs for goal-reaching problems. We emphasize, however, that the guarantees hold only for the true optimal value function, which is generally difficult to obtain exactly. In practice, we must rely on approximate value functions, and many off-the-shelf RL algorithms can be used to compute such approximations. What remains is to show how we can formulate this RL problem on the belief-space model introduced in Eq. (24). A direct application of RL is not straightforward because the particle-filter belief representation p(x) ≈ 1
+
+> N
+
+PNi=1 δ(x−x(i))
+
+is invariant to permutations of the particles. Any reordering of the stacked particle vector b = [ x(1) , . . . , x(N )] represents the same belief distribution, but would be interpreted as a different state by a standard neural network. This permutation symmetry leads to artificial ambiguity in the input representation. To address this, we adopt a permutation-invariant encoder inspired by architectures for point-cloud processing [73]. Each particle is first mapped through a shared encoder eψ : X → O 
+
+to obtain latent vectors o(i) = eψ (x(i)), and we aggregate them with the elementwise maximum 
+
+¯o = max  
+
+> i=1 ,...,N
+
+o(i), (32) which yields a belief embedding that is invariant to particle ordering. This compact latent representation is then passed through a network gθ : ¯O → R that parameterizes the stochastic CLF. The overall network architecture is illustrated in Fig. 5. 10 
+
+To learn this function, we formulate an RL problem over the belief dynamics and choose the reward 
+
+r(b, u) = −1 − R ε(b), (33) which encourages the agent to minimize the uncertainty mea-sure Rε(b) and therefore drives the belief quickly toward an informative region. Training the network parameters (ψ, θ )
+
+with off-the-shelf RL algorithms yields an approximate value function whose negative acts as a learned belief-space CLF, as motivated by Theorems 5 and 6. Note that if the reach objective changes, we do not need to retrain the BCLF. We only need to retrain if the environment changes. VII. B ELIEF SPACE SAFETY FILTER 
+
+In this section, we address the problem of guaranteeing probabilistic safety on the state by designing a safety filter in belief space that corrects the output from the belief CLF if necessary. Since safety is crucial and needs to be ensured at a high frequency, we design our belief space safety filter in continuous time for the stochastic hybrid system in Eq. (16). As stated in Problem 1, we seek to provide a probabilistic guarantee that holds over a mission horizon of time T ,i.e. Pr [ xt /∈ S a, ∀t ∈ [0 , T ]] ≥ 1 − δa which is not to be confused with a probabilistic guarantee pointwise in time 
+
+Pr [ xt /∈ S a] ≥ 1−δa, ∀t ∈ [0 , T ]. For the latter one, the over-all probability of a trajectory being unsafe decreases over time and converges to zero as t increases. To address this problem, we extend recently proposed Belief Control Barrier Functions (BCBFs) which provide risk-aware guarantees pointwise in time, to our desired setting of horizon guarantees. We first assume that the avoid set can be described as the subzero levelset of a function hx, i.e. 
+
+Sa = {x ∈ X | hx (x) < 0} (34) where we assume that hx is twice continuously differentiable. In the case of a fully observable state, stochastic RCBFs have been proposed to ensure set invariance almost surely as summarized in Sec. III-A. 
+
+Assumption 2. We assume the function B = 1/hx : X 7 → R is a stochastic RCBF according to Def. 1 for the fully observable system where the state x is known. 
+
+First, we rewrite the probability of the state being safe within a time interval I = [ tk, t k+1 ) as a single probabilistic statement on the entire past trajectory of the state, i.e. 
+
+Pr [ xt /∈ S a, ∀t ∈ I] = 1 − δa (35) 
+
+⇔ Pr 
+
+
+
+min   
+
+> τ∈I
+
+hx (xτ ) ≥ 0
+
+
+
+= 1 − δa. (36) This is true because, if the state is safe within an interval 
+
+I, then its minimum over time will also be safe within the interval I. The advantage of using the min formulation is that we can evaluate a horizon probabilistic constraint by checking a single equation in Eq. (36). Since, by Assumption 1, we obtain N i.i.d. samples from the belief at time tk after the resampling step, propagating each sample forward using an independent realization of the process 
+
+Algorithm 1 Horizon BCBF Safety Filter  
+
+> 1:
+
+Input: Current particles and their history state 
+
+{(x(i) 
+
+> t
+
+, ξ (i))}Ni=1 , BCLF control input uIG , risk level ¯δa 
+
+> 2:
+
+Output: Safe control input u 
+
+> 3:
+
+Compute non-conformity scores: 
+
+ρ(i) = −ξ(i), ∀i = 1 , . . . , N  
+
+> 4:
+
+Sort scores: ρ(1) ≤ ρ(2) ≤ · · · ≤ ρ(N ) ≤ ρ(N +1)  
+
+> 5:
+
+Compute threshold index: p = ⌈(N + 1)(1 − δ)⌉ 
+
+> 6:
+
+Select top-p particles: x(k), ∀k = 1 , . . . , p  
+
+> 7:
+
+Solve QP in Eq. (40) with top-p constraints  
+
+> 8:
+
+return u∗ from QP solution noise d W yields N i.i.d. continuous-time particle trajectories. Each trajectory 
+
+T (i) 
+
+> x
+
+= { x(i) 
+
+> t
+
+| t ∈ [tk, t k+1 ) }
+
+is therefore an independent draw from the distribution over state trajectories on the interval [tk, t k+1 ). This distribution is determined jointly by the initial-state distribution p(xtk )
+
+and the law of the noise process {Wτ }τ ∈[tk ,t k+1 ) through the system dynamics. In other words, the randomness in 
+
+T (i) 
+
+> x
+
+arises solely from the sampled initial condition and the independent noise realization used during propagation, and thus the resulting particle trajectories remain i.i.d. Therefore, we can use the N particles obtained at time t →
+
+tk+1 right before a measurement update to perform conformal prediction on the non-conformity score 
+
+ρt = − min 
+
+> x∈T x
+
+hx (x) (37) Then, using Lemma 1, we can obtain an upper bound C such that 
+
+Pr [ ρ(xt) ≤ C] ≥ 1 − ¯δa (38) for some desired probability threshold ¯δa. If this upper bound would satisfy C ≤ 0, it follows that Eq. (36) holds which, in turn, would imply that the desired horizon guarantee in Eq. (35) holds. Thus, our goal is to find control inputs such that at any time t ∈ I, the conformal upper bound satisfies 
+
+C ≤ 0.To synthesize controls that achieve the desired horizon guarantee, we introduce a history state ξ that keeps track of the running minimum for each particle, i.e. 
+
+ξ(i) 
+
+> t
+
+= min( ξt, h x(x(i) 
+
+> t
+
+)) (39) which is initialized with ξtk = hx(xtk ). At any time t ∈ I,we use the history state ξ to calculate the nonconformity score in Eq. (37) as ρ(i) 
+
+> t
+
+= −ξ(i) 
+
+> t
+
+for all particles i = 1 , . . . , N . We sort the scores and append ρ(N +1) = ∞ and perform CP according to Lemma 1, to obtain the upper bound C and all top-p particles for which ρ(i) 
+
+> t
+
+≤ C = ρ(p) 
+
+> t
+
+with p = ⌈(N +1)(1 − ¯δa)⌉.Next, we synthesize controls by solving a QP that minimizes the deviation from information gathering control input uIG 11 
+
+generated by the BCLF while ensuring that each of the top-p
+
+particles satisfies a per particle stochastic RCBF, reading 
+
+min  
+
+> u∈U
+
+∥u − uIG ∥2
+
+s.t. ∂B ∂x x(i)
+
+
+
+f (x(i))) + g(x(i))u
+
+
+
++ 12 tr 
+
+"
+
+σT ∂2B∂x2
+
+> x(i)
+
+σ
+
+#
+
+≤ α3
+
+
+
+hx(x(i))
+
+
+
+, ∀i = 1 , . . . , p. 
+
+(40) Note that p is a function of the current belief and the induced non-conformity scores. We summarize the overall controller in Alg. 1. Following this control strategy, we get the following guarantee. 
+
+Theorem 7. Given the belief system with dynamics in Eq. (15) , if the QP in Eq. (40) is always feasible on an interval 
+
+I = [ tk, t k+1 ], then Pr[ x /∈ S a, ∀t ∈ I] ≥ 1 − ¯δa.Proof. If the QP is always feasible, then all constraints are satisfied and we know by Thm. 1 that the p best particles are always safe, i.e. hx(x(k) 
+
+> t
+
+) ≥ 0 for all k = 1 , . . . , p . Conse-quently the minimum over their trajectory is also positive and 
+
+ρ(k) 
+
+> t
+
+≤ 0 for all k = 1 , . . . , p . In particular, by Lemma 1, it follows that at time t = tk+1 the conformal upper bound satisfies C = ρ(p) 
+
+> t
+
+≤ 0 from which it follows that 
+
+Pr 
+
+
+
+min   
+
+> τ∈I
+
+hx (xτ ) ≥ 0
+
+
+
+= 1 − ¯δa (41) which concludes that the continuous state evolution over the time interval I is safe with desired probability 1 − ¯δa.This result shows that we can guarantee probabilistic safety within a continuous time interval between measurements with desired probability. Next we show, how this safety guarantee can be extended to longer time intervals. 
+
+Assumption 3. The belief b does not enter the set of unsafe belief states under a stochastic discrete update, i.e. 
+
+C(bt−
+
+> k
+
+) ≤ 0 = ⇒ C(bt+
+
+> k
+
+) ≤ 0 (42) 
+
+where C is the conformal upper bound and t− 
+
+> k
+
+before a measurement update is infinitesimal smaller than t+ 
+
+> k
+
+.
+
+This assumption states that if the belief is probabilistically safe before a measurement, it will also remain probabilistically safe after a measurement. One example of a discrete transition not satisfying assumption 3 is when unsafe particles would get resampled more than p times such that suddenly most prob-ability mass is inside the unsafe set. However, in simulations and experiments we have not observed this case. To bound the probability of violating safety constraints over the time horizon T we first observe that we can find a lower bound on this probability through the following proposition. 
+
+Proposition 1. Under the same conditions as in Theorem 7, for a finite time interval [0 , T ] = ∪Mk=1 Ik, we have that 
+
+Pr[ xt /∈ S a∀t ∈ [0 , T ]] ≥ (1 − ¯δa)M . (43) 
+
+where M is the number of measurements taken in the interval [0, T]. Proof. See Sec. X-C Note that from this result, the total probability of the state entering the unsafe set over an arbitrary interval can be bounded by adjusting the ¯δa. That is, if we want Pr[ xt /∈Sa, ∀t ∈ ∪ Mk=1 Ik] ≥ 1 − δa, we can set ¯δa = 1 − δ1/M 
+
+> a
+
+.
+
+A. Guarantees on the Combined Controllers 
+
+In summary, we have introduced three controllers: a state-based reference controller, a belief CLF that enforces the desired information gathering behavior, and a belief CBF that acts as a safety filter to provide probabilistic safety guarantees over a finite horizon. The BCLF and BCBF each come with their own guarantees; probabilistic goal reaching and probabilistic safety, respectively. However, their conditions in Eq. (28) and Eq. (40) may conflict. For example, the control input required by the BCLF may steer the system toward the unsafe set Sa, causing the safety filter to intervene and potentially leaving the belief dynamics trapped in a local minimum. To mitigate this, we can use the learned BCLF as a monitor of the IG progress. If the BCLF value stagnates, i.e. it becomes non-decreasing, this indicates a conflict between information gathering and safety. In such cases, we can resample a new IG control input that still satisfies the Lyapunov decrease condition. While this mechanism does not provide a formal guarantee that all conflicts will be resolved, one of our ablation studies demonstrates that it can successfully escape local minima in practice. An alternative approach would be to combine the BCLF and BCBF constraints into a single optimization problem, thereby eliminating the need for the additional conflict-resolution mechanism. We choose not to take this approach for two reasons. First, the BCLF and BCBF do not need to operate at the same control frequency. Second, retaining the simple QP structure of the BCBF is advantageous for running the safety filter at high control rates, while the BCLF controller is solved at a lower rate determined by the measurement updates. This separation preserves computational efficiency without sacrificing the modularity of the overall architecture. VIII. E VALUATION 
+
+We evaluate our proposed control architecture for solving reach-avoid POMDPs in simulations as well as hardware experiments. Specifically, we 1) show improved performance in terms of goal reach-ing and safety over existing MCTS baselines which merge all control objectives in a single tree search in Sec. VIII-C, 2) demonstrate that the proposed minimum deviation con-trol in the BCLF results in goal-oriented information gathering behavior which results in shorter path lengths compared to a pure RL approach for information gath-ering in Sec. VIII-D, 3) show how the learned BCLF can be used to resolve conflict between information gathering and safety in 12 
+
+Sec. VIII-E and ablate that it can be reused for a completely new task in Sec. VIII-F, 4) analyze a learned BCLF and its theoretical properties in a toy example consisting of two particles which allows to visualize the belief space in Sec. VIII-G, and 5) validate our control architecture on a space robotics hardware platform in which a robot has to accurately localize itself by using IMU impact detections in Sec. VIII-H. 
+
+A. Simulation Setup 
+
+We evaluate our method on three different continuous reach-avoid POMDPs illustrated in Fig. 6. 
+
+Constrained Lightdark: In this adaption of the original Lightdark problem [20], a robot starts from an unknown initial state x0 ∼ U (−10 , 10) and has to reach a goal area located at Sg = {x ∈ R | | x| < 1} while avoiding the unsafe area at 
+
+Sa = {x ∈ R | x ≥ 10 }. The robot’s continuous dynamics are described by d x = u dt + 0 .01 dW and measurements happen at a frequency of 5Hz with an observation model z = x+σ(x)
+
+with spatially varying noise. The most accurate measurements can be obtained right at the boundary to the avoid set. 
+
+Constrained Antenna: In this extension, a robot has to operate in 2D to reach the goal set Sg and avoid the unsafe set 
+
+Sa as illustrated in Fig. 6. The robot follows single integrator dynamics d x = u dt + 0 .04 dW and the measurement model is given by z = ∥x − ℓ∥2 + σ(x) which measures the distance to the antenna with spatially varying noise. Due to the distance measurement, the belief can be highly non-Gaussian. 
+
+Constrained Bumper In this environment, a robot is mov-ing in a 2D map and can only localize itself by bumping into the wall. Thus, the measurement model is a simple binary measurement z = {0, 1} where 1 indicates a bumper mea-surement. Further, the bumper sensor has a failure probability of 1% meaning that it can provide the wrong sensor reading. The stochastic dynamics are the same as in the Constrained Antenna environment. The reach and avoid regions are illus-trated in Fig. 6. For our initial comparison, we use a finite-time BCLF according to Def. 5 and a simple proportional reference controller that would guide the state to the goal region if the state would be perfectly known. To learn a BCLF, we train an RL agent in each environment with the proposed reward structure in Eq. (33) using deep Q-networks (DQNs) [74]. To that end, we discretize the control space and learn a Q function. In Constrained Lightdark the action space is reduced to 7 equidistant actions between -10 and 10 and in the other environments, we discretize the action space into 9 actions which are the move directions in cardinal directions at constant velocity. Note that we only discretize the action space to make the RL problem simpler, the safety filter, e.g., can still apply continuous actions to the robot. For the encoder eψ
+
+we use simple MLP with two hidden layers of dimension 32 and a latent dimension of 8. For the Q function, we use an MLP with three hidden layers of dimension 256 (128 in Constrained Lightdark). The goal sets in belief space are chosen such that at convergence the state will be localized in     
+
+> Fig. 6. Illustration of the three reach-avoid POMDPs considered in simulation. Goal regions Sgare shown in green, avoid regions Saare shown in red and the particle filter belief is shown in blue.
+
+a ball Bε with probability 1 − δl = 0 .99 . The size of this ball is chosen such that it can be fully contained in the goal region. The RL agents are trained with a discount factor of 
+
+γ = 0 .99 and the BCBF safety filter has a per interval safety probability of 1 − ¯δa = 0 .99 in Constrained Lightdark and Constrained Antenna. The safety probability in the Bumper environment is set to 1 − ¯δa = 0 .9 because the robot would not move otherwise based on the initial belief. For the BCBF we use a stochastic CBF of the form hx(x) = 10 − x in Constrained Lightdark environment. In Constrained Antenna, we use a continuously differentiable overapproximation of the unsafe set using smooth min and max operators [75] and in Constrained Bumper, the stochastic CBF is chosen as 
+
+hx = ∥x − O∥ 2 − rO which is the distance to the unsafe region. 
+
+B. Baselines 
+
+First, we compare against different combinations of our proposed control architecture to isolate the effect of each individual module. Specifically, we compare against the pure reference-based controller that only acts on the mean state (uref ), the reference controller with a BCBF ( uref + BCBF) and the reference controller with a BCLF but without a safety filter (uref + BCLF). Further, we compare against state-of-the-art solvers for constrained POMDPs based on Monte Carlo Tree Search. Namely, we compare against constrained partially ob-servable planning with observation widening (CPOMCPOW) and constrained particle filter trees with double progressive widening (CPFT-DPW) [23]. These baselines try to maximize expected rewards subject to expected cost constraints. Since this is different from our original problem formulation, we use the negative distance to the goal set as reward function and the distance to the unsafe set as cost function. We use the same hyper parameters as proposed in [23]. We further compare to two different versions of the MCTS baselines in which we change the time step used in rollouts. This allows us to analyze the reach and avoid behavior for different horizon lengths and control frequencies. 
+
+C. Quantitative Evaluation 
+
+First, we consider the environments Constrained Lightdark and Constrained Antenna. We run 100 simulations for each environment in which the true initial state is randomized. The 13                                                              
+
+> TABLE I QUANTITATIVE EVALUATION ACROSS ENVIRONMENTS . F OR THE MCTS BASELINES ,δt REFERS TO THE PLANNING TIME STEP .CPOMCPOW CPFT-DPW uref uref +BCBF uref +BCLF Ours
+> Constrained Lightdark
+> Reach ↑0.72 ( δt =1 )0.52 ( δt =0 .1)0.9 ( δt =1 )0.66 ( δt =0 .1)0.51 0.51 1.0 0.99 Avoid ↑0.69 ( δt =1 )0.86 ( δt =0 .1)0.35 ( δt =1 )0.79 ( δt =0 .1)1.0 1.0 0.03 1.0 SR ↑0.4 ( δt =1 )0.47 ( δt =0 .1)0.35 ( δt =1 )0.56 ( δt =0 .1)0.51 0.51 0.03 0.99 Constrained Antenna
+> Reach ↑0.0 ( δt =0 .1)0.0 ( δt =0 .1)0.53 0.05 0.97 0.95 Avoid ↑1.0 ( δt =0 .1)0.99 ( δt =0 .1)0.37 0.98 0.41 0.98 SR ↑0.0 ( δt =0 .1)0.0 ( δt =0 .1)0.33 0.05 0.4 0.95
+> Fig. 7. Illustration of all baselines in the Constrained Antenna environment in which the antenna location is indicated by a red cross, the goal region is shown in green and the avoid set is shown in red. In this exemplary run, only our proposed control architecture is able to reach the goal without entering the set of unsafe states.
+
+quantitative results of the simulation study are summarized in Table I. It can be seen that our method achieves the overall best results when looking at the success rate, i.e. the runs in which the state reaches the goal and stays safe along the entire trajectory. In the Constrained Lightdark environment we can observe that for both MCTS baselines the reach rate increases and the avoid rate decreases if we reduce the time step. This can be attributed to a shorter planning horizon in the case of δt = 0 .1 such that information gathering becomes more difficult. On the other hand, if the time step is lower, the belief can be corrected at higher frequencies which results in higher avoid rates. This underlines our claim that different components occuring in POMDP solving do not necessarily all need to run at the same frequency. We can observe that all baselines with the proposed BCBF keep the state safe in almost all simulation runs showing that the belief safety filter successfully keeps the majority of particles outside Sa. Figure 7 shows examplary runs for all baselines in the Constrained Antenna environment. It can be observed that for uref + BCBF, the belief is kept safe but it is trapped in a local minimum since the belief is not accurate enough to safely reach the goal. It also becomes apperent that the MCTS baselines try to maximize the reward by reducing the distance to the goal in the py direction but the belief is not sufficiently accurate to reach the goal without enter-ing the unsafe set resulting in overly conservative behavior. The baseline uref + BCLF efficiently gathers information and reaches the goal but becomes unsafe during the information gathering process. Further, we can see that the baselines with a BCLF and a reference controller have a high reach rate since the robot gathers information first before approaching the goal. Combining all modules into one control architecture leads to high reach and avoid rates. Further, we want to highlight that IG and goal reaching are not aligned in these two environments, i.e. in order to gather information we need to move away from the goal. However, since the BCLF wants to reach an accurately localized belief state in finite time, the belief is first localized before moving to the goal. 
+
+D. Ablation: Lyapunov Coefficient 
+
+Next, we analyze the influence of the Lyapunov coeffi-cients c in the asymptotic BCLF and η in the finite-time BCLF, respectively. To that end, we shift our focus to the Constrained Bumper environment since, in contrast to the other environments, the robot has multiple different choices of gathering information, i.e. bumping into the top/bottom or left/right walls. We aim to show that the minimum deviation control proposed in Eq. (28) yields goal oriented information gathering. To that end, we also compare to another baseline based on a switching control (SC) policy, i.e. the robot follows the information gathering policy until it is accurately localized and then switches to the state-based reference. The unfiltered 14  
+
+> Fig. 8. Illustration of the proposed control architecture (top) and the switching controller (bottom) in the Constrained Bumper environment. Our method first gathers information by bumping into the left wall and then continues towards the goal as uncertainty can be reduced by bumping into the top wall. The switching controller moves south after the first bump resulting in overall longer path length.
+
+control strategy thus results in 
+
+uSC = 1Rε(b)>0 max  
+
+> u
+
+E{V ∗(F (b, u, w)} + 1Rε(b)≤0 uref .
+
+We run 100 simulations in the Constrained Bumper environ-ment and report the reach and avoid rates as well as the path length accross successful runs (PL). We first note in Fig. 9 that as we increase c in the asymptotic BCLF and decrease 
+
+η in the finite time BCLF, the overall path length reduces. This is caused by the constraint formulation that we do not require a fast decrease on the BCLF which allows the robot to gather information at a later point in time which is closer to the goal region. We visualize this qualitatively in Fig. 8 in which we show two runs with equivalent initial conditions for the switching controller and a BCLF. It can be seen that the switching controller first bumps into the left wall and then navigates south to accurately localize. In contrast, our BCLF enforces a behavior in which the robot knows that it can gather information on the way to the goal which results in shorter path length and thus faster goal reaching time. For both runs, the BCBF keeps the robot safe. Thus, the Lyapunov coefficent serves as a tuning knob to interpolate between information gathering and goal reaching behavior. However, we also note that increasing the information gathering behavior too much results in lower reach and avoid rates as shown in Table II. This can be attributed to the fact that a too little focus on IG can result in poor information gathering if the learned BCLF is not accurate enough. That is, the robot moves the mean state towards the goal thinking that it can gather enough information in the future which in turn leads to a timeout since the robot does not accurately localize within the simulation time. We can see that this effect is less 
+
+c = 0 .9
+
+η = 2 c = 0 .95 
+
+η = 1 c = 0 .99 
+
+η = 0 .4 c = 0 .999 
+
+η = 0 .1 SC 
+
+0
+
+5
+
+10 
+
+Lyapunov Coefficients Path Length in [m] 
+
+asymptotic finite-time  
+
+> Fig. 9. Box plots showing median, IQR, and min/max values for the path length for both BCLFs and the switching controller (SC).
+
+visible in the finite time BCLF as we impose the robot to accurately localize within finite time. However, also for the setting η = 0 .1, the reach rate drops which can be attributed to the same reason. Based on Thm. 3 the expected time to localize is in less than K = ⌈Wb(b0)/η⌉ ≈ 800 measurements for η = 0 .1. In simulation however, we use a timeout of 10 
+
+seconds with an update rate of 5 Hz which means the robot is not expected to localize within simulation time for η = 0 .1.
+
+E. Using the BCLF to resolve conflict 
+
+Next, we illustrate a failure case of the proposed architecture and show how it can be resolved. In certain scenarios, the information-gathering strategy may conflict with the safety filter. One such case is shown in Fig. 10, where the robot starts from an initial uniform belief and bumps into the right 15                                                              
+
+> TABLE II RESULTS FOR THE SWITCHING CONTROLLER (SC), ASYMPTOTIC BCLF
+> COEFFICIENT c,AND FINITE -TIME BCLF COEFFICIENT η.
+> Setting Reach ↑Avoid ↑PL [m] ↓
+> SC –0.95 0.97 7.54 ±1.31
+> c
+> 0.90.80 0.97 7.38 ±1.33 0.95 0.77 0.97 7.32 ±1.39 0.99 0.89 0.87 4.43 ±1.48 0.9999 0.74 0.91 3.65 ±0.97
+> η
+> 20.96 0.97 7.19 ±1.66 10.96 0.97 7.12 ±1.66 0.40.97 0.88 4.22 ±1.92 0.10.82 0.89 3.07 ±1.19
+> Fig. 10. Illustration of the conflict resolution in the Constrained Bumper Environment. The particle filter belief being stuck in a local minima is shown by the blue particles. The ground truth trajectory of the state under conflict resolution is shown in blue.
+
+wall. As a result, the belief becomes multimodal, with part of the probability mass already lying inside the goal set. In this situation, the reference controller attempts to move the robot in the northeast direction, which conflicts with the safety filter because doing so would drive a significant portion of the belief through the unsafe set. Consequently, the robot becomes trapped in a local minimum and remains safely stationary until timeout. Figure 10 further shows that the BCLF value stagnates once the belief is trapped. This observation motivates using the BCLF as a monitor for the information-gathering process and triggering a conflict-resolution mechanism when a local minimum is detected. In this example, if no information is gathered for more than one second, we switch to the direction of maximum information gain, i.e., the direction that maximizes the decrease of the BCLF. This simple mechanism is sufficient to escape the local minimum and successfully reach the goal. 
+
+F. Ablation: Reuse of Learned Lyapunov Function 
+
+We further show how the control architecture can be quickly adapted to new tasks. To that end, we formulate a completely different reach-avoid task as illustrated in Fig. 11 where we use the same Constrained Bumper environment but want the robot to perform a circular tracking task while avoiding the unsafe areas. We use exactly the same BCLF and only change the            
+
+> Fig. 11. Application of the proposed Control Architecture on a different Reach-avoid problem where the robot has to fulfill acircular tracking objective. Different initial conditions (ICs) are shown in blue and red.
+
+state-based reference controller and the BCBF. We show two different initial beliefs with samples drawn from a Gaussian distribution. Both initial conditions lead to the robot safely fulfilling the desired tracking task. We want to highlight that the depicted Gaussian belief states were never seen during training since an episode always starts from an initial uniform belief as depicted in Fig. 6. Thus the learned BCLF is able to generalize to unseen beliefs. 
+
+G. Analysis of Theoretical Properties 
+
+In this simulation study, we investigate the learned BCLF on a variation of the example introduced in Example 1 with a one dimensional state space and a discrete sensing region at 
+
+{x ∈ R | | x| ≤ 1}. In order to visualize the learned BCLF, we consider a simplified scenario in which the particle filter belief consists of only two particles x(1) and x(2) , respectively. The true state is either one of the particles, so the particle filter belief is reduced to a simple bimodal belief. We consider a time-discretized belief dynamics model using the sampling rate δt = 0 .1 seconds. We train a DQN with a Q function that is parameterized by an MLP with two layers of hidden dimension 256 without the permutation invariant encoder proposed in Sec. VI-B. Since two particles are not enough to apply conformal prediction as in Lemma 1, we define the goal set in belief space as Sb = {b ∈ B | | x(1) − x(2) | ≤ 0.1}.The discount factor during training is set to γ = 0 .99 and the reward structure is a simple negative reward of r(b, u) = −1
+
+if the belief state is outside of the goal set. Figure 12 shows the learned BCLF, with the sub-zero level set highlighted in orange. The learned BCLF clearly separates the goal states in belief space, as the sub-zero level set is a subset of the ground-truth set Sb. The optimal information-gathering policy in this scenario is straightforward: if both particles lie to the left or to the right of the sensing region, the optimal action is to move right or left, respectively; if the particles lie on opposite sides, information can be gathered by moving in either direction. This behavior is reflected in the learned BCLF: when the particle signs differ, either direction reduces the BCLF value, whereas when they share the same sign, information can only be gathered by moving 16 
+
+> Fig. 12. Illustration of the learned BCLF for the example two particle system. The colorgradient illustrates higher values of the BCLF, the ground truth goal set is shown in red while the sub-zero levelset of the BCLF is visualized in orange.
+
+toward the sensing region. A +-shaped structure emerges in the ±0.1 band around the particle axes, where at least one particle lies inside the sensing region. In this region the state will be accurately localized after the next measurement, so the value equals the one-step reward of −1. The maximum value over the belief space is Wmax = 8.73 , satisfying 
+
+Wmax ≤ |Rmax /1−γ = 100 for an asymptotic BCLF with minimum Lyapunov coefficient cmin ≈ 0.89 . Thus, the learned BCLF is a valid asymptotic BCLF over the entire bounded belief space. Moreover, Wmax ≤ |Rmax |− γη /1−γ = 60 .4 for a suitable η = 0 .4, confirming that the finite-time BCLF is also valid on the entire bounded belief space. Beyond visual inspection, we also empirically evaluate the conditions of the BCLFs in Defs. 4 and 5. To this end, we sample ten thousand random initial belief states and simulate the system under the optimal information-gathering policy. Table III summarizes the conditions and the corresponding true positive and false positive rates. We find that the subzero level set of the BCLF tends to underapproximate the goal set, as indicated by a true positive rate noticeably below one, which is consistent with the visualization in Fig. 12. The BCLF is, however, close to zero for the vast majority of samples inside the goal set Sb. Likewise, positive definiteness holds for almost all samples outside the goal set. Although the BCLF and FBCLF decrease conditions do not hold globally outside the goal set, they remain sufficient to guide the system toward the goal, as all simulated belief trajectories successfully reach Sb. Finally, we observe that the expected upper bound on the hitting time (see Def. 3) is overly conservative: most simulations reach the goal set substantially earlier, even though the bound is only required to hold in expectation. 
+
+H. Hardware Experiments 
+
+We finally perform hardware validation for a scenario similar to the Constrained Bumper scenario. Here, we con-sider a space-analogue platform that is able to approximate weightlessness in two dimensions by floating with three air-bearings over an epoxy-coated floor. During normal operation inside a spacecraft, global localization may be performed using observations of fiducial markers, similar to the Astrobee                                             
+
+> TABLE III PERFORMANCE METRICS FOR FUNCTION Wb(b)ACROSS SAMPLED POINTS
+> Condition TPR FPR
+> Wb(b)≤0for b∈ S b0.417 1e−4
+> Wb(b)>0for b/∈ S b0.999 0.583
+> Wb(bk+1 )≤cW b(bk)for bk/∈ S b0.982 –
+> ∆Wb(bk)≤ − min( Wb(bk), η )for bk/∈ S b0.95 –Reach Sb1.0 –Reach Sbwithin upper bound T < =E{K(b0)}0.983 –
+
+platform in the International Space Station [76]. When these cameras fail, the only available sensor is an onboard IMU. To navigate to its repair station autonomously, the robot needs to interact with its environment similar to the Bumper example. The dynamics of the space platform are given as stochastic double integrator dynamics 
+
+dp
+
+dv
+
+
+
+=
+
+vu
+
+
+
+dt + σdW (44) 
+
+z = {0, 1} (45) where p ∈ R2 denotes the robot’s position, v ∈ R2 is its velocity and u ∈ R2 is an acceleration control input. Similar to the original Constrained Bumper Scenario, we assume we have access to the map and the goal and avoid regions. Constrained by the quality of the epoxy-coated floor, we only allow uncertainty reduction via impacts with the left, right and upper wall, as the air-bearings get stuck near other parts of the border. We utilize onboard IMU measurements for detecting impacts with the border and artificially noise-corrupted motion-capture data to estimate the robot’s velocity. We learn the BCLF purely in simulation and directly transfer it to hardware. We solve the information-gathering control at 10 Hz and the BCBF safety filter at 50 Hz with the belief represented by 8000 particles. The first scenario, shown in Fig. 13, involves a repair station 
+
+Sg that can only be reached through a narrow corridor. From an initial uniform particle belief, the space platform reduces its uncertainty via a bump at the top of the workspace, after which the distribution is narrow enough to pass the corridor. A second bump after passage ensures the distribution is narrow enough to guarantee the reach-behavior with the desired probability. A second reach-avoid scenario, shown in Fig. 1, highlights how different initial conditions (under the same initial belief 
+
+b0) lead to qualitatively different trajectories. The initial lo-cation x10 is far enough to the right in the initial belief that only a single bump is required with the top of the workspace. Conversely, x20 experiences an additional bump with the left side of the workspace after which the uncertainty is still too significant in the vertical direction to enable the avoid and reach behavior. This leads to a second bump at the top of the workspace after which the uncertainty is low enough to reach the goal. Note that between these scenarios, the BCLF did not need to be retrained as its information-gathering behavior is only dependent on the shape of the workspace and is robust to dif-ferent initial beliefs. The scenarios presented here highlight the applicability of the proposed control architecture to real-world 17        
+
+> Fig. 13. Hardware validation for a reach-avoid scenario with a narrow passage. To navigate to the goal region Sg, the vertical uncertainty in the position (t= 0 s) needs to be reduced which is done with a bump with the top of the workspace ( t= 12 s). The belief narrows sufficiently and passage with probabilistic safety guarantees can be facilitated ( t= 25 .6s). In order to also provide the reach behavior with the desired probabilistic guarantee, a second bump ( t= 41 .4s) narrows the belief in the horizontal direction.
+
+robotics challenges. Thanks due to efficient QP formulations in Eq. 28 and Algorithm 1, a real-time control rate is achievable with a large number of particles leading to safe deployment under partial observability. IX. CONCLUSIONS AND FUTURE WORK This paper presented a layered, certificate-based control architecture for reach-avoid POMDPs that operates directly in belief space. By decoupling goal reaching, information gathering, and safety into separate modules, we showed how conflicting objectives under partial observability can be ad-dressed in a principled and scalable manner. Central to this architecture are Belief Control Lyapunov Functions (BCLFs) for information gathering and Belief Control Barrier Functions (BCBFs) for risk-aware safety, each providing their own prob-abilistic guarantees and operating at appropriate time scales. We formalized information gathering as a Lyapunov con-vergence problem in belief space and established theoretical conditions under which reinforcement learning value functions induce valid stochastic and finite-time BCLFs. For safety, we extended belief-space CBFs with conformal prediction to obtain finite-horizon probabilistic safety guarantees, moving beyond pointwise-in-time assurances. The resulting control synthesis reduces to lightweight optimization problems that can be solved in real time even for high-dimensional, non-Gaussian belief representations. Through extensive simulation studies and hardware exper-iments on a space robotics-platform, we demonstrated that the proposed architecture improves both safety and task per-formance compared to state-of-the-art constrained POMDP solvers. In particular, the modular design enables effective information gathering, resolves conflicts between safety and exploration, and supports reuse of learned BCLFs across different tasks without retraining. Future work will focus on improving scalability to higher-dimensional state spaces by exploring belief representations beyond standard particle filters, such as Stein variational particle filters [77]. Another promising direction is to leverage the reasoning capabilities of foundation models to maintain a lower-dimensional belief over the environment. Such compact belief representations could then be used to learn BCLFs that enable information gathering in complex, visually rich environments. In addition, it would be valuable to further investigate the probabilistic guarantees of the overall control architecture and the interactions between the different control modules. Since the BCLFs considered in this work are based on action-value functions with discretized action spaces, an important extension is to develop BCLFs for continuous action spaces, for example by leveraging algorithms such as TD3 [78] that learn continuous Q-functions. Finally, we plan to study formal and probabilistic verification of learned BCLFs, for instance by incorporating an additional layer of conformal prediction as proposed in [79]. REFERENCES [1] H. Kurniawati, “Partially observable markov decision processes and robotics,” Annual Review of Control, Robotics, and Autonomous Systems ,vol. 5, no. 1, pp. 253–277, 2022. [2] A. Zhitnikov and V. Indelman, “Simplified continuous high-dimensional belief space planning with adaptive probabilistic belief-dependent con-straints,” IEEE Transactions on Robotics , vol. 40, pp. 1684–1705, 2023. [3] A. zhitnikov and V. Indelman, “Anytime probabilistically constrained provably convergent online belief space planning,” IEEE Transactions on Robotics , 2025. [4] R. J. Moss, A. Jamgochian, J. Fischer, A. Corso, and M. J. Kochenderfer, “Constrainedzero: chance-constrained pomdp planning using learned probabilistic failure surrogates and adaptive safety constraints,” in Pro-ceedings of the Thirty-Third International Joint Conference on Artificial Intelligence , 2024, pp. 6752–6760. [5] S. G. Tzafestas, “Mobile robot control and navigation: A global overview,” Journal of Intelligent & Robotic Systems , vol. 91, no. 1, pp. 35–58, 2018. 18 
+
+[6] Z. Artstein, “Stabilization with relaxed controls,” Nonlinear Analysis: Theory, Methods & Applications , vol. 7, no. 11, pp. 1163–1173, 1983. [7] P. Ogren, A. Backlund, T. Harryson, L. Kristensson, and P. Stensson, “Autonomous ucav strike missions using behavior control lyapunov functions,” in AIAA guidance, navigation, and control conference and exhibit , 2006, p. 6197. [8] A. D. Ames, X. Xu, J. W. Grizzle, and P. Tabuada, “Control barrier function based quadratic programs for safety critical systems,” IEEE Transactions on Automatic Control , vol. 62, no. 8, pp. 3861–3876, 2016. [9] M. Vahs, C. Pek, and J. Tumova, “Belief control barrier functions for risk-aware control,” IEEE Robotics and Automation Letters , vol. 8, no. 12, pp. 8565–8572, 2023. [10] M. Vahs and J. Tumova, “Risk-aware control for robots with non-gaussian belief spaces,” in International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 11 661–11 667. [11] J. M. Porta, N. Vlassis, M. T. Spaan, and P. Poupart, “Point-based value iteration for continuous pomdps,” Journal of Machine Learning Research , vol. 7, pp. 2329–2367, 2006. [12] M. T. Spaan and N. Vlassis, “Perseus: Randomized point-based value iteration for pomdps,” Journal of artificial intelligence research , vol. 24, pp. 195–220, 2005. [13] T. Smith and R. Simmons, “Heuristic search value iteration for pomdps,” in Proceedings of the 20th conference on Uncertainty in artificial intelligence , 2004, pp. 520–527. [14] T. smith and R. Simmons, “Point-based pomdp algorithms: improved analysis and implementation,” in Proceedings of the Twenty-First Con-ference on Uncertainty in Artificial Intelligence , 2005, pp. 542–549. [15] H. Kurniawati, D. Hsu, W. S. Lee et al. , “Sarsop: Efficient point-based pomdp planning by approximating optimally reachable belief spaces.” in 
+
+Robotics: Science and systems , vol. 2008. Zurich, Switzerland, 2008. [16] N. P. Garg, D. Hsu, and W. S. Lee, “Despot-alpha: Online pomdp planning with large state and observation spaces.” in Robotics: Science and Systems , vol. 3, no. 3, 2019, pp. 3–2. [17] M. Hoerger and H. Kurniawati, “An on-line pomdp solver for contin-uous observation spaces,” in International conference on robotics and automation (ICRA) . IEEE, 2021, pp. 7643–7649. [18] M. H. Lim, C. J. Tomlin, and Z. N. Sunberg, “Sparse tree search optimality guarantees in pomdps with continuous observation spaces,” in 
+
+Proceedings of the Twenty-Ninth International Conference on Interna-tional Joint Conferences on Artificial Intelligence , 2021, pp. 4135–4142. [19] J. Mern, A. Yildiz, Z. Sunberg, T. Mukerji, and M. J. Kochenderfer, “Bayesian optimized monte carlo planning,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 35, no. 13, 2021, pp. 11 880– 11 887. [20] Z. Sunberg and M. Kochenderfer, “Online algorithms for pomdps with continuous state, action, and observation spaces,” in Proceedings of the International Conference on Automated Planning and Scheduling ,vol. 28, 2018, pp. 259–263. [21] M. Barenboim and V. Indelman, “Online pomdp planning with anytime deterministic guarantees,” Advances in Neural Information Processing Systems , vol. 36, pp. 79 886–79 902, 2023. [22] J. Lee, G.-H. Kim, P. Poupart, and K.-E. Kim, “Monte-carlo tree search for constrained pomdps,” Advances in Neural Information Processing Systems , vol. 31, 2018. [23] A. Jamgochian, A. Corso, and M. J. Kochenderfer, “Online planning for constrained pomdps with continuous spaces through dual ascent,” in Proceedings of the International Conference on Automated Planning and Scheduling , vol. 33, 2023, pp. 198–202. [24] P. Stocco, S. Chundi, A. Jamgochian, and M. J. Kochenderfer, “Address-ing myopic constrained pomdp planning with recursive dual ascent,” in 
+
+Proceedings of the International Conference on Automated Planning and Scheduling , vol. 34, 2024, pp. 565–569. [25] A. Jamgochian, H. Buurmeijer, K. H. Wray, A. Corso, and M. J. Kochen-derfer, “Constrained hierarchical monte carlo belief-state planning,” in 
+
+International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 2368–2374. [26] R. Platt, R. Tedrake, L. P. Kaelbling, and T. Lozano-Perez, “Belief space planning assuming maximum likelihood observations,” in Robotics: Science and Systems , 2010. [27] J. Van Den Berg, S. Patil, and R. Alterovitz, “Motion planning under uncertainty using iterative local optimization in belief space,” The International Journal of Robotics Research , vol. 31, no. 11, pp. 1263– 1278, 2012. [28] M. P. Vitus and C. J. Tomlin, “Closed-loop belief space planning for linear, gaussian systems,” in International Conference on Robotics and Automation . IEEE, 2011, pp. 2152–2159. [29] M. Vahs, C. Pek, and J. Tumova, “Risk-aware spatio-temporal logic planning in gaussian belief spaces,” in International Conference on Robotics and Automation . IEEE, 2023, pp. 7879–7885. [30] R. Platt Jr and R. Tedrake, “Non-gaussian belief space planning as a convex program,” in Proc. of the IEEE Conference on Robotics and Automation , 2012. [31] R. Platt, L. Kaelbling, T. Lozano-Perez, and R. Tedrake, “Efficient planning in non-gaussian belief spaces and its application to robot grasping,” in Robotics Research: The 15th International Symposium ISRR . Springer, 2016, pp. 253–269. [32] N. Atanasov, J. Le Ny, K. Daniilidis, and G. J. Pappas, “Information acquisition with sensing robots: Algorithms and error bounds,” in 
+
+International conference on robotics and automation (ICRA) . IEEE, 2014, pp. 6447–6454. [33] X. Cai, B. Schlotfeldt, K. Khosoussi, N. Atanasov, G. J. Pappas, and J. P. How, “Non-monotone energy-aware information gathering for heterogeneous robot teams,” in International Conference on Robotics and Automation (ICRA) . IEEE, 2021, pp. 8859–8865. [34] P. Yang, Y. Liu, S. Koga, A. Asgharivaskasi, and N. Atanasov, “Learning continuous control policies for information-theoretic active perception,” in International Conference on Robotics and Automation (ICRA) . IEEE, 2023. [35] S. Sheng, P. Yu, D. Parker, M. Kwiatkowska, and L. Feng, “Safe pomdp online planning among dynamic agents via adaptive conformal prediction,” IEEE Robotics and Automation Letters , 2024. [36] M. Ahmadi, N. Jansen, B. Wu, and U. Topcu, “Control theory meets pomdps: A hybrid systems approach,” IEEE Transactions on Automatic Control , vol. 66, no. 11, pp. 5191–5204, 2020. [37] R. Walia, M. Black, A. Schoer, and K. Leahy, “Belief space control of safety-critical systems under state-dependent measurement noise,” arXiv preprint arXiv:2510.14100 , 2025. [38] S. Han, M. Vahs, and J. Tumova, “Risk-aware robot control in dynamic environments using belief control barrier functions,” arXiv preprint arXiv:2504.04097 , 2025. [39] G. M. Hoffmann and C. J. Tomlin, “Mobile sensor network control using mutual information methods and particle filters,” IEEE Transactions on Automatic Control , vol. 55, no. 1, pp. 32–47, 2009. [40] G. M. Hoffmann, S. L. Waslander, and C. J. Tomlin, “Mutual informa-tion methods with particle filters for mobile sensor network control,” in 
+
+Proceedings of the 45th Conference on Decision and Control . IEEE, 2006, pp. 1019–1024. [41] C. Dawson, B. Lowenkamp, D. Goff, and C. Fan, “Learning safe, generalizable perception-based hybrid control with certificates,” IEEE Robotics and Automation Letters , vol. 7, no. 2, pp. 1904–1911, 2022. [42] C. Dawson, S. Gao, and C. Fan, “Safe control with learned certificates: A survey of neural lyapunov, barrier, and contraction methods for robotics and control,” IEEE Transactions on Robotics , vol. 39, no. 3, pp. 1749– 1767, 2023. [43] C. Dawson, Z. Qin, S. Gao, and C. Fan, “Safe nonlinear control using robust neural lyapunov-barrier functions,” in Conference on Robot Learning . PMLR, 2022, pp. 1724–1735. [44] K. Long, C. Qian, J. Cort´ es, and N. Atanasov, “Learning barrier functions with memory for robust safe navigation,” IEEE Robotics and Automation Letters , vol. 6, no. 3, pp. 4931–4938, 2021. [45] W. Xiao, T.-H. Wang, R. Hasani, M. Chahine, A. Amini, X. Li, and D. Rus, “Barriernet: Differentiable control barrier functions for learning of safe robot control,” IEEE Transactions on Robotics , vol. 39, no. 3, pp. 2289–2307, 2023. [46] K. Long, Y. Yi, J. Cort´ es, and N. Atanasov, “Distributionally robust lyapunov function search under uncertainty,” in Learning for Dynamics and Control Conference . PMLR, 2023, pp. 864–877. [47] K. Long, J. Cortes, and N. Atanasov, “Distributionally robust policy and lyapunov-certificate learning,” IEEE Open Journal of Control Systems ,2024. [48] J. Zhang, Q. Zhu, and W. Lin, “Neural stochastic control,” Advances in neural information processing systems , vol. 35, pp. 9098–9110, 2022. [49] G. Neustroev, M. Giacobbe, and A. Lukina, “Neural continuous-time supermartingale certificates,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 26, 2025, pp. 27 538–27 546. [50] M. Tayal, H. Zhang, P. Jagtap, A. Clark, and S. Kolathaya, “Learning a formally verified control barrier function in stochastic environment,” in 63rd Conference on Decision and Control (CDC) . IEEE, 2024, pp. 4098–4104. [51] H. Zhang, M. Tayal, J. Cox, P. Jagtap, S. Kolathaya, and A. Clark, “Stochastic neural control barrier functions,” arXiv preprint arXiv:2506.21697 , 2025. 19 
+
+[52] O. So, Z. Serlin, M. Mann, J. Gonzales, K. Rutledge, N. Roy, and C. Fan, “How to train your neural control barrier function: Learning safety filters for complex input-constrained systems,” in International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 11 532–11 539. [53] D. C. Tan, R. McCarthy, F. Acero, A. M. Delfaki, Z. Li, and D. Kanoulas, “Safe value functions: Learned critics as hard safety constraints,” in 
+
+20th International Conference on Automation Science and Engineering (CASE) . IEEE, 2024, pp. 2441–2448. [54] F. Berkenkamp, M. Turchetta, A. Schoellig, and A. Krause, “Safe model-based reinforcement learning with stability guarantees,” Advances in neural information processing systems , vol. 30, 2017. [55] K. Nakamura, L. Peters, and A. Bajcsy, “Generalizing safety beyond collision-avoidance via latent-space reachability analysis,” arXiv preprint arXiv:2502.00935 , 2025. [56] S. Agrawal, J. Seo, K. Nakamura, R. Tian, and A. Bajcsy, “Anysafe: Adapting latent safety filters at runtime via safety constraint parameter-ization in the latent space,” arXiv preprint arXiv:2509.19555 , 2025. [57] K. Nakamura, A. L. Bishop, S. Man, A. M. Johnson, Z. Manchester, and A. Bajcsy, “How to train your latent control barrier function: Smooth safety filtering under hard-to-model constraints,” 2025. [Online]. Available: https://arxiv.org/abs/2511.18606 [58] D. Du, S. Han, N. Qi, H. B. Ammar, J. Wang, and W. Pan, “Rein-forcement learning for safe robot control using control lyapunov barrier functions,” in International Conference on Robotics and Automation, ICRA 2023 . IEEE, 2023, pp. 9442–9448. [59] A. Clark, “Control barrier functions for stochastic systems,” Automatica ,vol. 130, p. 109688, 2021. [60] O. So, A. Clark, and C. Fan, “Almost-sure safety guarantees of stochastic zero-control barrier functions do not hold,” arXiv preprint arXiv:2312.02430 , 2023. [61] W. M. Haddad and J. Lee, “Lyapunov theorems for stability and semistability of discrete-time stochastic systems,” Automatica , vol. 142, p. 110393, 2022. [62] J. Lee, W. M. Haddad, and M. Lanchares, “Finite time stability and optimal finite time stabilization for discrete-time stochastic dynamical systems,” IEEE Transactions on Automatic Control , vol. 68, no. 7, pp. 3978–3991, 2022. [63] G. Shafer and V. Vovk, “A tutorial on conformal prediction.” Journal of Machine Learning Research , vol. 9, no. 3, 2008. [64] L. Lindemann, Y. Zhao, X. Yu, G. J. Pappas, and J. V. Deshmukh, “Formal verification and control with conformal prediction: Practical safety guarantees for autonomous systems,” IEEE Control Systems ,vol. 45, no. 6, pp. 72–122, 2025. [65] A. H. Jazwinski, Stochastic processes and filtering theory . Courier Corporation, 2007. [66] S. S¨ arkk¨ a, Recursive Bayesian inference on stochastic differential equa-tions . Helsinki University of Technology, 2006. [67] M. Mallick, M. Morelande, and L. Mihaylova, “Continuous-discrete filtering using ekf, ukf, and pf,” in 15th International Conference on Information Fusion . IEEE, 2012, pp. 1087–1094. [68] D. Crisan and A. Doucet, “A survey of convergence results on particle filtering methods for practitioners,” IEEE Transactions on Signal Pro-cessing , vol. 50, no. 3, pp. 736–746, 2002. [69] S. Thrun, W. Burgard, and D. Fox, Probabilistic robotics . Cambridge, Mass.: MIT Press, 2005. [70] R. Lamberti, Y. Petetin, F. Desbouvries, and F. Septier, “Independent resampling sequential monte carlo algorithms,” IEEE Transactions on Signal Processing , vol. 65, no. 20, pp. 5318–5333, 2017. [71] R. lamberti, Y. Petetin, F. Desbouvries, and F. Septier, “Semi-independent resampling for particle filtering,” IEEE Signal Processing Letters , vol. 25, no. 1, pp. 130–134, 2017. [72] L. Bruderm¨ uller, J. Jankowski, S. Calinon, M. Toussaint, and N. Hawes, “Tactile exploration with particle-based belief entropy,” in 
+
+2nd Workshop on Dexterous Manipulation: Design, Perception and Control (RSS) , 2024. [Online]. Available: https://openreview.net/forum? id=7sKUwZvTD6 [73] C. R. Qi, H. Su, K. Mo, and L. J. Guibas, “Pointnet: Deep learning on point sets for 3d classification and segmentation,” in Proceedings of the IEEE conference on computer vision and pattern recognition , 2017, pp. 652–660. [74] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Veness, M. G. Bellemare, A. Graves, M. Riedmiller, A. K. Fidjeland, G. Ostrovski 
+
+et al. , “Human-level control through deep reinforcement learning,” 
+
+nature , vol. 518, no. 7540, pp. 529–533, 2015. [75] T. G. Molnar and A. D. Ames, “Composing control barrier functions for complex safety specifications,” IEEE Control Systems Letters , vol. 7, pp. 3615–3620, 2023. [76] T. Smith, J. Barlow, M. Bualat, T. Fong, C. Provencher, H. Sanchez, and E. Smith, “Astrobee: A new platform for free-flying robotics on the international space station,” in International Symposium on Artificial Intelligence, Robotics, and Automation in Space (i-SAIRAS) , no. ARC-E-DAA-TN31584, 2016. [77] F. A. Maken, F. Ramos, and L. Ott, “Stein particle filter for nonlinear, non-gaussian state estimation,” IEEE Robotics and Automation Letters ,vol. 7, no. 2, pp. 5421–5428, 2022. [78] S. Fujimoto, H. Hoof, and D. Meger, “Addressing function approxi-mation error in actor-critic methods,” in International conference on machine learning . PMLR, 2018, pp. 1587–1596. [79] A. Lin and S. Bansal, “Verification of neural reachable tubes via scenario optimization and conformal prediction,” in 6th Annual Learning for Dynamics & Control Conference . PMLR, 2024, pp. 719–731. [80] S. Yang, G. J. Pappas, R. Mangharam, and L. Lindemann, “Safe perception-based control under stochastic sensor uncertainty using con-formal prediction,” in 62nd Conference on Decision and Control (CDC) .IEEE, 2023, pp. 6072–6078. 
+
+X. A PPENDIX 
+
+A. Proof of Theorem 5 Proof. First, we show that the CLF candidate is greater than zero everywhere outside the goal set and zero inside. If the state is inside the goal set, the reward is always r(x, u) = 0 ,hence 
+
+W (x) = −V ∗ (x) = −
+
+> ∞
+
+X
+
+> k=0
+
+γkr(xk, uk) = 0 . (46) If the state is outside the goal set, and we have strictly negative rewards for all x /∈ S g , we obtain W (x) = −V ∗ (x) > 0,thus the first conditions of a stochastic CLF in Def 2 hold. Next, we show the expected decrease condition. From the Bellman equation, we have 
+
+Q∗(x, u) = Ew{ r(x, u) + γV ∗(F (x, u, w)) } . (47) Substituting W (x) = −V ∗ (x) yields 
+
+Ew{ W (F (x, u, w)) } = 1
+
+γ (r(x, u) − Q∗(x, u)) . (48) For the optimal control input u∗(x), we have Q∗(x, u∗(x)) = 
+
+V ∗ (x) = −W (x), which gives 
+
+Ew{ W (F (x, u∗(x), w)) } ≤ 1
+
+γ (Rmax + W (x)) . (49) For all x ∈ D , we have W (x) ≤ Wmax , so that 
+
+Ew{ W (F (x, u∗(x), w)) } ≤ 1
+
+γ
+
+
+
+1 + Rmax 
+
+Wmax 
+
+
+
+W (x) (50) 
+
+= cmin W (x) . (51) Since Rmax < 0 and Wmax < |Rmax |/(1 − γ), it follows that 
+
+cmin < 1. Hence, there exists a constant c ∈ [cmin , 1) such that 
+
+Ew{ W (F (x, u, w)) } ≤ c W (x) , (52) for some control input u ∈ U (in particular, u∗(x)). Since 
+
+W (x) > 0 for all x /∈ S g and W (x) = 0 for x ∈ S g , all SCLF conditions in Def. 2 hold. Therefore, W (x) = −V ∗ (x)
+
+is a stochastic Control Lyapunov Function on D.20 
+
+B. Proof of Theorem 6 Proof. By the same logic of the proof in Sec. X-A, we know that W (x) ≤ 0 ∀x ∈ S g and W (x) > 0 ∀x /∈ S g . Further, we can obtain 
+
+∆W := Ew{ W (F (x, u∗(x), w)) } − W (x) (53) 
+
+≤ 1
+
+γ (Rmax + (1 − γ)W (x)) =: ϕ(W ). (54) Note that ϕ(W ) is affine and strictly increasing in W since 
+
+1 − γ > 0. For fixed-time convergence, we need to show that ∆W ≤ − min( W (x) , η ). First, we consider the region 
+
+0 < W (x) ≤ η for which we require ∆W ≤ − W . As ϕ(W )
+
+is strictly increasing, it suffices to check at the worst case 
+
+W (x) = η, i.e. ϕ(η) ≤ − η:
+
+(1 − γ)η + Rmax 
+
+γ ≤ − η (55) 
+
+⇔ (1 − γ)η + Rmax ≤ − γη (56) 
+
+⇔ η + Rmax ≤ 0 (57) which holds by assumption. Next, consider the region η ≤
+
+W (x) ≤ Wmax for which it, again, suffices to check 
+
+ϕ(Wmax ) ≤ − η:
+
+(1 − γ)Wmax + Rmax 
+
+γ ≤ − η (58) 
+
+⇔ (|Rmax | − γη ) + Rmax 
+
+γ ≤ − η (59) 
+
+⇔ − η ≤ − η (60) which concludes that W (x) = −V ∗ (x) is a local finite-time stochastic CLF on the domain D.
+
+C. Proof of Proposition 1 
+
+The proof is adapted from [80]. 
+
+Proof. We start with 
+
+Pr[ xt /∈ S a, ∀t ∈ ∪ Mk=1 Ik] (61) 
+
+= Pr[ xt /∈ S a, ∀t ∈ IM | xt /∈ S a, ∀t ∈ ∪ M −1 
+
+> k=1
+
+Ik] (62) 
+
+· Pr[ xt /∈ S a, ∀t ∈ ∪ M −1 
+
+> k=1
+
+Ik] (63) 
+
+= Pr[ xt /∈ S a, ∀t ∈ IM | xtM −1 /∈ S a] (64) 
+
+· Pr[ xt /∈ S a, ∀t ∈ ∪ M −1 
+
+> k=1
+
+Ik] (65) 
+
+= (1 − ¯δa) · Pr[ xt /∈ S a, ∀t ∈ ∪ M −1 
+
+> k=1
+
+Ik] (66) By Assumption 1, we assume that a discrete transition on the belief state does not leave the safe set, thus we can apply this result recursively, to obtain 
+
+Pr[ xt /∈ S a, ∀t ∈ ∪ Mk=1 Ik] = (1 − ¯δa)M · Pr[ x0 /∈ S a] (67) 
+
+= (1 − ¯δa)M . (68)

@@ -1,0 +1,3721 @@
+Title: Cross-Domain Policy Optimization via Bellman Consistency and Hybrid Critics
+
+URL Source: https://arxiv.org/pdf/2603.12087v1
+
+Published Time: Fri, 13 Mar 2026 01:21:52 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+Published as a conference paper at ICLR 2026 
+
+# CROSS -D OMAIN POLICY OPTIMIZATION VIA BELLMAN 
+
+# CONSISTENCY AND HYBRID CRITICS 
+
+Ming-Hong Chen 1∗ Kuan-Chen Pan 1∗ You-De Huang 1∗ Xi Liu 2 Ping-Chun Hsieh 11National Yang Ming Chiao Tung University, Hsinchu, Taiwan 
+
+> 2
+
+Applied Machine Learning, Meta AI, Menlo Park, CA, USA 
+
+{mhchen1224.cs12, pinghsieh}@nycu.edu.tw 
+
+## ABSTRACT 
+
+Cross-domain reinforcement learning (CDRL) is meant to improve the data effi-ciency of RL by leveraging the data samples collected from a source domain to facilitate the learning in a similar target domain. Despite its potential, cross-domain transfer in RL is known to have two fundamental and intertwined challenges: (i) The source and target domains can have distinct state space or action space, and this makes direct transfer infeasible and thereby requires more sophisticated inter-domain mappings; (ii) The transferability of a source-domain model in RL is not easily identifiable a priori, and hence CDRL can be prone to negative effect during transfer. In this paper, we propose to jointly tackle these two challenges through the lens of cross-domain Bellman consistency and hybrid critic . Specifi-cally, we first introduce the notion of cross-domain Bellman consistency as a way to measure transferability of a source-domain model. Then, we propose QAvatar, which combines the Q functions from both the source and target domains with an adaptive hyperparameter-free weight function. Through this design, we char-acterize the convergence behavior of QAvatar and show that QAvatar achieves reliable transfer in the sense that it effectively leverages a source-domain Q function for knowledge transfer to the target domain. Through experiments, we demon-strate that QAvatar achieves favorable transferability across various RL benchmark tasks, including locomotion and robot arm manipulation. Our code is available at https://rl-bandits-lab.github.io/Cross-Domain-RL/ .
+
+## 1 INTRODUCTION 
+
+Cross-domain reinforcement learning (CDRL) serves as a practical framework to improve the sample efficiency of RL from the perspective of transfer learning, which leverages the pre-trained models from a source domain to enable knowledge transfer to the target domain, under the presumption that the data collection and model training are much less costly in the source domain ( e.g., simulators). A plethora of the existing CDRL methods focuses on knowledge transfer across environments that share the same state-action spaces but with different transition dynamics. This setting has been extensively studied from a variety of perspectives, such as reward augmentation (Eysenbach et al., 2021; Liu et al., 2022), data filtering (Xu et al., 2023), and latent representations (Lyu et al., 2024). Despite the above progress, to fully realize the promise of CDRL, there are two fundamental challenges to tackle: (i) Distinct state and/or action spaces between domains : To support flexible transfer across a wide variety of domains, the generic CDRL is required to address the discrepancies in the state and action spaces between source and target domains. Take robot control as an example. One common scenario is to apply direct policy transfer between robot agents of different morphologies (Zhang et al., 2021), which naturally leads to a discrepancy in representations. This discrepancy significantly complicates the transfer of either data samples or learned source-domain models. (ii) Unknown transferability of a source-domain model to the target domain : CDRL conventionally presumes that the source-domain model can achieve effective transfer under a properly learned cross-domain correspondence. However, in practice, given that the data budget of the target domain is limited, it is rather difficult to determine a priori the transferability of a source-domain model. Indeed, it has 
+
+> ∗
+
+Equal contribution. 
+
+1
+
+> arXiv:2603.12087v1 [cs.LG] 12 Mar 2026
+
+Published as a conference paper at ICLR 2026 been widely observed that transfer learning from the source domain can have a negative impact on the target domain (Weiss et al., 2016; Pan & Yang, 2009). As a consequence, despite that CDRL has been shown to succeed in various scenarios, without a proper design, the performance of CDRL could actually be much worse than the vanilla target-domain model learned without using any source knowledge. Notably, to tackle (i), several approaches have been proposed to address such representation discrepancy by learning state-action correspondence, either in the typical RL (You et al., 2022) or unsupervised settings (Zhang et al., 2021; Gui et al., 2023). However, existing solutions are all oblivious to the issues of model transferability between the domains. Hence, one fundamental research question about CDRL remains largely open: 
+
+How to achieve effective transfer in CDRL under distinct state-action spaces without the knowledge of the transferability of the pre-trained source-domain model? 
+
+In this paper, we affirmatively address the above question by revisiting cross-domain state-action correspondence through the lens of cross-domain Bellman consistency , which quantifies the transfer-ability of a source-domain model. To enable reliable transfer across varying levels of source-model transferability, we introduce a novel CDRL framework, QAvatar , which integrates source-domain and target-domain critics. Drawing an analogy from the movie Avatar , where humans remotely control genetically engineered bodies to adapt to alien environments, QAvatar updates the target-domain policy via a weighted combination of the target- and source-domain Q functions, while learning the state-action correspondence by minimizing a cross-domain Bellman loss. To validate this idea, we first present a tabular prototype of QAvatar and show that it attains a tight sub-optimality bound under an adaptive, hyperparameter-free weight function, regardless of source model transferability. This ensures improved sample efficiency while avoiding poor transfer. Building on this, we develop a practical version by combining QAvatar with a normalizing flow-based mapping for learning state-action correspondence. The main contributions of this paper can be summarized as follows: 1) We propose the QAvatar framework that achieves knowledge transfer between two domains with distinct state and action spaces for improving sample efficiency. We then present a prototypical QAvatar algorithm and establish its convergence property. 2) We further substantiate the QAvatar framework by proposing a practical implementation with a normalizing-flow-based state-action mapping. This further demonstrates the compatibility of QAvatar with off-the-shelf methods for learning state-action correspondence. 3) Through experiments and an ablation study, we show that QAvatar outperforms the CDRL benchmark algorithms on various RL benchmark tasks. 
+
+## 2 RELATED WORK 
+
+CDRL across domains with distinct state and action spaces. The existing approaches can be divided into two main categories: (i) Manually designed latent mapping : In (Ammar & Taylor, 2012; Gupta et al., 2017; Ammar et al., 2012), the trajectories are mapped manually from the source domain and the target domain to a common latent space. The distance between latent states can then be calculated to find the correspondence of the states from the different domains. (ii) Learned inter-domain mapping : In (Taylor et al., 2008; Zhang et al., 2021; You et al., 2022; Gui et al., 2023; Zhu et al., 2024), the inter-domain mapping is mainly learned by enforcing dynamics alignment (or termed dynamics cycle consistency in (Zhang et al., 2021)). Additional properties have also been incorporated as auxiliary loss functions in learning the inter-domain mapping, including domain cycle consistency (Zhang et al., 2021), effect cycle consistency (Zhu et al., 2024), maximizing mutual information between states and embeddings (You et al., 2022) However, the existing approaches all presume that the domains are sufficiently similar and do not have any performance guarantees. By contrast, we propose a reliable CDRL method that can achieve transfer regardless of source-domain model quality or domain similarity with guarantees. 
+
+CDRL across domains with identical state and action spaces. Various methods have been proposed for the case where source and target domains share the same state and action spaces but are subject to dynamics mismatch. Existing methods include (i) using the samples from both source and target domains jointly for learning (Eysenbach et al., 2021; Liu et al., 2022; Xu et al., 2023; Lyu et al., 2024), (ii) explicit characterization of domain similarity (Behboudian et al., 2022; Sreenivasan et al., 2Published as a conference paper at ICLR 2026 2023), and (iii) using both Q-functions for Q-learning updates (Wang et al., 2020). However, given the assumption on identical state-action spaces, they are not readily applicable to our CDRL setting. 
+
+## 3 PRELIMINARIES 
+
+In this section, we provide the problem statement and basic building blocks of CDRL as well as the useful notation needed by subsequent sections. For a set X , we let ∆( X ) denote the set of probability distributions over X . As in typical RL, we model each environment as an infinite-horizon discounted Markov decision process (MDP) denoted by M := ( S, A, P, r, γ, μ ), where (i) S and A
+
+represent the state space and action space, (ii) P : S × A → ∆( S) denotes the transition function, (iii) r : S × A → [0 , 1] is the reward function (without loss of generality, we presume the rewards lie in the [0 , 1] interval), (iv) γ ∈ [0 , 1) is the discounted factor, and (v) μ ∈ ∆( S × A ) denotes the initial state-action distribution. Notably, the use of an initial distribution over states and actions is a standard setting in the literature of natural policy gradient (NPG) (Agarwal et al., 2021a; Ding et al., 2020; Yuan et al., 2022; Agarwal et al., 2020; Zhou et al., 2024). Given any policy π : S → ∆( A),let τ = ( s0, a 0, r 1, · · · ) denote a (random) trajectory generated under π in M, and the expected total discounted reward under π is V π
+
+> M
+
+(μ) := E[P∞ 
+
+> t=0
+
+γtr(st, a t)|π; s0, a 0 ∼ μ]. We use Qπ
+
+> M
+
+(s, a )
+
+and V π
+
+> M
+
+(s) to denote the Q function and value function of a policy π. We also define the state-action visitation distribution (also known as the occupancy measure in the MDP literature) of π as 
+
+dπ (s, a ) := (1 − γ) μ(s, a ) + P∞ 
+
+> t=1
+
+γtP(st = s, a t = a; π, μ ), for each (s, a ).
+
+Problem Statement of Cross-Domain RL. In typical CDRL, the knowledge transfer involves two MDPs, namely the source-domain MDP Msrc := ( Ssrc , Asrc , P src , r src , γ, μ src ) and the target-domain MDP Mtar := ( Star , Atar , P tar , r tar , γ, μ tar )1. Notably, in addition to distinct state and action spaces, the two domains can have different reward functions, transition dynamics, and initial distributions. We assume that the two MDPs share the same discounted factor γ, which is rather mild. Moreover, the trajectories of the two domains are completely unpaired. Let Πtar be the set of all stationary Markov policies for Mtar .The goal of the RL agent is to learn a policy π∗ in the target domain such that the expected total discounted reward is maximized, i.e., π∗ := arg max π∈Πtar V π 
+
+> Mtar
+
+(μtar ). To improve sample efficiency via knowledge transfer (compared to learning from scratch), in CDRL, the target-domain agent is granted access to (πsrc , Q src , V src ), which denotes a policy and the corresponding Q and value functions pre-trained in Msrc . Notably, we make no assumption on the quality of πsrc (and hence 
+
+πsrc may not be optimal to Msrc ), despite that πsrc shall exhibit acceptable performance in practice. In this paper, we focus on designing a reliable CDRL algorithm in that it effectively leverages a source-domain Q function Qsrc for knowledge transfer to the target domain, regardless of the quality of Qsrc and domain similarity. 
+
+Inter-Domain Mapping Functions. To address the discrepancy in state-action spaces in CDRL, learning an inter-domain mapping is one common block of many CDRL algorithms. Specifically, there are a variety of ways to construct the mapping functions, such as handcrafted functions (Ammar & Taylor, 2012), encoders and decoders trained by cycle consistency (You et al., 2022) like cycle-GAN (Zhu et al., 2017), neural networks trained by dynamics alignment of the MDPs (Gui et al., 2023). Moreover, mapping functions have various candidate target spaces, such as a latent space, state or action spaces of the target domain ( i.e., from Ssrc , Asrc to Star , Atar ), and state or action spaces of the source domain ( i.e., from Star , Atar to Ssrc , Asrc ). For example, Gui et al. (2023) proposed learning two mappings, G1 : Star → S src and G2 : Asrc →Atar , via dynamics alignment, which infers the unknown mapping between unpaired trajectories of 
+
+Msrc and Mtar by aligning one-step state transitions. However, this unsupervised approach provides no performance guarantee and can suffer from identification issues. By contrast, we propose learning inter-domain state and action mappings, ϕ : Star → S src and ψ : Atar → A src , using a cross-domain Bellman-like loss with guarantees (Section 4). Appendix D.1 shows a toy example where cycle consistency fails, but the Bellman-like loss leverages target rewards to learn a better mapping. 
+
+> 1Throughout this paper, we use the subscripts “src" and “tar" to represent the objects in the source and target domains, respectively.
+
+3Published as a conference paper at ICLR 2026 
+
+Tabular Approximate Q-Natural Policy Gradient. Natural Policy Gradient (NPG) (Kakade, 2001; Agarwal et al., 2019) is a classical RL algorithm. In this paper, we adopt NPG under two assumptions to analyze CDRL: (i) Tabular setting: finite state and action spaces, with independent parameters for each state–action pair (s, a ); (ii) Approximate Q-function: the true Qπ is inaccessible due to limited data, so we use an empirical approximation from samples. At iteration t, we first collect data D(t) by executing π(t), then obtain Q(t) by minimizing the standard TD loss for least-squares policy evaluation (LSPE) (Lagoudakis & Parr, 2001; Yu & Bertsekas, 2009; Lazaric et al., 2012) 2
+
+LTD (Q(t); π(t), D(t)) := ˆE(s,a,r,s ′)∈D (t)
+
+h
+
+r + γEa′∼π(t) [Q(t)(s′, a ′)] − Q(t)(s, a ) 2i
+
+. (1) Finally, we perform a one-step policy improvement: π(t+1) (a|s) ∝ π(t)(a|s) exp 
+
+
+
+ηQ (t)(s, a )
+
+
+
+,where η is the learning rate. This update improves the policy while staying close to the original. 
+
+Notation. Throughout this paper, for any policy π and any real-valued function h : S × A → R,we use h(s, π ) and ¯h(s, a ; π) as the shorthand for Ea∼π(·| s)[h(s, a )] and h(s, a ) − Ea∼π(·| s)[h(s, a )] ,respectively. For any real vector z and p ≥ 1, we let ∥z∥p be the ℓp-norm of z. For any real-valued function f : S × A → R, we use ∥f ∥dπ(t) as the shorthand for E(s,a )∼dπ(t)
+
+f (s, a ).
+
+## 4 METHODOLOGY 
+
+Algorithm 1 Direct Q Transfer (DQT) 
+
+Require: Source-domain Q function Qsrc , total iterations T , and η = (1 − γ)p1/T .
+
+1: Initialize π(1) as a uniformly random policy. 
+
+2: for iteration t = 1 , · · · , T do 
+
+3: Select ϕ(t) and ψ(t)
+
+4: Update target-domain policy as in (3). 
+
+5: end for 
+
+6: Return π(T ) 
+
+> tar
+
+∼ Uniform ({π(1) , · · · , π (T )}).In this section, we first describe the concept of cross-domain Bellman consistency and accordingly propose the QAvatar framework in the tabular set-ting ( i.e., Star and Atar are finite). We then extend this framework to a practical deep RL implemen-tation. 4.1 CROSS -D OMAIN BELLMAN CONSISTENCY 
+
+To motivate Source domain Q-function transfer, we present the sub-optimal gap of traditional NPG. First, we describe the definitions of state-action distribution coverage and TD error. 
+
+Definition 1 (Coverage) . Given a target-domain policy π† in Mtar , we say that π† has coverage Cπ†
+
+if for any policy π ∈ Πtar , we have ∥dπ†
+
+/d π ∥∞ ≤ Cπ† .
+
+Assumption 1. The initial distribution is exploratory, i.e., μtar (s, a ) > 0, for all s, a .
+
+Notably, Cπ† is finite if ∥dπ†
+
+/μ tar ∥∞ is finite (since ∥μtar /d π ∥∞ ≤ 1/(1 − γ) for all π by the definition of dπ ), which holds under an exploratory initial distribution with μtar (s, a ) > 0 for all 
+
+(s, a )—a standard assumption in the NPG literature (Agarwal et al., 2021a; Ding et al., 2020; Yuan et al., 2022; Agarwal et al., 2020; Zhou et al., 2024). Intuitively, coverage enables direct comparison of Bellman errors between policies. We also use μtar ,min as shorthand for min s,a μtar (s, a ).
+
+Definition 2 (TD Error) . For each state-action pair (s, a ) and t ∈ N, the TD error ϵ(t) 
+
+> td
+
+(s, a ) is defined as ϵ(t) 
+
+> td
+
+(s, a ) := Q(t) 
+
+> tar
+
+(s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a ),a ′∼π(t)(·| s′)[Q(t) 
+
+> tar
+
+(s′, a ′)] .
+
+Proposition 1. Under the tabular and approximate-Q settings, and Assumption 1, the average sub-optimality of Q-NPG over T iterations is upper bounded by 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+Q(t) 
+
+> tar
+
+− Qπ(t)
+
+> dπ(t)
+
+| {z }
+
+> (b)
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+| {z }
+
+> (c)
+
+, (2) 
+
+where C0 := 2 Cπ∗ /(1 − γ) and C1 := 2 Cπ∗ /((1 − γ)3μtar, min ).
+
+> 2
+
+LSPE under linear function approximation includes the tabular case via one-hot features: 
+
+4Published as a conference paper at ICLR 2026 The detailed proof of Proposition 1 is provided in Appendix B. The upper bound of the sub-optimality gap has two parts. Term (a) characterizes Q-NPG learning and converges at O(1 /√T ), while term (b) (or equivalently term (c)) accounts for approximation error at each iteration, which can be made arbitrarily small with enough samples (Agarwal et al., 2021a). In CDRL, limited data amplifies term (b), potentially preventing convergence to the optimal policy. To mitigate this issue, instead of learning Q(t) from scratch to approximate Qπ(t)
+
+, we leverage a pre-trained source-domain Q-function Qsrc (ϕ(t)(s), ψ (t)(a)) with inter-domain mapping ϕ(t) and ψ(t) to approximate Qπ(t)
+
+. Here, the inter-domain mappings ϕ(t) and ψ(t) are introduced to address the state–action representation mismatch. For more specifically, we present Direct Q Transfer (DQT) method, in each iteration t,DQT proceeds in two steps: (i) It first updates ϕ(t) and ψ(t), e.g., by gradient descent on some loss function. (ii) The policy is updated by an NPG policy improvement step based on the pre-trained source-domain Qsrc and inter-domain mappings ϕ(t), ψ (t) as 
+
+π(t+1) (a|s) ∝ π(t)(a|s) exp 
+
+
+
+ηQ src (ϕ(t)(s), ψ (t)(a)) 
+
+
+
+, (3) where η is the step size. The pseudo code is in Algorithm 1. Before characterizing the convergence behavior, we describe the cross-domain Bellman error used in Proposition 2. 
+
+Definition 3 (Cross-Domain Bellman Error) . Given a pre-trained source-domain Qsrc , inter-domain correspondences ϕ, ψ , and target-domain policy π, for each state-action pair (s, a ), the cross-domain Bellman error is defined as ϵcd (s, a ; ϕ, ψ, Q src , π ) := Qsrc (ϕ(s), ψ (a)) − rtar (s, a ) −
+
+γEs′∼Ptar (·| s,a ),a ′∼π(·| s′)[Qsrc (ϕ(s′), ψ (a′))] .
+
+Proposition 2. Under the DQT method in Algorithm 1 and Assumption 1, the average sub-optimality over T iterations is upper bounded as 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+Qsrc (ϕ(t), ψ (t)) − Qπ(t)
+
+> dπ(t)
+
+| {z }
+
+> (b)
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t)
+
+| {z }
+
+> (c)
+
+, (4) 
+
+where C0 := 2 Cπ∗ /(1 − γ) and C1 := 2 Cπ∗ /((1 − γ)3μtar, min ).
+
+The detailed proof of Proposition 2 is in Appendix B. The main insights are: (i) Similar to Propo-sition 1, the upper bound has two terms. Term (a) characterizes Q-NPG learning, while the sub-optimality gap is mainly determined by the approximation error from Qsrc , equivalent to the cross-domain Bellman error (term (c)). (ii) Minimizing this error requires ϕ and ψ that reduce term (c). Motivated by Equation (4), we define cross-domain Bellman consistency. 
+
+Definition 4 (Cross-Domain Bellman Consistency) . Let δ ≥ 0. A source-domain critic Qsrc is said to be δ-Bellman-consistent under target domain policy π if there exist a pair of inter-domain mapping 
+
+(ϕ, ψ ) such that ∥ϵcd (Qsrc , ϕ, ψ )∥dπ is no more than δ.
+
+Transferability of a Source-Domain Model. Given a source-domain critic Qsrc , if for any iteration t
+
+there exist inter-domain mappings ϕ(t) and ψ(t) such that Qsrc is δ-Bellman-consistent under π(t),then term (c) in (4) is bounded by C1δ. Thus, the transferability of a source-domain model is captured by δ. In the perfect transfer scenario, where source and target domains are identical and Qsrc is optimal, setting ϕ and ψ as identity mappings ensures small δ for all t, yielding a small sub-optimality gap for sufficiently large T .
+
+Limitations of DQT. By Proposition (2), a limitation of DQT is that with a poorly transferable source critic, the cross-domain Bellman error at each iteration t is large, so term (c) in (4) dominates the bound and prevents effective cross-domain transfer. 4.2 THE QAVATAR ALGORITHM 
+
+To address DQT’s limitation, we propose QAvatar, which uses a hybrid critic consisting of a weighted combination of a learned target-domain Q function and a given source-domain Q function to enable 5Published as a conference paper at ICLR 2026 
+
+Algorithm 2 QAvatar 
+
+Require: Source-domain Q function Qsrc .1: Initialize the state mapping function ϕ(0) , the action mapping function ψ(0) , number of on-policy samples per iteration Ntar , the target-domain policy π(0) , weight decay function α(0) = 0 , and η = (1 − γ)p1/T .2: for iteration t = 1 , · · · , T do 
+
+3: Sample D(t) 
+
+> tar
+
+= {(s, a, r, s ′)} of N (t) 
+
+> tar
+
+on-policy samples using π(t) in the target domain. 4: Update Qtar by minimizing the TD loss in (1), i.e., Q(t) 
+
+> tar
+
+← arg min Qtar LTD (Qtar ; π(t), D(t) 
+
+> tar
+
+).5: Update ϕ and ψ by minimizing (5), i.e., ϕ(t), ψ (t) ← arg min ϕ,ψ LCD (ϕ, ψ ; Qsrc , π (t), D(t) 
+
+> tar
+
+).6: Defined weight parameter α(t) = ∥ϵ(t) 
+
+> td
+
+∥D(t)
+
+> tar
+
+/(∥ϵcd (Qsrc , ϕ (t), ψ (t))∥D(t)
+
+> tar
+
++ ∥ϵ(t) 
+
+> td
+
+∥D(t)
+
+> tar
+
+)
+
+7: Update the target-domain policy by adapting NPG to CDRL as in (6). 8: end for 
+
+9: Return Target-domain policy π(T ) 
+
+> tar
+
+∼ Uniform ({π(1) , · · · , π (T )}).
+
+reliable cross-domain knowledge transfer. This design allows QAvatar to improve sample efficiency in favorable scenarios while avoiding reliance on poorly transferable source models. Specifically, 
+
+QAvatar comprises three major components: • Inter-domain mapping : Under QAvatar, we propose to learn the inter-domain mappings ϕ :
+
+Star → S src and ψ : Atar → A src by minimizing the cross-domain Bellman loss as 
+
+LCD (ϕ, ψ ; Qsrc , π tar , Dtar ) := ˆE(s,a,r tar ,s ′)∈D tar 
+
+h
+
+rtar + γEa′∼πtar [Qsrc (ϕ(s′), ψ (a′))] − Qsrc (ϕ(s), ψ (a)) 2i
+
+,
+
+(5) where Qsrc is the pre-trained source-domain Q function and Dtar = {(s, a, r tar , s ′)} denotes a set of target-domain samples drawn under πtar . Intuitively, the loss in (5) looks for a pair of mapping functions ϕ, ψ such that Qsrc aligns as much with the target-domain transitions as possible. • Target-domain Q function : To implement the hybrid critic, QAvatar maintains a target-domain Q function Qtar , serving as the critic of the current target-domain policy. At each iteration t,
+
+Qtar is obtained via policy evaluation by minimizing the TD loss LTD (Qtar ; πtar , Dtar ), where 
+
+Dtar = ( s, a, r, s ′) are target-domain samples (Equation 1). • NPG-like policy update with a weighted Q-function combination : QAvatar leverages both Qsrc 
+
+and Qtar for policy updates. At each iteration t,
+
+π(t+1) (a|s) ∝ π(t)(a|s) · exp 
+
+
+
+η (1 − α(t)) Q(t) 
+
+> tar
+
+(s, a ) + α(t)Qsrc (ϕ(t)(s), ψ (t)(a)) 
+
+, (6) where α : N → [0 , 1] is a weight function (see Section 4.3). The pseudo code of QAvataris provided in Algorithm 2. 
+
+Remark 1. In line 6 of Algorithm 1 and line 8 of Algorithm 2, DQT and QAvatar output the final policy by selecting uniformly from all intermediate policies which is a standard procedure linking average sub-optimality to policy performance. In experiments, the last-iterate policy suffices and performs well. 4.3 THEORETICAL JUSTIFICATION OF QAVATAR 
+
+In this section, we present the theoretical result of QAvatar and thereby describe how to choose the proper decay parameter α(·).
+
+Definition 5 (Cross-Domain Action Value Function) . For each state-action pair (s, a ) and t ∈ N,the cross-domain action value function f (t)(s, a ) is defined as f (t)(s, a ) := (1 − α(t)) Q(t) 
+
+> tar
+
+(s, a ) + 
+
+α(t)Qsrc (ϕ(t)(s), ψ (t)(a)) .
+
+We are ready to present the main theoretical result, and the detailed proof is provided in Appendix B. 6Published as a conference paper at ICLR 2026 
+
+Proposition 3. (Average Sub-Optimality) Under the QAvatar in Algorithm 2 and Assumption 1, the average sub-optimality over T iterations can be upper bounded as 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i| {z }
+
+> (b)
+
+(7) 
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+α(t)∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) + (1 − α(t)) ∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+| {z }
+
+> (c)
+
+, (8) 
+
+where C0 := 2 Cπ∗ /(1 − γ) and C1 := 2 Cπ∗ /((1 − γ)3μtar, min ).
+
+Notably, the term (a) in (8) reflects the learning progress of NPG, and term (c) reflects the trans-ferability of a source-domain critic Qsrc and the error of policy evaluation for the target-domain policy. 
+
+A Hyperparameter-Free Design of α(t). Based on (8), for each iteration t, term (c) can be minimized by choosing α(t) as an indicator function, i.e., set to 1 when ∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) <
+
+∥ϵ(t) 
+
+> td
+
+∥dπ(t) , and 0 otherwise. In practice, estimating the two error terms is noisy, so using an indicator can cause large fluctuations in α(t) and unstable training. To address this, we propose a smoother variant: α(t) = ∥ϵ(t) 
+
+> td
+
+∥dπ(t) /(∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) + ∥ϵ(t) 
+
+> td
+
+∥dπ(t) ). Notably, this design is hyperparameter-free and incurs minimal deployment overhead. 
+
+Key Implications of Proposition 3: (1) Effective transfer lowers the upper bound of average sub-optimality: In an ideal case with perfect mappings ϕ∗, ψ ∗ such that LCD (ϕ∗, ψ ∗; Qsrc , π tar , Dtar ) = 0 
+
+for any πtar , we obtain ∥ϵcd (Qsrc , ϕ ∗, ψ ∗)∥dπtar = 0 . Then α(t) = 1 at all t, making term (c) in (8) vanish. The bound thus reduces to term (a), which becomes negligible as T grows. (2) QAvatar avoids being trapped by low-transfer critics. For a source critic only δ-Bellman-consistent with large 
+
+δ, ∥ϵcd (Qsrc , ϕ, ψ )∥dπ(t) remains large, so α(t) ≈ 0. Consequently, term (c) reduces to the standard TD error. 4.4 PRACTICAL IMPLEMENTATION OF QAVATAR 
+
+We extend the QAvatar framework in Algorithm 2 to a practical deep RL implementation. The pseudo code is provided in Algorithm 3 in Appendix. • Learning the target-domain policy and the Q function. To go beyond the tabular setting, we extend QAvatar by connecting NPG with soft policy iteration (SPI) (Haarnoja et al., 2018). In the entropy-regularized RL setting, SPI is known to be a special case of NPG (Cen et al., 2022). Based on this connection, we choose to integrate QAvatar with soft actor-critic (SAC) (Haarnoja et al., 2018), i.e., updating the target-domain critic Qtar by the critic loss of SAC and updating the target-domain policy π(t) by the SAC policy loss with the weighted combination of Qtar and Qsrc 
+
+of QAvatar. • Learning the inter-domain mapping functions with an augmented flow model. Similar to the tabular setting, we learn inter-domain mappings by minimizing the cross-domain Bellman loss. In practical RL problems, the state and action spaces are usually bounded, so the outputs of 
+
+ϕ : Star → S src and ψ : Atar → A src must lie within feasible regions. As discussed in Section 2, adversarial learning is commonly used to address this (Taylor et al., 2008; Zhang et al., 2021; Gui et al., 2023; Zhu et al., 2024), but it can lead to unstable training. Therefore, we adopt the method of (Brahmanage et al., 2023) in the action-constrained RL literature (Hung et al., 2025), training a normalizing flow to map the outputs of the mapping functions into the feasible regions. 7Published as a conference paper at ICLR 2026 
+
+## 5 EXPERIMENTS 
+
+5.1 SETUP 
+
+Benchmark CDRL Methods. We compare QAvatar with recent CDRL benchmarks under different state-action spaces, including Cross-Morphology-Domain Policy Adaptation (CMD) (Gui et al., 2023), Cross-domain Adaptive Transfer (CAT) (You et al., 2022), and Policy Adaptation by Representation mismatch (PAR) (Lyu et al., 2024). For a fair comparison, all methods use the same source-domain models, including policy and corresponding Q-networks, pre-trained with SAC. We also evaluate both PPO-based CAT, the original version in (You et al., 2022), and SAC-based CAT. Notably, CMD is an enhanced version of (Zhang et al., 2021) that integrates dynamics cycle consistency to learn state-action correspondences. To demonstrate sample efficiency, we also compare QAvatar with standard SAC (Haarnoja et al., 2018), which learns from scratch in the target domain, and with direct fine-tuning (FT) of the source models (Ha et al., 2024), equivalent to SAC with source feature initialization. Both serve as competitive baselines. Hyperparameters are provided in Appendix F. 
+
+Evaluation Environments. 
+
+• Locomotion : We use the standard MuJoCo environments, including HalfCheetah-v3 and Ant-v3, as the source domains and follow the same procedure as in (Zhang et al., 2021; Xu et al., 2023) to modify them for the target domains. The detailed morphologies are in Appendix F. • Robot arm manipulation : We leverage Robosuite, a popular package for robot learning released by (Zhu et al., 2020) and evaluate our algorithm on door opening and table wiping. For each task, we use the Panda robot arm as the source domain and set the UR5e robot arm as the target domain. • Goal Navigation : A natural transfer scenario occurs when the source and target domains share the same goal but differ in robot type. We use the Safety-Gym benchmark (Ray et al., 2019) and evaluate transfer from Car to Doggo, keeping the goal unchanged, specifically using CarGoal0 as the source and DoggoGoal0 as the target domain. The dimensions of the state and action spaces of all the source-target pairs are in Table 3 in Appendix F. All the results reported below are averaged over 5 random seeds.     
+
+> (a) HalfCheetah (b) Ant (c) Door Opening (d) Table Wiping (e) Navigation
+
+Figure 1: Training curves of QAvatar and benchmark methods: (a)-(b) Locomotion tasks; (d)-(e) Robot arm manipulation tasks in Robosuite; (f) Navigation task from CarGoal0 to DoggoGoal0. 5.2 EXPERIMENTAL RESULTS 
+
+Does QAvatar improve data efficiency? Learning curves : As shown by Figure 1, we observe that QAvatar achieves improved data efficiency via cross-domain transfer than SAC throughout the training process in all the tasks, despite that these tasks have rather different dimensions as shown in Table 3. CAT-SAC achieves moderate results on MuJoCo but transfers slowly to other tasks, as CAT-like methods lack guarantees and depend on parameter-based transfer, i.e., weighted combinations of source and target policy layers. Such methods assume shared feature representations (Zhuang et al., 2020), which often fails when domains differ. FT improves data efficiency over SAC on MuJoCo but learns slowly in Robosuite due to dissimilar state–action representations from different robot arms. CMD generally performs poorly and can be unstable (e.g., in Ant) owing to its adversarial mapping module. We attribute CMD’s weakness to its unsupervised design, which ignores target-domain rewards. 8Published as a conference paper at ICLR 2026 
+
+Time to threshold : We provide Table 1 to mark the time to threshold. It shows that QAvatar requires only about 44% of the environment steps to achieve the threshold than SAC does in the best case. 
+
+Aggregated performance : To ensure a reliable comparison, we follow the guidelines of (Agarwal et al., 2021b) and calculate the interquartile mean (IQM) using rliable, which enables evaluation at an aggregated level. Figure 2 shows that QAvatarindeed achieves significantly better performance than all baselines. Table 1: Time to threshold of QAvatar and SAC. Environment Threshold QAvatar SAC QAvatar / SAC HalfCheetah 6000 126K 176K 0.71 Ant 1600 206K 346K 0.59 Door Opening 90 48K 98K 0.49 Table Wiping 45 72K 98K 0.73 Navigation 20 218K 490K 0.44 Figure 2: Aggregated IQMs (with 95% stratified bootstrap CIs) across tasks. 
+
+How does QAvatar perform under strong positive and negative transfer? We consider a task where the source domain is standard ’Ant-v3’ and the target changes the goal to move backward, with all else unchanged. Here, Qsrc and Qtar are adversarial due to opposite goals. We evaluate QAvatar in two scenarios: (a) Learning state/action mapping : strong transferability exists, as Ant is symmetric along the front-back axis, allowing a perfect mapping. (b) Fixing mapping as identity : a strong negative transfer case, since Qsrc provides adversarial reward signals. As shown in Figure 3, QAvatar captures both positive transfer (high α(t)) and negative transfer (low α(t)), demonstrating that α(t)
+
+reflects transferability. 
+
+Performance of QAvatar with a low-quality source domain: We evaluate this scenario in the Cheetah environment (Section 5.1) using a low-quality source model with a total return of 1000 (vs. 
+
+∼7000 for the expert). Figure 4 illustrates the learning process and α(t) of QAvatar. Results show that when the source model is of low quality, α(t) decreases to a small value by the end of training, mitigating the effect of negative transfer.   
+
+> (a) Evaluation Rewards (b) α(t)
+
+Figure 3: The training curve and the values of 
+
+α(t) for QAvatar under strongly positive and strongly negative transfer scenarios.   
+
+> (a) Evaluation Rewards (b) α(t)
+
+Figure 4: The training curve and the values of α(t) in the Cheetah environment with a low-quality source model. 
+
+Does QAvatar still perform reliably well when the source and target with two unrelated transfer scenario? We evaluate transfer from original Hopper-v3 in MuJoCo to the table-wiping task in Robosuite. The configurations of these environments are provided in Section 5.1. Figure 9a shows that even when the source and target domains share no structural similarity, QAvatar still performs reliably and does not suffer from negative transfer. 
+
+How QAvatar perform on non-stationary environment? We use the Ant environment and introduce stochasticity by adding N (0 , 0.1) noise to rewards and N (0 , 0.05) to actions, following (Tessler et al., 2019). As shown in Figure 9b, despite stochastic rewards and transitions, the inter-domain mapping is effectively learned, enabling positive transfer and faster learning in the target domain. 
+
+QAvatar on image-based experiment. We additionally evaluate QAvatar on image-based continuous control tasks from the DeepMind Control Suite (DMC) (Tassa et al., 2018). In DMC, each observation consists of a stack of three 84×84 RGB frames, and we apply an action repeat of 4. The SAC setup, 9Published as a conference paper at ICLR 2026  
+
+> (a) cheetah_run (b) walker_run
+
+Figure 5: Performance comparison on DMC tasks. the flow-model training, and the cross-domain transfer protocol is describe in Appendix D.4. For cross-domain experiments, we consider two transfer scenarios: The source model is trained with SAC on the walker_walk task, and the target tasks are walker_run and cheetah_run, respectively. Figure 5 indicate that QAvatar achieves substantially higher performance than SAC trained from scratch on both target tasks, and notably, QAvatar succeeds even when SAC struggles to learn effectively on cheetah_run. 
+
+Sensitivity test on the choice of Nα. In 
+
+QAvatar, αt is updated periodically, and Nα
+
+determines only the frequency of this closed-form update. As long as Nα is not too large (which would delay updates) or too small (which may cause αt to fluctuate too rapidly and introduce insta-bility), the overall learning behavior remains largely unaffected. We evaluate three update intervals, 
+
+Nα = 300 , 1000 , 3000 , in the Cheetah and Table Wiping environments, whose configurations are provided in Section 5.1. As shown in Figure 6 and 7, the results indicate that (1) the learned αt
+
+trajectories are highly similar across settings , and (2) performance exhibits only mild sensitivity .None of the choices lead to degradation or instability, suggesting that the method is reasonably robust to the selection of Nα within this range.   
+
+> (a) Evaluation Rewards (b) α(t)
+
+Figure 6: The training curves and the values of 
+
+α(t) for QAvatar under three settings of the Nα
+
+value in Cheetah environment.   
+
+> (a) Evaluation Rewards (b) α(t)
+
+Figure 7: The training curves and the values of 
+
+α(t) for QAvatar under three settings of the Nα
+
+value in Table Wiping environment. 
+
+Extension: QAvatar with more than one source model. QAvatar can be readily extended for transfer from multiple source model. Similar to the idea of one source critic transfer, the weight 
+
+αi(t) for the i-th source critic Qsrc ,i , αi(t) = (1 /∥ϵcd (Qsrc ,i , ϕ (t) 
+
+> i
+
+, ψ (t) 
+
+> i
+
+)∥dπ(t) )/(1 /∥ϵ(t) 
+
+> td
+
+∥dπ(t) +
+
+PNj=1 1/∥ϵcd (Qsrc ,j , ϕ (t) 
+
+> i
+
+, ψ (t) 
+
+> i
+
+)∥dπ(t) ). Consider a two-source to one-target transfer scenario: (i) Source domain 1 (denoted by “src1") is Ant-v3 with the both front legs disabled; (ii) Source domain 2 (denoted by “src2") is Ant-v3 with the both back legs disabled. (iii) Target domain (denoted by “tar") is the original Ant-v3 with no modifications. Figure 9c shows QAvatar in multi-source cross-domain transfer can achieve higher transferability by leveraging the knowledge from two source domains. 
+
+## 6 CONCLUDING REMARKS 
+
+We propose cross-domain Bellman consistency as a measure of source-model transferability, and introduce QAvatar, the first CDRL method that reliably handles distinct state-action representations with performance guarantees. Using a hybrid critic and a hyperparameter-free weighting scheme, 
+
+QAvatar achieves robust knowledge transfer even with weak source models. Experiments confirm its effectiveness for cross-domain RL. The general ideas of Bellman consistency and hybrid critics can be extended to cross-domain transfer in other learning settings, such as preference-based RL and imitation learning (Fickinger et al., 2022; Chu et al., 2026). A limitation of our formulation is the assumption that target-domain data collection is costlier than training compute. Since QAvatar takes about twice the training time of SAC due to inter-domain mappings and the flow model, further acceleration would be needed when training efficiency is critical. 10 Published as a conference paper at ICLR 2026 
+
+## ACKNOWLEDGMENTS 
+
+This research was partially supported by the National Science and Technology Council (NSTC) of Taiwan under Grant Numbers 114-2628-E-A49-002 and 114-2634-F-A49-002-MBK. This work was also partially supported by the Center for Intelligent Team Robotics and Human-Robot Collaboration under the “Top Research Centers in Taiwan Key Fields Program” of the Ministry of Education (MOE), Taiwan. The authors also thank the National Center for High-performance Computing (NCHC) for providing computational and storage resources. 
+
+## ETHICS STATEMENT 
+
+We conduct our research entirely in simulated environments, using no human participants or sensitive data. This work fully complies with the code of ethics. 
+
+## REPRODUCIBILITY STATEMENT 
+
+The code for our experiments is provided in the supplementary material, along with a README file detailing the commands required to run the experiments. Furthermore, a comprehensive list of package dependencies is included to facilitate the recreation of the experimental environment. 
+
+## USE OF LARGE LANGUAGE MODELS (LLM S)
+
+Large language models (LLMs) were used solely for linguistic editing of the manuscript and had no involvement in the study design, methodology, experiments, or interpretation of the results. 
+
+## BIBLIOGRAPHY 
+
+Joshua Achiam. Spinning Up in Deep Reinforcement Learning, 2018. Alekh Agarwal, Nan Jiang, Sham M Kakade, and Wen Sun. Reinforcement learning: Theory and algorithms. CS Dept., UW Seattle, Seattle, WA, USA, Tech. Rep , 32:96, 2019. Alekh Agarwal, Mikael Henaff, Sham Kakade, and Wen Sun. Pc-pg: Policy cover directed exploration for provable policy gradient learning. In Procersing in Advances in Neural Information Processing Systems , 2020. Alekh Agarwal, Sham M Kakade, Jason D Lee, and Gaurav Mahajan. On the theory of policy gradient methods: Optimality, approximation, and distribution shift. Journal of Machine Learning Research , 2021a. Rishabh Agarwal, Max Schwarzer, Pablo Samuel Castro, Aaron C Courville, and Marc Bellemare. Deep reinforcement learning at the edge of the statistical precipice. In Advances in Neural Information Processing Systems , 2021b. Haitham B Ammar, Karl Tuyls, Matthew E Taylor, Kurt Driessens, and Gerhard Weiss. Reinforcement learning transfer via sparse coding. In International Conference on Autonomous Agents and Multiagent Systems , 2012. Haitham Bou Ammar and Matthew E Taylor. Reinforcement learning transfer via common subspaces. In Adaptive and Learning Agents: International Workshop , 2012. Haitham Bou Ammar, Eric Eaton, Paul Ruvolo, and Matthew Taylor. Unsupervised cross-domain transfer in policy gradient reinforcement learning via manifold alignment. In AAAI Conference on Artificial Intelligence , 2015. Paniz Behboudian, Yash Satsangi, Matthew E Taylor, Anna Harutyunyan, and Michael Bowling. Policy invariant explicit shaping: an efficient alternative to reward shaping. Neural Computing and Applications , 34(3):1673–1686, 2022. 11 Published as a conference paper at ICLR 2026 Janaka Brahmanage, Jiajing Ling, and Akshat Kumar. Flowpg: Action-constrained policy gradient with normalizing flows. In Advances in Neural Information Processing Systems , 2023. Shicong Cen, Chen Cheng, Yuxin Chen, Yuting Wei, and Yuejie Chi. Fast global convergence of natural policy gradient methods with entropy regularization. Operations Research , 2022. Yevgen Chebotar, Ankur Handa, Viktor Makoviychuk, Miles Macklin, Jan Issac, Nathan Ratliff, and Dieter Fox. Closing the sim-to-real loop: Adapting simulation randomization with real world experience. In IEEE International Conference on Robotics and Automation , 2019. Li-Min Chu, Kai-Siang Ma, Ming-Hong Chen, and Ping-Chun Hsieh. Semi-supervised cross-domain imitation learning. Transactions on Machine Learning Research , 2026. Dongsheng Ding, Kaiqing Zhang, Tamer Basar, and Mihailo Jovanovic. Natural policy gradient primal-dual method for constrained markov decision processes. In Advances in Neural Information Processing Systems , 2020. Yuqing Du, Olivia Watkins, Trevor Darrell, Pieter Abbeel, and Deepak Pathak. Auto-tuned sim-to-real transfer. In IEEE International Conference on Robotics and Automation , 2021. Mahidhar Dwarampudi and NV Reddy. Effects of padding on lstms and cnns. arXiv preprint arXiv:1903.07288 , 2019. Lasse Espeholt, Hubert Soyer, Remi Munos, Karen Simonyan, Vlad Mnih, Tom Ward, Yotam Doron, Vlad Firoiu, Tim Harley, Iain Dunning, et al. Impala: Scalable distributed deep-rl with importance weighted actor-learner architectures. In International Conference on Machine Learning , 2018. Benjamin Eysenbach, Shreyas Chaudhari, Swapnil Asawa, Sergey Levine, and Ruslan Salakhutdinov. Off-dynamics reinforcement learning: Training for transfer with domain classifiers. In International Conference on Learning Representations , 2021. Arnaud Fickinger, Samuel Cohen, Stuart Russell, and Brandon Amos. Cross-domain imitation learning via optimal transport. In International Conference on Learning Representations , 2022. Haiyuan Gui, Shanchen Pang, Shihang Yu, Sibo Qiao, Yufeng Qi, Xiao He, Min Wang, and Xue Zhai. Cross-domain policy adaptation with dynamics alignment. Neural Networks , 2023. Abhishek Gupta, Coline Devin, YuXuan Liu, Pieter Abbeel, and Sergey Levine. Learning invariant feature spaces to transfer skills with reinforcement learning. In International Conference on Learning Representations , 2017. Seokhyeon Ha, Sunbeom Jeong, and Jungwoo Lee. Domain-aware fine-tuning: Enhancing neural network adaptability. In Association for the Advancement of Artificial Intelligence , 2024. Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International Conference on Machine Learning , 2018. Wei Hung, Shao-Hua Sun, and Ping-Chun Hsieh. Efficient action-constrained reinforcement learning via acceptance-rejection method and augmented MDPs. In International Conference on Learning Representations , 2025. Sham Kakade and John Langford. Approximately optimal approximate reinforcement learning. In 
+
+International Conference on Machine Learning , 2002. Sham M Kakade. A natural policy gradient. In Advances in Neural Information Processing Systems ,2001. Michail G. Lagoudakis and Ronald Parr. Model-free least-squares policy iteration. In Advances in Neural Information Processing Systems , 2001. Alessandro Lazaric, Mohammad Ghavamzadeh, and Rémi Munos. Finite-sample analysis of least-squares policy iteration. Journal of Machine Learning Research , 2012. 12 Published as a conference paper at ICLR 2026 Jinxin Liu, Zhang Hongyin, and Donglin Wang. DARA: Dynamics-Aware Reward Augmentation in Offline Reinforcement Learning. In International Conference on Learning Representations , 2022. Jiafei Lyu, Chenjia Bai, Jing-Wen Yang, Zongqing Lu, and Xiu Li. Cross-domain policy adaptation by capturing representation mismatch. In International Conference on Machine Learning , 2024. Steven Morad, Chris Lu, Ryan Kortvelesy, Stephan Liwicki, Jakob Foerster, and Amanda Prorok. Recurrent reinforcement learning with memoroids. In Advances in Neural Information Processing Systems , 2024. Sinno Jialin Pan and Qiang Yang. A survey on transfer learning. IEEE Transactions on Knowledge and Data Engineering , 2009. Xue Bin Peng, Marcin Andrychowicz, Wojciech Zaremba, and Pieter Abbeel. Sim-to-real transfer of robotic control with dynamics randomization. In IEEE International Conference on Robotics and Automation , 2018. Antonin Raffin, Ashley Hill, Adam Gleave, Anssi Kanervisto, Maximilian Ernestus, and Noah Dormann. Stable-baselines3: Reliable reinforcement learning implementations. Journal of Machine Learning Research , 2021. Aravind Rajeswaran, Sarvjeet Ghotra, Balaraman Ravindran, and Sergey Levine. Epopt: Learning robust neural network policies using model ensembles. In International Conference on Learning Representations , 2016. Alex Ray, Joshua Achiam, and Dario Amodei. Benchmarking safe exploration in deep reinforcement learning. arXiv preprint arXiv:1910.01708 , 7(1):2, 2019. Yuda Song, Yifei Zhou, Ayush Sekhari, Drew Bagnell, Akshay Krishnamurthy, and Wen Sun. Hybrid RL: Using both offline and online data can make RL efficient. In International Conference on Learning Representations , 2023. Ram Ananth Sreenivasan, Hyun-Rok Lee, Yeonjeong Jeong, Jongseong Jang, Dongsub Shim, and Chi-Guhn Lee. A learnable similarity metric for transfer learning with dynamics mismatch. In PRL Workshop Series – Bridging the Gap Between AI Planning and Reinforcement Learning , 2023. Yuval Tassa, Yotam Doron, Alistair Muldal, Tom Erez, Yazhe Li, Diego de Las Casas, David Budden, Abbas Abdolmaleki, Josh Merel, Andrew Lefrancq, et al. Deepmind control suite. arXiv preprint arXiv:1801.00690 , 2018. Matthew E Taylor, Gregory Kuhlmann, and Peter Stone. Autonomous transfer for reinforcement learning. In Autonomous Agents and Multiagent Systems , 2008. Chen Tessler, Yonathan Efroni, and Shie Mannor. Action robust reinforcement learning and applica-tions in continuous control. In International Conference on Machine Learning , 2019. Chang Wang and Sridhar Mahadevan. Manifold alignment without correspondence. In International Joint Conference on Artificial Intelligence , 2009. Yue Wang, Yuting Liu, Wei Chen, Zhi-Ming Ma, and Tie-Yan Liu. Target transfer q-learning and its convergence analysis. Neurocomputing , 2020. Karl Weiss, Taghi M Khoshgoftaar, and DingDing Wang. A survey of transfer learning. Journal of Big Data , 2016. Yuxiang Wu and Baotian Hu. Learning to extract coherent summary via deep reinforcement learning. In AAAI Conference on Artificial Intelligence , 2018. Kang Xu, Chenjia Bai, Xiaoteng Ma, Dong Wang, Bin Zhao, Zhen Wang, Xuelong Li, and Wei Li. Cross-domain policy adaptation via value-guided data filtering. In Advances in Neural Information Processing Systems , 2023. Heng You, Tianpei Yang, Yan Zheng, Jianye Hao, and E. Taylor, Matthew. Cross-domain adaptive transfer reinforcement learning based on state-action correspondence. In Uncertainty in Artificial Intelligence , 2022. 13 Published as a conference paper at ICLR 2026 Huizhen Yu and Dimitri P Bertsekas. Convergence results for some temporal difference methods based on least squares. IEEE Transactions on Automatic Control , 2009. Rui Yuan, Simon S Du, Robert M Gower, Alessandro Lazaric, and Lin Xiao. Linear convergence of natural policy gradient methods with log-linear policies. In International Conference on Learning Representations , 2022. Tom Zahavy, Matan Haroush, Nadav Merlis, Daniel J Mankowitz, and Shie Mannor. Learn what not to learn: Action elimination with deep reinforcement learning. In Advances in Neural Information Processing Systems , 2018. Qiang Zhang, Tete Xiao, Alexei A Efros, Lerrel Pinto, and Xiaolong Wang. Learning cross-domain correspondence for control with dynamics cycle-consistency. In International Conference on Learning Representations , 2021. Yifei Zhou, Ayush Sekhari, Yuda Song, and Wen Sun. Offline data enhanced on-policy policy gradient with provable guarantees. In International Conference on Learning Representations , 2024. Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A Efros. Unpaired image-to-image translation using cycle-consistent adversarial networks. In International Conference on Computer Vision ,2017. Ruiqi Zhu, Tianhong Dai, and Oya Celiktutan. Cross domain policy transfer with effect cycle-consistency. In IEEE International Conference on Robotics and Automation , 2024. Yuke Zhu, Josiah Wong, Ajay Mandlekar, Roberto Martín-Martín, Abhishek Joshi, Soroush Nasiriany, and Yifeng Zhu. Robosuite: A modular simulation framework and benchmark for robot learning. 
+
+arXiv preprint arXiv:2009.12293 , 2020. 14 Published as a conference paper at ICLR 2026 
+
+## APPENDICES 
+
+## A SUPPORTING LEMMAS 
+
+Lemma 1 (Performance difference lemma) . For any two policies π and π′, we have 
+
+V π′
+
+(μ) − V π (μ) = 11 − γ Es,a ∼dπ′ [Aπ (s, a )] ,
+
+where Aπ (s, a ) := Qπ (s, a ) − V π (s) is the advantage function. Proof. This can be directly obtained from Lemma 6.1 in (Kakade & Langford, 2002). 
+
+Lemma 2 ((Agarwal et al., 2019), Chapter 4) . Let τ = ( s0, a 0, s 1, a 1, · · · ) denote the (random) trajectory generated under a policy π in an infinite-horizon MDP M. For any function f : S × A → 
+
+R, we have 
+
+Eτ
+
+ ∞X
+
+> t=0
+
+γtf (st, a t)
+
+
+
+= 11 − γ E(s,a )∼dπ
+
+f (s, a ). (9) 
+
+Lemma 3 (Importance Ratio) . Given a fixed policy π and a fixed state-action pair (s, a ), let pk(s, a )
+
+denote the probability of reaching (s, a ) under an initial distribution dπ and policy π after k time steps. Then, for any k ∈ N, we have 
+
+pk(s, a )
+
+dπ (s, a ) ≤ 1(1 − γ)μ(s, a ) . (10) 
+
+Proof. To begin with, recall the definition of dπ as 
+
+dπ (s, a ) := (1 − γ)
+
+
+
+μ(s, a ) + 
+
+> ∞
+
+X
+
+> t=1
+
+γtP (st = s, a t = a; π, μ )
+
+
+
+≡
+
+> ∞
+
+X
+
+> t=0
+
+γtP (st = s, a t = a; π, μ ).
+
+(11) Let snext ,k and anext ,k denote the state and action after k time steps. Then, we can write down pk(s, a ):
+
+pk(s, a ) = X
+
+> (s′,a ′)∈S × A
+
+P(snext ,k = s, a next ,k = a|s′, a ′; π)dπ (s′, a ′) (12) 
+
+= X
+
+> (s′,a ′)∈S × A
+
+P(snext ,k = s, a next ,k = a|s′, a ′; π) · (1 − γ) ·
+
+> ∞
+
+X
+
+> t=0
+
+γt P(st = s′, a t = a′; π, μ )
+
+(13) 
+
+= (1 − γ)
+
+> ∞
+
+X
+
+> t=0
+
+γt X
+
+> s′,a ′∈S × A
+
+P(snext ,k = s, a next ,k = a|s′, a ′; π, μ ) · P(st = s′, a t = a′; π, μ )
+
+(14) 
+
+= (1 − γ)
+
+> ∞
+
+X
+
+> t=0
+
+γt P(st+k = s, a t+k = a; π, μ ). (15) Then, we have 
+
+pk(s, a )
+
+dπ (s, a ) = (1 − γ) P∞ 
+
+> t=0
+
+γt P(st+k = s; at+k = a; π, μ )(1 − γ) P∞ 
+
+> t=0
+
+γt P(st = s, a t = a; π, μ ) (16) 
+
+=
+
+P∞ 
+
+> t=0
+
+γt P(st+k = s, a t+k = a; π, μ )
+
+P∞ 
+
+> t=0
+
+γt P(st = s, a t = a; π, μ ) (17) 
+
+≤
+
+P∞ 
+
+> t=0
+
+γt
+
+P∞ 
+
+> t=0
+
+γt P(st = s; π, μ ) (18) 
+
+= 11 − γ · 1
+
+P∞ 
+
+> t=0
+
+γt P(st = s; π, μ ) , (19) 15 Published as a conference paper at ICLR 2026 where (18) holds by P(st+k = s, a t+k = a; π, μ ) ≤ 1 and (19) holds by taking the sum of an infinite geometric sequence. By the fact that P∞ 
+
+> t=0
+
+γt P(st = s, a t = a; π, μ ) = μ(s, a ) + P∞ 
+
+> t=1
+
+γt P(st =
+
+s, a t = a; π, μ ), we have 
+
+11 − γ · 1
+
+P∞ 
+
+> t=0
+
+γt P(st = s, a t = a; π, μ ) = 11 − γ · 1
+
+μ(s, a ) + P∞ 
+
+> t=1
+
+γt P(st = s, a t = a; π, μ )
+
+(20) 
+
+≤ 1(1 − γ)μ(s, a ) (21) where (21) holds by P∞ 
+
+> t=1
+
+γt P(st = s, a t = a; π, μ ) ≥ 0.
+
+Lemma 4. Let ν(t) : S × A → R and π(t) denote any tabular function used in the policy update and the policy at iteration t. That is, 
+
+π(t+1) (a | s) ∝ π(t)(a | s) exp 
+
+
+
+ην (t)(s, a )
+
+
+
+.
+
+Then, we assume that ∥ν(t)∥∞ ≤ 1/(1 − γ) and setting learning rate η = (1 − γ)p1/T and optimal policy π∗, we have 
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
+≤√T [log | A tar | + 1] 1 − γ
+
+Proof. Let ¯ν(t)(s, a ) := ν(t)(s, a ) − ν(t)(s, π (t)(s)) . According to the policy update rule, at iteration 
+
+t, the policy π(t+1) for the next iteration is updated by the formula: 
+
+π(t+1) (a | s) = π(t)(a | s) exp  ην (t)(s, a )P 
+
+> a′
+
+π(t) (a′ | s) exp  ην (t) (s, a ′) = π(t)(a | s) exp  η¯ν(t)(s, a )P 
+
+> a′
+
+π(t) (a′ | s) exp  η¯ν(t) (s, a ′) . (22) Let Zt := P 
+
+> a′
+
+π(t) (a′ | s) exp  η¯ν(t) (s, a ′). By multiplying both sides of (22) by Zt, taking the logarithm, and then taking the expectation on both sides w.r.t (s, a ) ∼ dπ∗
+
+, we obtain 
+
+E(s,a )∼dπ∗
+
+h
+
+η¯ν(t)(s, a )
+
+i
+
+= E(s,a )∼dπ∗
+
+h
+
+log Zt + log π(t+1) (a | s) − log π(t)(a | s)
+
+i
+
+. (23) Next, we bound the term log Zt. Note that η¯ν(t)(s, a ) ≤ p1/T ≤ 1 and the fact that exp (x) <
+
+1 + x + x2 for any x ≤ 1, we have 
+
+log Zt = log X
+
+> a′∈A
+
+π(t) (a′ | s) exp 
+
+
+
+η¯ν(t) (s, a ′)
+
+!
+
+(24) 
+
+≤ log X
+
+> a′∈A
+
+π(t) (a′ | s)
+
+
+
+1 + 
+
+
+
+η¯ν(t) (s, a ′)
+
+
+
++
+
+
+
+η¯ν(t) (s, a ′)
+
+2!
+
+(25) 
+
+≤ log 
+
+
+
+1 + η2
+
+(1 − γ)2
+
+
+
+(26) 
+
+≤ η2
+
+(1 − γ)2 , (27) where (26) is because P 
+
+> a′∈A
+
+π(t) (a′ | s) ¯ ν(t)(s, a ′) = 0 and ∥ν(t)∥∞ ≤ 1/(1 − γ), (27) is follow the fact that log(1 + x) ≤ x for any x ≥ 0. Then, we have 
+
+E(s,a )∼dπ∗
+
+h
+
+η¯ν(t)(s, a )
+
+i
+
+≤ E(s,a )∼dπ∗
+
+
+
+log π(t+1) (a | s) − log π(t)(a | s) + η2
+
+(1 − γ)2
+
+
+
+. (28) 16 Published as a conference paper at ICLR 2026 By taking the summation over iterations on both sides of (28), we have 
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼d∗
+
+h
+
+η¯ν(t)(s, a )
+
+i
+
+≤ T η 2
+
+(1 − γ)2 + E(s,a )∼dπ∗
+
+h
+
+log π(T +1) (a | s) − log π(1) (a | s)
+
+i
+
+.
+
+Using the fact that log( π(a | s)) ≤ 0 and π(1) (a | s) = 1  
+
+> | A tar |
+
+, we have 
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
+≤ T η 
+
+(1 − γ)2 + log | A tar |
+
+η .
+
+By setting η = (1 − γ)p1/T , we have 
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
+≤√T [log | A tar | + 1] 1 − γ
+
+Lemma 5. Let ν(t) : S × A → R and π(t) denote value function used in the policy update and the policy at iteration t. That is, 
+
+π(t+1) (a | s) ∝ π(t)(a | s) exp 
+
+
+
+ην (t)(s, a )
+
+
+
+. (29) 
+
+Then, by assuming that ∥ν(t)∥∞ ≤ 1/(1 − γ) and setting the learning rate η = (1 − γ)p1/T and optimal policy π∗, we have 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2Cπ∗
+
+1 − γ
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+Proof. 
+
+V π∗
+
+(μtar ) − V π(t)
+
+(μtar )= 11 − γ E(s,a )∼dπ∗
+
+> tar
+
+h
+
+Aπ(t)
+
+(s, a )
+
+i
+
+(30) 
+
+= 11 − γ E(s,a )∼dπ∗
+
+> tar
+
+h
+
+¯ν(t)(s, a ) − ¯ν(t)(s, a ) + Aπ(t)
+
+(s, a )
+
+i
+
+(31) 
+
+= 11 − γ E(s,a )∼dπ∗
+
+> tar
+
+h
+
+¯ν(t)(s, a )
+
+i
+
++ 11 − γ E(s,a )∼dπ∗
+
+> tar
+
+h
+
+− ¯ν(t)(s, a ) + Aπ(t)
+
+(s, a )
+
+i
+
+(32) 
+
+≤ 11 − γ E(s,a )∼dπ∗
+
+> tar
+
+h
+
+¯ν(t)(s, a )
+
+i
+
++ 11 − γ E(s,a )∼dπ∗
+
+> tar
+
+h
+
+−¯ν(t)(s, a ) + Aπ(t)
+
+(s, a )
+
+i
+
+, (33) where (30) holds by the performance difference lemma (cf. Lemma 1), (31) is obtained by adding 
+
+¯νt(s, a ) − ¯νt(s, a ), (32) is obtained by rearranging the terms in (31), and (33) holds by x ≤ | x|, for all x ∈ R. By the fact that ∥ dπ∗ 
+
+> dπ(t)
+
+∥∞ ≤ C, we have 
+
+11 − γ E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
++ 11 − γ Es,a ∼dπ∗
+
+h
+
+−¯ν(t)(s, a ) + Aπ(t)
+
+(s, a )
+
+i
+
+≤ 11 − γ E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
++ 11 − γ C · Es,a ∼dπ(t)
+
+h
+
+−¯ν(t)(s, a ) + Aπ(t)
+
+(s, a )
+
+i
+
+(34) 
+
+. (35) 17 Published as a conference paper at ICLR 2026 Recall the definitions that ¯ν(t)(s, a ) := ν(t)(s, a ) − ν(t)(s, π (t)(s)) and Aπ(t)
+
+(s, a ) := Qπ(t)
+
+(s, a ) −
+
+Qπ(t)
+
+(s, π (t)(s)) . Then, we have 
+
+E(s,a )∼dπ(t)
+
+h
+
+¯ν(t)(s, a ) − Aπ(t)
+
+(s, a ) i
+
+= E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − ν(t)(s, π (t)(s)) − Qπ(t)
+
+(s, a ) + Qπ(t)
+
+(s, π (t)(s))  i
+
+(36) 
+
+≤ E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a ) + Qπ(t)
+
+(s, π (t)(s)) − ν(t)(s, π (t)(s)) 
+
+i
+
+(37) where (37) holds by the fact that |x+y| ≤ | x|+|y| for any x, y ∈ R. Then, by linearity of expectation, we obtain 
+
+E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a ) + Qπ(t)
+
+(s, π (t)(s)) − ν(t)(s, π (t)(s)) 
+
+i
+
+= E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
++ Es∼dπ(t)
+
+h
+
+Qπ(t)
+
+(s, π (t)(s)) − ν(t)(s, π (t)(s)) 
+
+i
+
+(38) 
+
+= E(s,a )∼dπ(t) 2
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+(39) where (39) holds by Jensen’s inequality. Then, substituting the result from (39) into (34), we have 
+
+11 − γ E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
++ 11 − γ C · Es,a ∼dπ(t)
+
+h
+
+−¯ν(t)(s, a ) + Aπ(t)
+
+(s, a )
+
+i
+
+(40) 
+
+≤ 11 − γ E(s,a )∼dπ∗
+
+h
+
+¯ν(t)(s, a )
+
+i
+
++ 2C
+
+1 − γ · E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+(41) Next, summing over all iterations and combining with Lemma 4, we have 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2C
+
+1 − γ
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+ν(t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+(42) Recall that for any policy π, we use dπ to denote the discounted state-action visitation distribution under policy π in the target domain. 
+
+Lemma 6. Under Algorithm 2, for any t ∈ N, we have 
+
+E(s,a )∼dπ(t)
+
+h
+
+f t(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+≤ 1(1 − γ)2μtar,min 
+
+h
+
+(1 − α(t)) E(s,a )∼dπ(t)
+
+h
+
+ϵ(t) 
+
+> td
+
+(s, a )
+
+i
+
++ α(t)E(s,a )∼dπ(t)
+
+h
+
+ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))
+
+ii 
+
+(43) 
+
+Proof. Recall the definition of f (t) := (1 − α(t)) Q(t) 
+
+> tar
+
+(s, a ) + α(t)Qsrc (ϕ(t)(s), ψ (t)(a)) , we have 
+
+E(s,a )∼dπ(t)
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+= E(s,a )∼dπ(t)
+
+h
+
+(1 − α(t)) Q(t) 
+
+> tar
+
+(s, a ) + α(t)Qsrc (ϕ(t)(s), ψ (t)(a)) − Qπ(t)
+
+(s, a )
+
+i
+
+(44) 
+
+= E(s,a )∼dπ(t)
+
+  1 − α(t)  Q(t) 
+
+> tar
+
+(s, a ) − rtar (s, a ) + rtar (s, a )
+
++ α(t) Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) + rtar (s, a ) − Qπ(t)
+
+(s, a )
+
+ (45) 18 Published as a conference paper at ICLR 2026 
+
+= E(s,a )∼dπ(t)
+
+  1 − α(t)  Q(t)
+
+tar (s, a ) − rtar (s, a ) + rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] + γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)]  + α(t)
+
+
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) + rtar (s, a )
+
+− γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] + γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] 
+
+
+
+− Qπ(t)
+
+(s, a )
+
+
+
+(46) 
+
+= E(s,a )∼dπ(t)
+
+  1 − α(t)  Q(t)
+
+tar (s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] 
+
++ α(t)
+
+
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] 
+
+
+
++  1 − α(t)γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] + α(t)γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] + rtar (s, a ) − Qπ(t)
+
+(s, a )
+
+
+
+(47) 
+
+= E(s,a )∼dπ(t)
+
+  1 − α(t)
+
+Q(t)
+
+tar (s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] 
+
+
+
++ α(t)
+
+
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] 
+
+
+
++ γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[f (t)(s′, a ′)] + rtar (s, a ) − Qπ(t)
+
+(s, a )
+
+
+
+,
+
+(48) where we obtain (45) by adding the dummy terms  1 − α(t)  − rtar (s, a ) + rtar (s, a )
+
+and α(t)  − rtar (s, a ) + rtar (s, a ) to the inner part of (44), (46) is obtained by adding  1 − α(t)  − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] + γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)]  and α(t)  −
+
+γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] + γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))]  to the inner part of (45), (47) holds by rearranging the terms in (46), and (48) holds by the definition of f (t). Then, by adding γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] − γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] to the inner part of (48), we can rewrite (48) as 
+
+E(s,a )∼dπ(t)
+
+  1 − α(t)
+
+Q(t)
+
+tar (s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] 
+
+
+
++ α(t)
+
+
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] 
+
+
+
++ γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[f (t)(s′, a ′)] + rtar (s, a ) − Qπ(t)
+
+(s, a )+ γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] − γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] 
+
+
+
+(49) 19 Published as a conference paper at ICLR 2026 
+
+≤ E(s,a )∼dπ(t)
+
+  1 − α(t)
+
+Q(t)
+
+tar (s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] 
+
+
+
++ α(t)
+
+
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] 
+
+
+
++ γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[f (t)(s′, a ′)] + rtar (s, a ) − Qπ(t)
+
+(s, a )
+
++ γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] − γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] 
+
+
+
+(50) 
+
+≤ E(s,a )∼dπ(t)
+
+" 1 − α(t) Q(t)
+
+tar (s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] 
+
+| {z }
+
+=: ϵ(t) 
+
+> td
+
+(s,a )
+
++ α(t)
+
+
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] 
+
+| {z }
+
+=: ϵcd (s,a ;Qsrc ,ϕ (t),ψ (t),π (t))
+
++ γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[f (t)(s′, a ′)] − γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] 
+
++ rtar (s, a ) − Qπ(t)
+
+(s, a ) + γEs′′ ∼Ptar (·| s,a )
+
+a′′ ∼π(t)(·| s′′ )
+
+[Qπ(t)
+
+(s′′ , a ′′ )] 
+
+| {z }
+
+=0 
+
+#
+
+(51) 
+
+≤ E(s,a )∼dπ(t)
+
+" 1 − α(t)ϵ(t)
+
+td (s, a ) + α(t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))+ γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′′ )
+
+h
+
+f (t)(s′, a ′) − Qπ(t)
+
+(s′, a ′)
+
+i# (52) where (50) holds by triangle inequality, (51) holds by the facts that 0 ≤ α(t) ≤
+
+1 and 0 ≤ 1 − α(t) ≤ 1, (52) holds by coupling (s′, a ′) and (s′′ , a ′′ ) and applying Bellman expectation equation as well as the definitions that ϵ(t)
+
+td (s, a ) := 
+
+Q(t)
+
+tar (s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Q(t)
+
+tar (s′, a ′)] and ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t)) := 
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+[Qsrc (ϕ(t)(s′), ψ (t)(a′))] . By recursively ap-plying the procedure from (44) to (52) to f (t)(s′, a ′) − Qπ(t)
+
+(s′, a ′) , we obtain a bound on 
+
+E(s,a )∼dπ(t)
+
+h f (t)(s, a ) − Qπ(t)
+
+(s, a )2i
+
+as follows: 
+
+E(s,a )∼dπ(t)
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+≤ E(s,a )∼dπ(t)
+
+"  1 − α(t)ϵ(t)
+
+td (s, a ) + α(t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))+ γEs′∼Ptar (·| s,a )
+
+a′∼π(t)(·| s′)
+
+h
+
+f (t)(s′, a ′) − Qπ(t)
+
+(s′, a ′)
+
+i # (53) 20 Published as a conference paper at ICLR 2026 
+
+≤ E(s,a )∼dπ(t)
+
+"  1 − α(t)ϵ(t) 
+
+> td
+
+(s, a ) + α(t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))+ γEs′∼Ptar (·| s,a )
+
+> a′∼π(t)(·| s′)
+
+ 1 − α(t)ϵ(t) 
+
+> td
+
+(s′, a ′) + α(t)ϵcd (s′, a ′; Qsrc , ϕ (t), ψ (t), π (t))+ γEs′′ ∼Ptar (·| s′,a ′)
+
+> a′′ ∼π(t)(·| s′′ )
+
+h
+
+f (t)(s′′ , a ′′ ) − Qπ(t)
+
+(s′′ , a ′′ )
+
+i #
+
+(54) 
+
+≤ E(s,a )∼dπ(t)
+
+  1 − α(t)ϵ(t) 
+
+> td
+
+(s, a ) + α(t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))+ 1(1 − γ)μtar,min 
+
+
+
+γ 1 − α(t)ϵ(t) 
+
+> td
+
+(s, a ) + γα (t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))+ γ2 1 − α(t)ϵ(t) 
+
+> td
+
+(s, a ) + γ2α(t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t)) + · · · 
+
+ 
+
+(55) 
+
+≤ 1(1 − γ)2μtar,min 
+
+E(s,a )∼dπ(t)
+
+h
+
+(1 − α(t)) ϵ(t) 
+
+> td
+
+(s, a ) + α(t)ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))
+
+i
+
+(56) 
+
+= 1(1 − γ)2μtar,min 
+
+h
+
+(1 − α(t)) E(s,a )∼dπ(t)
+
+h
+
+ϵ(t) 
+
+> td
+
+(s, a )
+
+i
+
++ α(t)E(s,a )∼dπ(t)
+
+h
+
+ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))
+
+ii 
+
+(57) where (54) follows by applying the procedure from (44)–(52) to f (t)(s′, a ′) − Qπ(t)
+
+(s′, a ′), (55) follows by applying the same procedure to subsequent time steps with importance sampling using the ratio bound in Lemma 3 and the same dummy variables (s, a ) for all subsequent state-action pairs, and (57) follows from summing an infinite geometric series. 
+
+## B PROOFS OF THE PROPOSITIONS 
+
+We first present the proof of Proposition 3 in Appendix B.1 and then establish Proposition 2 and 1 by a similar argument in Appendix B.2. B.1 PROOF OF PROPOSITION 3
+
+Proposition 3. (Average Sub-Optimality) Under the QAvatar in Algorithm 2 and Assumption 1, the average sub-optimality over T iterations can be upper bounded as 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i| {z }
+
+> (b)
+
+(7) 
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+α(t)∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) + (1 − α(t)) ∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+| {z }
+
+> (c)
+
+, (8) 
+
+where C0 := 2 Cπ∗ /(1 − γ) and C1 := 2 Cπ∗ /((1 − γ)3μtar, min ).
+
+Proof. Using Lemma 5 and setting ν(t) = f (t), we have 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2C
+
+1 − γ
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+(58) 21 Published as a conference paper at ICLR 2026 This establishes the first inequality. Furthermore, recall the definitions of ϵ(t) 
+
+> td
+
+(s, a ) and 
+
+ϵcd (s, a ; Qsrc , ϕ, ψ, π ) as 
+
+ϵ(t) 
+
+> td
+
+(s, a ) := Q(t) 
+
+> tar
+
+(s, a ) − rtar (s, a ) − γEs′∼Ptar (·| s,a )
+
+> a′∼π(t)(·| s′)
+
+[Q(t) 
+
+> tar
+
+(s′, a ′)] , (59) 
+
+ϵcd (s, a ; Qsrc , ϕ, ψ, π ) := Qsrc (ϕ(s), ψ (a)) − rtar (s, a ) − γEs′∼Ptar (·| s,a ),a ′∼π(·| s′)[Qsrc (ϕ(s′), ψ (a′))] .
+
+(60) We also define the weighted ℓ1 norm under state-action distribution induced by any policy π as 
+
+∥ϵ(t) 
+
+> td
+
+∥dπ := E(s,a )∼dπ
+
+h
+
+ϵ(t) 
+
+> td
+
+(s, a )
+
+i
+
+, (61) 
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ := E(s,a )∼dπ
+
+h
+
+ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π )
+
+i
+
+. (62) For the second inequality, by Lemma 6, we have 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2C
+
+1 − γ
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+(63) 
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2C
+
+(1 − γ)3μtar,min 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+h
+
+(1 − α(t)) ∥ϵ(t) 
+
+> td
+
+∥dπ(t) + α(t)∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t)
+
+i
+
+(64) This completes the proof of Proposition 3. Additionally, by choosing α(t) =   
+
+> ∥ϵ(t)
+> td ∥dπ(t)
+> ∥ϵcd (Qsrc ,ϕ (t),ψ (t))∥dπ(t)+∥ϵ(t)
+> td ∥dπ(t)
+
+(as discussed in Section 4), we have 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ 2(1 − γ)2
+
+r log( Atar )
+
+T + 4√2C
+
+(1 − γ)3μtar,min 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) · ∥ ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) + ∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+. (65) B.2 PROOF OF PROPOSITION 2
+
+Proposition 2. Under the DQT method in Algorithm 1 and Assumption 1, the average sub-optimality over T iterations is upper bounded as 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+Qsrc (ϕ(t), ψ (t)) − Qπ(t)
+
+> dπ(t)
+
+| {z }
+
+> (b)
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t)
+
+| {z }
+
+> (c)
+
+, (4) 
+
+where C0 := 2 Cπ∗ /(1 − γ) and C1 := 2 Cπ∗ /((1 − γ)3μtar, min ).Proof. Notably, since the Proposition 2 is a special case of Proposition 3, we can simply follow all the steps taken for Proposition 3 and set α(t) = 1 for all t to establish Proposition 2. More specifically, 22 Published as a conference paper at ICLR 2026 we can replace f (t)(s, a ) with Qsrc (ϕ(t)(s), ψ (t)(a)) . Accordingly, under α(t) = 1 for all t, Lemma 6 can be simply rewritten as 
+
+E(s,a )∼dπ(t)
+
+h
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − Qπ(t)
+
+(s, a )
+
+i
+
+(66) 
+
+≤ 1(1 − γ)2μtar,min 
+
+E(s,a )∼dπ(t)
+
+h
+
+ϵcd (s, a ; Qsrc , ϕ (t), ψ (t), π (t))
+
+i
+
+. (67) Similarly, Lemma 5 can be be rewritten as 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2Cπ∗
+
+1 − γ
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+Qsrc (ϕ(t)(s), ψ (t)(a)) − Qπ(t)
+
+(s, a )
+
+i
+
+From the combination of the two results, 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2Cπ∗
+
+(1 − γ)3μtar,min T
+
+> T
+
+X
+
+> t=1
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) .
+
+(68) B.3 PROOF OF PROPOSITION 1
+
+Proposition 1. Under the tabular and approximate-Q settings, and Assumption 1, the average sub-optimality of Q-NPG over T iterations is upper bounded by 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+Q(t) 
+
+> tar
+
+− Qπ(t)
+
+> dπ(t)
+
+| {z }
+
+> (b)
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+| {z }
+
+> (c)
+
+, (2) 
+
+where C0 := 2 Cπ∗ /(1 − γ) and C1 := 2 Cπ∗ /((1 − γ)3μtar, min ).
+
+Proof. Notably, since the Proposition 1 is a special case of Proposition 3, we can simply follow all the steps taken for Proposition 3 and set α(t) = 0 for all t to establish Proposition 1. More specifically, we can replace f (t)(s, a ) with Q(t) 
+
+> tar
+
+(s, a ). Accordingly, under α(t) = 0 for all t, Lemma 6 can be simply rewritten as 
+
+E(s,a )∼dπ(t)
+
+h
+
+Q(t) 
+
+> tar
+
+(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+(69) 
+
+≤ 1(1 − γ)2μtar,min 
+
+E(s,a )∼dπ(t) [ϵtd (s, a )] . (70) Similarly, Lemma 5 can be be rewritten as 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2Cπ∗
+
+1 − γ
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+h
+
+Q(t) 
+
+> tar
+
+(s, a ) − Qπ(t)
+
+(s, a )
+
+i
+
+From the combination of the two results, 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + 2Cπ∗
+
+(1 − γ)3μtar,min T
+
+> T
+
+X
+
+> t=1
+
+∥ϵtd ∥dπ(t) . (71) 23 Published as a conference paper at ICLR 2026 B.4 SAMPLE COMPLEXITY BOUND 
+
+To convert the convergence result in Proposition 3 into sample complexity guarantees, we adopt the standard technique of the least squares generalization bound for sequential function estimation (Agar-wal et al., 2019; Song et al., 2023) as follows. 
+
+Lemma 7 (Least squares generalization bound, Lemma 3 in (Song et al., 2023)) . Consider a sequential function estimation setting with an instance space X and target space Y. Let R > 0, δ ∈
+
+(0 , 1) . Let H : X → [−R, R ] be a class of real-valued functions. Let D = {(x1, y 1), . . . , (xM , y M )}
+
+be a dataset of M points where xm ∼ ρm := ρm(x1: m−1, y 1: m−1), and ym is sampled via the conditional probability p(·| xm): ym ∼ p(·| xm) := h∗(xm) + εm. Suppose the following conditions hold: 1. h∗ satisfies approximate realizability, i.e., inf h∈H 1
+
+> M
+
+PMm=1 Ex∼ρm
+
+(h∗(x) − h(x)) 2 ≤ κ.2. {εm}Mm=1 are independent random variables such that E[ym|xm] = h∗(xm).3. max m |ym| ≤ R and max x |h∗(x)| ≤ R.Then, the least-squares solution ˆh := arg min h∈H 
+
+PMm=1 (h(xm) − ym)2 satisfies that with proba-bility at least 1 − δ,
+
+> M
+
+X
+
+> m=1
+
+Ex∼ρm
+
+(ˆh(x) − h∗(x)) 2 ≤ 3κM + 256 R2 log 
+
+ 2|H| 
+
+δ
+
+
+
+. (72) We define 
+
+κ(t) 
+
+> tar
+
+:= inf 
+
+> Q(t)∈Q
+
+E(s,a )∼dπ(t)
+
+h
+
+rtar (s, a ) + γEs′∼Ptar ,a ′∼π(t) [Q(t)(s′, a ′)] − Q(t)(s, a ) 2i
+
+, (73) where Q denotes a (finite) class of possible action-value functions. For ease of exposition, we suppose 
+
+κ(t) 
+
+> tar
+
+≤ κtar ,max , for all t. Note that this can be achieved since κtar ,max can be configured by choosing the function class Q. We also let F denote the product of the (finite) classes of possible inter-domain mappings ϕ and ψ.
+
+Definition 6 (Cross-Domain Realizability) . A source-domain critic Qsrc is said to satisfy the cross-domain realizability under a target-domain policy π if there exists a pair of inter-domain mappings 
+
+(ϕ, ψ ) in F such that ∥ϵcd (Qsrc , ϕ, ψ )∥dπ = 0 .
+
+Corollary 1. Consider the setting of Proposition 3 and assume a source-domain critic with cross-domain realizability for all t. In order to obtain an ϵ-optimal policy in Mtar with probability at least 
+
+1 − δ, the number of target-domain samples needed under QAvatar is 
+
+O
+
+ [log | A tar | + 1] (1 − γ)
+
+2 1
+
+ϵ2 · min 
+
+n C21 Ccd 
+
+ϵ2 , Ctar 
+
+ ϵ2
+
+> C21
+
+− 3κtar ,max 
+
++
+
+o
+
+(74) 
+
+where Ctar := 1024 (1 −γ)2 log 
+
+ 4|Q| 
+
+> δ
+
+
+
+and Ccd := 1024 (1 −γ)2 log( 4|F|  
+
+> δ
+
+). Moreover, to obtain an ϵ-optimal policy in Mtar with probability at least 1 − δ, the number of target-domain samples needed under Q-NPG is 
+
+O
+
+ [log | A tar | + 1] (1 − γ)
+
+2 1
+
+ϵ2 · Ctar 
+
+ ϵ2
+
+> C21
+
+− 3κtar ,max 
+
++
+
+
+
+(75) 
+
+Proof. To establish the sample complexity bound, we connect the sub-optimality gap in Proposition 3 with the number of samples needed in learning the Q function and the inter-domain mappings. To begin with, we bound the ∥ϵ(t) 
+
+> td
+
+∥dπ(t) as follows: Let Q : Star × A tar → R denote an action-value function in the target domain. Recall that we use rtar and Ptar to denote the reward function and the transition kernel of the target domain, respectively. For ease of exposition, define two helper functions ζ : Star × A tar → R and ζ∗ : Star × A tar → R as 
+
+ζ(s, a ; Q, π ) := rtar (s, a ) + γEs′∼Ptar ,a ′∼π [Q(s′, a ′)] − Q(s, a ), (76) 
+
+ζ∗(s, a ; π) := rtar (s, a ) + γEs′∼Ptar ,a ′∼π [Qπ (s′, a ′)] − Qπ (s, a ). (77) 24 Published as a conference paper at ICLR 2026 By the Bellman expectation equations, we know ζ∗(s, a ; π) = 0 , for any (s, a ) and any target-domain policy π. Recall from Algorithm 2, in each iteration t, we sample a batch D(t) of Ntar target-domain samples to obtain the Q(t) 
+
+> tar
+
+by minimizing the empirical TD loss, i.e., 
+
+Q(t) 
+
+> tar
+
+= arg min 
+
+> Q(t)∈Q
+
+X
+
+> (s,a,r,s ′)∈D (t)
+
+h
+
+r + γEa′∼π(t) [Q(t)(s′, a ′)] − Q(t)(s, a ) 2i
+
+. (78) Now we are ready to reinterpret (76)-(78) through the lens of Lemma 7. Let ζ(s, a ; Q, π ) and 
+
+ζ∗(s, a ; π) play the roles of h(x) and h∗(x). For each data sample (s, a, r, s ′), by treating  ζ(s, a ; Q, π ) − (r + γEa′∼π(t) [Q(t)(s′, a ′)] − Q(t)(s, a ))  as the noise term ϵm in Lemma 7, we know Q(t) 
+
+> tar
+
+actually plays the role of the least-squares solution ( i.e., , ˆh in Lemma 7). Through this interpretation, we know that the three conditions in Lemma 7 are satisfied with κ = κtar and 
+
+R = 2 /(1 − γ). By applying Lemma 7 and Jensen’s inequality, the result in (72) implies that with probability at least 1 − δ/ 2,
+
+∥ϵ(t) 
+
+> td
+
+∥2 
+
+> dπ(t)
+
+≤ 3κ(t) 
+
+> tar
+
++ Ctar 
+
+Ntar 
+
+, (79) where Ctar := 1024 (1 −γ)2 log 
+
+ 4|Q| 
+
+> δ
+
+
+
+. Similarly, we proceed to bound the ∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) as follows. Define an additional helper function ζcd : Star × A tar → R as 
+
+ζcd (s, a ; Qsrc , π, ϕ, ψ ) := rtar (s, a ) + γEs′∼Ptar ,a ′∼π [Qsrc (ϕ(s′), ψ (a′))] − Qsrc (ϕ(s), ψ (a)) . (80) Recall that in each iteration t, we also use the batch D(t) of Ntar target-domain samples to obtain the 
+
+ϕ(t), ψ (t) by minimizing the empirical cross-domain Bellman loss, i.e., 
+
+ϕ(t), ψ (t) ← arg min  
+
+> ϕ,ψ
+
+LCD (ϕ, ψ ; Qsrc , π (t), D(t) 
+
+> tar
+
+). (81) In each iteration t, we let ϕ(t) 
+
+> ∗
+
+and ψ(t) 
+
+> ∗
+
+denote the inter-domain mappings that yield 
+
+∥ϵcd (Qsrc , ϕ (t) 
+
+> ∗
+
+, ψ (t) 
+
+> ∗
+
+)∥dπ(t) = 0 . We know ζcd (s, a ; Qsrc , π (t), ϕ (t) 
+
+> ∗
+
+, ψ (t) 
+
+> ∗
+
+) = 0 , for all (s, a ).Now we are ready to reinterpret (80) through the lens of Lemma 7. Let ζcd (s, a ; Qsrc , π, ϕ, ψ )
+
+and ζcd (s, a ; Qsrc , π (t), ϕ (t) 
+
+> ∗
+
+, ψ (t) 
+
+> ∗
+
+) play the roles of h(x) and h∗(x), respectively. For each data sample (s, a, r, s ′), by treating  ζcd (s, a ; Qsrc , π, ϕ, ψ ) − (r + γEa′∼π(t) [Q(t) 
+
+> src
+
+(ϕ(s′), ψ (a′))] −
+
+Q(t) 
+
+> src
+
+(ϕ(s), ψ (a)))  as the noise term ϵm in Lemma 7, we know that ϕ(t) and ψ(t) actually play the role of the least-squares solution ( i.e., , ˆh in Lemma 7). Again, through the above interpretation, we know that the three conditions in Lemma 7 hold with κ = 0 and R = 2 /(1 − γ). By applying Lemma 7 and Jensen’s inequality, the result in (72) implies that with probability at least 1 − δ/ 2,
+
+∥ϵcd (Qsrc , ϕ (t), ψ (t))∥2 
+
+> dπ(t)
+
+≤ Ccd 
+
+Ntar 
+
+, (82) where Ccd := 1024 (1 −γ)2 log( 4|F|  
+
+> δ
+
+). We are ready to put everything together. We can rewrite the sub-optimality gap in Proposition 3 as follows. With probability at least 1 − δ,
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+α(t)∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t) + (1 − α(t)) ∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+
+
+, (83) 
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+α(t)
+
+r Ccd 
+
+Ntar 
+
++ (1 − α(t)) 
+
+r
+
+3κ(t) 
+
+> tar
+
++ Ctar 
+
+Ntar 
+
+
+
+, (84) 
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ) + C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+min 
+
+nr Ccd 
+
+Ntar 
+
+,
+
+r
+
+3κ(t) 
+
+> tar
+
++ Ctar 
+
+Ntar 
+
+o
+
+, (85) where (84) follows from (79) and (82), and (85) holds by choosing α(t) as an indicator function as described in Section 4.3. Accordingly, we can convert this into a sample complexity bound. We use 25 Published as a conference paper at ICLR 2026 
+
+[z]+ as the shorthand for max {0, z }. Moreover, suppose κ(t) 
+
+> tar
+
+≤ κtar ,max , for all t. Note that κtar ,max 
+
+can be configured by choosing the function class Q. Then, given any ϵ > 0, for any β ∈ (0 , 1) , we have that for any T ≥
+
+ [log | A tar |+1] (1 −γ)β
+
+2 1 
+
+> ϵ2
+
+=: T (ϵ) and Ntar ≥ min  C21 Ccd  
+
+> (1 −β)2ϵ2
+
+, Ctar 
+
+ (1 −β)2ϵ2
+
+> C21
+> −3κtar ,max
+
++ ,the average sub-optimality gap is no more than ϵ. Hence, by the fact that the final target-domain policy π(T ) 
+
+> tar
+
+∼ Uniform ({π(1) , · · · , π (T )}), we have that Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(T ) 
+
+> tar
+
+(s)
+
+i
+
+≤ ϵ, for any 
+
+T ≥
+
+ [log | A tar |+1] (1 −γ)β
+
+2 1 
+
+> ϵ2
+
+and Ntar ≥ min  C21 Ccd  
+
+> (1 −β)2ϵ2
+
+, Ctar 
+
+ (1 −β)2ϵ2
+
+> C21
+> −3κtar ,max
+
++ . This implies a total number of target-domain samples 
+
+O
+
+ [log | A tar | + 1] (1 − γ)
+
+2 1
+
+ϵ2 · min 
+
+n C21 Ccd 
+
+ϵ2 , Ctar 
+
+ ϵ2
+
+> C21
+
+− 3κtar ,max 
+
++
+
+o
+
+(86) is needed to achieve an ϵ-optimal target-domain policy under QAvatar. Moreover, recall that one can recover the vanilla Q-NPG by setting α(t) = 0 for all t. Hence, by setting α(t) = 0 in (83)-(85), we can also obtain that a total number of target-domain samples 
+
+O
+
+ [log | A tar | + 1] (1 − γ)
+
+2 1
+
+ϵ2 · Ctar 
+
+ ϵ2
+
+> C21
+
+− 3κtar ,max 
+
++
+
+
+
+(87) is needed to achieve an ϵ-optimal target-domain policy under Q-NPG. 
+
+## C A D ETAILED DESCRIPTION OF RELATED WORK 
+
+CDRL across domains with distinct state and action spaces. The existing approaches can divided into the following main categories: • (i) Manually designed latent mapping : In (Ammar & Taylor, 2012) and (Ammar et al., 2012), the trajectories are mapped manually and by sparse coding from the source domain and the target domain to a common latent space, respectively. The distance between latent states can then be calculated to find the correspondence of the states from the different domains. In (Gupta et al., 2017), the correspondence of the states is found by dynamic time warping and the mapping function which can map the states from two domains to the latent space is found by the correspondence. • (ii) Learned inter-domain mapping :In the literature (Taylor et al., 2008; Zhang et al., 2021; You et al., 2022; Gui et al., 2023; Zhu et al., 2024), the inter-domain mapping is mainly learned by enforcing dynamics alignment (or termed dynamics cycle consistency in (Zhang et al., 2021)), i.e., aligning the one-step transitions of the two domains. Additional properties have also been incorporated as auxiliary loss functions in learning the inter-domain mapping in the prior works, including domain cycle consistency (Zhang et al., 2021; You et al., 2022), effect cycle consistency (Zhu et al., 2024), maximizing mutual information between states and embeddings (You et al., 2022), and alignment of target-domain rewards with the embeddings (You et al., 2022). Moreover, as the state and action spaces are typically bounded sets and these methods directly map the data samples between the two domains, adversarial learning has been used to restrict the output range of the mapping functions (Zhang et al., 2021; Gui et al., 2023). On the other hand, in (Ammar et al., 2015), the state mapping function is found by Unsupervised Manifold Alignment (Wang & Mahadevan, 2009). Despite the above progress, the existing approaches all presume that the domains are sufficiently similar and do not have any performance guarantees (and hence can suffer from negative transfer in bad-case scenarios). By contrast, this paper proposes a robust CDRL method that can achieve transfer regardless of source-domain model quality or domain similarity with guarantees. 
+
+CDRL across domains with identical state and action spaces. In CDRL, a variety of methods have been proposed for the case where source and target domains share the same state and action spaces but are subject to dynamics mismatch. 26 Published as a conference paper at ICLR 2026 • (i) Using the data samples from both source and target domains for policy learning : One popular approach is to use the data from both domains for model updates (Eysenbach et al., 2021; Liu et al., 2022; Xu et al., 2023). For example, for compensating the discrepancy between domains in transition dynamics, (Eysenbach et al., 2021) proposes to modify the reward function, which is learned by an auxiliary domain classifier that distinguishes between the source-domain and target-domain transitions. (Liu et al., 2022) handles the dynamics shift problem in offline RL by augmenting rewards in the source-domain dataset. (Xu et al., 2023) proposes to address dynamics mismatch by a value-guided data filtering scheme, which ensures selective sharing of the source-domain transitions based on the proximity of paired value targets. • (ii) Explicit domain similarity : (Sreenivasan et al., 2023) proposes to selectively apply direct transfer of the source-domain policy to the target domain based on a learnable similarity metric, which is essentially the TD error of target domain trajectories with source Q function. Moreover, based on the policy invariant explicit shaping (Behboudian et al., 2022), (Sreenivasan et al., 2023) further uses the potential function as a bias term for selecting actions. • (iii) Using both Q-functions for the Q-learning updates : Target Transfer Q-Learning (Wang et al., 2020) calculates the TD error by the source and target domains Q functions in order to select the TD target from the two Q functions. • (iv) Domain randomization : To tackle sim-to-real transfer with dynamics mismatch, domain randomization (Rajeswaran et al., 2016; Peng et al., 2018; Chebotar et al., 2019; Du et al., 2021) and (Du et al., 2021) collects data from multiple similar source domains with different configurations to learn a high-quality policy that can work robustly in a possibly unseen but similar target domain. 
+
+## D ADDITIONAL EXPERIMENTAL RESULTS 
+
+D.1 A T OY EXAMPLES FOR MOTIVATING THE BENEFIT OF CROSS -D OMAIN BELLMAN LOSS  
+
+> (a) Source Domain (b) Target Domain
+
+Figure 8: Source and target domains of the grid navigation example. We consider the 3-by-3 grid navigation problem, as shown in Figure 8. In both domains, there are only two actions: ’going top’ and ’going right.’ The state of the source domain is described in decimal coordinates, while the state of the target domain is described in binary coordinates. The white squares represent obstacles that cannot be traversed. There are three special states: (i) Start state: The episode always begins at this state. (ii) End state: The episode will only end at this state, and the agent will receive an ending reward of +1. (iii) Treasure state: When the agent first navigates to this state, it will receive +0.5 rewards. In other states or at other times navigating the treasure state, the agent will not receive any reward. In the source domain, the start state, end state, and treasure state are set to (0 , 0) ,
+
+(0 , 2) , and (2 , 2) , respectively. In the target domain, the start state, end state, and treasure state are set to (0 , 0, 0, 0) , (0 , 0, 1, 1) , and (1 , 1, 1, 1) , respectively. We assume that the source Q-function Qsrc is optimal in the source domain and the environment discount factor γ is set to 0.99 . It is easy to verify that the optimal trajectory of the source domain is (0 , 0) → (0 , 1) → (0 , 2) → (1 , 2) → (2 , 2) and the optimal trajectory of the target domain is (0 , 0, 0, 0) → (0 , 0, 0, 1) → (0 , 0, 1, 1) → (0 , 1, 1, 1) →
+
+(1 , 1, 1, 1) . Consider two trajectories in the source domain: Traj-A, which is the optimal trajectory, and Traj-B, defined as (0 , 0) → (0 , 1) → (1 , 1) → (1 , 2) → (2 , 2) . When we map the optimal trajectory of the target domain to Traj-A and the optimal trajectory of the target domain to Traj-B, both mappings result in 0 cycle consistency loss. This suggests that the cycle consistency cannot determine which mapping is superior. This phenomenon results from the unsupervised nature of dynamics cycle consistency. In contrast, when we mapping the optimal trajectory of the target domain to Traj-A yields a cross-domain Bellman-like loss of 0, while mapping the optimal trajectory of 27 Published as a conference paper at ICLR 2026 the target domain to Traj-B results in a cross-domain Bellman-like loss of 1. Thus, we can achieve optimal mapping results based on the cross-domain Bellman error, while the cycle consistency loss provides sub-optimal mapping results. D.2 FINAL REWARDS 
+
+In this section, we evaluate the asymptotic performance of all baselines and our algorithm. In the experiments, all target-domain models are trained for 500k steps in MuJoCo and 100k steps in Robosuite. The results are summarized in Table 2. Table 2: Final rewards of QAvatarand all baselines in the experiments. Algorithm HalfCheetah Ant Door Opening Table Wiping Navigation                                                                                                          
+
+> QAvatar 11586.0 ±1224.4 2858.8 ±848.0 216.6 ±131.3 76.6 ±13.5 38.5 ±13.2
+> SAC 10986.0 ±1821.8 1620.0 ±527.2 94.8 ±23.9 47.6 ±11.0 19.7 ±13.6 FT 10756.8 ±1070.8 1644.3 ±748.2 129.9 ±34.6 42.1 ±15.4 12.5 ±9.0 PAR 8097.4 ±3962.0 737.6 ±45.3 33.7 ±18.6 17.9 ±11.8 0.0 ±0.0 CAT-SAC 8756.5 ±1264.3 1628.9 ±200.6 63.2 ±33.3 23.7 ±10.7 2.7 ±2.4 CAT 46.1 ±149.9 17.1 ±27.3 34.7 ±8.4 55.5 ±29.7 -0.1 ±0.2 CMD -253.1 ±344.1 777.5 ±144.1 7.8 ±6.4 0.8 ±0.4 -0.0 ±0.0
+
+D.3 ABLATION STUDY : E XPERIMENTAL RESULTS 
+
+(a) Unrelated transfer scenario (b) Non-stationary environment (c) Multiple source model 
+
+Figure 9: Training curves of ablation experiments. (a) Unrelated transfer scenario where the target domain is Table-Wiping with UR5e. (b) Training curves in non-stationary Ant-v3. (c) Transfer from two source domains to a target domain. D.4 ADDITIONAL EXPERIMENT AND EXPLANATION DURING REBUTTAL 
+
+QAvatar on image-based experiment. 
+
+We additionally evaluate QAvatar on image-based continuous control tasks from the DeepMind Control Suite (DMC) (Tassa et al., 2018). In DMC, each observation consists of a stack of three 84×84 RGB frames, and an action repeat of 4 is applied. The protocol details are described as follows: 
+
+SAC. For SAC, both the actor and critic use 3 hidden layers with 1024 units each. The image encoder follows the IMPALA (Espeholt et al., 2018) architecture to extract low-dimensional visual features. All remaining hyperparameters are the same as those used in Stable-Baselines3. 
+
+Flow model training. Training a flow model directly on the raw high-dimensional image observations is challenging. Therefore, we first pass each image stack through the source encoder to obtain its feature representation, and train the flow model to match the distribution of these extracted features rather than the raw images. Notably, this modification does not alter the QAvatar framework, since the source model remains fixed during target-domain transfer. 28 Published as a conference paper at ICLR 2026 
+
+Cross-domain transfer To leverage the source critic for transfer, each target image observation is first passed through the target encoder to obtain its feature representation, which is then used as the input to the state decoder; the rest of the procedure follows the standard QAvatar framework. 
+
+Comparison to Effective Cycle Consistency (Zhu et al., 2024). 
+
+Effective cycle consistency (ECC) (Zhu et al., 2024) operates under the same unsupervised cross-domain assumption as DCC and CMD, where the agent has no access to target-domain rewards. This makes the problem fundamentally more challenging than the supervised CDRL setting (i.e., with target-domain reward signal) considered in our work. Building on the DCC objective, ECC further introduces effect cycle-consistency to learn the mapping functions. We evaluate on Cheetah, Ant, Door Opening, and Table Wiping in Section 5.1. Figure 10 demostrate that although ECC produces more stable alignment than CMD, its overall performance remains significantly below SAC and other supervised CDRL baselines, which is consistent with the inherent limitations of the unsupervised CDRL methods.    
+
+> (a) HalfCheetah (b) Ant (c) Door Opening (d) Table Wiping
+
+Figure 10: Performance evaluation of ECC. 29 Published as a conference paper at ICLR 2026 
+
+## E IMPLEMENTATION DETAILS OF QAVATAR 
+
+E.1 PSEUDO CODE OF THE PRACTICAL IMPLEMENTATION OF QAVATAR 
+
+In this section, we provide the pseudo code of the practical version of QAvatarin Algorithm 3. 
+
+Algorithm 3 Practical Implementation of QAvatar 
+
+1: Require: Source-domain Q-network Qsrc , update α frequency Nα, batch size N .
+
+2: Initialize the state mapping function ϕ, the action mapping function ψ, the initial target-domain policy network π(1) , entropy coefficient β, replay buffer D, and α = 0 .
+
+3: for iteration t = 1 , · · · , T do 
+
+4: Interact with the environment and store the transition (st, a t, r t, s t+1 ) in the replay buffer D.
+
+5: Sample two sets of N transitions, denoted as BSAC and BMap , from the replay buffer D.
+
+6: Update the target-domain {Qtar ,1, Q tar ,2} by SAC’s critic loss: 
+
+Q(t) 
+
+> tar ,j
+
+= arg min 
+
+> Qtar
+
+ˆE(s,a,r,s ′)∈BSAC 
+
+h
+
+r + γEa′∼π(t)(·| s′)
+
+Qtar (s′, a ′) − β log( π(a′|s′))  − Qtar (s, a ) 2i
+
+.
+
+(88) 
+
+7: Update the state mapping function ϕ and action mapping function ψ by minimizing 
+
+8: the following loss: 
+
+ϕ(t), ψ (t) = arg min 
+
+> ϕ,ψ
+
+ˆE(s,a,r,s ′)∈BMap 
+
+h
+
+r + γEa′∼π(t)(·| s′)
+
+Qsrc (ϕ(s′), ψ (a′))  − Qsrc (ϕ(s), ψ (a)) 2i
+
+.
+
+(89) 
+
+9: if t mod Nα = 0 then 
+
+10: Define ∥ϵ(t) 
+
+> td
+
+∥D = ˆE(s,a,r,s ′)∈D
+
+h
+
+r + γEa′∼π(t)(·| s′)
+
+ min j=1 ,2 Q(t) 
+
+> tar ,j
+
+(s′, a ′) − min j=1 ,2 Q(t) 
+
+> tar ,j
+
+(s, a )
+
+i
+
+,
+
+11: ∥ϵcd (Qsrc , ϕ (t), ψ (t))∥D = ˆE(s,a,r,s ′)∈D
+
+h
+
+r + γEa′∼π(t)(·| s′)
+
+Qsrc (ϕ(t)(s′), ψ (t)(a′))  − Qsrc (ϕ(t)(s), ψ (t)(a)) 
+
+i
+
+.
+
+12: Update the weight α = ∥ϵ(t) 
+
+> td
+
+∥D /(∥ϵcd (Qsrc , ϕ (t), ψ (t))∥D + ∥ϵ(t) 
+
+> td
+
+∥D ).
+
+13: end if 
+
+14: Update the target-domain policy π:
+
+π(t+1) = arg min 
+
+> π
+
+ˆE(s,a,r,s ′)∈BSAC 
+
+> a′∼π(t)(·| s)
+
+h
+
+β log π(a′|s) − f (t)(s, a ′)
+
+i
+
+, (90) 
+
+f (t)(s, a ′) = (1 − α) min  
+
+> j=1 ,2
+
+Q(t) 
+
+> tar ,j
+
+(s, a ′) + αQ src (ϕ(t)(s), ψ (t)(a′)) . (91) 
+
+15: end for 
+
+E.2 SOURCE -D OMAIN MODELS AND THEIR PERFORMANCE 
+
+For the locomotion tasks including HalfCheetah and Ant, we train each source model for 1M steps. The average performance of the 5 source-domain models (under 5 distinct random seeds) in HalfCheetah and Ant are 7355 ± 2892 and 3689 ± 1013 , respectively. For the Robosuite tasks including Door Opening and Table Wiping, we train each source-domain model for 500K steps. The average performance of 5 random seed is 383 ± 139 and 94 ± 16 , respectively. For the navigation environment, we train the model for 500K steps, and the average performance is 39 .85 .E.3 INTER -D OMAIN MAPPING NETWORK AUGMENTED WITH A NORMALIZING FLOW 
+
+MODEL 
+
+As discussed in Section 4, a flow-based generative model is employed to transform the outputs of the mapping functions into their corresponding feasible regions. Therefore, there are two architectural paradigms of the flow model can be considered. In the first paradigm, the state and action are concatenated and jointly treated as the codomain of the flow model. This joint formulation is adopted in Cheetah, Ant environment. In the second paradigm, the state and action are modeled separately, 30 Published as a conference paper at ICLR 2026 with two independent flow models trained respectively for the state and the action. This decoupled formulation is applied in Hopper-v3, Table Wiping, and Door Opening tasks. E.4 QUALITY AND STABILITY OF LEARNED STATE /ACTION MAPPING FUNCTIONS ϕ AND ψ.In QAvatar, a key diagnostic for assessing alignment quality and stability is the cross-domain Bellman error. When this error approaches zero, it implies that Qsrc is δ-Bellman-consistent with a sufficiently small δ under the learned mappings, indicating that ϕ and ψ are well aligned. Figure 11 demostrate the curves of cross-domain Bellman error versus the TD error of the target critic across all main experiments in Section 5. The results consistently show that the cross-domain Bellman error remains low relative to the TD error when the learned mappings align well with the target domain.     
+
+> (a) HalfCheetah (b) Ant (c) Door Opening (d) Table Wiping (e) Navigation
+
+Figure 11: Cross-domain Bellman error and TD error of the target Q-function during training across all main experiments. 
+
+## F CONFIGURATION DETAILS OF THE EXPERIMENTS 
+
+F.1 STATE AND ACTION DIMENSIONS OF BENCHMARK ENVIRONMENTS 
+
+We summarize the state and action dimensions of each pair of source-domain and target-domain benchmark tasks in the following Table 3. Table 3: Dimensions of the source and target domains (“Src” and “Tar” represent the source domain and the target domain.) 
+
+Environment State Action Src Tar Src Tar HalfCheetah 17 23 6 9Ant 111 133 8 10 Door Opening 46 51 8 7Table Wiping 37 34 7 6Goal Navigation 40 72 2 12 F.2 MUJOCO AND ROBOSUITE ENVIRONMENTS 
+
+As mentioned in Section 5, We evaluate QAvatar in both MuJoCo and Robosuite environments. In the MuJoCo environments, the source domains of our experiments are the original MuJoCo environments such as HalfCheetah-v3 and Ant-v3. The target domains are the modified MuJoCo environments such as HalfCheetah with three legs and Ant with five legs. In Robosuite environments, We evaluate QAvatar on two tasks, including door opening and table wiping. For each task, we consider cross-domain transfer from controlling a Panda robot arm to controlling a UR5e robot arm. These four tasks are illustrated in Figure 12 and 13. 31 Published as a conference paper at ICLR 2026    
+
+> (a) HalfCheetah (b) Three-leg HalfCheetah (c) Ant (d) Five-leg Ant
+
+Figure 12: The environments of the source domains and the target domains. (a),(c): Source domains – Original MuJoCo environments. (b),(d): Target domains – Modified MuJoCo environments.     
+
+> (a) Door Opening: Panda (b) Table Wiping: Panda (c) Navigation: CarGoal0
+> (d) Door Opening: UR5e (e) Table Wiping: UR5e (f) Navigation: DoggoGoal0
+
+Figure 13: The environments of the source and target domains. (a)–(c): Source domains. (d)–(f): Target domains. F.3 THE IMPLEMENTATION DETAILS OF BASELINES 
+
+SAC. The implementation of SAC used in our experiments is released by Stable-Baselines3 (Raffin et al., 2021). The settings of all hyperparameters except for the discouted factor γ follows the default settings of SAC in the documentation of Stable-Baselines3. The discouted factor is set 0.99 in all other MuJoCo environments. In Robosuite environments, we set the discouted factor to 0.9. 
+
+CMD. Since there is no publicly available implementation of CMD, we leverage and adapt the codebase of DCC (Zhang et al., 2021) ( https://github.com/sjtuzq/Cycle_Dynamics )and reproduce CMD by following the pseudo code of CMD in its original paper (Gui et al., 2023). We follow the setting of the hyperparameters which is revealed in its original paper. Additionally, we change CMD from collecting the fixed amount of data to collecting data continuously for a fair comparison. As for the source model, we use the same model used in our algorithm. Moreover, we observe that the original setting could suffer because the collected trajectories mostly have low returns due to a random behavior policy. Therefore, we consider a stronger version of CMD with target-domain data collected under the target-domain policy, which is induced by the source-domain pre-trained policy and the current inter-domain mappings. 
+
+FT. FT can be seen as a standard SAC algorithm with source feature initialization. Specifically, we modify the input and output layers of the source policy to match the target domain’s state and action dimensions, using random initialization, while keeping the middle layers with the same weights as the 32 Published as a conference paper at ICLR 2026 source model. Similarly, for the source Q function, we adjust the input layer to fit the target domain’s state and action dimensions with random initialization, while the remaining layers retain the source model’s weights. After initialization, the agent is fine-tuned using the standard SAC algorithm. 
+
+CAT. We use the authors’ implementation (https://github.com/TJU-DRL-LAB/ transfer-and-multi-task-reinforcement-learning/tree/main/ Single-agent%20Transfer%20RL/Cross-domain%20Transfer/CAT ) and use PPO as the target-domain base algorithm following the original paper. For a fair comparison, we use the same source model used in QAvatar. 
+
+CAT-SAC. As CAT can be integrated with any off-the-shelf RL method, we adapt the original PPO-based CAT to CAT-SAC by using the SAC implementation in Spinning Up (Achiam, 2018) as the backbone of CAT-SAC. All the SAC-related hyperparameters are the same as those used by SAC and the CAT-related parameters are configured as in the original implementation. For a fair comparison, we use the same source model used by QAvatar. 
+
+PAR. We use the authors’ implementation ( https://github.com/dmksjfl/PAR.git )and consider the offline to online version of PAR, which is more compatible with the CDRL setting in our paper. For the source-domain data required by PAR, we use the samples in the buffer collected during the training of the source-domain policies (shared by QAvatarand other baselines). As a result, to adapt PAR to the more general CDRL setting in our paper, similar to the data pre-processing methods used in handling sequences (Zahavy et al., 2018; Dwarampudi & Reddy, 2019; Morad et al., 2024; Wu & Hu, 2018), we use padding and truncation to handle the differences in state and action dimensions. More specifically, • Padding : If the target domain has n more dimensions than the source, we append n zeros to the end of each source sample. • Truncation : If the target domain has n fewer dimensions than the source, we discard the last n from each source sample. Note that this design is reasonable, as neither the baselines nor QAvatarhave any knowl-edge about the physical meaning of each entry in the state or action representations. For the hyperparameters, to ensure a fair comparison with QAvataras well as the baselines CAT-SAC and SAC, we set the ratio between environment interaction and agent training to 1 ( i.e., 
+
+config[’tar_env_interact_freq’] in their original code). Other parameters ( e.g., beta, weight, etc.) and network architecture follow the recommendations provided in the original PAR pa-per. In addition, we observe that in some environments, temperature tuning can improve performance. Therefore, we apply temperature tuning during the training process (as adopted by PAR’s original code), and select the better one between using and not using temperature tuning as the final result. F.4 HYPERPARAMTER TUNING OF THE BASELINES 
+
+In this section, we provide the value of hyperparamter tuning detail of in the Section 5. For fairness, all SAC-based methods (QAvatar, SAC, FT, CAT-SAC, and PAR) use exactly the same SAC-related hyperparameters. This ensures that any performance differences arise solely from whether transfer is applied and how it is implemented. For all locomotion tasks, we follow the recommended SAC hyperparameters from Stable-Baselines3 (Raffin et al., 2021). Thus, there are no hyperparameter need to tune in SAC and FT. For the other baselines, 
+
+CAT and CAT-SAC. We conducted tuning for the schedule of p(t), which is the weight of the linear combination of hidden layer parameters: p(t) = 0 means that only the source-domain parameters are used; p(t) = 1 means that only the target-domain parameters are used). Specifically, You et al. 33 Published as a conference paper at ICLR 2026 (2022) sets p(t) to be piecewise linear as follows: Let T be the total training steps. 
+
+p(t) = 
+
+
+
+0, t ∈ [0 , c 1T ],t − c1T
+
+(c2 − c1)T , t ∈ [c1T, c 2T ],
+
+1, t ∈ [c2T, T ].
+
+The official CAT chooses c1 = 0 .45 , c 2 = 0 .9. For each environment, we choose the best among the following candidate choices: (c1, c 2) ∈ { (0 .15 , 0.4) , (0 .4, 0.7) , (0 .45 , 0.9) }.
+
+PAR. We performed a grid search over the penalty coefficient β : {0.1, 0.5, 1.0, 2.0}, which are the values suggested by the ablation study in the original paper. We also searched over the policy objective normalization coefficient ν : {2.5, 5.0}, as recommended by the official code and Appendix E.1 of the original paper. In addition, we evaluated both configurations that enable temperature tuning during training, which is used in their official implementation, and configurations that exclude temperature tuning, which is the default setting. We selected the best-performing configuration in the Cheetah environment and applied this configuration to all remaining environments. 
+
+CMD. We conduct a grid search over the loss weights (ρ0, ρ 1, ρ 2) in 
+
+L2nd = ρ0Lgan (Dsource , G 1) + ρ1Lgan (Dtarget , G 2) + ρ2L3(G1, G 2)
+
+The official CMD setting is (ρ0, ρ 1, ρ 2) = (1 , 1, 3) , we fix ρ1 = 1 and conduct the grid search on ρ2 : {0.3, 1.0, 3.0}, ρ 2 = {1.0, 3.0, 10 .0}. Across all combinations, the performance is similar and consistently much lower than that of SAC. Based on this observation, we adopt the original recommended CMD setting for all remaining environments. F.5 DETAILED CONFIGURATION OF QAVATAR 
+
+The base algorithm, Soft Actor-Critic (SAC), is implemented using Stable-Baselines3 (Raffin et al., 2021). All experiments were conducted on a computing server equipped with dual Intel Xeon Gold 6154 CPUs (36 cores in total) and an NVIDIA Tesla V100-SXM2 GPU with 32 GB of GPU memory. The hyperparameters of QAvatar are summarized in the following table. Unless otherwise specified, the hyperparameter settings, including the learning rates of the actor and critic networks, batch size, replay buffer size, and discount factor, follow the default configurations of SAC. Table 4: A list of hyperparameters of QAvatar. Parameter Value critic/actor learning rate 0.0003 mapping function learning rate 0.0001 batch size 256 replay buffer size 10 6
+
+optimizer for Actor/critic Adam optimizer for mapping function AdamW hidden layer size 256 update α frequency Nα 1000 34 Published as a conference paper at ICLR 2026 
+
+## G ANALYSIS OF THE OFF -P OLICY VARIANT OF PROPOSITION 3
+
+In Proposition 3, we provide an upper bound on the average sub-optimality of the on-policy version of QAvatar. In this section, we derive the corresponding upper bound for the off-policy variant of QAvatar. The primary difference between the on-policy and off-policy settings lies in the data collection policy. The on-policy approach collects data using the learned policy π(t), while the off-policy variant collects data using a behavior policy π(t) 
+
+> β
+
+. Based on notation use in the main paper, we provide the average sub-optimality of the off-policy version of QAvatar as following: 
+
+Corollary 2. Under the QAvatarin Algorithm 2, but with the data collection policy π(t) replaced by 
+
+π(t) 
+
+> β
+
+, and under Assumption 1, the average sub-optimality over T iterations can be upper bounded as follows: 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+Es∼μtar 
+
+h
+
+V π∗
+
+(s) − V π(t)
+
+(s)
+
+i
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C0
+
+T
+
+> T
+
+X
+
+> t=1
+
+E(s,a )∼dπ(t)
+
+> β
+
+h
+
+f (t)(s, a ) − Qπ(t)
+
+(s, a )
+
+i| {z }
+
+> (b)
+
+(92) 
+
+≤ [log | A tar | + 1] 
+
+√T (1 − γ)
+
+| {z }
+
+> (a)
+
++ C1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+α(t)∥ϵcd (Qsrc , ϕ (t), ψ (t))∥dπ(t)
+
+> β
+
++ (1 − α(t)) ∥ϵ(t) 
+
+> td
+
+∥dπ(t)
+
+> β
+
+| {z }
+
+> (c)
+
+, (93) 
+
+where C0 := 2 Cπ∗,β /(1 − γ) and C1 := 2 Cπ∗,β /((1 − γ)3μtar, min ).Proof. The proof follows exactly the same steps as those used for Proposition 3. The only difference lies in the proof of Lemma 5, specifically in Equation (34). There, instead of assuming the learned policy π(t) together with the corresponding dπ∗
+
+> dπ(t)
+> ∞
+
+≤ C, we replace it with the behavior policy 
+
+π(t) 
+
+> β
+
+together with the corresponding dπ∗ 
+
+> dπ(t)
+> β∞
+
+≤ Cβ . Notably, both Cβ and C are bounded constants given the condition of exploratory initial distribution in Assumption 1. For the subsequent derivations in Lemma 5 as well as those in Lemma 6, we may directly replace dπ(t)
+
+with dπ(t) 
+
+> β
+
+. This substitution preserves all arguments, because the relevant manipulations are carried out entirely inside expectations with respect to a distribution, and the structure of the inequalities does not depend on which particular distribution the expectation is taken over. Lemma 4 does not require any modification, because it is designed to control the learning process of the NPG-style policy update. This part of the analysis does not depend on whether the data are collected by π(t) or by π(t) 
+
+> β
+
+. With the above substitutions, we may directly use the modified versions of Lemma 5, Lemma 6, and Lemma 4. Following the same sequence of steps as in Equations (58) to (64), we can then complete the proof of this corollary. In our practical SAC-based implementation of QAvatar, we set the behavior policy π(t) 
+
+> β
+
+to match the buffer distribution, which can be viewed as a mixture of all past learned policies. Consequently, the value of α(t) can naturally be evaluated over the buffer distribution. 35

@@ -6,82 +6,98 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-21
-- 运行时间：2026-03-21 19:15:00 UTC
+- 最新运行日期：2026-03-22
+- 运行时间：2026-03-22 19:09:37 UTC
 - 运行状态：成功
-- 本次总论文数：20
-- 精读区：8
+- 本次总论文数：26
+- 精读区：14
 - 速读区：12
 
 ### 今日简报（AI）
-今日深度研读 20 篇 AI 论文，聚焦多模态推荐系统优化与视觉语言动作模型（VLA）的架构创新。
-核心突破在于通过锚定对齐解决推荐中的位置坍缩，并利用即插即用技术显著提升 VLA 模型的视觉感知能力。
-建议优先关注多模态对齐与模型轻量化方向，掌握提升复杂交互系统鲁棒性与效率的前沿方案。
-- 详情：[/202603/21/README](/202603/21/README)
+今日深度解析 26 篇前沿论文，重点聚焦端到端自动驾驶模型 AutoMoT 的满分架构突破。
+- 详情：[/202603/22/README](/202603/22/README)
 
 ### 精读区论文标签
-1. [Anchored Alignment: Preventing Positional Collapse in Multimodal Recommender Systems](/202603/21/2603.12726v1-anchored-alignment-preventing-positional-collapse-in-multimodal-recommender-systems)  
+1. [AutoMoT: A Unified Vision-Language-Action Model with Asynchronous Mixture-of-Transformers for End-to-End Autonomous Driving](/202603/22/2603.14851v1-automot-a-unified-vision-language-action-model-with-asynchronous-mixture-of-transformers-for-end-to-end-autonomous-driving)  
+   标签：评分：10.0/10、query:slm-rl
+   evidence：用于自动驾驶的统一视觉-语言-动作模型
+2. [AutoMoT: A Unified Vision-Language-Action Model with Asynchronous Mixture-of-Transformers for End-to-End Autonomous Driving](/202603/22/2603.14851v2-automot-a-unified-vision-language-action-model-with-asynchronous-mixture-of-transformers-for-end-to-end-autonomous-driving)  
+   标签：评分：10.0/10、query:slm-rl
+   evidence：用于自动驾驶的统一视觉-语言-动作模型
+3. [ImagiNav: Scalable Embodied Navigation via Generative Visual Prediction and Inverse Dynamics](/202603/22/2603.13833v1-imaginav-scalable-embodied-navigation-via-generative-visual-prediction-and-inverse-dynamics)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：VLM将指令分解为子目标，用于分层视觉规划
+4. [Fine-tuning is Not Enough: A Parallel Framework for Collaborative Imitation and Reinforcement Learning in End-to-end Autonomous Driving](/202603/22/2603.13842v1-fine-tuning-is-not-enough-a-parallel-framework-for-collaborative-imitation-and-reinforcement-learning-in-end-to-end-autonomous-driving)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：用于端到端自动驾驶控制的强化学习
+5. [vla-eval: A Unified Evaluation Harness for Vision-Language-Action Models](/202603/22/2603.13966v1-vla-eval-a-unified-evaluation-harness-for-vision-language-action-models)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：视觉-语言-动作（VLA）模型的统一评估框架
+6. [Data-Driven Physics Embedded Dynamics with Predictive Control and Reinforcement Learning for Quadrupeds](/202603/22/2603.14333v1-data-driven-physics-embedded-dynamics-with-predictive-control-and-reinforcement-learning-for-quadrupeds)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：用于四足机器人控制和长程规划的强化学习与模型预测控制
+7. [Towards Foundation Models for Consensus Rank Aggregation](/202603/22/2603.15218v1-towards-foundation-models-for-consensus-rank-aggregation)  
    标签：评分：9.0/10、query:llmrec
-   evidence：多模态推荐系统与对齐
-2. [PVI: Plug-in Visual Injection for Vision-Language-Action Models](/202603/21/2603.12772v1-pvi-plug-in-visual-injection-for-vision-language-action-models)  
+   evidence：推荐系统中用于共识排名聚合的Transformer强化学习
+8. [NavThinker: Action-Conditioned World Models for Coupled Prediction and Planning in Social Navigation](/202603/22/2603.15359v1-navthinker-action-conditioned-world-models-for-coupled-prediction-and-planning-in-social-navigation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于VLA模型的轻量级模块，旨在改进时间与几何线索
-3. [DecoVLN: Decoupling Observation, Reasoning, and Correction for Vision-and-Language Navigation](/202603/21/2603.13133v1-decovln-decoupling-observation-reasoning-and-correction-for-vision-and-language-navigation)  
+   evidence：用于耦合预测与规划的动作条件世界模型
+9. [NavThinker: Action-Conditioned World Models for Coupled Prediction and Planning in Social Navigation](/202603/22/2603.15359v2-navthinker-action-conditioned-world-models-for-coupled-prediction-and-planning-in-social-navigation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：长程任务的视觉语言导航
-4. [CLAG: Adaptive Memory Organization via Agent-Driven Clustering for Small Language Model Agents](/202603/21/2603.15421v1-clag-adaptive-memory-organization-via-agent-driven-clustering-for-small-language-model-agents)  
+   evidence：用于机器人规划的动作条件世界模型
+10. [AsgardBench - Evaluating Visually Grounded Interactive Planning Under Minimal Feedback](/202603/22/2603.15888v1-asgardbench---evaluating-visually-grounded-interactive-planning-under-minimal-feedback)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：专门为小参数语言模型（SLM）智能体在复杂任务中设计的记忆组织框架
-5. [Simulation Distillation: Pretraining World Models in Simulation for Rapid Real-World Adaptation](/202603/21/2603.15759v1-simulation-distillation-pretraining-world-models-in-simulation-for-rapid-real-world-adaptation)  
+   evidence：评估具身智能中基于视觉的交互式规划
+11. [ARISE: Agent Reasoning with Intrinsic Skill Evolution in Hierarchical Reinforcement Learning](/202603/22/2603.16060v2-arise-agent-reasoning-with-intrinsic-skill-evolution-in-hierarchical-reinforcement-learning)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：结合世界模型进行长程机器人规划的模型基强化学习
-6. [SIA: A Synthesize-Inject-Align Framework for Knowledge-Grounded and Secure E-commerce Search LLMs with Industrial Deployment](/202603/21/2603.16137v1-sia-a-synthesize-inject-align-framework-for-knowledge-grounded-and-secure-e-commerce-search-llms-with-industrial-deployment)  
-   标签：评分：9.0/10、query:llmrec
-   evidence：用于电子商务意图感知推荐的大模型
-7. [SIA: A Synthesize-Inject-Align Framework for Knowledge-Grounded and Secure E-commerce Search LLMs with Industrial Deployment](/202603/21/2603.16137v2-sia-a-synthesize-inject-align-framework-for-knowledge-grounded-and-secure-e-commerce-search-llms-with-industrial-deployment)  
-   标签：评分：9.0/10、query:llmrec
-   evidence：大语言模型用于电商意图感知推荐
-8. [MemoAct: Atkinson-Shiffrin-Inspired Memory-Augmented Visuomotor Policy for Robotic Manipulation](/202603/21/2603.18494v1-memoact-atkinson-shiffrin-inspired-memory-augmented-visuomotor-policy-for-robotic-manipulation)  
+   evidence：具有技能管理功能的智能体推理分层强化学习
+12. [Internalizing Agency from Reflective Experience](/202603/22/2603.16843v1-internalizing-agency-from-reflective-experience)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于长程机器人操作的层级记忆策略
+   evidence：自主智能体的长程交互与强化学习
+13. [HeiSD: Hybrid Speculative Decoding for Embodied Vision-Language-Action Models with Kinematic Awareness](/202603/22/2603.17573v1-heisd-hybrid-speculative-decoding-for-embodied-vision-language-action-models-with-kinematic-awareness)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：用于机器人控制的具身 VLA 模型加速
+14. [Specification-Aware Distribution Shaping for Robotics Foundation Models](/202603/22/2603.17969v1-specification-aware-distribution-shaping-for-robotics-foundation-models)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：机器人基础模型处理序列目标和时空需求
 
 ### 速读区论文标签
-1. [STAIRS-Former: Spatio-Temporal Attention with Interleaved Recursive Structure Transformer for Offline Multi-task Multi-agent Reinforcement Learning](/202603/21/2603.11691v1-stairs-former-spatio-temporal-attention-with-interleaved-recursive-structure-transformer-for-offline-multi-task-multi-agent-reinforcement-learning)  
+1. [HaltNav: Reactive Visual Halting over Lightweight Topological Priors for Robust Vision-Language Navigation](/202603/22/2603.12696v2-haltnav-reactive-visual-halting-over-lightweight-topological-priors-for-robust-vision-language-navigation)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：用于长程时间依赖的分层技能学习
-2. [Bielik-Minitron-7B: Compressing Large Language Models via Structured Pruning and Knowledge Distillation for the Polish Language](/202603/21/2603.11881v1-bielik-minitron-7b-compressing-large-language-models-via-structured-pruning-and-knowledge-distillation-for-the-polish-language)  
+   evidence：结合拓扑先验的视觉语言导航，实现目标导向的自主性
+2. [Evaluating VLMs' Spatial Reasoning Over Robot Motion: A Step Towards Robot Planning with Motion Preferences](/202603/22/2603.13100v1-evaluating-vlms-spatial-reasoning-over-robot-motion-a-step-towards-robot-planning-with-motion-preferences)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：7B参数模型的压缩与基于强化学习的对齐
-3. [Taming the Adversary: Stable Minimax Deep Deterministic Policy Gradient via Fractional Objectives](/202603/21/2603.12110v1-taming-the-adversary-stable-minimax-deep-deterministic-policy-gradient-via-fractional-objectives)  
+   evidence：评估视觉语言模型在机器人规划和运动偏好中的应用
+3. [Knowledge Distillation for Large Language Models](/202603/22/2603.13765v1-knowledge-distillation-for-large-language-models)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：用于连续控制任务的极小极大深度确定性策略梯度
-4. [AgentDrift: Unsafe Recommendation Drift Under Tool Corruption Hidden by Ranking Metrics in LLM Agents](/202603/21/2603.12564v1-agentdrift-unsafe-recommendation-drift-under-tool-corruption-hidden-by-ranking-metrics-in-llm-agents)  
-   标签：评分：8.0/10、query:llmrec
-   evidence：用于推荐的大语言模型智能体及排名指标
-5. [Collaborative Multi-Agent Optimization for Personalized Memory System](/202603/21/2603.12631v1-collaborative-multi-agent-optimization-for-personalized-memory-system)  
-   标签：评分：7.0/10、query:llmrec
-   evidence：用于个性化记忆和检索的协作强化学习
-6. [AI Planning Framework for LLM-Based Web Agents](/202603/21/2603.12710v1-ai-planning-framework-for-llm-based-web-agents)  
+   evidence：用于提升小参数模型效率的知识蒸馏与强化学习
+4. [APEX-Searcher: Augmenting LLMs' Search Capabilities through Agentic Planning and Execution](/202603/22/2603.13853v1-apex-searcher-augmenting-llms-search-capabilities-through-agentic-planning-and-execution)  
+   标签：评分：8.0/10、query:slm-rl
+   evidence：复杂任务的智能体规划与强化学习
+5. [EnterpriseOps-Gym: Environments and Evaluations for Stateful Agentic Planning and Tool Use in Enterprise Settings](/202603/22/2603.13594v1-enterpriseops-gym-environments-and-evaluations-for-stateful-agentic-planning-and-tool-use-in-enterprise-settings)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：将 Web 任务视为 LLM 智能体的顺序决策和规划
-7. [ToolTree: Efficient LLM Agent Tool Planning via Dual-Feedback Monte Carlo Tree Search and Bidirectional Pruning](/202603/21/2603.12740v1-tooltree-efficient-llm-agent-tool-planning-via-dual-feedback-monte-carlo-tree-search-and-bidirectional-pruning)  
+   evidence：智能体工作流中的长程规划
+6. [Multi-Robot Coordination for Planning under Context Uncertainty](/202603/22/2603.13748v1-multi-robot-coordination-for-planning-under-context-uncertainty)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：通过蒙特卡洛树搜索进行长程工具规划
-8. [Adaptive Vision-Language Model Routing for Computer Use Agents](/202603/21/2603.12823v1-adaptive-vision-language-model-routing-for-computer-use-agents)  
+   evidence：不确定性下的多机器人协作规划
+7. [Diffusion Reinforcement Learning via Centered Reward Distillation](/202603/22/2603.14128v1-diffusion-reinforcement-learning-via-centered-reward-distillation)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：计算机使用智能体的视觉语言模型路由
-9. [LMEB: Long-horizon Memory Embedding Benchmark](/202603/21/2603.12572v1-lmeb-long-horizon-memory-embedding-benchmark)  
+   evidence：扩散模型的强化学习微调
+8. [GoldenStart: Q-Guided Priors and Entropy Control for Distilling Flow Policies](/202603/22/2603.14245v1-goldenstart-q-guided-priors-and-entropy-control-for-distilling-flow-policies)  
+   标签：评分：7.0/10、query:slm-rl
+   evidence：用于捕获策略中复杂动作分布的强化学习
+9. [A Mathematical Programming Approach to Computing and Learning Berk--Nash Equilibria in Infinite-Horizon MDPs](/202603/22/2603.13641v1-a-mathematical-programming-approach-to-computing-and-learning-berk--nash-equilibria-in-infinite-horizon-mdps)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：记忆增强系统中长程记忆检索任务的基准测试
-10. [LMEB: Long-horizon Memory Embedding Benchmark](/202603/21/2603.12572v2-lmeb-long-horizon-memory-embedding-benchmark)  
-   标签：评分：6.0/10、query:slm-rl
-   evidence：长程记忆检索基准
-11. [LLM Routing as Reasoning: A MaxSAT View](/202603/21/2603.13612v1-llm-routing-as-reasoning-a-maxsat-view)  
+   evidence：无限时界MDP中的序列决策与模型失配研究
+10. [Greedy Information Projection for LLM Data Selection](/202603/22/2603.13790v1-greedy-information-projection-for-llm-data-selection)  
    标签：评分：6.0/10、query:llmrec
-   evidence：基于自然语言反馈的LLM推荐集路由选择
-12. [APEX-Searcher: Augmenting LLMs' Search Capabilities through Agentic Planning and Execution](/202603/21/2603.13853v2-apex-searcher-augmenting-llms-search-capabilities-through-agentic-planning-and-execution)  
+   evidence：基于任务信号的大模型微调数据选择
+11. [Supervised Fine-Tuning versus Reinforcement Learning: A Study of Post-Training Methods for Large Language Models](/202603/22/2603.13985v1-supervised-fine-tuning-versus-reinforcement-learning-a-study-of-post-training-methods-for-large-language-models)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：利用强化学习进行复杂搜索任务的智能体规划与执行
+   evidence：LLM后训练中SFT与强化学习的统一视角
+12. [SVD Contextual Sparsity Predictors for Fast LLM Inference](/202603/22/2603.14110v1-svd-contextual-sparsity-predictors-for-fast-llm-inference)  
+   标签：评分：6.0/10、query:slm-rl
+   evidence：通过上下文稀疏实现高效LLM推理
 
 
 <div class="dpr-home-promo-card">

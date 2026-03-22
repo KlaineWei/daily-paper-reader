@@ -1,0 +1,460 @@
+Title: Specification-Aware Distribution Shaping for Robotics Foundation Models
+
+URL Source: https://arxiv.org/pdf/2603.17969v1
+
+Published Time: Thu, 19 Mar 2026 01:37:45 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Specification-Aware Distribution Shaping for Robotics Foundation Models 
+
+Sadık Bera Y¨ uksel and Derya Aksaray 
+
+Abstract — Robotics foundation models have demonstrated strong capabilities in executing natural language instructions across diverse tasks and environments. However, they remain largely data-driven and lack formal guarantees on safety and satisfaction of time-dependent specifications during deployment. In practice, robots often need to comply with operational constraints involving rich spatio-temporal requirements such as time-bounded goal visits, sequential objectives, and persistent safety conditions. In this work, we propose a specification-aware action distribution optimization framework that enforces a broad class of Signal Temporal Logic (STL) constraints during execution of a pretrained robotics foundation model without modifying its parameters. At each decision step, the method computes a minimally modified action distribution that satisfies a hard STL feasibility constraint by reasoning over the remaining horizon using forward dynamics propagation. We validate the proposed framework in simulation using a state-of-the-art robotics foundation model across multiple environments and complex specifications. 
+
+I. INTRODUCTION Recent advances in robotics foundation models have sig-nificantly expanded the capabilities of embodied agents. These models are pretrained on large-scale multi-modal data to learn unified vision-language-action representations that allow robots to map high-level commands directly to low-level control (e.g., [1], [2]). As a result, they demon-strate strong performance across navigation and manipulation benchmarks and achieve high task completion rates in diverse settings (e.g., [3]–[6]). For example, a robot can interpret instructions such as “go to the kitchen and pick up a mug” or “find a pen” and autonomously execute the task with high success rates. Furthermore, these models exhibit strong zero-shot generalization, which enables them to operate in previously unseen layouts and handle novel objects and task variations without additional retraining. Despite these impressive capabilities, robotics foundation models remain largely data-driven and lack formal guaran-tees on their behavior during deployment. In safety-critical settings, robots must satisfy strict operational constraints, such as avoiding restricted regions and respecting geofencing limits. Some approaches incorporate safety considerations into foundation models through training or inference-time modifications. For example, [7] considers safety constraints that penalize behaviors such as collisions with objects or unsafe interactions during manipulation, while [8] introduces semantic safety rules that discourage harmful actions, such 
+
+> S.B. Y¨ uksel is a PhD student in the Department of Electrical and Computer Engineering at Northeastern University. D. Aksaray is an Assistant Professor in the Department of Electrical and Computer Engineering at Northeastern University.
+
+Fig. 1: A robot is instructed to “find a bowl” while ensuring that at least one charging station (green circles) is visited within designated time intervals. The trajectories illustrate [left] execution under a pretrained robotics foundation model policy (SPOC) and [right] the same model augmented with specification-aware action distribution shaping to enforce the spatio-temporal constraint. 
+
+as manipulating fragile or hazardous objects. However, real-world deployments often require enforcing richer spatio-temporal requirements that govern how robot behaviors evolve over time, including but not limited to sequential task specifications, time-bounded objectives, and persistent safety conditions that must hold throughout execution. Existing foundation models do not provide a formal mechanism to ensure compliance with such constraints at runtime. In the literature, a prominent way of expressing complex operational requirements is via temporal logic (TL), which is a formal specification language to describe and reason about complex spatio-temporal behaviors [9]. Temporal logics can compactly and rigorously express constraints such as “always avoid unsafe regions,” “eventually reach a goal within a time interval,” “complete tasks in a prescribed sequence”, “if an event is detected, immediately go to the safe region”. In this work, we focus on Signal Temporal Logic (STL) [10], which provides quantitative semantics over real-valued signals with explicit state and time parameters. While TL has been successfully applied in robotics for safety-constrained planning and control, its integration with large transformer-based foundation models remains limited. Several works have explored incorporating TL constraints into foundation models. SELP [11] converts natural language instructions into LTL specifications and guides the language model to generate task plans that satisfy these constraints during planning, while [12] translates natural language safety constraints into LTL and enforces them at execution time through runtime monitoring and action pruning. However, LTL has Boolean semantics and therefore does not have a notion of robustness degree (i.e., degree of satisfaction). Moreover, it is not expressive to encode explicit time-bounded requirements over real-valued signals. The work most closely related to our paper is the SafeDec framework 
+
+> arXiv:2603.17969v1 [cs.RO] 18 Mar 2026
+
+[13], which enforces a family of STL specifications at infer-ence time without the need for retraining by modifying action logits based on predicted robustness degree values. Never-theless, this method evaluates candidate actions using next-state robustness and is therefore well-suited to invariance-type constraints (i.e., safety requirements). Time-windowed or sequential specifications require reasoning over longer horizons. In such cases, next-state robustness evaluation becomes insufficient to predict STL satisfaction. Motivated by the gaps in the literature, we propose a specification-aware action distribution shaping framework that enforces a rich class of STL tasks during the execution of a pretrained robotics foundation model, without retraining or modifying its parameters. Our main contributions are summarized as follows:  
+
+> •
+
+We introduce a novel constrained optimization problem, whose goal is to minimally modify a foundation model’s action distribution while ensuring a desired level of STL satisfaction, and we provide its closed-form solution.  
+
+> •
+
+We show that the proposed approach guarantees STL satisfaction for deterministic dynamical systems.  
+
+> •
+
+We validate the proposed approach in simulation across multiple environments and under a broad class of STL constraints to demonstrate reliable STL satisfaction while preserving strong main-task performance. II. PRELIMINARIES: S IGNAL TEMPORAL LOGIC 
+
+We specify the desired behaviors of the system using Signal Temporal Logic (STL). 
+
+Definition 1 (Signal Temporal Logic) Signal Temporal Logic (STL) [10] is a specification language for expressing temporal properties of real-valued signals. In this paper, we consider an STL fragment with the following syntax: 
+
+ϕ := φ | ϕ1 ∧ ϕ2 | F[a,b ]φ | G[a,b ]φ | F[a,c 1]G[c2,b ]φ, φ := μ | ¬ φ | φ1 ∧ φ2 | φ1 ∨ φ2, (1) 
+
+where 0 ≤ a ≤ c1, c 2 ≤ b are time bounds; ¬, ∧, ∨
+
+denote the negation, conjunction, and disjunction Boolean operators, respectively; F , G, denote the finally (eventually) and globally (always) temporal operators, respectively. The symbols ϕ, φ denote STL formulas, while μ represents a predicate of the form h(x) < d , where x : R≥0 → R is a signal, h : Rn → R is a real-valued function, and d ∈ R is a constant. 
+
+For a signal x, let xt denote the value of x at time t and 
+
+(x, t ) denote the part of the signal starting at time t. The satisfaction of an STL specification over (x, t ) is defined recursively as follows: 
+
+(x, t ) |= μ ⇐⇒ h(xt) < d, 
+
+(x, t ) |= ¬μ ⇐⇒ ¬ (( x, t ) |= μ),
+
+(x, t ) |= ϕ1 ∧ ϕ2 ⇐⇒ (x, t ) |= ϕ1 and (x, t ) |= ϕ2,
+
+(x, t ) |= ϕ1 ∨ ϕ2 ⇐⇒ (x, t ) |= ϕ1 or (x, t ) |= ϕ2,
+
+(x, t ) |= G[a,b ]ϕ ⇐⇒ ∀ t′ ∈ [t + a, t + b], (x, t ′) |= ϕ, 
+
+(x, t ) |= F[a,b ]ϕ ⇐⇒ ∃ t′ ∈ [t + a, t + b], (x, t ′) |= ϕ. 
+
+The formula F[a,b ]ϕ requires that ϕ should be satisfied at least once within the interval [t + a, t + b], whereas G[a,b ]ϕ
+
+enforces that ϕ is satisfied throughout the entire interval. The horizon of an STL formula ϕ, denoted by hrz (ϕ),corresponds to the maximum number of future time steps needed to evaluate whether the specification is satisfied [14]. STL provides a quantitative measure called the robustness degree which quantifies how strongly a signal x satisfies a given specification. The robustness degree is calculated recursively as follows: 
+
+ρ(x, μ, t ) = d − h(xt),ρ(x, ¬ϕ, t ) = −ρ(x, ϕ, t ),ρ(x, ϕ 1 ∧ ϕ2, t ) = min( ρ(x, ϕ 1, t ), ρ (x, ϕ 2, t )) ,ρ(x, ϕ 1 ∨ ϕ2, t ) = max( ρ(x, ϕ 1, t ), ρ (x, ϕ 2, t )) ,ρ(x, G [a,b ]ϕ, t ) = min  
+
+> t′∈[t+a,t +b]
+
+ρ(x, ϕ, t ′),ρ(x, F [a,b ]ϕ, t ) = max  
+
+> t′∈[t+a,t +b]
+
+ρ(x, ϕ, t ′).
+
+For notational simplicity, we will use ρ(x, ϕ ) to denote 
+
+ρ(x, ϕ, 0) throughout the remainder of the paper. III. PROBLEM STATEMENT 
+
+Robot: We consider a robot modeled as a discrete-time dynamical system 
+
+xt+1 = f (xt, a t),
+
+where xt ∈ X ⊆ Rn is the system state at time t, at ∈ A 
+
+is a discrete action selected from a finite action set A at time t, and f : X × A → X is a known dynamics model. Given an initial state x0 and action sequence a0: T −1, the dynamics model produces the corresponding state trajectory 
+
+x0: T . Moreover, the robot is equipped with onboard sensors that provide observations of the environment. At physical state xt, the robot receives a sensory measurement 
+
+yt = h(xt) ∈ Y ,
+
+where h : X → Y denotes the observation model mapping physical states to sensor outputs. The observation space Y
+
+is a measurable space representing all admissible sensor measurements, whose dimensionality and structure depend on the sensing modality (e.g., RGB images, LiDAR scans). In general, Y is high-dimensional and provides partial infor-mation about the environment and the robot’s configuration. 
+
+Environment: We assume that our robot operates in a static, complex indoor environment similar to those used in training and evaluation of robotics foundation models such as SPOC [3] and FlaRe [4]. These environments consist of multiple rooms, furniture, and manipulable objects representative of realistic domestic settings. We assume that a coarse structural layout of the space, including the floor plan and large static obstacles (e.g., walls and fixed furniture), is known, as robots can obtain such maps using standard SLAM-based techniques. However, the precise locations of smaller objects and task-relevant items are unknown. Hence, we characterize these environments as structurally known but semantically complex and unknown .
+
+Mission: We consider a robot that is tasked with a mission specified in natural language within a semantically com-plex and a priori unknown environment. Such missions are inherently unstructured and demand reasoning beyond pre-defined tasks and environment models. Robotics foundation models are particularly well-suited for such settings because they can leverage broad contextual knowledge and semantic understanding during decision-making. In this work, we consider robotics foundation models that output a probability distribution over a finite discrete action set at each decision step (e.g., [3]–[6]). Let I denote the natural language instruction given to the foundational model. We define the aggregated input to the foundation model as 
+
+zt := ( yt, I) where yt is the robot’s sensory measurement at time t. At each time step, the foundational model produces a discrete probability distribution as 
+
+πFM (· | zt) ∈ ∆( A), (2) where A is the finite action set and ∆( A) := {p : A → 
+
+[0 , 1] | P 
+
+> a∈A
+
+p(a) = 1 } denotes the probability simplex over A. During deployment, an action is sampled from 
+
+πFM (· | zt) and executed on the physical system. 
+
+Constraint: Since foundation models cannot provide formal guarantees on specification satisfaction, we introduce explicit operational constraints in addition to missions expressed in natural language. For example, consider a robot instructed to “find the TV remote” that may also need to satisfy an operational requirement, such as reaching a charging station within a specified time due to battery limitations. This additional requirement can be formalized as an STL task of the form “eventually reach a charger within 60 time steps.” Hence, we encode such constraints as an STL formula ϕ with the fragment presented in Def. 1. Since we consider a rich class of STL specifications that may include time-windowed reachability and other horizon-dependent constraints, satisfaction cannot be determined from the next state alone. In contrast to the constrained decoding framework in [13], which focuses on invariance-type specifications whose violation can be detected from single-step transitions, our setting requires reasoning over future state evolution. To evaluate the future impact of a candidate action, we introduce a secondary policy 
+
+πϕ : X × { 0, . . . , T − 1} → A , (3) where T = hrz (ϕ) is the time horizon of specification ϕ.This policy maps a state and time index to an action and is designed to satisfy ϕ within its time horizon. Although the details of the environment are unknown, the availability of a coarse structural layout enables the computation of πϕ. In particular, since large obstacles and the floor plan are known and the environment is assumed static, forward propagation of the dynamics under candidate actions can be performed to assess specification satisfaction. We now formally define a specification evaluation function that quantifies whether a candidate action, followed by the policy πϕ, leads to satisfaction of the STL specification over the full horizon. 
+
+Definition 2 (Specification Evaluation Function) Let ϕ
+
+be an STL specification with horizon T , and let πϕ denote a policy designed to satisfy ϕ over this horizon. For each time step t ∈ { 0, . . . , T − 1} and action at ∈ A , we define the specification evaluation function 
+
+Jϕ(x0: t, a t, π ϕ) ∈ R (4) 
+
+where x0: t = ( x0, . . . , x t) denotes the executed state trajec-tory up to time t. This function quantifies the extent to which executing at at time t and subsequently following πϕ leads to the satisfaction of ϕ over the remaining horizon. 
+
+Using Jϕ, we enforce STL compliance by constraining the modified action distribution π(· | zt) to place sufficient mass on actions that admit a “good” continuation under πϕ. In particular, for a threshold δ ∈ R, we impose 
+
+Eat∼π(·| zt)
+
+Jϕ
+
+ x0: t, a t, π ϕ
+
+ ≥ δ, 
+
+Finally, our objective is to modify the foundational model’s action distribution as little as possible while en-forcing the STL constraint. To achieve this in a princi-pled manner, we select the distribution that satisfies the specification constraint while minimally deviating from the original foundation model policy. We quantify this deviation using the Kullback–Leibler (KL) divergence DKL (π1|| π2),an information-theoretic measure of discrepancy between probability distributions π1 and π2. This leads to the fol-lowing constrained optimization problem. 
+
+Problem 1 Given a natural language instruction I, an STL specification ϕ with horizon T , a policy πϕ designed to satisfy ϕ, compute a modified policy π∗(· | zt) ∈ ∆( A)
+
+at each time step t as follows: 
+
+π∗(· | zt) = arg min  
+
+> π∈∆( A)
+
+DKL (π(· | zt) ∥ πFM (· | zt)) (5) 
+
+subject to 
+
+Eat∼π(·| zt)
+
+Jϕ
+
+ x0: t, a t, π ϕ
+
+ ≥ δ, (6) 
+
+where zt := ( h(xt), I) denotes the aggregated input to the foundational model at time t, πFM (· | zt) ∈ ∆( A) is the action distribution induced by the foundational model, Jϕ is the specification evaluation function, and δ is a user specified threshold. 
+
+IV. PROPOSED SOLUTION In this section, we first explain how the STL-satisfying policy πϕ is constructed and how the specification evaluation function Jϕ in Def. 2 is defined. We then present the solution to the resulting constrained optimization problem and introduce the main algorithm that enforces the STL specification during task execution. A. STL Policy Synthesis 
+
+As discussed in Section III, evaluating whether a candidate action promotes STL compliance cannot, in general, be determined solely from its immediate next-state effect. For time-bounded specifications, such as reachability within a finite horizon, the consequence of an action depends on the future trajectory induced after that action is taken. Therefore, we require a policy πϕ that is explicitly synthesized to satisfy the STL specification over the remaining horizon. A variety of approaches have been proposed for syn-thesizing control policies under STL constraints, includ-ing optimization-based methods [15], [16], Control Barrier Function (CBF) based methods [17]–[19], and learning-based methods [20]–[24]. Optimization-based methods often require solving computationally intensive programs whose complexity scales with the specification horizon. CBF-based approaches, while computationally efficient at runtime, typ-ically rely on control-affine dynamics and require careful manual construction of barrier functions tailored to specific classes of STL specifications. In contrast, learning-based methods offer greater flexibility for nonlinear dynamics and complex specifications. In this work, we adopt the funnel-based reward shaping approach in [24], which embeds tem-poral requirements into a time-varying reward and enables scalable synthesis of an STL-satisfying policy using rein-forcement learning. The funnel-based approach constructs a time-dependent robustness bound that gradually tightens over the specifi-cation horizon. Specifically, a decreasing funnel function 
+
+γ(t) defines how the allowable robustness margin shrinks as time progresses. Following [24], γ(t) is chosen as an exponentially decaying function 
+
+γ(t) = ( γ0 − γ∞)e−ℓt + γ∞, (7) where γ0 = ρmax − min x∈X ρ(x, φ ) and γ∞ ∈
+
+(0 , min( γ0, ρ max )) with ρmax denoting the maximum achiev-able robustness of the predicate over the state space. The de-cay rate ℓ and the parameter t∗ are selected according to the temporal structure of the STL specification as summarized in Table I. The parameter t∗ determines when the funnel boundary reaches zero within the specified time window. Given the funnel function constructed according to the temporal component of an STL specification ϕ and the ro-bustness measure ρ(xt, φ ) associated with the non-temporal formula φ, the reward function is formulated as 
+
+r(xt, a t, t ) = ρ(xt, φ ) + γ(t) − ρmax (8) As time progresses, the γ(t) term gets smaller, and the agent is encouraged to increase the value of the robustness term ρ(xt, φ ) to maintain positive reward, which drives the policy toward satisfying the STL specification within the prescribed time window. 
+
+B. Specification Evaluation via Jϕ
+
+Once πϕ is obtained, it serves as a predictive guide: given a candidate action at time t, we evaluate the specification TABLE I: Selection of funnel parameters ℓ and t∗ [24].                                       
+
+> ϕt∗ℓG[a,b ]φt∗=a1
+> t∗ln
+> γ0−γ∞
+> ρmax −γ∞
+> 
+> F[a,b ]φt∗∈[a, b ]1
+> t∗ln
+> γ0−γ∞
+> ρmax −γ∞
+> 
+> F[a,c 1]G[c2,b ]φt∗∈[a+c2, c 1+c2]1
+> t∗ln
+> γ0−γ∞
+> ρmax −γ∞
+> 
+
+over the trajectory induced by executing that action and subsequently following πϕ. Intuitively, πϕ represents an STL-aware recovery strategy. It allows us to penalize actions that would lead the system into states from which the specification cannot be satisfied, or from which the expected satisfaction level would drop below the desired threshold, even under an optimal STL-satisfying controller. For exam-ple, in a time-bounded reachability task such as “eventually reach a charger within 60 time steps,” actions that move the robot away from the charger late in the horizon should be penalized, since recovery may no longer be possible within the remaining time. In this sense, πϕ provides the structure needed to shape the foundational model’s action distribution in a temporally consistent manner. While Jϕ can represent different notions of specification satisfaction (e.g., robustness-based scores), in this paper, we adopt a binary feasibility instantiation based on STL robustness, such as: 
+
+Jϕ(x0: t, a t, π ϕ) = 1[ρ(˜ x0: T , ϕ ) > 0] (9) where 1[·] denotes the indicator function, which equals 
+
+1 if the condition inside the brackets is satisfied and 0
+
+otherwise. Here, ρ(·, ϕ ) is the STL robustness function, and 
+
+˜x0: T is the complete trajectory obtained by concatenating the executed prefix x0: t with the future trajectory ˆxt+1: T =(xt+1 , . . . , x T ) generated by applying action at at time t
+
+and subsequently following the policy πϕ under the known dynamics xt+1 = f (xt, a t). Accordingly, Jϕ = 1 if the candidate action admits a satisfying continuation, and Jϕ = 0 
+
+otherwise. 
+
+C. Action Distribution Optimization Under STL Constraints 
+
+Our objective is to solve Problem 1 at each decision step, which produces a modified action distribution that satisfies the prescribed STL specification constraint while remaining as close as possible to the original distribution produced by the foundation model. Minimizing deviation from the origi-nal distribution preserves the causal structure learned during pretraining and avoids a mismatch between the model’s internal state evolution and the executed action sequence, which could otherwise degrade performance. This formula-tion can be interpreted as projecting the foundation model’s action distribution onto the set of specification-compliant distributions. A similar idea is used in SafeDec [13], where actions that violate the STL specifications are suppressed at the logit level. However, that approach evaluates robustness solely based on the next state under each action and is therefore suitable only for invariance-type specifications. In contrast, our approach evaluates task satisfaction over the remaining horizon via the specification-evaluation function 
+
+Jϕ in (9), which enables enforcement of richer STL tasks that require reasoning over time windows and multi-step temporal objectives. After computing πϕ according to the method in Sec. IV-A and considering Jϕ as in (9), Problem 1 becomes: 
+
+π∗(· | zt) = arg min  
+
+> π∈∆( A)
+
+DKL (π(· | zt) ∥ πFM (· | zt)) (10) subject to 
+
+Eat∼π(·| zt)
+
+1[ρ(˜ x0: T , ϕ ) > 0]  = 1 , (11) Here, the Kullback–Leibler divergence is 
+
+DKL (π(· | zt) ∥ πFM (· | zt)) = X
+
+> ai∈A
+
+π(ai | zt) log π(ai | zt)
+
+πFM (ai | zt) .
+
+(12) Note that Problem 1 is a convex optimization problem, since the KL divergence is convex in π and the expectation constraint in (11) is linear. For notational convenience, define 
+
+Ji := Jϕ(x0: t, a i, π ϕ) ∈ { 0, 1}. (13) Forming the Lagrangian,                   
+
+> L(π, λ, μ ) = X
+> ai∈A
+> π(ai|zt) log π(ai|zt)
+> πFM (ai|zt)+λ
+>  X
+> ai∈A
+> π(ai|zt)Ji−1
+> 
+> +μ
+>  X
+> ai∈A
+> π(ai|zt)−1
+> 
+> ,
+
+(14) where λ ∈ R is the multiplier associated with the STL feasibility constraint and μ ∈ R enforces the normalization constraint P 
+
+> ai∈A
+
+π(ai | zt) = 1 , which arises from the fact that π(· | zt) lies in the probability simplex over the action space. Taking the partial derivative of the Lagrangian L(π, λ, μ )
+
+with respect to π(ai | zt) and setting it equal to zero yields 
+
+log π(ai | zt)
+
+πFM (ai | zt) + 1 + λJ i + μ = 0 . (15) Solving for π(ai | zt) gives the exponential-form solution 
+
+π(ai | zt) = πFM (ai | zt) exp( −λJ i − 1 − μ). (16) Enforcing normalization leads to 
+
+π∗(ai | zt; λ) = πFM (ai | zt) exp( −λJ i)
+
+P  
+
+> aj∈A
+
+πFM (aj | zt) exp( −λJ j ) . (17) Since Ji ∈ { 0, 1}, taking the limit λ → −∞ suppresses all actions with Ji = 0 , and the solution reduces to 
+
+π∗(ai | zt) = 
+
+
+
+πFM (ai | zt)
+
+P  
+
+> aj∈St
+
+πFM (aj | zt) if ai ∈ St,
+
+0 otherwise, (18) where St := {ai | Ji = 1 }.
+
+Algorithm 1: Specification-Aware Action Distribu-tion Optimization 
+
+Input: Foundational model F queried with natural language instruction I, STL specification ϕ
+
+with horizon T , STL-satisfying policy πϕ,specification evaluation function Jϕ, discrete action set A, global time limit Tmax  
+
+> 1
+
+Initialize t ← 0, observe initial state x0, set 
+
+x0:0 ← [x0] 
+
+> 2
+
+while not MainTaskDone (xt, I) and t < T max do  
+
+> 3
+
+Query F to obtain πFM (· | zt) 
+
+> 4
+
+if STLDone (x0: t, ϕ ) then  
+
+> 5
+
+Sample at ∼ πFM (· | zt) 
+
+> 6
+
+else  
+
+> 7
+
+if t < T then  
+
+> 8
+
+foreach ai ∈ A do  
+
+> 9
+
+Compute Jϕ(x0: t, a i, π ϕ) 
+
+> 10
+
+if Problem 1 is feasible then  
+
+> 11
+
+Solve Problem 1 to obtain π∗(· | zt) 
+
+> 12
+
+Sample at ∼ π∗(· | zt) 
+
+> 13
+
+else  
+
+> 14
+
+Sample at ← πϕ(xt, t ) 
+
+> 15
+
+else  
+
+> 16
+
+Sample at ∼ πFM (· | zt) 
+
+> 17
+
+Execute at, observe xt+1  
+
+> 18
+
+Append xt+1 to x0: t to obtain x0: t+1  
+
+> 19
+
+xt ← xt+1  
+
+> 20
+
+t ← t + 1  
+
+> 21
+
+while not STLDone (x0: t, ϕ ) and t < T do  
+
+> 22
+
+Sample at ← πϕ(xt, t ) 
+
+> 23
+
+Execute at, observe xt+1  
+
+> 24
+
+Append xt+1 to x0: t to obtain x0: t+1  
+
+> 25
+
+xt ← xt+1  
+
+> 26
+
+t ← t + 1 
+
+Algorithm 1 summarizes the overall procedure for specification-aware action selection. Starting from the ini-tial state, the algorithm repeatedly queries the foundational model to obtain the prior action distribution πFM (line 3). The flag MainTaskDone becomes true when the foundational model samples the special termination token end from its prior distribution. In practice, this token typically receives the highest probability once the model predicts that the language-conditioned main task has been completed. During the main-task phase, the algorithm first checks whether the STL specification has already been satisfied. If STLDone is true, the action is sampled directly from the foundational model’s prior distribution (line 5). Otherwise, the algorithm deter-mines whether STL enforcement remains active by checking whether t < T (line 7). If the STL horizon has not expired, the algorithm evaluates the task functional Jϕ(x0: t, a i, πϕ )
+
+for each candidate action ai ∈ A by forward propagating the known dynamics model (lines 8–9). In a deterministic setting, where the system dynamics are deterministic and πϕ is deterministic, each candidate action induces a unique continuation trajectory over the remaining horizon, which allows Jϕ to be computed unambiguously. If the constrained optimization problem in Problem 1 is feasible, the modified action distribution π∗(· | zt) is computed, and the next action is sampled from this distribution (lines 10-12). Infeasibility may arise when no candidate action admits a satisfying continuation under the assumed dynamics, which can occur due to model mismatch between the forward-propagation model and the true system. In such cases, the algorithm falls back to the STL-satisfying policy πϕ (line 14). If instead the STL horizon has expired, the algorithm directly samples from the foundational model’s prior distribution (line 16). Once the main task is completed, the algorithm may still need to complete the STL specification if it has not yet been satisfied. Therefore, if the STL specification remains unsatisfied after the main task loop, the algorithm continues following πϕ until the specification is satisfied or the STL horizon T is reached (lines 21-26). We introduce a global time limit Tmax > T to guarantee termination in cases where the foundational model becomes stuck or enters a deadlock, thereby preventing indefinite execution. 
+
+Proposition 1 Assume that (i) the true system dynamics satisfy xt+1 = f (xt, a t) (i.e., no model mismatch between the forward-propagation model and the physical system), and (ii) the STL specification ϕ is satisfiable from the initial state 
+
+x0. If actions are sampled according to Alg. 1, the resulting closed-loop trajectory x0: T is guaranteed to satisfy ϕ.Proof: This can be shown by examining two cases: 
+
+Case 1 (STL completion occurs during the main-task loop): 
+
+For any time step t < T at which the specification remains unsatisfied, the algorithm solves Problem 1 and samples 
+
+at ∼ π∗(· | zt). Under the hard feasibility constraint and the fact that Jϕ(x0: t, a, π ϕ) ∈ { 0, 1}, the optimizer constructs 
+
+π∗(· | zt) so that π∗(a | zt) > 0 only if Jϕ(x0: t, a, π ϕ) = 1 .Hence, the sampled action at admits a satisfying continuation under πϕ from the current history. Under the assumption of no model mismatch, the continuation assessed by Jϕ is consistent with the true system evolution. Repeating this reasoning at each t < T preserves feasibility step by step until the STL task becomes satisfied within the horizon, implying ρ(x0: T , ϕ ) ≥ 0 with probability one. 
+
+Case 2 (STL completion occurs after the main-task loop): 
+
+Suppose the main task terminates at some t′ < T before the STL specification is satisfied. By construction, the executed prefix x0: t′ is generated by Alg. 1 and, up to time t′ − 1, ac-tions are sampled from π∗(· | zt) whenever STL enforcement is active. Therefore, the same feasibility-preservation argu-ment as in Case 1 implies that the state-history pair at time 
+
+t′ still admits a satisfying continuation under πϕ within the remaining horizon. Algorithm 1 then switches to sampling from πϕ for the remaining steps, and since πϕ is designed to satisfy ϕ over the horizon and a valid satisfying continuation exists from x0: t′ , following πϕ completes the specification within the time bound. Consequently, the resulting trajectory satisfies ϕ with probability one. V. SIMULATION RESULTS 
+
+A. Implementation Details 
+
+We evaluate the proposed specification-aware action dis-tribution optimization framework using the Shortest Path Oracle (SPOC) robotics foundation model [3] within the AI2-THOR simulation environment [25], across multiple household layouts and object configurations. AI2-THOR is a high-fidelity 3D simulator providing photo-realistic indoor environments for embodied AI research, including diverse home layouts and assets from the Objaverse dataset [26]. SPOC is a transformer-based model trained via supervised imitation learning on shortest-path expert trajectories and outputs a categorical action distribution conditioned on RGB camera observations and language instructions. Although SPOC supports both navigation and manipulation tasks, we focus exclusively on navigation scenarios. To obtain the STL-satisfying policy πϕ, we employ the funnel-based reward shaping approach described in Sec-tion IV-A to train a Deep Q-Network (DQN) [27]. Since we assume access to a coarse structural layout of the environment, the policy was trained in a two-dimensional occupancy map abstraction of the AI2-THOR environment, shown in Fig. 2. The occupancy maps were constructed from the simulator by extracting room dimensions and the bounding boxes of large static objects (e.g., walls and fixed furniture). The robot is modeled as a circular footprint, and its motion follows unicycle dynamics consistent with those used in AI2-THOR. This 2D representation is used both during training and for forward propagation of the dynamics when evaluating candidate actions at deployment time, which allows fast and computationally efficient rollouts that are critical for minimizing overhead during real-time execution. Let Qϕ(xt, a, t ) denote the state–action value function learned by the DQN after the training. The resulting STL-satisfying policy is the deterministic greedy policy 
+
+πϕ(xt, t ) = arg max  
+
+> a∈A
+
+Qϕ(xt, a, t ).
+
+The synthesized policy πϕ is then used within the proposed framework to evaluate candidate actions during execution. We now demonstrate the performance of the overall approach through two case studies. 
+
+B. Case 1: Time-Windowed Charger Reachability 
+
+In this case study, we consider a scenario in which the robot must periodically visit charging stations due to battery limitations while executing its main task specified to the foundational model via the natural language instruction “find a bowl” . The environment layout is shown in Fig. 1. The additional operational requirement is encoded as the following STL specification:         
+
+> ϕ1=F[0 ,60] (Charger 1∨Charger 2)∧F[80 ,140] (Charger 1∨Charger 2).
+
+This specification requires the robot to visit either charging station within the first 60 time steps and again during Fig. 2: Top-down view of an AI2-THOR house environment (left) and the corresponding 2D occupancy map abstraction used for training and forward propagation (right). In the occupancy map, black regions denote occupied space (walls and static obstacles), white regions represent free space, and the robot is depicted as a red circular footprint. 
+
+the interval [80 , 140] . Figure 1 compares the trajectories obtained under (i) the unmodified foundational model policy and (ii) the proposed specification-aware action distribu-tion optimization. Under the unmodified foundational model policy, the robot goes to the target object without visiting any charging region, thereby violating the STL constraint. In contrast, the proposed framework enforces the temporal reachability requirement during task execution while still progressing toward the main objective. To assess statistical reliability, we conduct 200 indepen-dent simulation runs. The quantitative results are summarized in Table II. The proposed framework achieves a 100% STL satisfaction rate across all runs, consistent with the satis-faction guarantee stated in Prop.1 under the hard feasibility constraint. Meanwhile, the main task success rate remains high at 92.5%, compared to 93.5% when following the unmodified foundational model policy. In the few failure cases, the robot satisfies the STL specification but fails to reach the target object within the allotted time limit, either because the object cannot be located in time or due to false positives where another object is mistaken for the target. TABLE II: Empirical success rates over 200 independent simulation runs.              
+
+> Unmodified SPOC Proposed Case STL (%) Main (%) STL (%) Main (%) Case 1 ( ϕ1)093.5 100 92.5 Case 2 ( ϕ2)099 100 82.5
+
+C. Case 2: Sequential Goal Visits with Safety Constraint 
+
+In this case study, we consider a more complex task involving sequential region visits under a strict safety con-straint. The SPOC model is queried with the object-finding instruction “find a pan” , and the corresponding environment layout is shown in Fig. 3. The sequential and safety require-ments are encoded using the following STL formula:       
+
+> ϕ2=F[0 ,50] (Region 1)∧F[50 ,100] (Region 2)∧F[100 ,150] (Region 3)
+> ∧G[0 ,150] ¬(F orbidden Region )
+
+This specification requires the robot to sequentially visit three designated regions within prescribed time windows while avoiding the forbidden region throughout the entire 
+
+> Fig. 3: Trajectory comparison for Case 2: (left) execution under the unmodified SPOC policy and (right) execution under the proposed specification-aware framework.
+
+horizon. Figure 3 compares trajectories generated by the SPOC policy and by the proposed specification-aware frame-work. Under the unmodified SPOC policy, the robot violates the STL constraint by traversing the forbidden region while navigating toward the target object. In contrast, the proposed framework successfully enforces the temporal ordering and safety requirements: the robot visits all three regions within their respective time intervals, avoids the forbidden region at all times, and subsequently completes the main task. We further evaluate performance over 200 independent simulation runs as summarized in Table II. The proposed framework achieves a 100% STL satisfaction rate, which is again consistent with the satisfaction guarantee under the assumption of no model mismatch. However, the main task success rate decreases to 82.5%, compared to 99% under the unmodified foundational model policy and 92.5% in Case 1. This reduction reflects the increased complexity of the specification. Satisfying sequential reachability constraints while maintaining global safety necessitates more substan-tial modifications to the foundational model’s probability distribution. As a result, the executed behavior may deviate more significantly from the behavior originally induced by the pretrained model. Similar trade-offs between constraint enforcement and task performance have been observed in prior constrained decoding frameworks [13], [28]. A video demonstrating both case studies is available at: https: //youtu.be/ftQ7b_69EnY 
+
+VI. CONCLUSION In this work, we proposed a specification-aware action distribution optimization framework that enforces rich STL constraints during the execution of pretrained robotics foun-dation models without retraining them. By solving a con-strained optimization problem at each decision step, the method modifies the model’s action distribution to guarantee satisfaction of time-windowed, sequential, and safety-critical specifications while remaining as close as possible to the original policy. Under the assumptions of no model mismatch and feasibility of the specification from the initial state, we provided a probabilistic satisfaction guarantee and demon-strated through simulation that the framework consistently enforces STL constraints while maintaining strong main-task performance. Our approach relies on access to a known dynamics model and a coarse structural layout to synthesize the STL-satisfying policy and evaluate candidate actions via forward propagation. Although rollouts are performed in a simplified two-dimensional abstraction, horizon-based eval-uation at each step may become computationally demanding for longer tasks or more complex dynamics. Future work will focus on improving scalability, relaxing modeling as-sumptions, and exploring alternative specification evaluation metrics to allow more flexible trade-offs between main task performance and specification robustness. REFERENCES [1] R. Firoozi, J. Tucker, S. Tian, A. Majumdar, J. Sun, W. Liu, Y. Zhu, S. Song, A. Kapoor, K. Hausman, B. Ichter, D. Driess, J. Wu, C. Lu, and M. Schwager, “Foundation models in robotics: Applications, challenges, and the future,” The International Journal of Robotics Research , vol. 44, no. 5, pp. 701–739, 2025. [Online]. Available: https://doi.org/10.1177/02783649241281508 [2] Y. Hu, Q. Xie, V. Jain, J. Francis, J. Patrikar, N. Keetha, S. Kim, Y. Xie, T. Zhang, H.-S. Fang, S. Zhao, S. Omidshafiei, D.-K. Kim, A. akbar Agha-mohammadi, K. Sycara, M. Johnson-Roberson, D. Batra, X. Wang, S. Scherer, C. Wang, Z. Kira, F. Xia, and Y. Bisk, “Toward general-purpose robots via foundation models: A survey and meta-analysis,” 2024. [Online]. Available: https://arxiv.org/abs/2312.08782 [3] K. Ehsani, T. Gupta, R. Hendrix, J. Salvador, L. Weihs, K.-H. Zeng, K. P. Singh, Y. Kim, W. Han, A. Herrasti, R. Krishna, D. Schwenk, E. VanderBilt, and A. Kembhavi, “Spoc: Imitating shortest paths in simulation enables effective navigation and manipulation in the real world,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2024, pp. 16 238–16 250. [4] J. Hu, R. Hendrix, A. Farhadi, A. Kembhavi, R. Mart´ ın-Mart´ ın, P. Stone, K.-H. Zeng, and K. Ehsani, “Flare: Achieving masterful and adaptive robot policies with large-scale reinforcement learning fine-tuning,” in 2025 IEEE International Conference on Robotics and Automation (ICRA) , 2025, pp. 3617–3624. [5] M. J. Kim, K. Pertsch, S. Karamcheti, T. Xiao, A. Balakrishna, S. Nair, R. Rafailov, E. Foster, G. Lam, P. Sanketi, Q. Vuong, T. Kollar, B. Burchfiel, R. Tedrake, D. Sadigh, S. Levine, P. Liang, and C. Finn, “Openvla: An open-source vision-language-action model,” 2024. [Online]. Available: https://arxiv.org/abs/2406.09246 [6] K.-H. Zeng, Z. Zhang, K. Ehsani, R. Hendrix, J. Salvador, A. Herrasti, R. Girshick, A. Kembhavi, and L. Weihs, “Poliformer: Scaling on-policy rl with transformers results in masterful navigators,” in 
+
+Proceedings of The 8th Conference on Robot Learning , ser. Proceedings of Machine Learning Research, P. Agrawal, O. Kroemer, and W. Burgard, Eds., vol. 270. PMLR, 06–09 Nov 2025, pp. 408–432. [Online]. Available: https://proceedings.mlr.press/v270/ zeng25a.html [7] B. Zhang, Y. Zhang, J. Ji, Y. Lei, J. Dai, Y. Chen, and Y. Yang, “Safevla: Towards safety alignment of vision-language-action model via constrained learning,” 2025. [Online]. Available: https://arxiv.org/abs/2503.03480 [8] P. Sermanet, A. Majumdar, A. Irpan, D. Kalashnikov, and V. Sindhwani, “Generating robot constitutions & benchmarks for semantic safety,” in Proceedings of The 9th Conference on Robot Learning , ser. Proceedings of Machine Learning Research, J. Lim, S. Song, and H.-W. Park, Eds., vol. 305. PMLR, 27–30 Sep 2025, pp. 4767–4823. [Online]. Available: https: //proceedings.mlr.press/v305/sermanet25a.html [9] C. Baier and J.-P. Katoen, Principles of model checking . MIT press, 2008. [10] O. Maler and D. Nickovic, “Monitoring temporal properties of con-tinuous signals,” in International symposium on formal techniques in real-time and fault-tolerant systems . Springer, 2004, pp. 152–166. [11] Y. Wu, Z. Xiong, Y. Hu, S. S. Iyengar, N. Jiang, A. Bera, L. Tan, and S. Jagannathan, “Selp: Generating safe and efficient task plans for robot agents with large language models,” in 2025 IEEE International Conference on Robotics and Automation (ICRA) , 2025, pp. 2599– 2605. [12] Z. Yang, S. S. Raman, A. Shah, and S. Tellex, “Plug in the safety chip: Enforcing constraints for llm-driven robot agents,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) , 2024, pp. 14 435–14 442. [13] P. Kapoor, A. Ganlath, M. Clifford, C. Liu, S. Scherer, and E. Kang, “Constrained decoding for robotics foundation models,” 2025. [Online]. Available: https://arxiv.org/abs/2509.01728 [14] A. Dokhanchi, B. Hoxha, and G. Fainekos, “On-line monitoring for temporal logic robustness,” in Runtime Verification , B. Bonakdarpour and S. A. Smolka, Eds. Cham: Springer International Publishing, 2014, pp. 231–246. [15] V. Raman, A. Donz´ e, M. Maasoumy, R. M. Murray, A. Sangiovanni-Vincentelli, and S. A. Seshia, “Model predictive control with signal temporal logic specifications,” in 53rd IEEE Conference on Decision and Control , 2014, pp. 81–87. [16] S. Sadraddini and C. Belta, “Robust temporal logic model predictive control,” in 2015 53rd Annual Allerton Conference on Communication, Control, and Computing (Allerton) , 2015, pp. 772–779. [17] L. Lindemann and D. V. Dimarogonas, “Control barrier functions for signal temporal logic tasks,” IEEE Control Systems Letters , vol. 3, no. 1, pp. 96–101, 2019. [18] A. T. Buyukkocak, D. Aksaray, and Y. Yazıcıo˘ glu, “Control barrier functions with actuation constraints under signal temporal logic spec-ifications,” in 2022 European Control Conference (ECC) . IEEE, 2022, pp. 162–168. [19] A. T. Buyukkocak, D. Aksaray, and Y. Yazıcıo˘ glu, “Sequential control barrier functions for mobile robots with dynamic temporal logic specifications,” Robotics and Autonomous Systems , vol. 176, p. 104681, 2024. [Online]. Available: https://www.sciencedirect.com/ science/article/pii/S0921889024000642 [20] D. Aksaray, A. Jones, Z. Kong, M. Schwager, and C. Belta, “Q-learning for robust satisfaction of signal temporal logic specifications,” in 2016 IEEE 55th Conference on Decision and Control (CDC) .IEEE, 2016, pp. 6565–6570. [21] H. Venkataraman, D. Aksaray, and P. Seiler, “Tractable reinforcement learning of signal temporal logic objectives,” in Proceedings of the 2nd Conference on Learning for Dynamics and Control , ser. Proceedings of Machine Learning Research, A. M. Bayen, A. Jadbabaie, G. Pappas, P. A. Parrilo, B. Recht, C. Tomlin, and M. Zeilinger, Eds., vol. 120. PMLR, 10–11 Jun 2020, pp. 308–317. [Online]. Available: https://proceedings.mlr.press/v120/venkataraman20a.html [22] J. Ikemoto and T. Ushio, “Deep reinforcement learning under signal temporal logic constraints using lagrangian relaxation,” IEEE Access ,vol. 10, pp. 114 814–114 828, 2022. [23] J. Wang, S. Yang, Z. An, S. Han, Z. Zhang, R. Mangharam, M. Ma, and F. Miao, “Multi-agent reinforcement learning guided by signal temporal logic specifications,” in 2025 IEEE/RSJ International Con-ference on Intelligent Robots and Systems (IROS) , 2025, pp. 6048– 6054. [24] N. Saxena, S. Gorantla, and P. Jagtap, “Funnel-based reward shaping for signal temporal logic tasks in reinforcement learning,” IEEE Robotics and Automation Letters , vol. 9, no. 2, pp. 1373–1379, 2024. [25] E. Kolve, R. Mottaghi, W. Han, E. VanderBilt, L. Weihs, A. Herrasti, M. Deitke, K. Ehsani, D. Gordon, Y. Zhu, A. Kembhavi, A. Gupta, and A. Farhadi, “Ai2-thor: An interactive 3d environment for visual ai,” 2022. [Online]. Available: https://arxiv.org/abs/1712.05474 [26] M. Deitke, D. Schwenk, J. Salvador, L. Weihs, O. Michel, E. VanderBilt, L. Schmidt, K. Ehsani, A. Kembhavi, and A. Farhadi, “Objaverse: A universe of annotated 3d objects,” 2022. [Online]. Available: https://arxiv.org/abs/2212.08051 [27] V. Mnih, K. Kavukcuoglu, D. Silver, A. Graves, I. Antonoglou, D. Wierstra, and M. Riedmiller, “Playing atari with deep reinforcement learning,” 2013. [Online]. Available: https://arxiv.org/abs/1312.5602 [28] K. Park, J. Wang, T. Berg-Kirkpatrick, N. Polikarpova, and L. D’Antoni, “Grammar-aligned decoding,” 2025. [Online]. Available: https://arxiv.org/abs/2405.21047

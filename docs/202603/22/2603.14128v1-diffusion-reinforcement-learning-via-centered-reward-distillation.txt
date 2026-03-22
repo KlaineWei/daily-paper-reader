@@ -1,0 +1,1218 @@
+Title: Diffusion Reinforcement Learning via Centered Reward Distillation
+
+URL Source: https://arxiv.org/pdf/2603.14128v1
+
+Published Time: Tue, 17 Mar 2026 04:46:40 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# Diffusion Reinforcement Learning via Centered Reward Distillation 
+
+Yuanzhi Zhu 1 Xi Wang 1 Stéphane Lathuilière 2 Vicky Kalogeiton 1 
+
+> 1
+
+LIX, École Polytechnique, CNRS, IPP  
+
+> 2
+
+Inria at Univ. Grenoble Alpes, CNRS, LJK 
+
+Abstract. Diffusion and flow models achieve State-Of-The-Art (SOTA) generative performance, yet many practically important behaviors such as fine-grained prompt fidelity, compositional correctness, and text ren-dering are weakly specified by score or flow matching pretraining objec-tives. Reinforcement Learning (RL) fine-tuning with external, black-box rewards is a natural remedy, but diffusion RL is often brittle. Trajectory-based methods incur high memory cost and high-variance gradient es-timates; forward-process approaches converge faster but can suffer from distribution drift, and hence reward hacking. In this work, we present 
+
+Centered Reward Distillation (CRD) , a diffusion RL framework de-rived from KL-regularized reward maximization built on forward-process-based fine-tuning. The key insight is that the intractable normalizing constant cancels under within-prompt centering , yielding a well-posed reward-matching objective. To enable reliable text-to-image fine-tuning, we introduce techniques that explicitly control distribution drift: ( i) de-coupling the sampler from the moving reference to prevent ratio-signal collapse, ( ii ) KL anchoring to a CFG-guided pretrained model to con-trol long-run drift and align with the inference-time semantics of the pre-trained model, and ( iii ) reward-adaptive KL strength to accelerate early learning under large KL regularization while reducing late-stage exploitation of reward-model loopholes. Experiments on text-to-image post-training with GenEval and OCR rewards show that CRD achieves competitive SOTA reward optimization results with fast convergence and reduced reward hacking, as validated on unseen preference metrics. 
+
+## 1 Introduction 
+
+Diffusion and flow models [1, 39, 44, 51, 54, 55, 83–85, 87] have become a cor-nerstone of modern generative modeling, achieving state-of-the-art performance across modalities and tasks [6, 18, 19, 22, 24, 41, 70, 77, 90, 94]. Yet many behav-iors that matter most in practice, such as aesthetic quality, fine-grained prompt fidelity, and legible text rendering, are only weakly specified by denoising score matching [84, 88] objectives on static datasets, and are therefore not reliably in-duced during pretraining. Closing this gap calls for post-training strategies that optimize models with respect to external signals. Reinforcement Learning (RL)      
+
+> arXiv:2603.14128v1 [cs.CV] 14 Mar 2026 2Y. Zhu et al.
+> Fig. 1: Qualitative results produced by our RL fine-tuned SD3.5M [24] model with
+> GenEval [30] reward (top) and OCR [11] reward (bottom).
+
+is particularly well-suited to this end: rather than matching a fixed data distri-bution, the model is explicitly optimized toward downstream objectives using rewards derived from human preference models [60, 80, 97, 99], vision-language evaluators [38], or task-specific metrics [11, 30]. Diffusion RL aims to post-train a pretrained model to maximize external re-ward signals while preventing excessive drift from the original distribution. Early approaches either operated off-policy with expensive data collection process, or required differentiable rewards ( e.g. , CLIPScore [38]) to backpropagate through the denoising process [4, 17, 26, 49, 71, 105], limiting their applicability to reward signals that are non-differentiable ( e.g. , OCR accuracy, object detection metrics) prohibitively expensive to differentiate through ( e.g. , VLM-based evaluators). To address these, recent diffusion RL work has pursued two main directions. First, GRPO-style methods [34, 82] (e.g., Flow-GRPO [53, 101] and follow-ups [12, 20, 21, 50, 52]) view denoising as an explicit Markov Decision Process (MDP): each denoising step is treated as an action that transforms the cur-rent noisy latent into a less noisy one, and the full SDE sampling trajectory plays the role of an RL rollout. This perspective is attractive as it yields an explicit sequential decision problem with well-defined intermediate states and actions, enabling principled credit assignment across denoising steps and import-Diffusion Reinforcement Learning via Centered Reward Distillation 3
+
+ing variance-reduction and off-policy tools (advantages/baselines, importance ra-tios, trust-region style updates). These same structural benefits also align closely with the RLHF techniques developed for autoregressive LLMs [34, 56, 104, 106], making GRPO-style formulations a natural extension of that toolkit. However, this first direction, due to its rollout-based MDP formulation, typically requires storing the full SDE trajectory and suffers from high-variance training signals, imposing high memory and compute overhead that slows convergence, which is particularly prohibitive when post-training large-scale diffusion models [90]. A second line of work [13, 15, 58, 67, 96, 100, 109] argues that diffusion RL can be formulated more directly via the forward process . The key idea is to decouple sampling from training states [109]: clean samples are first generated from the current model, noisy latents are then obtained via the forward diffusion process, and training proceeds on these synthetically noised states. This yields objectives that resemble advantage-weighted maximum likelihood , intuitively, high-reward samples are upweighted and low-reward samples are downweighted. Compared to the Flow-GRPO direction, forward-process objectives are typically simpler to implement and substantially more efficient, with lower-variance gradients that often converge faster [100]. However, this direction introduces its own challenge: a fixed reference model becomes a poor surrogate as training progresses, making the distance between current and reference model increasingly large and training samples off-distribution. To mitigate this, these methods maintain a moving reference that is periodically updated toward the current model; but if it tracks too aggressively, it will enable iterative drift [100,109]. In practice, such drift can amplify reward hacking by encouraging exploitation of reward imperfections. In this work, we revisit the forward-process paradigm through the lens of KL-regularized reward maximization, where the optimal solution is a reward-tilted [31, 45, 47, 69, 71, 72, 74, 75, 78, 86] version of a reference model. This per-spective implies that external rewards correspond to a scaled log-density ratio between the optimal fine-tuned model and the reference model, but only up to an unknown, prompt-dependent normalizer . Because this normalizer is in-tractable, directly regressing model likelihood ratios toward absolute rewards is ill-posed [27,29,62,63,111]. Our key insight is that the normalizer cancels exactly under within-prompt centering : for a group of samples drawn under the same prompt, the unknown normalizer term is identical across samples and disappears when rewards are centered within the group. Building on this observation, we propose Centered Reward Distillation (CRD) , a set of well-posed reward-matching objectives for diffusion RL. CRD trains the diffusion model so that its implicit log-density ratio (approximated via a diffusion Evidence Lower BOund surrogate, ELBO) matches centered external rewards within each prompt group. This yields a unifying view that recovers prior works in LLM such as reward-distillation methods [27, 29, 62] and GVPO objective [107] as special cases, and naturally extends to a ratio-based variant connected to InfoNCA [7]. To make CRD reliable for moving reference RL fine-tuning, we introduce practical stabilization techniques that explicitly mitigate reward hacking by con-trolling distribution drift. First, we decouple the model used to generate samples 4 Y. Zhu et al. 
+
+from the moving reference used in the log-ratio objective, which prevents train-ing instabilities when the reference drifts too close to the current model. Second, to control long-run drift, we add a KL penalty that anchors the current model to a fixed initial reference (the pretrained model). Importantly, because many forward-process setups train and sample the current model without Classifier-Free Guidance (CFG) [40,48,95] for efficiency, we adopt the CFG-guided version of the initial reference model, aligning regularization with inference-time seman-tics (and reducing to CFG distillation when the RL signal is absent). Finally, we use a simple reward-adaptive scaling of the anchoring strength to accelerate early learning while preventing late-stage exploitation of reward-model loopholes. We evaluate CRD on text-to-image RL fine-tuning with GenEval and OCR -based rewards, comparing against representative Flow-GRPO-style and forward-process baselines. Overall, our approach achieves competitive reward optimiza-tion with faster and more stable training, and reduced reward hacking behavior. Our contributions can be summarized as follows: 
+
+– We introduce Centered Reward Distillation (CRD) , a within-prompt centered reward-matching framework for diffusion RL that removes the un-known prompt-dependent normalizer, yielding a well-posed objective; the framework recovers prior reward distillation methods and GVPO-style objec-tives as special cases and admits a ratio-based variant connected to InfoNCA under appropriate parameterization. 
+
+– We propose practical techniques for stable RL fine-tuning: decoupled sam-pling versus moving reference, KL anchoring to a CFG -guided fixed refer-ence, and reward-adaptive KL strength to reduce drift and reward hacking 
+
+– We provide text-to-image experiments on GenEval and OCR rewards demon-strating competitive performance against recent diffusion RL baselines, with improved stability and reduced reward hacking. 
+
+## 2 Related Works 
+
+Progress in diffusion and flow-based generative modeling has motivated works that apply RL as a post-training stage to better align generations with human preferences or task-specific reward signals [4, 17, 26, 49, 71, 105]. 
+
+2.1 GRPO in Visual Generation 
+
+Recently, methods leveraging Group Relative Policy Optimization (GRPO) [34, 82] have shown strong alignment performance in diffusion and flow-based mod-els [53, 101]. Meanwhile, a recurring challenge in diffusion/flow GRPO is the de-noising process itself: learning signals and estimator variance are highly timestep-dependent, while practical training also hinges on rollout fidelity, sampling effi-ciency, and the choice of reward objective. Existing methods address these issues through several complementary mechanisms: Diffusion Reinforcement Learning via Centered Reward Distillation 5
+
+1. Trajectory structuring for exploration and credit assignment. These methods modify rollout topology (branching/trees/chunks) to broaden ex-ploration and improve credit assignment along denoising: TempFlow-GRPO [37]; Branch-GRPO [50], TreeGRPO [21]; Chunk-GRPO [57]. The trade-off is added algorithmic complexity and sensitivity to design choices (e.g., branching depth, chunk size). 2. Dense rewards and ratio/regularization stabilizers. This line reshapes timestep-wise learning signals and stabilizes per-step weighting via dense rewards or ratio/regularization control: Dense-GRPO [20], GARDO [36], GRPO-Guard (RatioNorm) [93]. Gains depend on the quality of dense re-ward proxies and careful calibration of normalization/regularization. 3. Sampling efficiency and rollout fidelity. These works improve the compute– quality trade-off by increasing group-sampling efficiency and reducing solver-induced artifacts: SuperFlow [12], Flow-CPS [91], E-GRPO [108], Neighbor GRPO [35]. They are largely orthogonal to reward design but can remain brittle under sparse or misaligned rewards. 4. Richer reward definitions and objectives. Recent variants broaden su-pervision beyond a single prompt-level scalar (e.g., reference-image rewards, diversity objectives, prompt refinement, or multi-granularity advantages): Adv-GRPO [61], DiverseGRPO [52], PromptRL [92], Granular-GRPO [110]. While often more informative, they introduce extra assumptions/modules and can increase sensitivity to reward/model misspecification. Despite these advances, a fundamental limitation remains: most of these methods optimize through the backward-process MDP formulation, introducing inherent challenges in timestep-dependent variance, rollout overhead, and credit assignment that ultimately limit training efficiency. 
+
+2.2 Diffusion RL Based on the Forward Process 
+
+In contrast to Flow-GRPO and subsequent methods that explicitly model the diffusion sampling trajectory as an MDP and derive policy-gradient style updates under that assumption, a recent line of work argues that diffusion RL can be formulated more directly using the forward-process [13, 15, 58, 96, 100, 109, 112]. The key idea is to decouple data sampling and model training: in the sampling phase, the model generates clean samples without storing intermediate noisy states; in the training phase, the loss is computed on noisy versions of the samples using the forward diffusion process. Experiments and analyses from these works suggest that forward-process-based methods achieve significantly faster training compared to backward-process-based methods like Flow-GRPO. GPO [13] is the first attempt at this perspective. It employs an ELBO-based likelihood estimator for diffusion models and shows that the resulting objective can be interpreted as an advantage-weighted log-likelihood , connecting diffusion RL to weighted maximum likelihood updates. Concurrently, AWM [100] ana-lyzes the variance properties of Flow-GRPO-style estimators and proposes a forward-process algorithm, Advantage Weighted Matching , to mitigate variance 6 Y. Zhu et al.                 
+
+> Prompt c
+> Sampling Model
+> ps←EMA( θ,η s)
+> {xi}Ki=1
+> CFG Reference
+> pCFG
+> ϕ
+> forward diffusion
+> LKL (Eq. (7)) Reward Model
+> ri=r(c, x i)
+> Old Model
+> po←EMA( θ,η o)
+> Training Model
+> pθ
+> 0.9,0.5, ..., −0.3
+> Group Relative Rewards
+> −βE
+> h
+> ∥vθ−v∥22−∥ vref −v∥22
+> i
+> Implicit Reward bRθ,i
+> ri−PKj=1 wjrj
+> Centered Reward ∆ir,w
+> bRθ,i −PKj=1wjbRθ,j
+> Centered Implicit Reward ∆i
+> bR,w
+> LCRD  (Eq. (11))
+
+Fig. 2: For each prompt, K samples {xi}Ki=1 are generated from the sampling model 
+
+psamp (ps). A reward model produces external rewards r(c, x i), and implicit model re-wards bRθ,i are estimated via diffusion ELBO differences between the current model 
+
+pθ and a moving reference pold (po). Within-prompt centering yields ∆ir,w and ∆i 
+
+> bR,w
+
+,cancelling the prompt-dependent normalizer and enabling a well-posed matching ob-jective. A initial KL penalty with respect to the fixed CFG-guided pretrained model 
+
+pCFG  
+
+> ϕ
+
+is imposed to prevent reward hacking. 
+
+amplification, demonstrating that it significantly accelerates training. An impor-tant conceptual link is that the GPO objective can be viewed as a first-order approximation of AWM objective; the approximation error becomes negligible when the current model remains close to the reference (old) model [13, 100]. DiffusionNFT [109] also adopts a forward-process RL formulation and ad-vocates using faster ODE-based samplers during training to improve efficiency. Unlike approaches that explicitly rely on an ELBO likelihood estimator to con-struct loss function, DiffusionNFT uniquely derives an update that targets an optimal velocity direction that steers samples toward high-reward regions. De-spite this difference in derivation, DiffusionNFT remains conceptually aligned with the forward-process family in that it targets the same optimal solution. DGPO [58] further develops the forward-process paradigm by learning from 
+
+group-level preferences, exploiting relative information among samples within the same group and empirically demonstrating efficient optimization and stable convergence. GDRO [96] reframes the log-likelihood ratio and advantage in terms of probability and derives a cross-entropy training objective; the resulting loss is closely related to InfoNCA proposed in [7]. Finally, Choi et al. [15] provides a systematic study of design choices in diffusion RL and empirically validates the central contribution from the ELBO-based estimator in diffusion RL training. Our method falls within this forward-process RL family and inherits its com-putational efficiency, while introducing a new class of objectives and practical techniques that prevent reward hacking without sacrificing training efficiency. 
+
+## 3 Diffusion RL using Reward Distillation 
+
+We first introduce the KL-regularized formulation of diffusion RL and show that rewards correspond to a log-density ratio only up to an unknown prompt-dependent normalizer (Sec. 3.1). We then present Centered Reward Dis-tillation (CRD) , which removes this normalizer via within-prompt centering and yields a family of reward-matching objectives (Sec. 3.2). Finally, we de-scribe practical techniques that mitigate reward hacking under distribution drift Diffusion Reinforcement Learning via Centered Reward Distillation 7
+
+(Sec. 3.3). The overall training pipeline is illustrated in Fig. 2 and the algorithm is summarized in Algorithm 1. 
+
+3.1 Background 
+
+Setup and goal. Given access to a fixed external reward r(c, x ) (e.g., from a reward model) and a pretrained diffusion model with parameters ϕ, the goal of diffusion RL is to fine-tune a copy of this model with parameters θ to maximize the expected reward r(c, x ) of its generated samples, while keeping the distri-bution pθ (x|c) close to a reference distribution pref (x|c) (which is usually the pretrained model pϕ(x|c)) for each prompt condition c.
+
+KL-regularized form and the unknown normalizer. Under the standard KL-regularized reward maximization objective, the optimal distribution satisfies [31, 47, 71, 72, 75] 
+
+pθ∗ (x | c) ∝ pref (x | c) exp 
+
+ r(c, x )
+
+β
+
+
+
+, (1) which implies 
+
+r(c, x ) = β log pθ∗ (x | c)
+
+pref (x | c) + β log Z(c), (2) where β > 0 is the KL regularization strength and Z(c) = R pref (x|c)exp( r(c,x ) 
+
+> β
+
+)dx 
+
+is a prompt-dependent normalizer. 
+
+Implicit model reward and diffusion-specific surrogate. The implicit model reward 
+
+is defined as the scaled log-density ratio: 
+
+Rθ (c, x ) ≜ β log pθ (x | c)
+
+pref (x | c) . (3) For diffusion models, the exact log-density ratio in Eq. (3) is intractable. Follow-ing [15, 64, 76, 89], we use the diffusion ELBO surrogate to estimate this term: 
+
+bRθ (c, x ) ≜ −β Et,ϵ 
+
+h
+
+w(t)( ∥vθ (xt, t |c)−vtarget ∥22 − ∥ vref (xt, t |c)−vtarget ∥22)
+
+i
+
+, (4) where t is sampled from a predefined timestep distribution, ϵ ∼ N (0 , I ), w(t)
+
+is a time-dependent weighting which we set as 1 for simplicity, xt is the noisy latent produced by the forward diffusion process from clean data x at time t,
+
+vtarget (·) = ϵ − x denotes the corresponding target velocity and vθ is the velocity predicted by the model θ. We use bRθ as an estimator of Rθ throughout what follows. Following previous work [100, 109], we first transform the raw reward 
+
+rraw (c, x ) using group normalization to get r(c, x ).Crucially, since the normalizer β log Z(c) is intractable, directly regressing 
+
+bRθ (c, x ) onto absolute rewards r(c, x ) is ill-posed without knowing the normalizer based on Eq. (2) [63, 111]. 8 Y. Zhu et al. 
+
+3.2 Centered Reward Distillation (CRD) 
+
+Key insight: within-prompt centering (subtracting the weighted group reward mean) removes the normalizer β log Z(c). For each prompt c, we consider a group of K samples {xi}Ki=1 drawn from a proposal distribution and their correspond-ing external rewards r(c, x i). Recall from Eq. (2) that, under KL-regularized reward maximization, the reward decomposes as r(c, x ) = Rθ∗ (c, x ) + β log Z(c),where the normalizer term β log Z(c) depends only on the prompt c. Conse-quently, for a fixed prompt c and any weights {wj }Kj=1 satisfying PKj=1 wj = 1 ,the normalizer cancels under within-prompt centering: 
+
+r(c, x i) −
+
+> K
+
+X
+
+> j=1
+
+wj r(c, x j ) = Rθ∗ (c, x i) −
+
+> K
+
+X
+
+> j=1
+
+wj Rθ∗ (c, x j ). (5) This centered matching problem is well-posed regardless of the unknown nor-malizer, and directly motivates our objective: train the model so that its implicit reward bRθ (c, x ) is consistent with the external rewards. 
+
+Reward-weighted centering weights. Within each prompt group, we define reward-weighted softmax weights: wi(c, {xj }Kj=1 ; τ ) ≜ exp( r(c,x i)/τ )    
+
+> PKj=1 exp( r(c,x j)/τ )
+
+where τ > 0
+
+is temperature that controls the sharpness of the probability distribution over the estimated rewards. For brevity, we write wi ≡ wi(c, {xj }Kj=1 ; τ ) throughout. We note that, as τ → ∞ , wi → 1/K (uniform centering), whereas as τ → 0, the weights concentrate on the highest-reward sample (max-anchored centering). 
+
+CRD objective. Let ρ(c, {xi}Ki=1 ) be a distribution over prompts and the cor-responding within-prompt generation sets with group size K (sampled from a proposal such as the current model [2, 25, 75], a mixture with pref [32], or a replay buffer [100]). Motivated by the centering identity in Eq. (5), we define within-prompt centered residuals for both the reward model and the log-density ratio estimator: 
+
+∆ir,w ≜ r(c, x i)−
+
+> K
+
+X
+
+> j=1
+
+wj r(c, x j ), ∆i 
+
+> bR,w
+
+≜ bRθ (c, x i)−
+
+> K
+
+X
+
+> j=1
+
+wj bRθ (c, x j ). (6) The CRD loss then matches centered external rewards to centered implicit model reward by minimizing 
+
+L(τ )CRD (pθ ; ρ) = Eρ(c, {xi})
+
+1
+
+K
+
+> K
+
+X
+
+> i=1
+
+
+
+∆ir,w − ∆i
+
+> bR,w
+
+2
+
+. (7) 
+
+Connections to existing methods. CRD can serve as a unifying framework that reinterprets several existing methods as special cases and admits natural exten-sions. We show in Appendix F that two-sample reward distillation [27, 29, 62] methods and GVPO [107] can both be recovered as special cases of CRD. In addition, in Appendix G we introduce a ratio-based distillation variant of CRD, and shows that InfoNCA loss proposed in [7] can be recovered as a special case under appropriate parameterization. Diffusion Reinforcement Learning via Centered Reward Distillation 9
+
+Algorithm 1 CRD Distillation 
+
+Require: Pre-trained model ϕ, reward model rψ , ODE solver ODE[ ·], prompt dataset 
+
+Dc, βold and βinit , group size K, EMA decay ηold and ηsamp , temperature τ
+
+1: ∆θ ← initLoRA () , ∆θ old ← initLoRA () , ∆θ samp ← initLoRA() // init adapters 2: θ ≜ ϕ + ∆θ, θ old ≜ ϕ + ∆θ old , θ samp ≜ ϕ + ∆θ samp // effective weights 3: repeat 
+
+4: ### Sample prompts and group of data 
+
+5: Sample c ∼ D c, {xi
+
+> 1
+
+}Ki=1 ∼ N (0 , 1) 
+
+6: Generate a group of samples {xi
+
+> 0
+
+}Ki=1 ← ODE[ vθsamp ]( {xi
+
+> 1
+
+}Ki=1 )
+
+7: ### Calculate r(c, x )
+
+8: ri 
+
+> raw
+
+= rψ (c, x i
+
+> 0
+
+) // scaled to [0 , 1] 
+
+9: r(c, x i
+
+> 0
+
+) = ri     
+
+> raw −mean( {rraw }1: K)std( {rraw }1: K)
+
+10: ### Estimate Rθ (c, x ) ≜ β log pθ (x|c)
+
+> pold (x|c)
+
+11: Sample t ∼ U [0 , 1] and noise ϵ ∼ N (0 , 1) for each i
+
+12: Calculate xt = tϵ + (1 − t)x0 and vtarget = ϵ − x0 for each i
+
+13: Rθ (c, x i
+
+> 0
+
+) ← − βold (|| vθ−vtarget || 2−|| vθold −vtarget || 2) for each i // ELBO estimator 14: ### Loss calculation and update θ
+
+15: Calculate ∆ir,w and ∆i 
+
+> bR,w
+
+using r(c, x i
+
+> 0
+
+) and bRθ (c, x i
+
+> 0
+
+) // Eq. (6) 16: Calculate L(τ )CRD = 1
+
+> K
+
+PKi=1 
+
+
+
+∆ir,w − ∆i
+
+> bR,w
+
+2
+
+17: ˆβi 
+
+> init
+
+← ri
+
+> raw
+
+βinit // Adaptive reference KL 18: Calculate LKL = 1
+
+> K
+
+PKi=1 ˆβi
+
+> init
+
+|| vθ (xit, t, c ) − vCFG  
+
+> ϕ
+
+(xit, t, c )|| 2
+
+19: Update θ using gradient of LCRD _KL = LCRD + LKL 
+
+20: ### Update θold and θsamp 
+
+21: θold ← ηold θold + (1 − ηold )θ
+
+22: θsamp ← ηsamp θsamp + (1 − ηsamp )θ
+
+23: until convergence 
+
+24: Return Reward tilted model θ
+
+Training efficiency and stability: moving reference and decoupled sampling. As training progresses, a fixed pretrained reference can become misaligned with the current model, yielding noisy log-density ratios and increasingly off-distribution samples. Following DiffusionNFT [109], we maintain a moving reference pold ,held fixed within each epoch and updated at epoch end via Exponential Moving Average (EMA), so the reference and reference-sampled data remain close to pθ .However, if pold is updated too aggressively, it can drift too close to the current model pθ , collapsing the log-ratio signal in Eq. (3) toward zero and destabilizing training. We therefore further decouple sampling from the log-ratio reference (see Fig. 2): samples are drawn from a separate EMA model psamp , while pold is used only in the log-density ratio and updated with a slower EMA. This keeps data collection near on-policy while preserving a meaningful log-ratio signal. 
+
+3.3 Reward-Adaptive CFG based KL Regularization 
+
+Motivation: reward hacking under online distribution drift. During online fine-tuning, the old model pold evolves across iterations as pθ is updated, inducing dis-tribution drift away from the pretrained model. This distribution drift increases the risk of reward hacking (see Appendix E for more discussion): the model ex-ploits weaknesses of the reward model by moving into out-of-distribution regions, leading to degraded sample quality despite high reward scores. 10 Y. Zhu et al. 
+
+Mitigation: KL regularization to a fixed initial reference. A standard stabiliza-tion is to add a KL penalty that anchors the model θ to a fixed initial reference model (the pretrained model ϕ), preventing uncontrolled drift [68, 81, 113]: 
+
+βinit KL( pθ (· | c) ∥ pϕ(· | c)) ≈ βinit Et,ϵ 
+
+h
+
+λ(t) ∥vθ (xt, t | c) − vϕ(xt, t | c)∥22
+
+i
+
+, (8) where βinit denote the strength of the initial KL regularization, λ(t) is a time-dependent weight which we set to 1 for simplicity, and vϕ is the initial model velocity prediction. However, in the standard setup of forward-process based methods, the current model θ is sampled without CFG, while the conditional pretrained model (without CFG) can be significantly weaker than its CFG-guided counterpart. As a result, anchoring too strongly to a weak non-CFG reference can introduce a training mismatch: the KL term may dominate and pull the model toward low-quality regions of the pretrained conditional model, meanwhile counteracting reward optimization. To align the anchoring distribution with the effective sampling semantics of the pretrained model, we instead use a KL penalty with the CFG-guided version of the pretrained model as the fixed reference: 
+
+βinit KL  pθ (· | c) ∥ pCFG  
+
+> ϕ
+
+(· | c) , (9) where pCFG  
+
+> ϕ
+
+(· | c) denotes the distribution induced by sampling the pretrained model ϕ with CFG (guidance scale s). This KL term is approximated analo-gously to Eq. (8), replacing vϕ with the CFG-guided velocity vCFG  
+
+> ϕ
+
+. For notation consistency, we rename the CRD coefficient β as βold for moving reference. Intuitively, this anchors training to a stronger, more reliable pretrained be-havior, which reduces reward hacking while avoiding the degenerate pull toward the weak non-CFG conditional baseline. Note that when the RL gradient is missing, this initial KL regularization alone is functionally equivalent to CFG distillation [8, 9, 16, 65]. 
+
+Reward-adaptive initial KL strength for faster optimization. While a large initial-reference KL coefficient improves stability, it can also slow learning by excessively restricting policy updates. Since our raw reward rraw (c, x ) is a scalar and can be normalized to [0 , 1] , we use a simple reward-adaptive scaling of the initial-reference KL strength: 
+
+ˆβinit (c, x ) = rraw (c, x ) βinit , rraw (c, x ) ∈ [0 , 1] . (10) We apply ˆβinit (c, x ) to the KL term in (9). This choice preserves nonnegativ-ity, and it makes the anchoring weaker on low-reward samples (allowing larger corrective updates) and stronger on high-reward samples (preventing late-stage drift into reward-model loopholes), empirically accelerating training without sacrificing final performance. This strategy coincidences with the take away in GARDO [36]. Since the adaptive KL strength is sample-dependent, we can fi-nally write our KL loss as: 
+
+LKL = 1
+
+K
+
+> K
+
+X
+
+> i=1
+
+ˆβinit (c, x i)Et,ϵ 
+
+h
+
+λ(t) vθ (xit, t | c) − vCFG  
+
+> ϕ
+
+(xit, t | c) 22
+
+i
+
+. (11) Diffusion Reinforcement Learning via Centered Reward Distillation 11 
+
+> SD3.5-M reference Flow-GRPO AWM (w/o CFG) AWM (w/ CFG) DiffusionNFT Ours
+
+Fig. 3: Visual comparison between benchmarks and our models. 
+
+The overall training objective. The model vθ is trained to minimize the com-bination of the aforementioned CRD loss and initial CFG KL regularization: 
+
+LCRD _KL = LCRD + LKL . (12) 
+
+## 4 Experiments 
+
+4.1 Experiment Setup 
+
+Models and training configuration. All experiments fine-tune Stable Diffusion 3.5-Medium (SD3.5-M) [24] and following Flow-GRPO [53]. Unless stated oth-erwise, images are generated at 512 × 512 resolution with a group size K = 24 
+
+for the main results and a group size K = 6 for all the ablations. We train LoRA adapters [42] with r = 32 and α = 64 , and adopt the remaining optimization and implementation details from DiffusionNFT [109]. All main experiments are run on up to four NVIDIA H100 GPUs and ablations on a single NVIDIA H100 GPU, each completing in under 36 hours. 
+
+Datasets and reward models. We study two non-differentiable reward settings: (i) compositional image generation using GenEval [30] as the reward, and (ii) visual text rendering using an OCR reward [11]. For both tasks, we use the same training/evaluation prompt splits and the corresponding reward models as in Flow-GRPO [53]. To assess generalization (reward hacking) and overall image quality beyond the task reward, we additionally evaluate on DrawBench [79] prompts and report a suite of metrics, including PickScore [46], CLIPScore [38], 
+
+HPSv2.1 [97], Aesthetics [80], and ImageReward [99], capturing image quality, image-text alignment, and human preference. 12 Y. Zhu et al. 
+
+Table 1: Performance on Compositional Image Generation, Visual Text Rendering, and Human Preference benchmarks. Task metrics are evaluated on the corresponding test prompts; image quality and preference scores are evaluated on DrawBench [79] prompts. Baseline results are taken from Flow-GRPO [53] or reim-plemented when unavailable in original papers. ImgRwd : ImageReward .                                                                                                                                       
+
+> Model Task Metric Image Quality Preference Score
+> GenEval ↑OCR ↑Aesthetics ↑ImgRwd ↑PickScore ↑CLIPScore ↑HPSv2.1 ↑
+> SD3.5-M 0.63 0.59 5.39 0.87 22.34 27.99 0.279
+> Compositional Image Generation
+> Flow-GRPO [53] (w/o KL) 0.95 —4.93 0.44 21.16 ——Flow-GRPO [53] (w/ KL) 0.95 —5.25 1.03 22.37 29.25 0.274 AWM [100] (w/o CFG) 0.91 —5.10 0.39 21.76 26.99 0.235 AWM [100] (w/ CFG) 0.86 —5.25 1.06 22.12 28.86 0.278 DiffusionNFT [109] 0.92 —5.30 0.63 22.07 27.25 0.253 CRD 0.93 —5.44 0.98 22.48 28.44 0.284 + CFG sampling=1.5 0.93 —5.42 1.05 22.55 28.80 0.289 + CFG sampling=3.0 0.92 —5.37 1.10 22.43 29.00 0.287
+> Visual Text Rendering
+> Flow-GRPO [53] (w/o KL) —0.93 5.13 0.58 21.79 ——Flow-GRPO [53] (w/ KL) —0.92 5.32 0.95 22.44 28.86 0.282 AWM [100] (w/o CFG) —0.97 5.22 -0.64 20.82 24.54 0.203 AWM [100] (w/ CFG) —0.96 5.35 0.96 22.36 28.70 0.283 DiffusionNFT [109] —0.97 4.89 -0.81 20.53 24.08 0.196 CRD —0.92 5.33 0.87 22.40 28.48 0.281 + CFG sampling=1.5 —0.92 5.31 0.97 22.50 28.77 0.287 + CFG sampling=3.0 —0.87 5.28 1.04 22.44 29.16 0.290
+
+Further experimental details are provided in Appendix C. 
+
+4.2 Main Results 
+
+Compositional image generation. In Tab. 1, CRD achieves a GenEval score of 0.93 (vs. 0.63 for SD3.5-M), and offers a strong quality–alignment trade-off. While Flow-GRPO [53] reaches the highest GenEval (0.95), CRD attains the best Aesthetics (5.44) and strong preference metrics ( ImageReward : 0.98, 
+
+PickScore : 22.48, HPSv2.1 : 0.284). Notably, CRD is the only method that im-proves Aesthetics over SD3.5-M (5.44 vs. 5.39) while also increasing preference scores. The detailed GenEval performance comparison is provided in Tab. 2. 
+
+Visual text rendering. CRD obtains 0.92 OCR accuracy, matching Flow-GRPO (w/ KL), while maintaining positive preference metrics on unseen prompts ( 
+
+ImageReward : 0.87, PickScore : 22.40, HPSv2.1 : 0.281). In contrast, Diffusion-NFT [109] and AWM [100] (w/o CFG) incur negative ImageReward (−0.81/ −0.64), indicating degraded perceptual quality despite high OCR score. 
+
+Qualitative comparison. Figure 3 shows CRD preserves SD3.5-M photorealism while improving prompt fidelity, especially for multi-object composition and inte-grated text. Flow-GRPO often yields less natural backgrounds, AWM (w/ CFG) Diffusion Reinforcement Learning via Centered Reward Distillation 13 
+
+Table 2: GenEval Result. Best scores are in blue , second-best in green . Results for baselines are taken from Flow-GRPO [53] or the respective original papers, and reimplemented where unavailable. Obj.: Object; Attr.: Attribution.                                                                        
+
+> Model Overall Single Obj. Two Obj. Counting Colors Position Attr. Binding
+> Autoregressive Models
+> Show-o [98] 0.53 0.95 0.52 0.49 0.82 0.11 0.28 Janus-Pro-7B [14] 0.80 0.99 0.89 0.59 0.90 0.79 0.66 GPT-4o [43] 0.84 0.99 0.92 0.85 0.92 0.75 0.61
+> Diffusion and Flow Matching Models
+> SD-XL [73] 0.55 0.98 0.74 0.39 0.85 0.15 0.23 FLUX.1 Dev [5] 0.66 0.98 0.81 0.74 0.79 0.22 0.45 SD3.5-M [24] 0.63 0.98 0.78 0.50 0.81 0.24 0.52
+> Flow + RL
+> SD3.5-M+Flow-GRPO [53] 0.95 1.00 0.99 0.95 0.92 0.99 0.86 SD3.5-M+AWM [100] (w/o CFG) 0.91 1.00 0.98 0.95 0.77 0.78 0.65 SD3.5-M+DiffusionNFT [109] 0.92 1.00 0.99 0.96 0.82 0.78 0.73 SD3.5-M+CRD 0.93 1.00 0.98 0.92 0.88 0.90 0.73
+
+over-saturates toward a stylized look, and DiffusionNFT tends to produce uni-form backgrounds or blurred regions around text. CRD produces more legible, naturally embedded text and coherent object relations, consistent with Tab. 1. 
+
+Global discussion on results. As shown in Tab. 1 and Fig. 3, although AWM does not require CFG during training, this setting leads to reward hacking and de-graded visual quality; incorporating CFG partially alleviates this but introduces over-saturation artifacts. Although CRD implicitly distills the CFG guidance through Eq. (11), moderate test-time CFG further improves preference scores (Tab. 1), likely by increasing effective text-conditioning strength and due to the insufficient ‘CFG distillation’ in our RL fine-tuning. Based on the qualitative results in Fig. 3, we also notice that images generated with our method are more close to the reference model than the ones from the competing methods. Finally, although CRD underperforms Flow-GRPO on certain metrics, it inherits the efficiency of forward-process-based training and converges significantly faster, offering a more practical trade-off. Additional experimental results can be found in Appendix H. 
+
+4.3 Ablation Studies 
+
+We study the impact of three core design choices: the old-model decay rate ηold ,the initial KL strength βinit , and the adaptive KL schedule ˆβinit . More ablations can be found in Appendix H. 
+
+Old-model decay (slow vs. fast). We first validate the proposed slow old-model decay. As shown in Fig. 4a, using a fast decay yields faster convergence, but it also causes highly unstable KL divergence with model ϕ. This instability and large KL value usually correspond to severe reward hacking, consistent with the 14 Y. Zhu et al. 0
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR  slow old decay
+> fast old decay
+> 0
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> Init. KL Div.
+
+(a) Slow and fast old decay ηold 0 
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR
+> _init=0.0001, CFG=3.
+> _init=0.0001, CFG=1.
+> _init=0.01, CFG=3.
+> _init=0.05, CFG=3.
+> _init=0.05, CFG=1.
+
+(b) Results with different βinit 0 
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR
+> _init=0.05, CFG=3. + adaptive KL
+> _init=0.05, CFG=3.
+
+(c) Ablation on adaptive ˆβinit 
+
+Fig. 4: Ablations on slow old model decay rate ηold , and initial KL strength βinit .A realistic classroom scene with a large clock on the wall, its face reading "Time for Lunch", surrounded by desks and chairs, with sunlight streaming through windows, creating a warm, inviting atmosphere.              
+
+> Afuturistic spaceship cockpit with adigital screen displaying "Fuel Low" warning, set against the backdrop of astar-studded galaxy, with control panels and futuristic interfaces around.
+
+fast old decay βinit =0.0001 CFG=1.0 slow old decay +CFG=3.0 βinit =0.05 CFG=1.0 +CFG=3.0 +Adaptive ˆβinit 
+
+Fig. 5: Visual comparison corresponding to the ablations in Fig. 4. 
+
+qualitative results in Fig. 5: the fast-decay generations collapse to plain text on flat backgrounds, satisfying the OCR reward while losing all scene coherence. 
+
+Initial KL strength. In Fig. 4b, we report evaluation reward curves under dif-ferent initial KL coefficients βinit and CFG values. We observe a clear trade-off between the strength of the initial KL constraint and training speed, where smaller βinit accelerates optimization. Moreover, the visual comparisons in Fig. 5 indicate that a larger initial KL typically produces better perceptual quality. 
+
+Adaptive KL. In Fig. 4c, we evaluate the proposed adaptive weighting for the initial KL coefficient. The adaptive strategy improves training progress while incurring minimal degradation in generation quality, as supported by both the reward curves and the qualitative results in Fig. 5. 
+
+## 5 Conclusion 
+
+We presented Centered Reward Distillation (CRD) , a forward-process dif-fusion RL framework grounded in KL-regularized reward maximization. Our key insight, that the intractable prompt-dependent normalizer cancels under within-prompt reward centering, yields a well-posed family of reward-matching objec-tives that unifies prior methods as special cases. Paired with practical techniques targeting distribution drift and reward hacking, CRD achieves competitive re-ward optimization with fast and stable training on GenEval and OCR benchmarks, and competitive results on unseen metrics. Diffusion Reinforcement Learning via Centered Reward Distillation 15 
+
+## References 
+
+1. Albergo, M.S., Boffi, N.M., Vanden-Eijnden, E.: Stochastic interpolants: A uni-fying framework for flows and diffusions. arXiv preprint arXiv:2303.08797 (2023) 2. Azar, M.G., Guo, Z.D., Piot, B., Munos, R., Rowland, M., Valko, M., Calan-driello, D.: A general theoretical paradigm to understand learning from human preferences. In: International Conference on Artificial Intelligence and Statistics. pp. 4447–4455. PMLR (2024) 3. Beirami, A., Agarwal, A., Berant, J., D’Amour, A., Eisenstein, J., Nagpal, C., Suresh, A.T.: Theoretical guarantees on the best-of-n alignment policy. arXiv preprint arXiv:2401.01879 (2024) 4. Black, K., Janner, M., Du, Y., Kostrikov, I., Levine, S.: Training diffusion models with reinforcement learning. arXiv preprint arXiv:2305.13301 (2023) 5. Black Forest Labs: Flux. https://blackforestlabs.ai/announcing- black-forest-labs/ (Aug 2024) 6. Boudier, L., Manganelli, L., Tsonis, E., Dufour, N., Kalogeiton, V.: Training-free synthetic data generation with dual ip-adapter guidance. In: British Machine Vision Conference (BMVC) (2025) 7. Chen, H., He, G., Yuan, L., Cui, G., Su, H., Zhu, J.: Noise contrastive align-ment of language models with explicit rewards. Advances in Neural Information Processing Systems 37 , 117784–117812 (2024) 8. Chen, H., Jiang, K., Zheng, K., Chen, J., Su, H., Zhu, J.: Visual generation without guidance. arXiv preprint arXiv:2501.15420 (2025) 9. Chen, H., Su, H., Sun, P., Zhu, J.: Toward guidance-free ar visual generation via condition contrastive alignment. arXiv preprint arXiv:2410.09347 (2024) 10. Chen, H., Zheng, K., Zhang, Q., Cui, G., Cui, Y., Ye, H., Lin, T.Y., Liu, M.Y., Zhu, J., Wang, H.: Bridging supervised learning and reinforcement learning in math reasoning. arXiv preprint arXiv:2505.18116 (2025) 11. Chen, J., Huang, Y., Lv, T., Cui, L., Chen, Q., Wei, F.: Textdiffuser: Diffusion models as text painters. Advances in Neural Information Processing Systems 36 ,9353–9387 (2023) 12. Chen, K., Xu, Z., Shen, Y., Lin, Z., Yao, Y., Huang, L.: Superflow: Training flow matching models with rl on the fly. arXiv preprint arXiv:2512.17951 (2025) 13. Chen, R., Lin, W., Zhang, Y., Wei, J., Liu, B., Feng, C., Ran, J., Guo, M.: Towards self-improvement of diffusion models via group preference optimization. arXiv preprint arXiv:2505.11070 (2025) 14. Chen, X., Wu, Z., Liu, X., Pan, Z., Liu, W., Xie, Z., Yu, X., Ruan, C.: Janus-pro: Unified multimodal understanding and generation with data and model scaling. arXiv preprint arXiv:2501.17811 (2025) 15. Choi, J., Zhu, Y., Guo, W., Molodyk, P., Yuan, B., Bai, J., Xin, Y., Tao, M., Chen, Y.: Rethinking the design space of reinforcement learning for diffusion models: On the importance of likelihood estimation beyond loss design. arXiv preprint arXiv:2602.04663 (2026) 16. Cideron, G., Agostinelli, A., Ferret, J., Girgin, S., Elie, R., Bachem, O., Perrin, S., Ramé, A.: Diversity-rewarded cfg distillation. arXiv preprint arXiv:2410.06084 (2024) 17. Clark, K., Vicol, P., Swersky, K., Fleet, D.J.: Directly fine-tuning diffusion models on differentiable rewards. arXiv preprint arXiv:2309.17400 (2023) 18. Courant, R., Wang, X., Loiseaux, D., Christie, M., Kalogeiton, V.: Pulp motion: Framing-aware multimodal camera and human motion generation. arXiv preprint arXiv:2510.05097 (2025) 16 Y. Zhu et al. 19. Degeorge, L., Ghosh, A., Dufour, N., Picard, D., Kalogeiton, V.: How far can we go with imagenet for text-to-image generation? arXiv (2025) 20. Deng, H., Yan, K., Mao, C., Wang, X., Liu, Y., Gao, C., Sang, N.: Densegrpo: From sparse to dense reward for flow matching model alignment. arXiv preprint arXiv:2601.20218 (2026) 21. Ding, Z., Ye, W.: Treegrpo: Tree-advantage grpo for online rl post-training of diffusion models. arXiv preprint arXiv:2512.08153 (2025) 22. Dufour, N., Besnier, V., Kalogeiton, V., Picard, D.: Don’t drop your samples! coherence-aware training benefits conditional diffusion. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6264– 6273 (2024) 23. Eisenstein, J., Nagpal, C., Agarwal, A., Beirami, A., D’Amour, A., Dvijotham, D., Fisch, A., Heller, K., Pfohl, S., Ramachandran, D., et al.: Helping or herding? reward model ensembles mitigate but do not eliminate reward hacking. arXiv preprint arXiv:2312.09244 (2023) 24. Esser, P., Kulal, S., Blattmann, A., Entezari, R., Müller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al.: Scaling rectified flow transformers for high-resolution image synthesis. In: Forty-first International Conference on Machine Learning (2024) 25. Ethayarajh, K., Xu, W., Muennighoff, N., Jurafsky, D., Kiela, D.: Kto: Model alignment as prospect theoretic optimization. arXiv preprint arXiv:2402.01306 (2024) 26. Fan, Y., Lee, K.: Optimizing ddpm sampling with shortcut fine-tuning. arXiv preprint arXiv:2301.13362 (2023) 27. Fisch, A., Eisenstein, J., Zayats, V., Agarwal, A., Beirami, A., Nagpal, C., Shaw, P., Berant, J.: Robust preference optimization through reward model distillation. arXiv preprint arXiv:2405.19316 (2024) 28. Gao, L., Schulman, J., Hilton, J.: Scaling laws for reward model overoptimiza-tion. In: International Conference on Machine Learning. pp. 10835–10866. PMLR (2023) 29. Gao, Z., Chang, J., Zhan, W., Oertell, O., Swamy, G., Brantley, K., Joachims, T., Bagnell, D., Lee, J.D., Sun, W.: Rebel: Reinforcement learning via regressing relative rewards. Advances in Neural Information Processing Systems 37 , 52354– 52400 (2024) 30. Ghosh, D., Hajishirzi, H., Schmidt, L.: Geneval: An object-focused framework for evaluating text-to-image alignment. Advances in Neural Information Processing Systems 36 , 52132–52152 (2023) 31. Go, D., Korbak, T., Kruszewski, G., Rozen, J., Ryu, N., Dymetman, M.: Align-ing language models with preferences through f-divergence minimization. arXiv preprint arXiv:2302.08215 (2023) 32. Gorbatovski, A., Shaposhnikov, B., Malakhov, A., Surnachev, N., Aksenov, Y., Maksimov, I., Balagansky, N., Gavrilov, D.: Learn your reference model for real good alignment. arXiv preprint arXiv:2404.09656 (2024) 33. Gui, L., Gârbacea, C., Veitch, V.: Bonbon alignment for large language models and the sweetness of best-of-n sampling. Advances in Neural Information Pro-cessing Systems 37 , 2851–2885 (2024) 34. Guo, D., Yang, D., Zhang, H., Song, J., Wang, P., Zhu, Q., Xu, R., Zhang, R., Ma, S., Bi, X., et al.: Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025) Diffusion Reinforcement Learning via Centered Reward Distillation 17 35. He, D., Feng, G., Ge, X., Niu, Y., Zhang, Y., Ma, B., Song, G., Liu, Y., Li, H.: Neighbor grpo: Contrastive ode policy optimization aligns flow models. arXiv preprint arXiv:2511.16955 (2025) 36. He, H., Ye, Y., Liu, J., Liang, J., Wang, Z., Yuan, Z., Wang, X., Mao, H., Wan, P., Pan, L.: Gardo: Reinforcing diffusion models without reward hacking. arXiv preprint arXiv:2512.24138 (2025) 37. He, X., Fu, S., Zhao, Y., Li, W., Yang, J., Yin, D., Rao, F., Zhang, B.: Tempflow-grpo: When timing matters for grpo in flow models. arXiv preprint arXiv:2508.04324 (2025) 38. Hessel, J., Holtzman, A., Forbes, M., Bras, R.L., Choi, Y.: Clipscore: A reference-free evaluation metric for image captioning. arXiv preprint arXiv:2104.08718 (2021) 39. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. Advances in Neural Information Processing Systems 33 , 6840–6851 (2020) 40. Ho, J., Salimans, T.: Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 (2022) 41. Ho, J., Salimans, T., Gritsenko, A., Chan, W., Norouzi, M., Fleet, D.J.: Video diffusion models. arXiv preprint arXiv:2204.03458 (2022) 42. Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W., et al.: Lora: Low-rank adaptation of large language models. Iclr 1(2), 3 (2022) 43. Hurst, A., Lerer, A., Goucher, A.P., Perelman, A., Ramesh, A., Clark, A., Ostrow, A., Welihinda, A., Hayes, A., Radford, A., et al.: Gpt-4o system card. arXiv preprint arXiv:2410.21276 (2024) 44. Karras, T., Aittala, M., Aila, T., Laine, S.: Elucidating the design space of diffusion-based generative models. arXiv preprint arXiv:2206.00364 (2022) 45. Kim, S., Kim, M., Park, D.: Test-time alignment of diffusion models without reward over-optimization. arXiv preprint arXiv:2501.05803 (2025) 46. Kirstain, Y., Polyak, A., Singer, U., Matiana, S., Penna, J., Levy, O.: Pick-a-pic: An open dataset of user preferences for text-to-image generation. Advances in neural information processing systems 36 , 36652–36663 (2023) 47. Korbak, T., Elsahar, H., Kruszewski, G., Dymetman, M.: On reinforcement learning and distribution matching for fine-tuning language models with no catastrophic forgetting. Advances in Neural Information Processing Systems 35 ,16203–16220 (2022) 48. Kynkäänniemi, T., Aittala, M., Karras, T., Laine, S., Aila, T., Lehtinen, J.: Ap-plying guidance in a limited interval improves sample and distribution quality in diffusion models. Advances in Neural Information Processing Systems 37 , 122458– 122483 (2024) 49. Lee, K., Liu, H., Ryu, M., Watkins, O., Du, Y., Boutilier, C., Abbeel, P., Ghavamzadeh, M., Gu, S.S.: Aligning text-to-image models using human feed-back. arXiv preprint arXiv:2302.12192 (2023) 50. Li, Y., Wang, Y., Zhu, Y., Zhao, Z., Lu, M., She, Q., Zhang, S.: Branchgrpo: Stable and efficient grpo with structured branching in diffusion models. arXiv preprint arXiv:2509.06040 (2025) 51. Lipman, Y., Chen, R.T., Ben-Hamu, H., Nickel, M., Le, M.: Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 (2022) 52. Liu, H., Huang, H., Wang, J., Liu, C., Li, X., Ji, X.: Diversegrpo: Mitigat-ing mode collapse in image generation via diversity-aware grpo. arXiv preprint arXiv:2512.21514 (2025) 18 Y. Zhu et al. 53. Liu, J., Liu, G., Liang, J., Li, Y., Liu, J., Wang, X., Wan, P., Zhang, D., Ouyang, W.: Flow-grpo: Training flow matching models via online rl. arXiv preprint arXiv:2505.05470 (2025) 54. Liu, Q.: Icml tutorial on the blessing of flow. International conference on machine learning (2025) 55. Liu, X., Gong, C., Liu, Q.: Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 (2022) 56. Liu, Z., Chen, C., Li, W., Qi, P., Pang, T., Du, C., Lee, W.S., Lin, M.: Understand-ing r1-zero-like training: A critical perspective. arXiv preprint arXiv:2503.20783 (2025) 57. Luo, Y., Du, P., Li, B., Du, S., Zhang, T., Chang, Y., Wu, K., Gai, K., Wang, X.: Sample by step, optimize by chunk: Chunk-level grpo for text-to-image generation. arXiv preprint arXiv:2510.21583 (2025) 58. Luo, Y., Hu, T., Tang, J.: Reinforcing diffusion models by direct group preference optimization. arXiv preprint arXiv:2510.08425 (2025) 59. Ma, N., Tong, S., Jia, H., Hu, H., Su, Y.C., Zhang, M., Yang, X., Li, Y., Jaakkola, T., Jia, X., et al.: Inference-time scaling for diffusion models beyond scaling de-noising steps. arXiv preprint arXiv:2501.09732 (2025) 60. Ma, Y., Wu, X., Sun, K., Li, H.: Hpsv3: Towards wide-spectrum human preference score. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 15086–15095 (2025) 61. Mao, W., Chen, H., Yang, Z., Shou, M.Z.: The image as its own reward: Rein-forcement learning with adversarial reward for image generation. arXiv preprint arXiv:2511.20256 (2025) 62. Mao, X., Li, F.L., Xu, H., Zhang, W., Luu, A.T.: Don’t forget your reward values: Language model alignment via value-based calibration. arXiv preprint arXiv:2402.16030 (2024) 63. Matrenok, S., Moalla, S., Gulcehre, C.: Quantile reward policy optimization: Alignment with pointwise regression and exact partition functions. arXiv preprint arXiv:2507.08068 (2025) 64. McAllister, D., Ge, S., Yi, B., Kim, C.M., Weber, E., Choi, H., Feng, H., Kanazawa, A.: Flow matching policy gradients. arXiv preprint arXiv:2507.21053 (2025) 65. Meng, C., Rombach, R., Gao, R., Kingma, D., Ermon, S., Ho, J., Salimans, T.: On distillation of guided diffusion models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 14297–14306 (2023) 66. Oord, A.v.d., Li, Y., Vinyals, O.: Representation learning with contrastive pre-dictive coding. arXiv preprint arXiv:1807.03748 (2018) 67. Ou, Z., Si, J., Zhu, J., Bohdal, O., Ozay, M., Ceritli, T., Li, Y.: Diffusion alignment beyond kl: Variance minimisation as effective policy optimiser. arXiv preprint arXiv:2602.12229 (2026) 68. Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al.: Training language models to follow instructions with human feedback. Advances in neural information processing systems 35 , 27730–27744 (2022) 69. Pachebat, J., Conforti, G., Durmus, A., Janati, Y.: Iterative tilting for diffusion fine-tuning. arXiv preprint arXiv:2512.03234 (2025) 70. Peebles, W., Xie, S.: Scalable diffusion models with transformers. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4195–4205 (2023) Diffusion Reinforcement Learning via Centered Reward Distillation 19 71. Peng, X.B., Kumar, A., Zhang, G., Levine, S.: Advantage-weighted regres-sion: Simple and scalable off-policy reinforcement learning. arXiv preprint arXiv:1910.00177 (2019) 72. Peters, J., Schaal, S.: Reinforcement learning by reward-weighted regression for operational space control. In: Proceedings of the 24th international conference on Machine learning. pp. 745–750 (2007) 73. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., Rombach, R.: Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 (2023) 74. Potaptchik, P., Lee, C.K., Albergo, M.S.: Tilt matching for scalable sampling and fine-tuning. arXiv preprint arXiv:2512.21829 (2025) 75. Rafailov, R., Sharma, A., Mitchell, E., Manning, C.D., Ermon, S., Finn, C.: Di-rect preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems 36 , 53728–53741 (2023) 76. Ren, A.Z., Lidard, J., Ankile, L.L., Simeonov, A., Agrawal, P., Majumdar, A., Burchfiel, B., Dai, H., Simchowitz, M.: Diffusion policy policy optimization. arXiv preprint arXiv:2409.00588 (2024) 77. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 10684–10695 (2022) 78. Sabour, A., Albergo, M.S., Domingo-Enrich, C., Boffi, N.M., Fidler, S., Kreis, K., Vanden-Eijnden, E.: Test-time scaling of diffusions with flow maps. arXiv preprint arXiv:2511.22688 (2025) 79. Saharia, C., Chan, W., Saxena, S., Li, L., Whang, J., Denton, E.L., Ghasemipour, K., Gontijo Lopes, R., Karagol Ayan, B., Salimans, T., et al.: Photorealistic text-to-image diffusion models with deep language understanding. Advances in neural information processing systems 35 , 36479–36494 (2022) 80. Schuhmann, C.: Laion-aesthetics. https://laion.ai/blog/laion-aesthetics/ 
+
+(2022) 81. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O.: Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 (2017) 82. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al.: Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 (2024) 83. Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., Ganguli, S.: Deep unsuper-vised learning using nonequilibrium thermodynamics. In: International Confer-ence on Machine Learning. pp. 2256–2265. PMLR (2015) 84. Song, Y., Ermon, S.: Generative modeling by estimating gradients of the data distribution. Advances in Neural Information Processing Systems 32 (2019) 85. Song, Y., Sohl-Dickstein, J., Kingma, D.P., Kumar, A., Ermon, S., Poole, B.: Score-based generative modeling through stochastic differential equations. In: In-ternational Conference on Learning Representations (2020) 86. Uehara, M., Zhao, Y., Wang, C., Li, X., Regev, A., Levine, S., Biancalani, T.: Inference-time alignment in diffusion models with reward-guided generation: Tu-torial and review. arXiv preprint arXiv:2501.09685 (2025) 87. Vahdat, A., Kreis, K., Kautz, J.: Score-based generative modeling in latent space. Advances in Neural Information Processing Systems 34 , 11287–11302 (2021) 88. Vincent, P.: A connection between score matching and denoising autoencoders. Neural computation 23 (7), 1661–1674 (2011) 20 Y. Zhu et al. 89. Wallace, B., Dang, M., Rafailov, R., Zhou, L., Lou, A., Purushwalkam, S., Ermon, S., Xiong, C., Joty, S., Naik, N.: Diffusion model alignment using direct preference optimization. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 8228–8238 (2024) 90. Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.W., Chen, D., Yu, F., Zhao, H., Yang, J., et al.: Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 (2025) 91. Wang, F., Yu, Z.: Coefficients-preserving sampling for reinforcement learning with flow matching. arXiv preprint arXiv:2509.05952 (2025) 92. Wang, F.Y., Zhang, H., Gharbi, M., Li, H., Park, T.: Promptrl: Prompt matters in rl for flow-based image generation. arXiv preprint arXiv:2602.01382 (2026) 93. Wang, J., Liang, J., Liu, J., Liu, H., Liu, G., Zheng, J., Pang, W., Ma, A., Xie, Z., Wang, X., et al.: Grpo-guard: Mitigating implicit over-optimization in flow matching via regulated clipping. arXiv preprint arXiv:2510.22319 (2025) 94. Wang, X., Courant, R., Christie, M., Kalogeiton, V.: Akira: Augmentation kit on rays for optical video generation. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 2609–2619 (2025) 95. Wang, X., Dufour, N., Andreou, N., Cani, M.P., Abrevaya, V.F., Picard, D., Kalo-geiton, V.: Analysis of classifier-free guidance weight schedulers. arXiv preprint arXiv:2404.13040 (2024) 96. Wang, Y., Chen, X., Xu, X., Liu, Y., Zhao, H.: Gdro: Group-level reward post-training suitable for diffusion models. arXiv preprint arXiv:2601.02036 (2026) 97. Wu, X., Hao, Y., Sun, K., Chen, Y., Zhu, F., Zhao, R., Li, H.: Human preference score v2: A solid benchmark for evaluating human preferences of text-to-image synthesis. arXiv preprint arXiv:2306.09341 (2023) 98. Xie, J., Mao, W., Bai, Z., Zhang, D.J., Wang, W., Lin, K.Q., Gu, Y., Chen, Z., Yang, Z., Shou, M.Z.: Show-o: One single transformer to unify multimodal understanding and generation. arXiv preprint arXiv:2408.12528 (2024) 99. Xu, J., Liu, X., Wu, Y., Tong, Y., Li, Q., Ding, M., Tang, J., Dong, Y.: Imagere-ward: Learning and evaluating human preferences for text-to-image generation. Advances in Neural Information Processing Systems 36 , 15903–15935 (2023) 100. Xue, S., Ge, C., Zhang, S., Li, Y., Ma, Z.M.: Advantage weighted matching: Aligning rl with pretraining in diffusion models. arXiv preprint arXiv:2509.25050 (2025) 101. Xue, Z., Wu, J., Gao, Y., Kong, F., Zhu, L., Chen, M., Liu, Z., Liu, W., Guo, Q., Huang, W., et al.: Dancegrpo: Unleashing grpo on visual generation. arXiv preprint arXiv:2505.07818 (2025) 102. Ye, H., Zheng, K., Xu, J., Li, P., Chen, H., Han, J., Liu, S., Zhang, Q., Mao, H., Hao, Z., et al.: Data-regularized reinforcement learning for diffusion models at scale. arXiv preprint arXiv:2512.04332 (2025) 103. Yin, T., Gharbi, M., Zhang, R., Shechtman, E., Durand, F., Freeman, W.T., Park, T.: One-step diffusion with distribution matching distillation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6613–6623 (2024) 104. Yu, Q., Zhang, Z., Zhu, R., Yuan, Y., Zuo, X., Yue, Y., Dai, W., Fan, T., Liu, G., Liu, L., et al.: Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 (2025) 105. Yuan, H., Chen, Z., Ji, K., Gu, Q.: Self-play fine-tuning of diffusion models for text-to-image generation. Advances in Neural Information Processing Systems 37 ,73366–73398 (2024) Diffusion Reinforcement Learning via Centered Reward Distillation 21 106. Yue, Y., Chen, Z., Lu, R., Zhao, A., Wang, Z., Song, S., Huang, G.: Does rein-forcement learning really incentivize reasoning capacity in llms beyond the base model? arXiv preprint arXiv:2504.13837 (2025) 107. Zhang, K., Hong, Y., Bao, J., Jiang, H., Song, Y., Hong, D., Xiong, H.: Gvpo: Group variance policy optimization for large language model post-training. arXiv preprint arXiv:2504.19599 (2025) 108. Zhang, S., Zhang, Z., Dai, C., Duan, Y.: E-grpo: High entropy steps drive effective reinforcement learning for flow models. arXiv preprint arXiv:2601.00423 (2026) 109. Zheng, K., Chen, H., Ye, H., Wang, H., Zhang, Q., Jiang, K., Su, H., Ermon, S., Zhu, J., Liu, M.Y.: Diffusionnft: Online diffusion reinforcement with forward process. arXiv preprint arXiv:2509.16117 (2025) 110. Zhou, Y., Ling, P., Bu, J., Wang, Y., Zang, Y., Wang, J., Niu, L., Zhai, G.: Fine-grained grpo for precise preference alignment in flow models. arXiv preprint arXiv:2510.01982 (2025) 111. Zhu, X., Cheng, D., Zhang, D., Li, H., Zhang, K., Jiang, C., Sun, Y., Hua, E., Zuo, Y., Lv, X., et al.: Flowrl: Matching reward distributions for llm reasoning. arXiv preprint arXiv:2509.15207 (2025) 112. Zhu, Y., Guo, W., Choi, J., Molodyk, P., Yuan, B., Tao, M., Chen, Y.: Enhancing reasoning for diffusion llms via distribution matching policy optimization. arXiv preprint arXiv:2510.08233 (2025) 113. Ziegler, D.M., Stiennon, N., Wu, J., Brown, T.B., Radford, A., Amodei, D., Chris-tiano, P., Irving, G.: Fine-tuning language models from human preferences. arXiv preprint arXiv:1909.08593 (2019) Diffusion Reinforcement Learning via Centered Reward Distillation 1
+
+# Appendix for CRD 
+
+This appendix is organized as follows: 
+
+– Appendix A: Limitation and future work. 
+
+– Appendix B: More discussion on related works. 
+
+– Appendix C: Experimental details. 
+
+– Appendix D: Theoretical discussion on DiffusionNFT. 
+
+– Appendix E: Discussion of accumulated tilting. 
+
+– Appendix F: GVPO and Reward Distill as special cases of CRD. 
+
+– Appendix G: Ratio-based Reward Distillation and connection to InfoNCA. 
+
+– Appendix H: Additional experimental results and visualizations. 
+
+## A Limitations and Future Work 
+
+Despite strong empirical performance, this work has several limitations that sug-gest clear directions for future research. First , while CRD is motivated by a KL-regularized optimality view, a more rigorous theoretical analysis remains open in-cluding convergence and stability guarantees under the practical approximations such as ELBO-based log-ratio surrogates, moving references, and finite-sample within-prompt centering. Second , CRD is fundamentally constrained by the cov-erage and capabilities of the reference (pretrained) model, since training relies on self-generated samples: if the base model rarely produces trajectories that exhibit a desired behavior, the reward signal provides little leverage to bootstrap it, and continued self-training can further narrow diversity. A natural mitigation is to inject real data and explicit supervision into the training pipeline [10]. For exam-ple, mixing RL updates with Supervised Fine-Tuning (SFT) updates or adding a data-anchoring regularizer (data KL) to preserve coverage and diversity [102]. 
+
+Finally , although CRD is substantially more efficient than Flow-GRPO variants, it still incurs non-trivial computational overhead relative to standard fine-tuning as it requires full sampling during training. This cost becomes more pronounced for video diffusion models with long temporal trajectories and high-resolution frames [90]. Future work could reduce training costs through integration with faster samplers or diffusion distillation techniques to amortize generation costs while maintaining reward optimization performance. 
+
+## B More Discussion with Related Works 
+
+The objective of prior work GVPO [107] can be viewed as a special case of our CRD. GVPO focuses on the variance analysis of the loss gradient and is primarily designed for LLM post-training. While the two methods share con-ceptual similarities, CRD is derived from a different perspective and is tailored for image generation tasks with text-to-image diffusion models. Furthermore, we 2 Y. Zhu et al. 
+
+demonstrate that CRD provides a unified framework that subsumes both GVPO and prior two-sample reward distillation methods [27, 29, 62]. More recently, Ou et al . [67] introduce Variance Minimisation Policy Op-timisation (VMPO), which formulates diffusion alignment as minimising the variance of log importance weights rather than directly optimising a KL-based objective. Despite the surface-level similarity in the final objective, VMPO is more closely related to a diffusion-adapted variant of GVPO [107], accompa-nied by corresponding theoretical analysis. Compared to CRD, VMPO adopts a different empirical focus, and at the time of our submission, its scope remains narrower in terms of the experimental coverage that CRD provides. Finally, for diffusion RL, all forward-process-based methods address different aspects of a broader picture. Together, they form a complementary recipe that enables faster training while mitigating reward hacking. 
+
+## C Experimental Details 
+
+CRD is implemented on top of the DiffusionNFT codebase, with hyperparam-eters and model configurations listed in Tab. 3. Regarding training time, we compare with AWM and DiffusionNFT under the same training budget; how-ever, as both baselines suffer from reward hacking, we report their results at early checkpoints where this issue is less severe. Throughout the experiments, we adopt the adaptive weighting [103, 109] variant of the implicit model reward: 
+
+bRadap  
+
+> θ
+
+(c, x ) ≜ −β Et,ϵ 
+
+" d ∥vθ (xt, t | c) − vtarget ∥22
+
+sg( ∥vθ (xt, t | c) − vtarget ∥1) − d ∥vref (xt, t | c) − vtarget ∥22
+
+sg( ∥vref (xt, t | c) − vtarget ∥1)
+
+#
+
+,
+
+(13) where d is the dimension of x and sg( ·) denotes the stop-gradient operation. 
+
+## D DiffusionNFT Recovers the KL-Regularized Exponential-Tilt Optimum 
+
+Unlike other formulations that explicitly include the log density ratio between the current and reference models and rely on a diffusion ELBO estimator to approximate it (an approach that generalizes naturally to LLMs), DiffusionNFT is derived directly for diffusion and flow models without invoking the log den-sity ratio, making it a ‘native’ diffusion RL algorithm. Nevertheless, we show in this section that when the reference model is held fixed, DiffusionNFT is equiv-alent to optimizing the same exponentially tilted target distribution as standard KL-regularized reward maximization (see Eq. (1)), revealing a deep connection between DiffusionNFT and our method. We present the argument at the density level using the notation of the main text. Diffusion Reinforcement Learning via Centered Reward Distillation 3
+
+Table 3: Hyperparameters and configurations used for main experiment runs. Model architecture is the same as the pretrained model. Largest Experiments in this work are conducted with 4 NVIDIA H100 GPUs. i in ηold and ηinit denotes for Training (Optimizer) Steps .Reward Model OCR GenEval Multi Rewards                                                                               
+
+> LoRA α64 64 64
+> r32 32 32 Sampling Sampling CFG 1.0 1.0 1.0 Training Rollout Steps 10 10 15 Evaluation Sampling Steps 40 40 40 ODE Solver ‘dpmv2’ ‘dpmv2’ ‘dpmv2’ Forward-Process RL Generation Image Resolution 512 ×512 512 ×512 512 ×512 Group Size K24 24 24 Training (Optimizer) Steps 720 360 300 Num of Groups per Batch 48 48 48 Optimizer Step per Batch 211CRD
+> βold 1.0 1.0 0.1
+> βinit 0.1 0.08 0.01 CFG for Initial KL 4.5 4.5 4.5 Use Adaptive KL Strength ˆβinit True True True
+> ηold min(0 .25 + 0 .005 i, 0.999) min(0 .1 + 0 .001 i, 0.5) min(0 .5 + 0 .0025 i, 0.999)
+> ηinit min(max(0 .0075( i−75) ,0) ,0.999) min(0 .001 i, 0.5) min(0 .001 i, 0.5)
+> Optimization Optimizer AdamW AdamW AdamW
+> (β1, β 2)(0.9,0.999) (0.9,0.999) (0.9,0.999) Learning Rate 3e-4 3e-4 3e-4 Weight Decay 1e-4 1e-4 1e-4 EMA Ratio 0.9 0.9 0.9
+
+D.1 DiffusionNFT Score Update Implies an Exponential Tilt 
+
+DiffusionNFT is defined through a modification of the velocity (or score) field of the diffusion model relative to the old model. Let p∗(· | c) denote the population-optimal distribution induced by the optimal velocity field v∗ for a fixed old/reference model pold . Under the fixed Gaussian noising family, for two diffusion processes 
+
+A and B, the differences of velocity fields reduce to differences of score functions: 
+
+vA(xt, t | c) − vB (xt, t | c) = κ(t)
+
+
+
+∇xt log pAt (xt | c) − ∇ xt log pBt (xt | c)
+
+
+
+, (14) where κ(t) depends only on the noise schedule, and pAt (· | c) and pBt (· | c)
+
+denote the noised marginals at time t induced by diffusion process A and B,respectively. DiffusionNFT constructs a guidance direction of the form 
+
+∆(xt, c, t ) = α(xt, c ) v+(xt, t | c) − vold (xt, t | c), (15) where α(xt, c ) is an “optimality” score (in DiffusionNFT, an optimality poste-rior). Using the Bayes relation 
+
+p+
+
+t (xt | c) = pold 
+
+t (xt | c) α(xt, c )
+
+Ext∼pold  
+
+> t
+
+(·| c)[α(xt, c )] , (16) and applying Eq. (14), one obtains 
+
+v+(xt, t | c) − vold (xt, t | c) = κ(t)∇xt log α(xt, c ), (17) 4 Y. Zhu et al. 
+
+and therefore 
+
+∆(xt, c, t ) = κ(t) α(xt, c ) ∇xt log α(xt, c ) = κ(t) ∇xt α(xt, c ). (18) In the population optimum of DiffusionNFT (cf. the optimality condition in the main text), the optimal velocity satisfies (see Eq. (3) in DiffusionNFT) 
+
+v∗(xt, t | c) − vold (xt, t | c) = 2
+
+β ∆(xt, c, t ). (19) Combining Eq. (14), Eq. (18), and Eq. (19) yields a score-level characterization: 
+
+∇xt log p∗ 
+
+> t
+
+(xt | c)
+
+pold  
+
+> t
+
+(xt | c) = 2
+
+β ∇xt α(xt, c ). (20) Integrating both sides over xt gives the corresponding density-level optimum: 
+
+p∗ 
+
+> t
+
+(xt | c) = 1
+
+Zt(c) pold  
+
+> t
+
+(xt | c) exp 
+
+ 2
+
+β α(xt, c )
+
+
+
+, (21) where Zt(c) = R pold  
+
+> t
+
+(xt | c) exp 
+
+ 2 
+
+> β
+
+α(xt, c )
+
+
+
+dx t.
+
+D.2 Reduction to KL-regularized RL at t = 0 
+
+At the data level ( t = 0 ), we identify α(x0, c ) with the (scaled) reward used for training; in our notation we take 
+
+α(x0, c ) ≡ r(c, x 0). (22) Substituting Eq. (22) into Eq. (21) at t = 0 yields 
+
+p∗(x0 | c) ∝ pold (x0 | c) exp 
+
+ 2
+
+β r(c, x 0)
+
+
+
+. (23) Eq. (23) is exactly the KL-regularized exponential-tilt optimum Eq. (1), with reference pref = pold and an effective inverse-temperature λ = 2 /β . Therefore, 
+
+with a fixed reference model , DiffusionNFT is equivalent (at the population opti-mum) to KL-regularized reward maximization targeting the same exponentially tilted distribution (see Eqs. (1) and (23)). 
+
+Implication. This equivalence makes explicit that DiffusionNFT performs KL-regularized policy improvement relative to pold , and also clarifies why repeatedly updating the reference online can accumulate tilt (see Appendix E). 
+
+## E Online RL Leads to Reward Hacking via Accumulated Tilting 
+
+This section explains why running KL-regularized diffusion fine-tuning online 
+
+with a moving reference can induce accumulated tilting [45, 72], leading to in-creasingly peaked policies and potential reward hacking (see Figs. 3 and 5). Diffusion Reinforcement Learning via Centered Reward Distillation 5
+
+Online training with a moving reference. In practice, methods such as Diffusion-NFT can be run online: after optimizing the student model pθ for one epoch, the reference model is updated (e.g., by a hard copy of weights or by an Exponen-tial Moving Average (EMA)), and the next epoch optimizes against this updated reference. This induces a recursion over the reference distributions across epochs. 
+
+E.1 Idealized Recursion under Exact Per-epoch Optima 
+
+Let p(k)(x | c) denote the reference (“old”) model distribution at epoch k. We idealize the analysis by assuming that (i) the reward function r(c, x ) is fixed across epochs and (ii) at each epoch we reach the population optimum of the KL-regularized objective with inverse-temperature β > 0. Under this idealization, the population-optimal model at epoch k + 1 is the exponentially tilted version of the reference: 
+
+p(k+1) (x | c) = 1
+
+Z(k)(c) p(k)(x | c) exp 
+
+ 1
+
+β r(c, x )
+
+
+
+, (24) where Z(k)(c) = R p(k)(x | c) exp( r(c, x )/β ) dx is the normalizer. Eq. (24) is the same Boltzmann form as in Eq. (1), applied epoch-by-epoch with the updated reference. Unrolling the recursion yields 
+
+p(K)(x | c) ∝ p(0) (x | c) exp 
+
+ Kβ r(c, x )
+
+
+
+. (25) Thus, under exact per-epoch optimization and a fixed reward r(c, x ), online training compounds the reward tilt: the effective inverse temperature scales lin-early with the number of epochs K.
+
+E.2 Concentration and Reward Hacking 
+
+Eq. (25) implies that as K → ∞ , the distribution p(K)(· | c) concentrates its mass on the set of maximizers of the reward for that prompt. Let rmax (c) = sup x r(c, x )
+
+and define the maximizer set S(c) = {x : r(c, x ) = rmax (c)}. Under mild regularity assumptions (e.g., p(0) (· | c) assigns nonzero mass near S(c)), the sequence {p(K)(· | c)} becomes increasingly peaked on S(c). In practice, when 
+
+r(c, x ) is produced by an imperfect reward model, this progressive sharpening can amplify reward exploitation, i.e., reward hacking .
+
+E.3 Remarks on EMA References 
+
+If the reference model is updated via EMA in parameter space, the induced recursion over distributions is not exactly the multiplicative update in Eq. (24). Nevertheless, EMA typically interpolates between keeping the reference fixed and fully replacing it with the current student, effectively reducing the rate at which 6 Y. Zhu et al. 
+
+the tilt coefficient grows with epoch. The qualitative conclusion remains: without an explicit anchoring term to the initial reference, repeated online updates tend to accumulate reward tilt and can lead to overly concentrated policies that are more prone to reward hacking. 
+
+## F GVPO and Reward Distill as Special Cases 
+
+Extreme case:  K = 2  and  τ → 0 recovers reward distillation. Consider two samples  {x1, x 2} with rewards  r1 = r(c, x 1) and  r2 = r(c, x 2), and assume w.l.o.g. 
+
+r1 ≥ r2. As  τ → 0, the softmax becomes one-hot: 
+
+w1 → 1, w2 → 0.
+
+Hence  rw → r1 and  Rθ w → R1 where  Ri = Rθ (c, x i). The centered terms satisfy 
+
+∆1 
+
+> r,w
+
+→ 0, ∆2 
+
+> r,w
+
+→ r2 − r1, ∆1 
+
+> R,w
+
+→ 0, ∆2 
+
+> R,w
+
+→ R2 − R1.
+
+Plugging into Eq. (7) (uniformly averaging over  i ∈ { 1, 2}) yields 
+
+L(τ →0) distill _GVPO = Eρ(c,x 1,x 2)
+
+ 12
+
+
+
+(0 − 0) 2 +  (r2 − r1) − (R2 − R1)2
+
+= Eρ(c,x 1,x 2)
+
+ 12
+
+
+
+(r1 − r2) − (R1 − R2)
+
+2
+
+.
+
+This is exactly the reward distillation loss proposed in [27, 29, 62]. 
+
+Extreme case:  τ → ∞  recovers GVPO [107]. When  τ → ∞ , the softmax weights become uniform: 
+
+wi(c; τ ) = exp( r(c, x i)/τ )
+
+PKj=1 exp( r(c, x j )/τ ) −−−−→ 
+
+> τ→∞
+
+1
+
+K . (26) Therefore the weighted means reduce to simple averages, 
+
+rw(c, {xi}) −−−−→ 
+
+> τ→∞
+
+1
+
+K
+
+> K
+
+X
+
+> j=1
+
+r(c, x j ), Rθ w (c, {xi}) −−−−→ 
+
+> τ→∞
+
+1
+
+K
+
+> K
+
+X
+
+> j=1
+
+Rθ (c, x j ),
+
+(27) and consequently we show that GVPO is recovered as a special case of the proposed framework. 
+
+## G Ratio-based Reward Distillation and Connection to InfoNCA 
+
+Unlike in the method section in the main text where we use the difference-based relationship to construct the loss, we can also construct the loss using ratio-based relationship. Diffusion Reinforcement Learning via Centered Reward Distillation 7
+
+Eq. (1) implies that, up to the (unknown) partition function  Z(c), the expo-nentiated reward induces an energy-based density over responses proportional to a power of the optimal density ratio. Concretely, rewriting in terms of a probability ratio yields 
+
+exp( r(c, x )) 
+
+Z(c) =
+
+ pθ∗ (x | c)
+
+pref (x | c)
+
+β
+
+. (28) This suggests viewing both the true reward  r and the model-induced reward  rθ
+
+as defining energies over a finite candidate set. Given a context  c and a set of candidates  {xi}Ki=1 , introduce a generic nonnegative weighting scheme  {wi}Ki=1 
+
+(e.g., importance weights, sampling correction, or uniform weights) and define the corresponding normalized distributions 
+
+q∗(i | c, {x}) ≜ wi exp  r(c, x i)/β PKj=1 wj exp  r(c, x j )/β  ,qθ (i | c, {x}) ≜ wi exp  rθ (c, x i)/β PKj=1 wj exp  rθ (c, x j )/β  .
+
+(29) When  rθ = r (up to an additive constant independent of  x), these two distribu-tions coincide: 
+
+q∗(i | c, {x}) = qθ (i | c, {x}). (30) Crucially, the normalization in Eq. (29) removes dependence on the unknown 
+
+Z(c), converting reward matching into distribution matching over a finite set. 
+
+Divergence minimization view. A natural objective is therefore to fit  qθ to  q∗ by minimizing a divergence over sets: 
+
+Ldist (θ) = Eρ(c, {xi})
+
+h
+
+D q∗(· | c, {x}) ∥ qθ (· | c, {x})i
+
+, (31) where  D(·∥· ) can be chosen as forward KL, reverse KL, Jensen–Shannon, or other proper scoring rules. 
+
+Special case: uniform weights and forward KL recover InfoNCA. For the common choice  wi ≡ 1, both  q∗ and  qθ are categorical distributions on  {1, . . . , K } [66]. Taking  D to be the forward KL gives 
+
+LInfoNCA (θ) ≜ Eρ(c, {xi})
+
+h
+
+KL  q∗(· | c, {x}) ∥ qθ (· | c, {x})i
+
+= Eρ(c, {xi})
+
+h
+
+−
+
+> K
+
+X
+
+> i=1
+
+q∗(i | c, {x}) log qθ (i | c, {x})
+
+i
+
++ const.  (32) Thus, minimizing forward KL is equivalent to minimizing cross-entropy from the “teacher” distribution induced by  r to the “student” distribution induced by  rθ .8 Y. Zhu et al.       
+
+> (a) BoN results with SD3.5-M (b) BoN results with SD1.5
+> Fig. 6: BoN results. The orange curve is the BoN performance, and the blue curve is the average performance of the current Nsamples.
+
+## H Additional Results 
+
+H.1 Best-of-N (BoN) Performance of SD3.5-M and SD1.5 
+
+Best-of-N (BoN) is an inference-time scaling strategy that generates N indepen-dent samples and selects the one with the highest reward score [3, 23, 28, 33, 59]. We report the BoN performance of SD3.5-M and SD1.5 on GenEval in Fig. 6 as a reference. The orange curve reports BoN performance as N increases (log-linear for both SD3.5-M and SD1.5), while the blue curve shows the average reward score on the current N samples. The results suggest that RL fine-tuning can effectively amortize this inference-time cost, matching or exceeding BoN performance without requiring multiple samples at test-time. 
+
+H.2 Multi-reward Training 
+
+We also evaluate our method under a multi-reward training setting, where the model is jointly optimized using multiple rewards. Following prior work [15,109], we report PickScore , CLIPScore , and HPSv2.1 as task metrics and trained on the PickScore prompt dataset, alongside Aesthetics and ImageReward 
+
+(ImgRwd ) as preference scores, all evaluated on DrawBench [79] prompts. As shown in Tab. 4, CRD achieves competitive performance across all metrics com-pared to baselines such as Flow-GRPO [53] and Choi et al. [15]. Notably, ap-plying CFG sampling further improves CLIPScore , suggesting better text align-ment, although at a slight cost to aesthetic quality at higher CFG values. Cor-responding visualizations can be found in Fig. 14. 
+
+H.3 Adaptive KL Regularization on DiffusionNFT 
+
+In Fig. 7, we demonstrate that the proposed Adaptive KL Regularization also effectively mitigates reward hacking when applied to DiffusionNFT, preserving visual quality (fewer white backgrounds) while maintaining high reward scores. Diffusion Reinforcement Learning via Centered Reward Distillation 9
+
+Table 4: Performance on Human Preference benchmarks with Multi-reward Training. Task metrics, image quality and preference scores are all evaluated on 
+
+DrawBench [79] prompts. Baseline results are taken from Flow-GRPO [53] and [15], or reimplemented when unavailable in the original papers. Flow-GRPo is trained on 
+
+PickScore only. ImgRwd : ImageReward .
+
+Model Task Metric Preference Score 
+
+PickScore ↑ CLIPScore ↑ HPSv2.1 ↑ Aesthetics ↑ ImgRwd ↑
+
+SD3.5-M 22.34 27.99 0.279 5.39 0.87 
+
+Visual Text Rendering 
+
+Flow-GRPO [53] (w/o KL) 23.41 — — 6.15 1.24 Flow-GRPO [53] (w/ KL) 23.31 27.81 0.315 5.92 1.28 DiffusionNFT [109] 23.61 28.80 0.344 6.04 1.46 Choi et al . [15] 23.68 29.60 0.325 6.06 1.45 CRD 23.27 29.63 0.321 5.70 1.35 + CFG sampling=1.5 23.22 29.91 0.323 5.60 1.39 + CFG sampling=3.0 22.89 30.01 0.315 5.47 1.36 0
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 150
+
+Training Steps 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Eval Reward / GenEval
+> _init=0.0001, CFG=1.
+> _init=0.04, CFG=3. + adaptive KL
+> _init=0.04, CFG=3.
+
+(a) Evaluation GenEval score during train-ing, under different βinit and CFG values. 
+
+(b) Visual comparison, from top to bottom corre-sponding to the pink, blue and green curve in Fig. 7a. 
+
+Fig. 7: Effectiveness of adaptive initial KL on DiffusionNFT. 0    
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR
+> _init=0.0001, =1.0
+> _init=0.0001, =10.0
+> _init=0.0001, =100.0
+> _init=0.0001, =inf
+
+(a) βinit =0.0001; CFG=1.0 0     
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR
+> _init=0.05, =1.0
+> _init=0.05, =10.0
+> _init=0.05, =100.0
+> _init=0.05, =inf
+
+(b) βinit =0.05; CFG=3.0 
+
+Fig. 8: Ablations on different temperatures τ0
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 300
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR
+> K=2
+> K=4
+> K=6
+> K=12
+> K=24
+
+Fig. 9: Ablation on group size K with OCR reward 
+
+H.4 Additional Ablations 
+
+Temperature in CRD objective. As shown in Fig. 8, varying τ over a wide range (1.0, 10.0, 100.0, ∞) yields remarkably similar reward curves across both small and large βinit , suggesting that CRD is largely insensitive to the choice of τ . For simplicity, we use uniform weighting ( i.e . τ =∞) in all other experiments. 10 Y. Zhu et al. 0           
+
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 320
+> 360
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Eval Reward / OCR
+> x_0 weight
+> v weight
+> no weight
+> (a) Evaluation reward of the current model θ0
+> 80
+> 160
+> 240
+> 320
+> 360
+> Training Steps
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Sampling Model Reward / OCR
+> x_0 weight
+> v weight
+> no weight
+> (b) Reward value during train-ing of the sampling model psamp 0
+> 40
+> 80
+> 120
+> 160
+> 200
+> 240
+> 280
+> 320
+> 360
+> Training Steps
+> 0.05
+> 0.10
+> 0.15
+> Initial KL Divergence
+> x_0 weight
+> v weight
+> no weight
+> (c) Initial KL value during training
+
+Fig. 10: Ablations on adaptive weighting in ELBO estimator 
+
+Group size K. Fig. 9 shows a clear trend: larger group sizes lead to faster convergence and higher final rewards, with K=24 achieving near-perfect OCR scores by the end of training, as larger groups provide richer gradient signal per update. Notably, even K=2 yields meaningful learning, demonstrating the robustness of CRD under minimal sampling budgets. 
+
+Adaptive weighting in ELBO estimator. The original adaptive weighting [103, 109] is built on the x0 representation, which introduces an extra coefficient t
+
+compared to the estimator in Eq. (13): 
+
+bRadap _x0 
+
+> θ
+
+(c, x ) ≜ −β Et,ϵ 
+
+" td ∥vθ (xt, t | c) − vtarget ∥22
+
+sg( ∥vθ (xt, t | c) − vtarget ∥1) − td ∥vref (xt, t | c) − vtarget ∥22
+
+sg( ∥vref (xt, t | c) − vtarget ∥1)
+
+#
+
+(33) As shown in Fig. 10, our v-prediction adaptive weighting (Eq. (13)) achieves the highest evaluation reward and sampling model reward, while maintaining stable KL divergence throughout training. We therefore adopt our adaptive weighting scheme in all experiments. 
+
+H.5 Additional Qualitative Results 
+
+Visualization during training process We visualize generated samples at succes-sive checkpoints throughout training, starting from step 0 and sampled at every 200-step interval. As training progresses, the model learns to render text more accurately within the generated images without collapsing, reflecting steady im-provements in text fidelity over time. 
+
+Inference with higher CFG In Fig. 12, we compare samples generated with in-creasing CFG scales. While moderate CFG typically improves prompt adherence, we observe a consistent degradation in visual fidelity as CFG becomes large. For text-centric prompts, higher CFG often introduces typographic artifacts such as broken glyphs, and unstable letter shapes, even when the overall image appears more strongly aligned with the prompt. For compositional prompts, increasing CFG does not reliably improve prompt following and can even reduce it. For example, the four stop sign prompt frequently violates the counting constraint Diffusion Reinforcement Learning via Centered Reward Distillation 11  
+
+> −−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−−→
+> Training Progress
+> Fig. 11: We visualize samples generated with our method at successive checkpoints (from left to right) throughout training, starting from step 0 and sampled at every 200-step interval.
+
+at the higher CFG. Finally, we observe a style shift at large CFG values, where the cow in the last column gradually transitions from a photorealistic appear-ance to a more stylized, illustration-like rendering with simplified textures and exaggerated features. 
+
+Colored zebra. We further demonstrate the model’s ability to generate zebras in a variety of colors. The training dataset has a roughly uniform color distribution: 12 Y. Zhu et al. 
+
+> CFG=1.0 CFG=1.5 CFG=3.0 CFG=4.5
+
+Fig. 12: Visualization of generation with different inference CFG values. The left 5 columns are generated with prompts from GenEval and the right 5 columns are gener-ated with prompts from OCR testsets, respectively. 
+
+Fig. 13: Qualitative visual generations. Each row shows generations from a dif-ferent random seed for the same prompt. Prompts follow the template “a photo of a {} zebra”, where the placeholder is replaced by the colors red, blue, green, yellow, and purple from top to bottom. 
+
+Counter({‘white’: 1857, ‘purple’: 1817, ‘green’: 1797, ‘brown’: 1782, ‘black’: 1771, ‘orange’: 1749, ‘pink’: 1742, ‘blue’: 1722, ‘red’: 1715, ‘yellow’: 1696}). 
+
+Qualitative generations with simple prompts are shown in Fig. 13. We highlight three observations: ( 1 ) the model produces diverse and visually distinct outputs across colors; ( 2 ) despite the balanced color distribution in training, the model struggles to generate convincing blue and green zebras (failure generation); and (3 ) in most cases, the black stripes are replaced by the target color, with only rare cases where the zebra retains its black stripes alongside the assigned color. Diffusion Reinforcement Learning via Centered Reward Distillation 13 
+
+Fig. 14: Qualitative visual generations from our model trained with multiple rewards. The text prompts are selected from the DrawBench .

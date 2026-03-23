@@ -1,0 +1,1048 @@
+Title: MBD: A Model-Based Debiasing Framework Across User, Content, and Model Dimensions
+
+URL Source: https://arxiv.org/pdf/2603.14422v1
+
+Published Time: Tue, 17 Mar 2026 05:43:01 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# MBD: A Model-Based Debiasing Framework Across User, Content, and Model Dimensions 
+
+Yuantong Li 1,†, Lei Yuan 1,†, Zhihao Zheng 1, Weimiao Wu 1, Songbin Liu 1, Jeong Min Lee 1, Ali Selman Aydin 1, Shaofeng Deng 1, Junbo Chen 1, Xinyi Zhang 1, Hongjing Xia 1, Sam Fieldman 1, Matthew Kosko 1,
+
+Wei Fu 1, Du Zhang 1, Peiyu Yang 1, Albert Jin Chung 1, Xianlei Qiu 1, Miao Yu 1, Zhongwei Teng 1, Hao Chen 1,
+
+Sunny Baek 1, Hui Tang 1, Yang Lv 1, Renze Wang 1, Qifan Wang 1, Zhan Li 1, Tiantian Xu 1, Peng Wu 1, Ji Liu 11Meta AI 
+
+> †
+
+Equal Contribution 
+
+Modern recommendation systems rank candidates by aggregating multiple behavioral signals through a value model. However, many commonly used signals are inherently affected by heterogeneous biases. For example, watch time naturally favors long-form content, loop rate favors short-form content, and comment probability favors videos over images. Such biases introduce two critical issues: (1) value model scores may be systematically misaligned with users’ relative preferences — for instance, a seemingly low absolute like probability may represent exceptionally strong interest for a user who rarely engages; and (2) changes in value modeling rules can trigger abrupt and undesirable ecosystem shifts. In this work, we ask a fundamental question: can biased behavioral signals be systematically transformed into unbiased signals, under a user-defined notion of “unbiasedness”, that are both personalized and adaptive? We propose a general, model-based debiasing (MBD) framework that addresses this challenge by augmenting it with distributional modeling. By conditioning on a flexible subset of features (partial feature set), we explicitly estimate the contextual mean and variance of the engagement distribution for arbitrary cohorts (e.g., specific video lengths or user regions) directly alongside the main prediction. This integration allows the framework to convert biased raw signals into unbiased representations, enabling the construction of higher-level, calibrated signals (such as percentiles or z-scores) suitable for the value model. Importantly, the definition of unbiasedness is flexible and controllable, allowing the system to adapt to different personalization objectives and modeling preferences. Crucially, this is implemented as a lightweight, built-in branch of the existing multi-task multi-label (MTML) ranking model, requiring no separate serving infrastructure. We demonstrate the effectiveness of this framework through large-scale deployment on two billion-user-level short-video applications. Empirical results from rigorous online A/B testing show that MBD significantly improves long-term retention and engagement metrics (e.g., Time Spent, Sessions) by successfully decoupling preference signals from intrinsic ecosystem biases.  
+
+> Date:
+
+March 17, 2026  
+
+> Correspondence:
+
+yuantongli@meta.com 
+
+## 1 Introduction 
+
+Recommendation systems have become fundamental components of modern digital platforms, particularly with the exponential growth of short-form video content on platforms such as TikTok, Instagram Reels, Facebook Reels, and YouTube Shorts, managing content distribution to billions of daily active users (Davidson et al., 2010; Wang et al., 2017; Liu et al., 2019; Wang et al., 2021a; Quan et al., 2023; Chen et al., 2023b; Jing et al., 2024; Yang et al., 2025). Modern recommendation systems serve users by aggregating a diverse collection of behavioral signals (e.g., likes, shares, watch time). However, these raw signals are intrinsically confounded by heterogeneous biases (Schnabel et al., 2016; Wei et al., 2021; Chen et al., 2023b; Gao et al., 2024). Specifically, these biases arise from three primary sources: (1) Item bias, where physical properties like video duration mechanically inflate engagement metrics regardless of content quality; (2) User bias, where some users are naturally more active or patient than others, and demographic factors like location and language often drive users to follow trends, causing popularity bias; and (3) Model bias, where the ranking system itself exacerbates 1
+
+> arXiv:2603.14422v1 [cs.LG] 15 Mar 2026
+
+these initial biases through feedback loops, progressively narrowing the ecosystem to favor system-selected winners over genuine user interests. To mitigate these issues, the industry has adopted various debiasing strategies, ranging from statistical approaches like inverse propensity weighting and statistical bucketing to advanced causal inference methods (Wang et al., 2021b; Chen et al., 2023a). Recent advances in watch time prediction have introduced sophisticated debiasing techniques. Weighted logistic regression (Covington et al., 2016) pioneered duration-aware prediction for YouTube. D2Q (Zhan et al., 2022) mitigates duration bias through backdoor adjustments and quantile modeling under different duration groups. D2Co (Zhao et al., 2023) addresses both duration bias and noisy watching behavior, while DVR (Zheng et al., 2022) introduces the watch time gain metric with adversarial learning for unbiased preference estimation. Despite their effectiveness in specific scenarios, all these methods lack a unified mechanism to estimate the contextual baseline distribution. While effective in specific scenarios, these methods share a fundamental limitation: they operate primarily within a point-wise estimation paradigm. Standard ranking models aim to estimate the absolute expectation of engagement (e.g., “this video will get 45 seconds of watch time”). However, a single point estimate lacks the contextual information necessary for fair comparison. For instance, 45 seconds of watch time indicates high interest for a 60-second clip but low interest for a 10-minute video. Traditional methods fail to quantify the contextual distribution of the baseline behavior. Without modeling the underlying uncertainty within a specific context (e.g., “what is the normal watch time for this user on videos of this length?”), point-wise predictions cannot distinguish between genuine user interest and bias-driven inflation. In this work, we propose model-based debiasing (MBD), a generalized framework that addresses these limitations by augmenting the traditional point-wise ranking paradigm with distribution-wise characterization. The core intuition of MBD is to explicitly model the statistical properties of “normal” behavior for any given context. By defining a flexible partial feature set (e.g., {user profile, video length}), the framework simultaneously estimates the contextual mean ( μ) and variance ( σ2) of the engagement distribution directly within the ranking architecture. This allows us to systematically transform biased, absolute predictions into calibrated, relative signals (such as z-scores or percentiles). For example, instead of predicting a raw “45 seconds”, MBD allows the system to interpret the signal as “the 85th percentile of performance for this specific video length” (as detailed in Section 4.2). Crucially, MBD is implemented as a lightweight, built-in branch of the existing multi-task multi-label model, estimating these statistics via a dual-prediction framework without requiring separate serving infrastructure or offline statistical tables. The contributions of this work are summarized as follows: 
+
+• Generalized Debiasing Framework : We introduce a theoretical framework that shifts from point-wise error minimization to distributional bias mitigation. By utilizing partial feature sets, MBD provides a unified solution for diverse bias types, including video length, user activity skew, and content cold-start. 
+
+• Distribution-Free Learning Algorithm : We propose the decoupled method of moment learning algorithm to estimate distributional statistics, offering distribution-free property. 
+
+• Efficient Built-in Architecture : We design a dual-prediction model architecture that integrates distribution modeling as an additional task sharing part of the main model’s feature representation. This design incurs negligible engineering overhead and allows for real-time, context-aware debiasing. 
+
+• Industrial Scale Impact : We demonstrate the effectiveness of MBD through large-scale deployment on a platform serving billions of users. Online A/B testing confirms significant gains in long-term engagement, including a cumulative increase of over +0.5% in Time Spent and +0.05% in Sessions across different product surfaces, validating that debiased signals effectively drive sustainable ecosystem growth. 
+
+## 2 Preliminary: Existing Systems 
+
+This section introduces the typical recommendation system and how it may handle biased signals. 2User Full Features Item Full Features     
+
+> MTML
+> Task Arch (Watch Time)
+> Task Arch (Like)
+> Watch Time Label
+> Like Label
+> MBD Shared Arch
+> User Full Features
+> Item Partial Features
+> Task Arch (Watch Time) Task Arch (Like)
+> Loss (WT) Loss (Like)
+> Task Arch (VC)
+> VC Label
+> Task Arch (VC)
+> Loss (VC)
+> Indentity
+> MTML Model MBD Model
+> logit logit
+> ... ...
+> Partial Feature Set
+
+Figure 1 The MBD framework augments the MTML model with an additional branch that estimates contextual distribution statistics (μ, σ 2) through a partial feature set. 
+
+Let U denote the user set and V denote the item set. When there is an interaction between user u and item v,the platform observes a ground-truth label yu,v . Depending on the specific ranking task, this target variable may be binary (e.g., y ∈ { 0, 1} for likes or skips) or continuous (e.g., y ∈ R+ for watch time). We define a feature mapping function g(u, v ) that extracts a dense feature representation h ∈ Rd, based on the user profile attributes, item content features (e.g., video duration, topic), and historical interactions. Additionally, let 
+
+x = {u, v } denote the full features of the user and item. 
+
+2.1 Signal bias widely exist in typical recommendation systems 
+
+The standard approach employs a multi-task multi-label (MTML) ranking architecture. The primary objective of this formulation is to accurately estimate contextual expectation of a target variable Yu,v given features x:
+
+p(x) = E[Yu,v | x] (1) For binary tasks, this corresponds to the probability of engagement P (y = 1 |x), while for regression tasks, it represents the expected magnitude (e.g., predicted watch time in seconds). 
+
+Value Model (VM). To generate the final recommendation list, the system merges T tasks’ predictions into one final score. This is achieved through a VM, which aggregates the heterogeneous vector of point-wise predictions ⃗p (x) = ˆy = [ ˆy1, . . . , ˆyT ]⊤ into one score Sfinal . The most prevalent industrial formulation is a linear weighted combination of transformed signals Sfinal = PTt=1 wt · ˆyt, where wt represents the hyperparameter weight for the t-th task, determined by business objectives. 
+
+Inherent Biases in Signal Aggregation. While point-wise estimates successfully minimize prediction error, the subsequent linear aggregation introduces significant systematic bias by treating the raw engagement ˆyt as a direct proxy for user preference intensity. In reality, these signals possess heterogeneous functionality in business and are inherently confounded by content attributes rather than solely reflecting user interest. For instance, ˆywatch time is naturally higher for longer videos regardless of actual satisfaction, while loop rates favor shorter content. Consequently, the linear sum Sfinal inadvertently amplifies intrinsic biases, aligning the 3final ranking with ecosystem artifacts rather than the user’s true relative preference efficiency. Here we list several examples of bias: 
+
+• Format Bias (video vs. photo): Watch time naturally favors video content over static photos regardless of user satisfaction. A 5s view on a photo might indicate high interest, whereas on a video it may be not interested, which is very common in feed scenario. 
+
+• Duration Bias (loop rate): The probability of looping ( ploop ) naturally favors short videos over long videos. Directly comparing raw ploop scores unfairly suppresses longer, high-quality videos. 
+
+• User Threshold Bias: Different users possess different baseline tendencies for engagement (e.g., “fast scrollers” vs. “patient watchers”), making absolute predictions incomparable across users. 
+
+2.2 Naive Debiasing Approaches via Bucketized Counting 
+
+Recognizing the systemic risks and impacts that biased signals introduce into recommendation systems, a natural and straightforward approach is to apply bucketized counting, although this approach has not been explicitly discussed in prior literature, to the best of our knowledge. This method aims to construct a relative signal by normalizing predictions against discrete group averages derived from historical data. Taking watch time duration bias as an example, the process involves three steps: 1. Bucketing : Items are grouped into discrete buckets based on the bias attribute (e.g., video duration intervals: 0-5s, 5-10s, 10-15s). 2. Counting : Compute the average historical engagement mean μk and variance σk for all items falling into bucket k.3. Correction : The original point-wise prediction is adjusted by mean or mean-variance of this group’s baseline: 
+
+ˆyunbiased = ˆ y(u, v ) − μk, or ˆy(u, v ) − μk
+
+σk
+
+(2) 
+
+Limitations. While statistical bucketing method provides a form of debiasing, it suffers from severe structural limitations when applied to large-scale personalized recommendation system. We categorize these failures into four dimensions: 
+
+• Discretization Error and Intra-Bucket Bias: Bucketing approximates continuous bias curves with discrete step functions. This approach fails to capture bias within a specific bucket. For example, in a “5s-10s” duration bucket, a 5.1s video and a 9.9s video are treated as having the same baseline, despite the 9.9s video naturally accruing significantly higher watch time. This residual bias continues to distort ranking within the cohort. 
+
+• The Curse of Dimensionality (Scalability): Statistical bucketing methods rely on pre-computed statistical tables, which do not scale to high-dimensional contexts. To debias a signal based on multiple confounders simultaneously—such as user region × video type × duration — the system would need to maintain a combinatorial explosion of buckets. This becomes computationally prohibitive and impossible in real scenario. 
+
+• Data Sparsity and Generalization: Statistical methods require sufficient historical data to establish a stable baseline ( μk). Consequently, they fail for cold start scenarios (infrequent users or fresh content) where the bucket is empty or sparse. It cannot construct a reliable signal for rare or unseen cross-combinations. 
+
+• Temporal Staleness and Infrastructure Overhead: Finally, heuristic baselines suffer from a critical lag. The baseline statistic μk is determined by a historical snapshot — typically aggregated from offline logs. This approach relies on the assumption that the engagement distribution is stationary. However, live ecosystems exhibit distributional drift due to trending topics, time-of-day effects. As illustrated in Figure 2, global median watch time demonstrates a non-trivial downtrend over a period. Consequently, a baseline μk
+
+calculated from a “past snapshot” becomes systematically misaligned with the current inference - time distribution, leading to persistent bias (e.g., over-demoting content when the global average naturally drops). While real-time streaming aggregation could theoretically mitigate this, it incurs prohibitive engineering complexity and synchronization latency. 4Date P50         
+
+> 5.0 5.5 6.0 6.5 7.0
+> 1/4/2026 1/11/2026 1/18/2026 1/25/2026 90-180s 10-30mins 60-90s 30-60s 5-10min Figure 2
+
+Transformed watch time ( P50 ) trend over one month bucketed by video length. 
+
+## 3 MBD: Model-Based Debiasing Framework 
+
+To systematically address these structural deficiencies, we propose MBD, a generalized framework designed to overcome the limitations of the typical recommendation system. Unlike bucketized counting — which is plagued by the curse of dimensionality, intra-bucket bias, data sparsity, and temporal staleness — MBD provides a unified solution by creating a partial feature set to model. This allows the system designer to specify arbitrary bias dimensions to debias existing signals. This framework includes three key components: 1) Specify the bias feature set - a subset of features (we want to remove bias from them, e.g., video length, user nation); 2) Learning debiased mean and variance over the specified bias set admitting maximal efficiency and reliability by adding a cheap computational module onto the regular ranking model but with zero impact to ranking model; 3) Construct the unbiased signals from bias mean and bias variance together original biased signal. 
+
+3.1 Specifying Bias 
+
+Definition 3.1 (Bias Feature Set ). Let x denote the full feature set encompassing all user and item attributes. We define a partial feature set x′ as an arbitrary subset representing the specific bias factors we wish to control for. This formulation offers great flexibility. We can choose arbitrary set of features as the debiasing target. For example, x′ can be configured to represent: 
+
+• Duration Debiasing: x′ = {ufull , v length }. Here, the baseline is conditioned on the user’s full profile and the video length, allowing comparisons relative to the user’s typical watch time for that duration. 
+
+• Content Cold-Start Debiasing: x′ = {ufull , v views }. The baseline is conditioned on the item’s exposure level (e.g., the number of views on new videos), enabling fairness adjustments for new content lacking historical interaction data. 
+
+• Regional Debiasing: x′ = {uregion , vfull }. The baseline is conditioned on the user’s geographic cohort (e.g., US/CA vs. ROW) and item attributes, accounting for regional variations in engagement volatility. 53.2 Contextual Mean and Variance Estimates on Bias Set via Supervised Learning 
+
+The essential problem is to estimate contextual mean and variance over the bias feature set x′ for specific task, 
+
+E[yu,v | x′]
+
+Var [yu,v | x′] (3) The mean estimate can be easily formulated into a supervised learning problem like Eq.(1). 
+
+min  
+
+> μ
+
+Lmean (μ) = [ sg [p(x)] − μ(x′)] 2 (4) and the solution is E[sg [p(x)] | x′].In comparison, the estimate of contextual variance is not straightforward because the supervised signals do not exist unlike the contextual mean prediction. To make contextual variance learnable under the supervised learning framework, we are inspired by the relation among the variance, the 1st order moment, and the 2nd order moment Var (X) = E[( X − E[X]) 2] (5) where X is a random variable. Then we formulate this contextual variance estimate problem into a supervised learning problem by the following loss function 
+
+min  
+
+> σ2
+
+Lvar (σ2) = ∥σ2(x′) − sg [p(x) − sg [μ(x′)]] 2 ∥2 (6) where sg [·] denotes the stop-gradient operator. It is worth noting that 1) this approach is consistent with the bucketized counting approach when the bucket is granular, so MBD can be considered to be a generation of the naive bucketized counting approach; 2) this estimate framework does not assume any underlying distribution.  
+
+> Efficiency and Reliability.
+
+These two supervised loss terms for contextual mean and variance estimates can be added to the main ranking loss as the additional ones, maximally reusing the intermediate embedding of the main ranking model if we can share user or item embedddings. Thus, the overall increased computational cost is typically below 5%. To avoid the unanticipated impact to the main ranking model, the components for contextual mean and variance estimates only update their own parameters by detaching the gradient backpropagation from the original module in the ranking model.  
+
+> Debiasing Ranking Model.
+
+The contextual mean and variance signals are going to be used together with the original predictive signal, for example, in the way in Eq. (2) . In the real scenario, the original predictive signal could be significantly deviated from the contextual mean and variance due to unanticipated stability issue or calibration issue. To avoid them, a more robust choice of labels in Eq. (4) and Eq. (6) are the prediction by the ranking model rather than the ground truth labels. The overall model architecture can be found in Figure 1. 
+
+3.3 Unbiased Signal Construction from Contextual Mean and Variance 
+
+The contextual mean and variance estimates on the predefined bias set x′ allow us to construct unbiased signals together the original (biased) signal. Per application scenarios, there are various approaches to construct the unbiased counterpart from the biased signal. In the following, we provide a few examples. All of the admits a common principle - removing the bias components (defined by contextual mean and variance) from the original bias signal. The most common construction is the relative preference score (RPS) similar to Eq. (2) ,defined as: RPS = p(x) − μ(x′)
+
+σ(x′) (7) This transformation effectively converts a raw prediction (e.g., “45 seconds”) into a standardized metric (e.g., “85th percentile performance” if compound with Gaussian CDF Φ( ·)), enabling fair comparison across heterogeneous content types. 6Table 1 Contextual distribution estimation quality measured across accuracy (bias), distributional fit (NLL), and alignment (correlation).    
+
+> Task Bias NLL Correlation (
+
+ρ)
+
+(p, y ) (μMBD , p ) σcluster σMBD (p, μ MBD ) (σMBD , σ cluster ) 
+
+> Watch Time
+
+0.0014 -0.0060 0.989 0.442 0.815 0.690  
+
+> Plike (Logit)
+
+0.0018 -0.0026 5.863 1.752 0.863 0.625 
+
+Here we provide three examples to illustrate how to integrate the RPS into the VM system.  
+
+> 1. Additive Boosting (High-Confidence Promotion):
+
+This strategy is designed to reward items that perform above their cohort baseline. We adopt a hinge-based boosting formulation to ensure only boosting candidates that exhibit “high confidence” while leaving average items untouched. 
+
+Sfinal = Sfinal + w · max(0 , RPS − τhigh ) (8) where τhigh is a statistical significance threshold (typically τ = μ + ασ , with α ∈ [1 .0, 3.0] ). This effectively targets top-tier content for promotion without introducing noise from the dense central distribution.  
+
+> 2. Hard Filtering (Low-Confidence Suppression):
+
+To safeguard user experience against low-quality content (e.g., clickbait), we employ an indicator-based gating mechanism. This strategy suppresses candidates that fall significantly below their cohort expectations. 
+
+Sfinal = Sfinal · I(RPS ≥ τlow ) (9) where I(·) is the indicator function and τlow represents a minimum quality floor (e.g., τ = μ − βσ ).  
+
+> 3. Multiplicative Reweighting (Soft Calibration):
+
+For scenarios requiring continuous calibration rather than binary thresholds, we utilize a ratio-based or sigmoidal approach. This acts as a “soft reweighting” mechanism that adjusts the score magnitude relative to the item’s baseline performance. 
+
+Sfinal = Sfinal · qscale (RPS ) (10) where qscale is typically a normalized scaling function (e.g., (p/μ )α or Sigmoid (z)). This strategy preserves the relative order of candidates but expands or compresses the score distribution to reflect the true relative preference efficiency across different cohorts. 
+
+## 4 Experiments 
+
+In this section, we rigorously evaluate the effectiveness of MBD across both foundational and large-scale industrial settings. We begin with comprehensive offline analyses to verify that MBD accurately estimates contextual distributions. Building on this, we present results from three challenging real-world scenarios, demonstrating how MBD’s principled debiasing approach leads to measurable improvements in user experience and ecosystem health. 
+
+4.1 Offline Evaluation 
+
+In the offline evaluation, we begin by assessing the statistical fidelity of the learned contextual distribution, μ
+
+and σ2. We then demonstrate that leveraging these contextual distributions enables the proposed relative preference score (RPS) to effectively mitigate biases present in common ranking signals.  
+
+> 4.1.1 Contextual Distribution Estimation Quality
+
+We evaluate the quality of MBD’s distribution estimation across three dimensions: accuracy, distributional fit, and alignment in Table 1. 7a. Accuracy (Bias) : We present both the ranking model bias ( y − p(x)) and MBD module bias (p(x) − μ) as a measure of systematic drift. In Table 1, we find that the MBD bias is close to zero (-0.006 & -0.0026) both in regression task and binary classification task, which confirms μ acts as an unbiased estimator of the ranking prediction p, compared with the baseline ranking bias (0.0014 & 0.0018) separately. 
+
+> b. Distributional Fit
+
+: We employ the negative log-likelihood (NLL) (Nix and Weigend, 1994; Du et al., 2021) to measure the goodness-of-fit between the ground truth data and the learned distribution. A lower NLL indicates that μ and σ better capture the underlying uncertainty. As a baseline for variance estimation, we construct σcluster by computing the empirical variance within coarse clusters of ground truth data (e.g., the variance of watch time within different length buckets). Based on the offline analysis in Figure 4 for watch time and like task, we assume a Gaussian distribution to compute the NLL as follows: 
+
+N LL = − log N (p|μ, σ 2) = (p − μ)2
+
+2σ2 + 12 log σ2
+
+As shown in Table 1, MBD yields the lowest NLL, reducing watch time’s NLL by more than 50% compared to cluster baselines (0.442 vs. 0.989). The improvement in like task (1.752 vs. 5.863) also validates the MBD’s ability to model complex heteroscedasticity.  
+
+> c. Alignment
+
+: We utilize the Pearson correlation coefficient ( ρ) to assess the alignment between MBD’s estimates and the distributional trends observed in the ground truth data: 
+
+• Trend Alignment ( ρ(p, μ MBD )): This metric evaluates the consistency of relative trends, verifying that μ
+
+accurately captures the directional shifts of the ranking model. In both the like and watch time tasks, a correlation greater than 0.81 demonstrates strong alignment. 
+
+• Uncertainty Alignment ( ρ(σMBD , σ cluster )): This metric measures the agreement between the learned variance and the empirical trend of uncertainty in the ground truth data. A high correlation indicates that, for data clusters exhibiting high empirical uncertainty, the learned variance is also elevated. The observed variance correlations of 0.690 and 0.625 with the empirical baseline ( σcluster ) confirm that MBD effectively identifies uncertainty in segments with intrinsically high variance.    
+
+> Table 2 Correlation analysis between signals and video duration.
+> Task: Watch Time (Positive Bias) Task: Loop Rate (Negative Bias)
+> Method Correlation (
+
+ρ) Method Correlation ( ρ)
+
+y 0.350 y -0.13 
+
+Log( y) 0.222 
+
+p(x) 0.514 p(x) -0.13 
+
+VVP95 -0.043 
+
+VVP95 × NormTS -0.228     
+
+> RPS 0.003 RPS -0.04
+> 4.1.2 Bias Mitigation
+
+A core objective of MBD is to mitigate the correlation between the ranking score and bias attributes (e.g., duration). To evaluate the effectiveness of MBD, we compute the correlation coefficient between the relative preference score (RPS) and duration. A correlation near zero indicates successful debiasing, as the signal becomes independent of the bias attribute. We conduct this analysis using two widely used signals—watch time (inherently positively correlated with duration) and loop rate (inherently negatively correlated)—as shown in Table 2. 
+
+> Mitigating Positive Duration Bias in Watch Time
+
+. The watch time label exhibits a strong positive correlation with duration ( ρ = 0 .350 ). Applying a log transformation to the label ( log (y)) reduces this correlation to 
+
+0.222 , but notable bias remains. When using log( y) as the prediction target, the ranking model’s prediction 
+
+p(x) actually increases the correlation to 0.514 , indicating that the model amplifies duration bias. 8We also report two heuristic production baselines: VVP95 ( ρ = −0.043 ) and VVP95 × NTS ( ρ = −0.228 )1.However, these negative correlations suggest over-correction, where the system inadvertently penalizes longer videos, resulting in an “inverse” bias. In contrast, MBD maintains stability ( ρ = 0 .003 ), avoiding both under-and over-correction. 
+
+Mitigating Negative Duration Bias in Loop Rate . The loop rate label is inherently biased against longer videos (ρ = −0.13 ), and the ranking model’s prediction p(x) does not alleviate this bias ( ρ = −0.13 ). MBD effectively mitigates this issue, reducing the negative correlation to −0.04 .These results demonstrate that MBD generalizes across different bias directions and effectively mitigates both positive and negative duration biases. 
+
+4.2 Applications 
+
+In the previous offline experiments, we demonstrated that MBD accurately learns contextual distributions and enables the construction of ranking scores that effectively mitigate inherent biases. In the following case studies, we further show that these bias mitigation capabilities translate into tangible improvements in real-world user experience and overall product health.  
+
+> Table 3
+
+Online A/B testing results across case studies. Note: A boldface means a statistically significant result (p-value< 5%).                                         
+
+> Application Task Metric Lift (%) Session View Watch Time Share Like Breakout
+> a. Media Length Debias Watch Time 0.002% 0.003% 0.198 %0.44% 0.173 %-b. Content Format Debias Long Time Spent 0.006% -0.011% 0.058 %-0.071% -0.119 %-Like -0.001% 0.040 %-0.018% 0.035% 0.421 %-Click 0.018 %0.023% 0.034 %-0.040% 0.007% -c. Content Cold Start Debias Watch Time 0.011 %0.135 %0.072% 0.049% 0.823% 0.190 %
+> Figure 3
+
+User-level transformed time spent mean and variance distribution stratified by stories length. 
+
+4.2.1 Case 1 - Media Length Debias 
+
+In this product application, the ranking system needs to address a persistent bias that disadvantaged longer, multi-media stories, thereby limiting fair competition among diverse content types. Analysis of the contextual                    
+
+> 11. Video View Percentile (Naive Bucketing): Statistical baselines that bucket videos by duration and calculate the 90th or 95th percentile threshold offline (VVP90 or VVP95). Scores are normalized by checking if a user’s watch time exceeds these static thresholds. 2. NTS ×VVP95: The normalized time spent (NTS) compensates for user-side bias with a normalized weight. NTS = sigmoid (c×(PredTS ×(1 −pskip )−Content 7 days Avg TS )) , where cis a hyperparameter, pskip is the model-predicted personalized skip rate, and content 7 days Avg TS is the content’s 7-day average watch time.
+
+9Table 4 Engagement efficiency analysis by video length buckets. The table illustrates the traffic redistribution driven by the MBD model. Efficiency Ratio ( %∆ WT  
+
+> %∆ VV
+
+) quantifies the quality of the shift: a ratio < 100% during pruning (↘) indicates the removal of low-value views, while a ratio > 100% during promotion ( ↗) indicates the surfacing of high-retention content.                                                                                   
+
+> Video Length Short-Form (0s - 30s) Mid-Length (30s - 3m) Long-Form (3m - 30m) Ultra-Long (30m+) Bucket 0∼5s 5∼10s 10 ∼15s 15 ∼30s 30 ∼45s 45 ∼60s 60 ∼90s 90 ∼180s 3∼5m 5∼10m 10 ∼30m 30 ∼60m 60m+
+> Watch Time Shift -0.64% -0.75% -0.62% -0.19% 0.43% 0.60% 0.77% 0.85% 1.05% 0.73% 0.31% 0.53% -0.65%
+> Video Views Shift -0.83% -0.80% -0.77% -0.40% 0.12% 0.27% 0.39% 0.41% 0.55% 0.13% -0.23% 0.25% -0.46%
+> Efficiency Ratio 77% 94% 81% 47% 350% 222% 198% 209% 191% 562% -135% >200% 143% Traffic Trend ↘↘↘↘↗↗↗↗↗↗↘↗↘
+> Impact Pruned Pruned Pruned Pruned Promoted Promoted Promoted Promoted Promoted Promoted Optimized Promoted Pruned
+
+mean and variance of transformed watch time, stratified by media length (see Figure 3), reveals a strong positive correlation: as story length increases, both the expected watch time and the predictive uncertainty also increase substantially. 
+
+• Bias Correction & Impression Shift: Previously, time-spent labels systematically penalized multi-media stories. With the introduction of MBD, this bias was corrected, leading to a notable shift in the ecosystem: impressions decreased for single-media stories ( −0.181% ) and increased for multi-media stories ( +0 .58% ). 
+
+• Removal of Heuristic Constraints: The debiasing correction resulted in simultaneous gains in both consumption (+0 .198% watch time) and interaction ( +0 .173% likes). This concurrent lift demonstrates that, unlike video ranking, story consumption does not inherently involve a trade-off; instead, fair ranking enhances overall relevance by surfacing richer, multi-media content that was previously suppressed by static heuristics. 
+
+4.2.2 Case 2 - Content Format Debias 
+
+On certain product surfaces, it is essential for the ranking system to achieve a uniquely diverse mix of media types (e.g., photos, videos of varying durations) and to balance content sources (Connected vs. Recommended). Ranking signals must overcome inherent imbalances across formats and account for the diversity in viewer-author relationships. Beyond previously discussed attributes such as duration, raw predictions often fail to capture the heterogeneous semantics of user interactions—particularly the viewer’s relationship with the content author. For example, a “like” on a friend’s photo may reflect social obligation or personal connection, while a “like” on a recommended post typically signals genuine content discovery. Treating these signals uniformly causes downstream ranking to conflate social maintenance with content consumption, potentially misaligning recommendations with users’ true discovery preferences. By directly modeling the (User × Format ) tuple, MBD enhances multiple tasks to deliver a more balanced content mix and improved user experience: 
+
+• Long Time Spent: By constructing cohorts based on intersectional features (e.g., User ×Type ), MBD prevents the ranker from over-indexing on video formats due to their intrinsic time-spent advantage over static media like photos, resulting in a significant watch time lift ( +0 .058% ). 
+
+• Incremental Like Value: By accounting for users’ varying tendencies toward different content sources, MBD identifies content with true “incremental” like value for each user, leading to a more balanced engagement-to-consumption trade-off. 
+
+• Quality Filtering (Click Task): By modeling the intersection of format and inventory source (Connected vs. Unconnected), the system identifies “low confidence” clicks where p < μ − σ. Demoting these effectively filters out clickbait—items with high predicted click probability but low distributional certainty—resulting in a +0 .018% session lift and +0 .034% watch time lift. 
+
+4.2.3 Case 3 - Content Cold Start Debias 
+
+In addition to content length and format, a significant source of bias in ranking systems arises from the number of views a piece of content has already accumulated. This often disadvantages newer content—a 10 challenge known as the content cold start problem. In this case study, MBD addresses exposure bias for cold start content by modeling the tuple (User × length × views ), capturing the nuanced interactions between user characteristics, content length, and prior exposure. MBD delivers strong improvements in key metrics: breakout ( +0 .190% ), session ( +0 .011% ), and views (+0 .135% ). Cold start items typically suffer from high uncertainty due to limited interaction history. By explicitly modeling this uncertainty through the watch time task, MBD can identify items with high potential (i.e., high predicted mean μ and high variance σ relative to their view count). 
+
+4.3 Engagement Efficiency Analysis 
+
+To understand how MBD reshapes the content ecosystem, we analyze the traffic distribution shift across video length buckets. We define engagement efficiency as the ratio between the relative lift in watch time and video views (VV): Efficiency = %∆ WT /%∆ VV . As detailed in Table 4, the framework optimizes the ecosystem through two distinct mechanisms: 
+
+• Pruning Low-Value Short-Videos (0s–30s): The model induces a negative shift in short-video. Crucially, the decline in views (e.g., -0.83% for 0-5s) consistently exceeds the decline in watch time (-0.64%). This results in an efficiency ratio of < 100% in the negative domain, indicating that the model selectively prunes views — short, looping clips that generate views but minimal user attention. 
+
+• Promoting High-Retention Long-Videos (30s+): For videos with duration > 30s, the model drives a positive shift with high efficiency. For instance, in the 5-10m bucket, a modest +0.13% increase in views yields a massive +0.73% gain in watch time (efficiency ratio = 562%). This confirms that MBD successfully identifies and surfaces high quality content previously suppressed by duration bias that delivers disproportionately high retention when exposed. 
+
+4.4 Special Handling for Binary Signals 
+
+A critical challenge in MBD framework is in accurately modeling the variance of sparse binary events (e.g., shares or comments) where the background click-through rate (CTR) is extremely low ( ≈1%). In the probability space, these events are heavily clustered near zero. This creates a “saturated tail” phenomenon: the absolute difference between a user with p = 0 .001 and p = 0 .01 like rate is numerically negligible (0.009) compared with the difference between p = 0 .2 and p = 0 .4, yet it represents a 10x difference vs. 2x difference in user preference intensity. Consequently, applying DMoM directly on probabilities results in vanishing gradients and an inability to distinguish signal from noise. To resolve this, we introduce logit-space projection method. Instead of modeling the bounded probability, we project the prediction into the unbounded latent space R by estimating the statistics of the logit: logit (p(x)) = ln 
+
+ p(x)1 − p(x)
+
+
+
+By setting the target logit (p(x)) (the raw logit output of the main ranking model), we effectively “stretch” the compressed probability interval near zero into a vast, quasi-symmetric manifold, check distribution in Figure 5. This transformation ensures numerical stability and prevents the asymmetric penalty issue, allowing the moments to capture the true relative spread of user preference that would otherwise be obscured by the sigmoid nonlinearity. 
+
+## 5 Related Work 
+
+5.1 Debiasing in Recommender Systems 
+
+Recommender systems rely on interaction signals to model preferences, yet these signals are inherently confounded by biases such as selection, exposure, and position. Without intervention, models risk amplifying feedback loops where popular items suppress niche content regardless of true user preference. Traditional mitigation strategies categorize into: (1) Inverse Propensity Weighting, which re-weights training samples 11 by the inverse of their exposure probability (Chen et al., 2023b); (2) Causal Intervention, utilizing backdoor adjustment to block confounding paths (Wang et al., 2021b); and (3) Regularization, such as In-Batch Balancing Regularization (IBBR), which adds fairness penalty terms to loss functions to mitigate ranking disparity among subgroups (Li et al., 2022). However, these methods typically focus on correcting point-wise estimates, often failing to provide the distributional context necessary for calibrating relative preference across heterogeneous content formats. 
+
+5.2 Duration Bias and Watch Time Prediction 
+
+In video recommendation, addressing the “duration bias” is critical for fair ranking. Early work like (Covington et al., 2016) introduced weighted logistic regression to modify training odds, approximating expected watch time by weighting samples with their duration. Recent research has evolved toward causal and adversarial frameworks: causal adjustment D2Q (Zhan et al., 2022) treats duration as a confounder affecting both exposure and watch time. It utilizes backdoor adjustment and duration-group quantile modeling to remove exposure bias while preserving the natural correlation with watch time. AlignPxtr (Lin et al., 2025) further advances this by aligning predicted behavior distributions via quantile mapping to ensure independence between bias factors and user interest. DVR (Zheng et al., 2022) introduces “watch time gain” optimization via adversarial learning to decouple duration from preference. D2Co (Zhao et al., 2023) simultaneously corrects for duration bias and “noisy watching” (user’s dwelling on content they dislike) using a mixture of latent distributions. SWaT (Yang et al., 2025) adopts a user-centric perspective, modeling watch time through statistical buckets derived from specific user behavior assumptions (e.g., random picking vs. sequential watching) to handle non-stationary viewing probabilities. While effective at correcting mean estimates, these approaches often lack the granular uncertainty quantification required to distinguish whether a high prediction is a signal of confidence or merely an artifact of high variance in long-form content. Unlike these methods which focus on correcting specific bias types, MBD provides a unified framework applicable to any bias defined by a partial feature set. 
+
+5.3 Uncertainty and Distributional Learning 
+
+MBD moves beyond point estimation to distributional learning, estimating the statistical properties of the model’s behavior to enable relative scoring. Quantile regression techniques like CQE (Lin et al., 2024) apply deep quantile regression to estimate the full conditional distribution of watch time. By predicting multiple quantiles (e.g., P95 ), these methods capture the inherent uncertainty and heterogeneity of user engagement, which point estimates (mean) fail to represent. Similarly, non-crossing quantile networks (Shen et al., 2025) enforce logical consistency in distribution estimation. Recent works also explore conformal prediction (Cherian et al., 2024), Epinet (Jeon et al., 2024), and prediction-powered inference (PPI) (Angelopoulos et al., 2023) to construct rigorous confidence intervals. While these methods focus on bounding prediction uncertainty, MBD leverages distributional statistics to enable relative scoring across heterogeneous cohorts. 
+
+## 6 Conclusion and Future Work 
+
+In this paper, we propose the MBD framework, a generalized solution for signal debiasing in large-scale recommender systems across user, content, and model dimensions. By shifting from absolute point-wise estimation to relative distributional modeling, MBD constructs an arbitrary feature set to debias existing signals by estimating the contextual mean and contextual variance with maximal efficiency and reliability. This is achieved by adding a lightweight computational module with zero impact on the existing ranking model. Extensive offline analysis demonstrates the fidelity of the estimated contextual mean and contextual variance and validates the debiasing effect through correlation analysis. In addition, we apply MBD to three challenging real-world scenarios over a platform serving billions of users which confirms MBD significantly improving long-term engagement metrics. In the future, the MBD framework can be extended to explore automated bias discovery techniques to dynamically identify bias features. 12 References 
+
+Anastasios N Angelopoulos, Stephen Bates, Clara Fannjiang, Michael I Jordan, and Tijana Zrnic. Prediction-powered inference. Science , 382(6671):669–674, 2023. Gang Chen, Jiawei Chen, Fuli Feng, Sheng Zhou, and Xiangnan He. Unbiased knowledge distillation for recommendation. In Proceedings of the sixteenth ACM international conference on web search and data mining , pages 976–984, 2023a. Jiawei Chen, Hande Dong, Xiang Wang, Fuli Feng, Meng Wang, and Xiangnan He. Bias and debias in recommender system: A survey and future directions. ACM Transactions on Information Systems , 41(3):1–39, 2023b. John Cherian, Isaac Gibbs, and Emmanuel Candes. Large language model validity via enhanced conformal prediction methods. Advances in Neural Information Processing Systems , 37:114812–114842, 2024. Paul Covington, Jay Adams, and Emre Sargin. Deep neural networks for youtube recommendations. In Proceedings of the 10th ACM conference on recommender systems , pages 191–198, 2016. James Davidson, Benjamin Liebald, Junning Liu, Palash Nandy, Taylor Van Vleet, Ullas Gargi, Sujoy Gupta, Yu He, Mike Lambert, Blake Livingston, et al. The youtube video recommendation system. In Proceedings of the fourth ACM conference on Recommender systems , pages 293–296, 2010. Chao Du, Zhifeng Gao, Shuo Yuan, Lining Gao, Ziyan Li, Yifan Zeng, Xiaoqiang Zhu, Jian Xu, Kun Gai, and Kuang-Chih Lee. Exploration in online advertising systems with deep uncertainty-aware learning. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining , pages 2792–2801, 2021. Chen Gao, Yu Zheng, Wenjie Wang, Fuli Feng, Xiangnan He, and Yong Li. Causal inference in recommender systems: A survey and future directions. ACM Transactions on Information Systems , 42(4):1–32, 2024. Hong Jun Jeon, Songbin Liu, Yuantong Li, Jie Lyu, Hunter Song, Ji Liu, Peng Wu, and Zheqing Zhu. Epinet for content cold start. arXiv preprint arXiv:2412.04484 , 2024. Peiguang Jing, Xianyi Liu, Lijuan Zhang, Yun Li, Yu Liu, and Yuting Su. Multimodal attentive representation learning for micro-video multi-label classification. ACM Transactions on Multimedia Computing, Communications and Applications , 20(6):1–23, 2024. Yuantong Li, Xiaokai Wei, Zijian Wang, Shen Wang, Parminder Bhatia, Xiaofei Ma, and Andrew Arnold. Debiasing neural retrieval via in-batch balancing regularization. arXiv preprint arXiv:2205.09240 , 2022. Chengzhi Lin, Shuchang Liu, Chuyuan Wang, and Yongqi Liu. Conditional quantile estimation for uncertain watch time in short-video recommendation. arXiv preprint arXiv:2407.12223 , 2024. Chengzhi Lin, Chuyuan Wang, Annan Xie, Wuhong Wang, Ziye Zhang, Canguang Ruan, Yuancai Huang, and Yongqi Liu. Alignpxtr: Aligning predicted behavior distributions for bias-free video recommendations. arXiv preprint arXiv:2503.06920 , 2025. Shang Liu, Zhenzhong Chen, Hongyi Liu, and Xinghai Hu. User-video co-attention network for personalized micro-video recommendation. In The world wide web conference , pages 3020–3026, 2019. David A Nix and Andreas S Weigend. Estimating the mean and variance of the target probability distribution. In 
+
+Proceedings of 1994 ieee international conference on neural networks (ICNN’94) , volume 1, pages 55–60. IEEE, 1994. Yuhan Quan, Jingtao Ding, Chen Gao, Nian Li, Lingling Yi, Depeng Jin, and Yong Li. Alleviating video-length effect for micro-video recommendation. ACM Transactions on Information Systems , 42(2):1–24, 2023. Tobias Schnabel, Adith Swaminathan, Ashudeep Singh, Navin Chandak, and Thorsten Joachims. Recommendations as treatments: Debiasing learning and evaluation. In international conference on machine learning , pages 1670–1679. PMLR, 2016. Guohao Shen, Runpeng Dai, Guojun Wu, Shikai Luo, Chengchun Shi, and Hongtu Zhu. Deep distributional learning with non-crossing quantile network. arXiv preprint arXiv:2504.08215 , 2025. Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. Deep & cross network for ad click predictions. In Proceedings of the ADKDD’17 , pages 1–7. 2017. Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong, and Ed Chi. Dcn v2: Improved deep & cross network and practical lessons for web-scale learning to rank systems. In Proceedings of the web conference 2021 , pages 1785–1797, 2021a. 
+
+13 Wenjie Wang, Fuli Feng, Xiangnan He, Xiang Wang, and Tat-Seng Chua. Deconfounded recommendation for alleviating bias amplification. In Proceedings of the 27th ACM SIGKDD conference on knowledge discovery & data mining ,pages 1717–1725, 2021b. Tianxin Wei, Fuli Feng, Jiawei Chen, Ziwei Wu, Jinfeng Yi, and Xiangnan He. Model-agnostic counterfactual reasoning for eliminating popularity bias in recommender system. In Proceedings of the 27th ACM SIGKDD conference on knowledge discovery & data mining , pages 1791–1800, 2021. Shentao Yang, Haichuan Yang, Linna Du, Adithya Ganesh, Bo Peng, Boying Liu, Serena Li, and Ji Liu. Swat: Statistical modeling of video watch time through user behavior analysis. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 1 , pages 2768–2778, 2025. Ruohan Zhan, Changhua Pei, Qiang Su, Jianfeng Wen, Xueliang Wang, Guanyu Mu, Dong Zheng, Peng Jiang, and Kun Gai. Deconfounding duration bias in watch-time prediction for video recommendation. In Proceedings of the 28th ACM SIGKDD conference on knowledge discovery and data mining , pages 4472–4481, 2022. Haiyuan Zhao, Lei Zhang, Jun Xu, Guohao Cai, Zhenhua Dong, and Ji-Rong Wen. Uncovering user interest from biased and noised watch time in video recommendation. In Proceedings of the 17th ACM Conference on Recommender Systems , pages 528–539, 2023. Yu Zheng, Chen Gao, Jingtao Ding, Lingling Yi, Depeng Jin, Yong Li, and Meng Wang. Dvr: micro-video recommen-dation optimizing watch-time-gain under duration bias. In Proceedings of the 30th ACM International Conference on Multimedia , pages 334–345, 2022. 
+
+14 Appendix 
+
+## A Estimation 
+
+In this section, we present the another option of estimating the distribution through quantile estimation. 
+
+A.1 Distribution Estimation 
+
+Quantile regression estimates contextual quantiles Qτ (p(x)|x′) for a specified quantile level τ ∈ (0 , 1) , providing a distribution-free approach to uncertainty quantification. The pinball loss function imposes asymmetric penalties based on the direction of prediction errors: 
+
+min 
+
+> qτ
+
+Lτ (qτ ) = [ τ − I(p(x) < q τ )] ( p(x) − qτ ) (11) where I(·) is the indicator function. Note that when τ = 0 .5, this reduces to L1 loss (median regression). Quantile regression is a distribution-free method that is robust to outliers due to its reliance on contextual quantiles, when the distribution is not unimode. It directly provides interpretable percentile-based uncertainty estimates suitable for top-k% selection in recommender system. However, estimation accuracy deteriorates for extreme quantiles (e.g., τ = 0 .01 or τ = 0 .99 ) due to data sparsity in the distribution tails, which are important to the system. The quantile level τ must be specified during training and remains fixed post-deployment, limiting adaptability when operational requirements shift (e.g., changing from τ to τ ′ requires retraining). In addition, the quantile method can be an optional addition to the existing MBD framework. 
+
+## B Additional Experiment 
+
+B.1 Video Distributional Fitting Analysis 
+
+To empirically validate the effectiveness of the contextual baseline estimation, we present the alignment between the MBD-estimated statistics ( μMBD , σ 2
+
+> MBD
+
+) and the empirical statistics of the main model’s predictions p(x)
+
+across video duration buckets.  
+
+> Mean Estimation.
+
+As illustrated in Figure 4(a) for Watch Time and Figure 5(a) for Like Probability (in Logit Space), the MBD-predicted mean μMBD exhibits near-perfect alignment with the empirical average of the main model’s predictions. This confirms that the MBD module successfully “profiles” the bias curve—accurately capturing the natural logarithmic increase in predicted watch time as duration grows—without requiring ground-truth labels for the auxiliary branch.  
+
+> Variance Estimation.
+
+Figures 4(b) and 5(b) demonstrate the variance estimation capabilities. The MBD-predicted variance σ2 
+
+> MBD
+
+closely tracks the empirical variance of p(x). Crucially, for sparse binary targets like Likes, fitting in the logit space allows the model to capture significant heteroscedasticity in user preference intensity that is typically compressed by the sigmoid function. This accurate variance estimation is vital for the normalization step in RPS construction, ensuring relative scores are properly calibrated against the intrinsic uncertainty of each duration cohort. 15 0 1 2 3 4
+
+0% 
+
+25% 
+
+50% 
+
+75% 
+
+100% 
+
+125% 
+
+> Density
+
+0-5s 
+
+Log(Watch Time) 
+
+0 1 2 3 4
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+120% 
+
+5-15s 
+
+Log(Watch Time) 
+
+0 1 2 3 4 5
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+100% 
+
+15-30s 
+
+Log(Watch Time) 
+
+0 1 2 3 4 5
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+> Density
+
+30-45s 
+
+Log(Watch Time) 
+
+0 1 2 3 4 5
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+45-60s 
+
+Log(Watch Time) 
+
+0 1 2 3 4 5
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+60-90s 
+
+Log(Watch Time) 
+
+0 1 2 3 4 5
+
+Log(Watch Time)) 
+
+0% 
+
+10% 
+
+20% 
+
+30% 
+
+40% 
+
+50% 
+
+60% 
+
+> Density
+
+90-180s 
+
+Log(Watch Time) 
+
+1 0 1 2 3 4 5 6
+
+Log(Watch Time)) 
+
+0% 
+
+10% 
+
+20% 
+
+30% 
+
+40% 
+
+50% 
+
+180-300s 
+
+Log(Watch Time) 
+
+2 0 2 4 6
+
+Log(Watch Time)) 
+
+0% 
+
+10% 
+
+20% 
+
+30% 
+
+40% 
+
+50% 
+
+300s+ 
+
+Log(Watch Time) 
+
+vs Log(Watch Time) by Video Duration (a) p(x) vs μMBD 0.0 0.1 0.2 0.3 0.4 
+
+0% 
+
+200% 
+
+400% 
+
+600% 
+
+800% 
+
+> Density
+
+0-5s 2
+
+0.0 0.1 0.2 0.3 0.4 
+
+0% 
+
+250% 
+
+500% 
+
+750% 
+
+1000% 
+
+1250% 
+
+5-15s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 
+
+0% 
+
+200% 
+
+400% 
+
+600% 
+
+800% 
+
+1000% 
+
+15-30s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 
+
+0% 
+
+200% 
+
+400% 
+
+600% 
+
+800% 
+
+> Density
+
+30-45s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 
+
+0% 
+
+200% 
+
+400% 
+
+600% 
+
+800% 
+
+45-60s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 
+
+0% 
+
+200% 
+
+400% 
+
+600% 
+
+60-90s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 
+
+2
+
+0% 
+
+200% 
+
+400% 
+
+600% 
+
+> Density
+
+90-180s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 
+
+2
+
+0% 
+
+100% 
+
+200% 
+
+300% 
+
+400% 
+
+500% 
+
+600% 
+
+180-300s 2
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 
+
+2
+
+0% 
+
+100% 
+
+200% 
+
+300% 
+
+400% 
+
+300s+ 2
+
+2 by Video Duration (b) σ2
+
+MBD 
+
+Figure 4 Analysis of MBD predictions across duration buckets: (a) The predicted mean μMBD closely tracks the empirical distribution p(x); (b) The predicted variance σ2
+
+MBD effectively captures the uncertainty within each bucket. 20 15 10 5 0 5 10 
+
+0% 
+
+2% 
+
+4% 
+
+6% 
+
+8% 
+
+10% 
+
+12% 
+
+> Density
+
+0-5s 
+
+P(Like) 
+
+15 10 5 0 5
+
+0% 
+
+2% 
+
+5% 
+
+8% 
+
+10% 
+
+12% 
+
+5-15s 
+
+P(Like) 
+
+15 10 5 0 5 10 
+
+0% 
+
+2% 
+
+5% 
+
+8% 
+
+10% 
+
+12% 
+
+15% 
+
+15-30s 
+
+P(Like) 
+
+15 10 5 0 5 10 
+
+0% 
+
+2% 
+
+5% 
+
+8% 
+
+10% 
+
+12% 
+
+15% 
+
+> Density
+
+30-45s 
+
+P(Like) 
+
+20 15 10 5 0 5 10 
+
+0% 
+
+2% 
+
+5% 
+
+8% 
+
+10% 
+
+12% 
+
+15% 
+
+45-60s 
+
+P(Like) 
+
+20 15 10 5 0 5 10 
+
+0% 
+
+2% 
+
+5% 
+
+8% 
+
+10% 
+
+12% 
+
+15% 
+
+60-90s 
+
+P(Like) 
+
+15 10 5 0 5 10 
+
+Logit(P(Like)) 
+
+0% 
+
+2% 
+
+5% 
+
+8% 
+
+10% 
+
+12% 
+
+15% 
+
+> Density
+
+90-180s 
+
+P(Like) 
+
+20 10 0 10 
+
+Logit(P(Like)) 
+
+0% 
+
+2% 
+
+4% 
+
+6% 
+
+8% 
+
+10% 
+
+180-300s 
+
+P(Like) 
+
+30 20 10 0 10 20 
+
+Logit(P(Like)) 
+
+0% 
+
+2% 
+
+4% 
+
+6% 
+
+300s+ 
+
+P(Like) 
+
+vs Logit P(Like) by Video Duration 
+
+(a) p(x) vs μMBD (Logit Space) 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 
+
+0% 
+
+10% 
+
+20% 
+
+30% 
+
+40% 
+
+50% 
+
+60% 
+
+> Density
+
+0-5s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+5-15s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 15-30s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+> Density
+
+30-45s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+45-60s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+60-90s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 
+
+2
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+80% 
+
+> Density
+
+90-180s 
+
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 
+
+2
+
+0% 
+
+20% 
+
+40% 
+
+60% 
+
+180-300s 
+
+0 1 2 3 4
+
+2
+
+0% 
+
+10% 
+
+20% 
+
+30% 
+
+40% 
+
+50% 
+
+300s+ 
+
+^2 by Video Duration (b) σ2
+
+MBD (Logit Space) 
+
+Figure 5 Analysis of MBD predictions for Likes in logit space: (a) The predicted mean μMBD accurately tracks the main model’s logit prediction p(x); (b) The predicted variance σ2
+
+MBD quantifies the uncertainty of user preference intensity. 
+
+16

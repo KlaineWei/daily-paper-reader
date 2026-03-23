@@ -1,0 +1,500 @@
+Title: Zero-Shot Generalization from Motion Demonstrations to New Tasks
+
+URL Source: https://arxiv.org/pdf/2603.15445v1
+
+Published Time: Tue, 17 Mar 2026 04:13:45 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Zero-Shot Generalization from Motion Demonstrations to New Tasks 
+
+Kilian Freitag 1∗, Alvin Combrink 1∗, and Nadia Figueroa 2
+
+Abstract — Learning motion policies from expert demonstra-tions is an essential paradigm in modern robotics. While end-to-end models aim for broad generalization, they require large datasets and computationally heavy inference. Conversely, learning dynamical systems (DS) provides fast, reactive, and provably stable control from very few demonstrations. However, existing DS learning methods typically model isolated tasks and struggle to reuse demonstrations for novel behaviors. In this work, we formalize the problem of combining isolated demonstrations within a shared workspace to enable gener-alization to unseen tasks. The Gaussian Graph is introduced, which reinterprets spatial components of learned motion prim-itives as discrete vertices with connections to one another. This formulation allows us to bridge continuous control with discrete graph search. We propose two frameworks leveraging this graph: Stitching , for constructing time-invariant DSs, and 
+
+Chaining , giving a sequence-based DS for complex motions while retaining convergence guarantees. Simulations and real-robot experiments show that these methods successfully gener-alize to new tasks where baseline methods fail. 
+
+I. I NTRODUCTION 
+
+Learning from demonstration is a widely used paradigm in robotics for acquiring control policies from expert trajecto-ries. Recent work increasingly targets end-to-end foundation models that aim to generalize across tasks and embod-iments [1], [2]. However, such models typically require large datasets and significant compute, which can make fast, reactive control challenging [3]. An alternative is to learn a dynamical system (DS) from a small number of demonstrations and use it directly as a motion policy [4], [5]. In Linear Parameter Varying DS 
+
+(LPV-DS) [4], a Gaussian Mixture Model (GMM) partitions the demonstrations into regions and smoothly blends locally linear time-invariant (LTI) DSs into a single nonlinear policy, enabling stable and convergent behavior toward a target state. Despite their data efficiency, LPV-DS-like methods are typ-ically trained per task. Consequently, they do not generalize to new initial-target pairs that were not demonstrated. The ability to combine demonstrations of distinct tasks to solve novel, unseen tasks has high practical relevance in modern robotics. In structured environments such as factories or laboratories, the number of potential tasks scales combinatorially with the number of start and goal config-urations. Collecting expert demonstrations for every pos-sible variation is prohibitively expensive, time-consuming, and fundamentally unscalable. However, demonstrations in           
+
+> ∗Equal contribution. 1Department of Electrical Engineering, Chalmers University of Technology, Gothenburg, Sweden
+
+{combrink,kilian.freitag }@chalmers.se . 2GRASP Lab, University of Pennsylvania, PA 19104, USA. This work is supported by the ITEA project ArtWork. 
+
+a shared workspace effectively exhibit regions of safe and kinematically viable movement — knowledge that we aim to repurpose in this work to achieve zero-shot generalization to new tasks. This approach drastically improves the efficiency and scalability of imitation learning by circumventing the need for exhaustive data collection. Furthermore, it naturally supports incremental learning; introducing a new workstation to a factory floor only requires a brief demonstration linking it to the existing network of learned behaviors. Prior work has explored the adjacent problem of adapt-ing learned policies to new target configurations without requiring new data. For instance, Elastic Motion Policy [6] geometrically reshapes the underlying GMM structure to reach new targets, while Task-Parameterized GMMs [7] warp a single demonstrated skill to accommodate new or moving reference frames. Other approaches address multi-stage behaviors by segmenting demonstrations into sequen-tial phases and recombining them temporally [8]. However, these methods primarily focus on adapting or segmenting an isolated task; they do not treat disjoint demonstrations as a shared, interconnected map of safe, kinematically viable regions from which entirely novel paths can be routed. Building on LPV-DS, we reinterpret the Gaussians derived from the GMM as intermediate “stepping stones” that guide the system from its current state ξ toward a target state ξ∗.By constructing a graph where these Gaussian centers serve as vertices, we can use established graph search algorithms to find paths that synthesize new motion policies from separate demonstrations, yielding efficient trajectories for unseen initial-target pairs in a zero-shot manner (see Fig. 1). Our main contributions can be summarized as:  
+
+> •
+
+The Gaussian Graph (GG), a novel representation com-bining multiple demonstrations and enabling the use of well-known graph algorithms for synthesizing new motion policies.  
+
+> •
+
+Demonstration Stitching : GG-based construction of time-invariant DSs, enabling zero-shot initial-target gen-eralization within data support and providing strict convergence guarantees.  
+
+> •
+
+Demonstration Chaining : A sequential GG-based DS producing sophisticated motions while maintaining the same generalization and convergence properties.  
+
+> •
+
+An empirical evaluation demonstrating consistent gen-eralization to unseen tasks and real-robot experiments verifying the method’s capabilities. Our implementation builds on LPV-DS [4] and is provided along with datasets and additional details on our repository 1.   
+
+> 1https://github.com/KilianFt/DemoStitching .
+> arXiv:2603.15445v1 [cs.RO] 16 Mar 2026 (a) Set of Demonstrations. (b) Demo-wise LPV-DS. (c) Gaussian Graph and solution. (d) Stitched DS.
+
+Fig. 1: The Demonstration Stitching (Section IV) pipeline using Shortest Path and Reuse Gaussians . On a set of separate demonstrations (a) (initial positions in red, target positions in green), LPV-DS is applied to each demonstration separately 
+
+(b) , from which a Gaussian Graph is constructed and a shortest path from an initial position to a target position is found (c) .A DS is constructed to follow the shortest path (d) . Thus, a zero-shot generalization from separate motion demonstrations to a new, undemonstrated task is achieved. II. P ROBLEM DESCRIPTION AND PRELIMINARIES 
+
+We consider a setting where demonstrations for several different tasks are collected in the same workspace. Each demonstration D = {ξref  
+
+> i
+
+, ˙ξref  
+
+> i
+
+}i — with ξref  
+
+> i
+
+, ˙ξref  
+
+> i
+
+∈ Rd
+
+— aggregates position-velocity pairs from multiple refer-ence trajectories. Intuitively, each demonstration provides position-velocity pairs that specify the desired robot motion within a region of the workspace (see Fig. 1a). Together, the different demonstrations form a demonstration set D,which therefore contains a combined understanding of the workspace. The aim of this work is to effectively reuse information from these separate demonstrations for zero-shot generalization to unseen tasks by synthesizing new, safe movements from existing trajectories (see Fig. 1d) without collecting large amounts of data. LPV-DS learns a time-invariant DS-based motion policy 
+
+˙ξ = fΘ(ξ) from a single demonstration D. The policy 
+
+fΘ is parameterized by Θ and constructed to ensure con-vergence to a stable equilibrium point ξ∗ ∈ Rd. That is, 
+
+lim t→∞ ∥ξ − ξ∗∥ = 0 when starting from any position in 
+
+Rd and moving according to ˙ξ = fΘ(ξ). We say that fΘ
+
+is globally asymptotically stable (GAS) with respect to an 
+
+attractor ξ∗. This is done by formulating fΘ as a GMM of 
+
+K LTI dynamical systems: 
+
+fΘ(ξ) = 
+
+> K
+
+X
+
+> k=1
+
+γk(ξ)Ak(ξ − ξ∗), (1) 
+
+γk(ξ) = πkN (ξ | μk, Σk)
+
+PKj=1 πj N (ξ | μj , Σj ) , (2) where Ak ∈ Rd×d is the state matrix describing the dynamics of the kth LTI DS component, πk is the prior probability of an observation belonging to Gaussian k, and 
+
+N (ξ | μk, Σk) (with mean μk and covariance Σk) is the conditional probability density of observing ξ at Gaussian k.The posterior probability γk(ξ) of ξ belonging to system 
+
+k therefore weighs Ak’s influence on fΘ. From this we see that the model parameters are Θ = θDS  
+
+> k
+
+, θ GMM 
+
+> k
+> Kk=1
+
+,with θDS  
+
+> k
+
+= Ak and θGMM  
+
+> k
+
+= {πk, μ k, Σk}. To find these parameters, first a GMM model is fit to D, giving θGMM 
+
+> k
+
+for k = 1, . . . , K . Then, for the DS parameters θDS  
+
+> k
+
+, a parameterized Lyapunov function V (ξ) = ( ξ−ξ∗)T P(ξ−ξ∗)
+
+with P = PT ≻ 0 is formulated. By ensuring that ATk P +
+
+PA k = Qk and Qk = QTk ≺ 0 for all k, fΘ is GAS with respect to ξ∗. P is found simultaneously with θDS  
+
+> k
+
+.By parameterizing V (ξ) with P, LPV-DS achieves greater flexibility in the LTI systems Ak [9] compared to methods like SEDS [8], which uses the unparameterized version. However, LPV-DS — just like SEDS but to a lesser degree — remains constrained by V (ξ) to guarantee GAS, and therefore struggles as the non-linearity of the underlying motions increases. Consequently, naively applying LPV-DS to aggregated demonstrations from multiple tasks causes the motion policy to fit the demonstration data less accurately as task diversity grows. Section V proposes a method that circumvents this constraint while still guaranteeing GAS. III. T HE GAUSSIAN GRAPH 
+
+To aggregate multiple demonstrations, we introduce the 
+
+Gaussian Graph (GG), which enables the construction of new motion policies for unseen tasks (see Fig. 1c). First, LPV-DS is applied to each demonstration D ∈
+
+D to obtain motion policies {fD | D ∈ D} (dropping the parameter Θ subscript), where each fD has parameters ΘD ,
+
+PD , and KD . The GG is a directed, weighted graph G =
+
+⟨V , E, W ⟩ with vertices V, edges E ⊆ V × V and edge-weights W : E → R+. Each vertex in V corresponds to a component in the motion policies. Specifically, for every component k ∈ [1 , .., K D ] of motion policy fD with param-eters θGMM  
+
+> k, D
+
+= {πk, D , μ k, D , Σk, D } and θDS  
+
+> k
+
+= Ak, D , there exists a vertex vk, D ∈ V . The direction ψk, D is defined by the dynamics at the Gaussian center: ψk, D = Ak, D (μk, D − ξ∗D ),where ξ∗D is the attractor of D.Informally, we assume the full system dynamics fD near component k strongly aligns with k’s direction, fD (μk, D ) ≈
+
+ψk, D . Under this assumption, dynamics near μk, D lead toward components in the direction of ψk, D , with closer com-ponents exerting greater influence until their own dynamics eventually dominate. Based on this principle, the connection from vertex vi to vj is stronger when they are closer and vj
+
+aligns more with ψi.Edges in E represent possible component transitions. An edge (vi, v j ) ∈ E exists only if:  
+
+> •
+
+cos( φij ) > 0, where φij is the angle between ψi
+
+and μj − μi, ensuring ψi points at least partly toward component j, and  
+
+> •
+
+the Bhattacharyya Coefficient [10] between Gaussians of i and j exceeds the user-defined threshold ηBC , en-suring sufficient data connectivity between components. The edge weight is defined as 
+
+W (( vi, v j )) = || μi − μj || ηdist 
+
+cos( φi,j )ηdir 
+
+, (3) where ηdist and ηdir are user-defined parameters. The user-defined parameters ( ηBC , η dist , η dir ) collectively govern the GG’s connectivity and traversal cost, balancing adherence to demonstrations with the flexibility to synthesize novel behaviors. The threshold ηBC acts as a structural safety filter by dictating the minimum data support required for a transition. Higher ηBC values strictly enforce empirical support, while lower values suit applications more tolerant of out-of-data movements; however, excessively high thresholds risk fragmenting the GG. For viable edges, ηdist and ηdir 
+
+act as cost regularizers on spatial separation and dynamic consistency, respectively. A high ηdist heavily penalizes long jumps, favoring paths of closely packed Gaussians, while a high ηdir enforces strict directional alignment between a Gaussian’s inherent dynamics and the physical path to the next vertex. Conversely, lowering these two parameters widens the transition “field-of-view”, enabling the graph to bridge disjoint tasks at the risk of leaving data-supported regions. Depending on the application, some demonstrations may be safely executed in reverse. We refer to this as the bi-directionality assumption . The graph is then expanded by creating a counterpart vertex v′ 
+
+> i
+
+for every original vertex 
+
+vi corresponding to such a demonstration, with reversed dynamics A′ 
+
+> i
+
+= −Ai and direction ψ′ 
+
+> i
+
+= −ψi.Finally, the methods in subsequent sections will primarily use shortest paths in the GG. For this reason, the GG can be reduced in size by removing every edge (vi, v j ) ∈ E not included in the shortest path from vi to vj . This operation does not have any effect on shortest paths in the GG since such edges would never be included, however, it does improve computation times. IV. D EMONSTRATION STITCHING 
+
+In this section, we present four methods for stitching together separate demonstrations into a single time-invariant motion policy. These four methods arise from the combina-tion of two ways to use the GG ( Shortest Path and Shortest Path Tree ) with two ways of reusing elements from the initial LPV-DS policies {fD | D ∈ D}.
+
+A. Graph Strategies 1) Shortest Path: We assume for this method that an initial position ξ0 and attractor ξ∗ are given. A vertex is added to the GG for each v0 and v∗ respectively, with 
+
+μ0 = ξ0 and μ∗ = ξ∗. For v∗, only incoming edges connect it to existing vertices; for every vj ∈ V , (3) is used to compute an initial weight wj, ∗, with the same requirement that cos( φj, ∗) > 0. However, the weight is further modified to account for data support provided by 
+
+vj , giving W (( vj , v ∗)) = wj, ∗/N (ξ0 | μj , Σj ). On the other hand, only outgoing edges from v0 are added. Since 
+
+v0 has no notion of direction, for every vj ∈ V , v0 adopts direction ψj when calculating w0,j with (3), also requiring 
+
+cos( φ0,j ) > 0. Factoring in the amount of data-support provided by vj , we get W (( v0, v j )) = w0,j /N (ξ0 | μj , Σj ).A standard shortest-path algorithm (e.g., Dijkstra’s [11]) is used to find the shortest path ⟨v0, v 1, . . . , v e, v ∗⟩ from v0
+
+to v∗, with the set σ = {v1, . . . , v e} ⊆ V containing the vertices corresponding to components. 
+
+2) Shortest Path Tree: Given only an attractor ξ∗, acorresponding vertex v∗ is added to the GG in the same way as above. The shortest path tree to v∗ is found, with all vertices in V for which there exists a path to v∗ stored in 
+
+σ. This approach yields a global policy that is agnostic to a starting position. The bi-directionality assumption, however, introduces a critical problem: a path to v∗ may exist from both a vertex vi and its reverse counterpart v′
+
+> i
+
+. Including both vertices in the final policy is problematic, as their opposing dynamics ( ψi = −ψ′
+
+> i
+
+) effectively cancel each other out. To resolve this ambiguity, we prune the vertex set by applying a simple heuristic: for any such pair ⟨vi, v ′
+
+> i
+
+⟩, we retain only the vertex with the shorter path to v∗.
+
+B. Levels of DS Reuse 
+
+Using the set of vertices σ from either of the two graph strategies introduced above, a new motion policy can be constructed. Intuitively, reusing components from the initial policies {fD | D ∈ D} simplifies computation — but also constrains the new policy. We consider two levels of reuse: 
+
+1) No Reuse: When LPV-DS is applied to a demonstration 
+
+D ∈ D, data points in D are clustered to each of the KD
+
+Gaussian components, resulting in the clustering Ck, D ⊆ D 
+
+for each k = 1 , . . . , K D . In this method, all data points clustered to vertices in σ are collected, S 
+
+> ni∈σ
+
+Ci, and a completely new LPV-DS model is fitted. Essentially, the GG is used to filter data points from the demonstrations, after which LPV-DS is applied anew. With the bi-directionality assumption, the data points’ velocity ˙ξ associated with a reversed vertex are negated (that is, − ˙ξ is used). 
+
+2) Reusing Gaussians: This method reuses the GMM parameters θGMM  
+
+> i
+
+= {πi, μ i, Σi} and corresponding data points Ci for each vertex vi ∈ σ. The priors {πi}, however, are normalized to sum to 1. With the GMM structure fixed, only the second LPV-DS step is performed to find the DS parameters θDS i = Ai and a shared Lyapunov parameter P
+
+that best fits the filtered data points. (a) (b) 
+
+Fig. 2: Examples of two DS-Chains, with the resulting motions when starting at an initial position in red. Colored regions show the active DS at the corresponding part of the trajectory, with the underlying Gaussians shown in orange. We explored not only reusing Gaussians but also P to only recompute the dynamics Ai or reusing Ai, and instead seek a single P. However, those approaches yielded relatively low performance and are therefore omitted. V. D EMONSTRATION CHAINING 
+
+The overall approach of Demonstration Chaining is to transition through a sequence of simpler DSs to collectively realize motions more sophisticated than those achievable with any single time-invariant DS alone. For instance, the motions shown in Fig. 2 are impossible for standard LPV-DS or the stitching methods presented in the previous section: they require multiple velocities at a single position —violating time-invariance — and follow paths incompatible with the decay of any parameterized Lyapunov function. In this section, we define a DS-Chain , formulate criteria under which it is GAS with respect to an attractor ξ∗, and then describe our specific method for using the GG to construct such a GAS DS-Chain. 
+
+Definition 5.1 (DS-Chain): A DS-Chain is a tuple C =
+
+⟨F , Γ, T , U⟩ , where F = ⟨f1, . . . , f N ⟩ contains N dynam-ical systems; Γ = ⟨γ1, . . . , γ N −1⟩ and T = ⟨τ1, . . . , τ N −1⟩
+
+contain N −1 trigger and timer predicates, respectively, each mapping to {⊤ , ⊥} ; and U = ⟨u1, . . . , u N −1⟩ contains N −1
+
+dynamical systems. We model a DS-Chain C as a finite hybrid automaton with nominal states S = {s1, . . . , s N } and intermediate states S′ = s′
+
+> 1
+
+, . . . , s ′  
+
+> N−1
+
+. The system initializes in s1.Each nominal state si transitions to s′ 
+
+> i
+
+when the trigger 
+
+γi is ⊤, and each intermediate state s′ 
+
+> i
+
+transitions to si+1 
+
+when the timer τi is ⊤. Thus, the automaton’s structure is 
+
+s1
+
+> γ1
+
+→ s′
+
+> 1
+> τ1
+
+→ s2
+
+> γ2
+
+→ s′
+
+> 2
+> τ2
+
+→ . . . τN −1
+
+→ sN . The system dynamics are defined by the state of the DS-Chain: when in state si the dynamics are governed by fi, when in state s′ 
+
+> i
+
+the dynamics are governed by ui. Fig. 2 visualizes this, with colored regions corresponding to the active nominal state in S and associated DS in F during that part of the trajectory. Note that the transition DSs in U are not visualized. Theorem 5.1 provides criteria under which C is GAS with respect to ξ∗.
+
+Theorem 5.1 (Global Asymptotically Stable DS-Chain): 
+
+A DS-Chain C = ⟨F , Γ, T , U⟩ — modeled by states in S
+
+and S′ — is GAS with respect to an attractor ξ∗ if: 1) the DSs in F and U are bounded, 2) ∀i = 1 , . . . , N − 1, trigger γi is guaranteed to evaluate to ⊤ within a finite time when in state si,3) ∀i = 1 , . . . , N − 1, τi is guaranteed to evaluate to ⊤
+
+within a finite time when in state s′
+
+> i
+
+,4) fN is GAS with respect to ξ∗.
+
+Proof: Since γi is guaranteed to evaluate to ⊤ within a finite time when in state si, it holds that the transition from si to s′ 
+
+> i
+
+will occur within a finite time. Likewise, since 
+
+τi is guaranteed to evaluate to ⊤ within a finite time when in state s′
+
+> i
+
+, it holds that the transition from s′ 
+
+> i
+
+to si+1 will occur within a finite time. Thus, the system initializes in state s1 and is guaranteed to transition through all states to eventually arrive and remain in sN . Since all dynamics 
+
+f1, . . . , f N and u1, . . . , u N −1 are bounded, the system’s state will be bounded when entering sN , from which the dynamics are governed by fN — with fN being GAS with respect to ξ∗. In other words, starting from any bounded position and following the dynamics specified by C, eventually the system’s state will be bounded and the dynamics will be governed by fN , inevitably leading to ξ∗. Therefore, C is GAS with respect to ξ∗.
+
+A. Constructing a GAS DS-Chain using the Gaussian Graph 
+
+We now define our specific method of creating a DS-Chain using the GG, showing that it satisfies every criterion of Theorem 5.1 and is therefore GAS. 
+
+1) Dynamical systems in F: From the Gaussian graph G,a sequence of vertices σ = ⟨v1, v 2, . . . , v M ⟩ can be obtained by, for instance, finding the shortest path from an initial position ξ0 to ξ∗. Each pair (vi, v i+1 ) is an edge in E. Just as in Section IV-A.1, we do not include the vertices v0 and 
+
+v∗ corresponding to ξ0 to ξ∗ in σ.Our approach is to partition σ using a sliding window to fit a local DS to each segment. While the simplest approach uses vertex pairs (i.e., single edges), we achieve better results using overlapping vertex triplets. Triples are advantageous because adjacent segments share exactly one edge, providing a continuous transition region between successive local mod-els. This yields a sequence of M − 2 overlapping segments: 
+
+⟨⟨ v1, v 2, v 3⟩, ⟨v2, v 3, v 4⟩, . . . , ⟨vM −2, v M −1, v M ⟩⟩ . We make one assumption on the path σ: no segment derived from 
+
+σ contains any vertex and its reversal (under the bi-directionality assumption) due to the difficulty of finding a DS from the resulting set of data points. LPV-DS is applied to each segment ⟨vi, v i+1 , v i+2 ⟩ to obtain an LTI DS fi that is GAS at the final vertex’s position, μi+2 . While it seems intuitive to fit fi to all data points clustered to these three vertices, we find that LPV-DS more reliably obtains a DS when omitting a specific subset of data around the target vertex vi+2 . Specifically, let l = || μi+2 − μi+1 || 2 be the distance between the last two vertices. To improve fitting, we discard any reference point 
+
+ξref belonging to vi+2 that is both farther from vi+1 than l(a) Stitch-SP (All) (b) Stitch-SP (DS) (c) Stitch-SPT (All) (d) Stitch-SPT (DS) (e) Chaining (All) 
+
+(f) Stitch-SP (All) (g) Stitch-SP (DS) (h) Stitch-SPT (All) (i) Stitch-SPT (DS) (j) Chaining (All) 
+
+(k) Stitch-SP (All) (l) Stitch-SP (DS) (m) Stitch-SPT (All) (n) Stitch-SPT (DS) (o) Chaining (All) 
+
+Fig. 3: Qualitative results for datasets 2D Small (first row) and 2D Large (second and third row). Simulations are shown in red, demonstrations in blue-green, and Gaussians extracted from the GG in orange. Baseline methods are excluded as they failed in all the presented cases, as well as Chaining (DS) since results are similar to Chaining (All). (i.e., || ξref − μi+1 || 2 > l ) and closer to vi+2 than 0.1l (i.e., 
+
+|| ξref −μi+2 || 2 < 0.1l). Observe that fi is invariant to ξ0 and 
+
+ξ∗ and can therefore be pre-computed and stored in a lookup table (bounded by |E| max v∈V |neighbors (v)| entries). A final DS f ∗ is fitted to data from the last two vertices 
+
+vM −1 and vM , and ensured GAS with respect to the attractor 
+
+ξ∗. This results in F = ⟨f1, . . . , f M −2, f ∗⟩. As an optional step, an initial DS f0 — GAS with respect to μ1 and fitted to data from v1 — can be prepended to F. The same levels of reuse as described in Section IV-B also apply here. 
+
+2) Triggers in Γ: We define a trigger γi(ξ) (associated with a segment ⟨vi, v i+1 , v i+2 ⟩) as ⊤ when ξ has passed the second vertex vi+1 on its way from vi to vi+2 . That is, 
+
+γi(ξ) = ⊤ when 
+
+|| ξ − μi|| 2
+
+|| ξ − μi+2 || 2
+
+≥ || μi+1 − μi|| 2
+
+|| μi+1 − μi+2 || 2
+
+, (4) 
+
+γi(ξ) = ⊥ otherwise. Specifically, for the optional initial DS 
+
+f0, in (4) we let μi = ξ0, μi+2 = μ1, and μi+1 = ( ξ0 +
+
+μ1)/2.
+
+3) Timers in T : For each segment i = 1 , . . . , N − 1, the timer τi(t) switches to ⊤ after prescribed transition time Ti.Specifically, τi(t) = ⊤ when t−ti ≥ Ti, τi(t) = ⊥ otherwise, where t is the current time and ti is the time at which the DS-Chain enters state si. We choose Ti ∈ R+ to approximate the time required for the state ξ to travel a fraction α ∈ [0 , 1] 
+
+from vi+1 to vi+2 :
+
+Ti = α || μi+2 − μi+1 || 2
+
+|| fi(μi+1 ) + fi+1 (μi+1 )|| 2/2 (5) This can be interpreted as follows: state si is entered when trigger γi = ⊤, which occurs near the middle Gaussian 
+
+i + 1 of the segment ⟨vi, v i+1 , v i+2 ⟩. Hence, Ti estimates the time needed to travel a fraction α of the distance from 
+
+vi+1 to vi+2 under the average velocity of the current and next DS. In particular, α = 0 yields an immediate transition, whereas α = 1 delays the transition until approximately the full segment has been traversed ( ξ ≈ μi+2 ). 
+
+4) Intermediate dynamics in U: The system remains in intermediate state s′ 
+
+> i
+
+for Ti time while transitioning from state si with dynamics fi to state si+1 with dynamics fi+1 .Therefore, we let the dynamics ui during this transition be a linear interpolation between the two DSs: 
+
+ui(ξ, t ) = t − ti
+
+Ti
+
+fi(ξ) + 
+
+
+
+1 − t − ti
+
+Ti
+
+
+
+fi+1 (ξ). (6) Since f1, . . . , f N are all bounded, so too are the linear interpolations u1, . . . , u N −1.2D Small 2D Large 3D PC-GMM                                                                                                             
+
+> Method Success % RMSE Data Support Comp. Time Success % RMSE Data Support Comp. Time Success % RMSE Data Support Comp. Time Baseline (All) 20.8% 1.77 ± 0.72 0.73 ± 0.17 8.29 ± 0.63 19.1% 2.15 ± 0.74 0.72 ± 0.23 17.51 ± 1.86 28.3% 0.28 ± 0.33 0.88 ± 0.17 17.78 ± 16.59 Baseline (DS) 20.0% 2.97 ± 1.57 0.68 ± 0.25 10.16 ± 0.42 13.7% 3.30 ± 0.76 0.58 ± 0.24 33.65 ± 2.67 35.8% 2.53 ± 1.19 0.93 ± 0.10 251 ± 23 Stitch-SP (All) 98.3% 0.08 ± 0.02 0.86 ± 0.24 0.76 ± 0.42 90.2% 0.14 ± 0.30 0.90 ± 0.17 1.09 ± 1.28 90.0% 0.04 ± 0.03 0.87 ± 0.19 1.33 ± 1.27 Stitch-SP (DS) 94.2% 0.08 ± 0.02 0.86 ± 0.24 0.14 ± 0.71 91.3% 0.19 ± 0.41 0.87 ± 0.21 0.59 ± 1.90 85.8% 0.04 ± 0.02 0.85 ± 0.20 0.06 ± 0.04 Stitch-SPT (All) 97.5% 0.09 ± 0.03 0.86 ± 0.19 1.44 ± 0.72 89.7% 0.27 ± 0.44 0.77 ± 0.22 5.06 ± 5.95 81.7% 0.08 ± 0.11 0.92 ± 0.13 7.10 ± 12.37 Stitch-SPT (DS) 95.8% 0.08 ± 0.02 0.85 ± 0.20 0.08 ± 0.02 91.6% 0.67 ± 0.82 0.80 ± 0.22 15.28 ± 16.46 100.0% 0.45 ± 0.57 0.95 ± 0.06 196 ± 100 Chaining (All) 99.2% 0.11 ± 0.14* 0.91 ± 0.14 0.26 ± 0.05 97.4% 0.12 ± 0.18 *0.96 ± 0.09 0.29 ± 0.09 97.5% 0.05 ± 0.03* 0.97 ± 0.06 0.46 ± 0.32 Chaining (DS) 97.5% 0.14 ± 0.19* 0.91 ± 0.17 0.01 ± 0.01 94.1% 0.15 ± 0.39* 0.95 ± 0.09 0.01 ± 0.00 100.0% 0.06 ± 0.02* 0.98 ± 0.03 0.02 ± 0.00
+
+TABLE I: The results on each dataset for the methods LPV-DS (Baseline), Stitching using the Shortest Path (Stitch SP) and Shortest Path Tree (Stitch SPT), and Chaining, showing the success rate in percent, RMSE, Data Support, and computation time in seconds from four random seeds. The two levels of reuse from Section IV-B — recomputing both the GMM and DS parameters (all) or only recomputing the DS parameters (DS) — are tested. ∗Calculating the RMSE of Chaining methods is approximated by mixing DSs equally during transitions. By construction, C = ⟨F , Γ, T , U⟩ satisfies all criteria of Theorem 5.1 and is therefore GAS with respect to ξ∗.Criteria 1 and 4 hold because all primary and intermediate dynamics in F and U are bounded, and the final system 
+
+fN = f ∗ is GAS. Furthermore, Criteria 2 and 3 are satisfied because every trigger γi(ξ) evaluates to ⊤ in finite time (since each fi is GAS towards μi+2 ) and the transition timers 
+
+τi(t) rely on finite Ti.VI. R ESULTS 
+
+A. Simulation Experiments 
+
+We evaluate the proposed methods alongside LPV-DS as a baseline on three datasets: 2D Small (Fig. 1 and Figs. 3a– 3e); a larger 2D Large of 6 demonstrations (Figs. 3f–3o); and 3D PC-GMM based on the dataset from [9], comprising “3D C-shape top”, “3D viapoint 1”, and “3D viapoint 2”. For each dataset, all pairwise combinations of pooled initial-attractor points (assuming bi-directionality) yield 30 
+
+instances for 2D Small , 182 for 2D Large , and 30 for 
+
+3D PC-GMM . All experiments use ηBC = 0 .05 , ηdist = 2 and 
+
+ηdir = 1 , thus slightly prioritizing closeness over alignment, and are rerun using four random seeds. Results are presented in Table I. The success-rate is shown, with a success meaning that a valid solution was found and the goal state was reached within 1000 simula-tion seconds. Root Mean-Squared Error (RMSE) is taken between ˙ξ = f (ξref ) and ˙ξref . Due to these methods aggregating reference points from different parts of vari-ous demonstrations, we found the common Dynamic Time Warping Distance to be an unsuitable measurement of how data-supported a trajectory is. Instead, a trajectory’s Data Support is the average evaluation of its points. A point with distance d to the nearest reference point evaluates to 1 if 
+
+d < μ D, else exp 
+
+
+
+− 12
+
+ d−μD
+
+> σD
+
+2
+
+, where μD and σD are the mean and standard deviation of inter-trajectory nearest-neighbor distances over reference points in demonstrations in 
+
+D. Thus, a Data Support of 1.0 indicates the trajectory to be as close to the data as the reference trajectories, while 0.0
+
+indicates no support. Metrics are averaged over successful solutions. More details are available on our repository 1.As shown in Table I, our proposed GG methods suc-cessfully synthesize new trajectories, achieving substantially higher success rates across all datasets compared to the LPV-DS baselines, which fail in the majority of cases. Furthermore, in the instances where valid solutions are found, our approaches generally yield higher-quality tra-jectories. This is evidenced by improved alignment with reference velocities (lower RMSE) and stronger adherence to demonstrated regions (higher Data Support) compared to baseline methods. Our proposed methods additionally yield lower inference times, with Chaining (DS) outperforming the others by a significant margin. This rapid online performance is achieved by shifting much of the computational load to offline precomputations, which averages 4.2 seconds for 
+
+Chaining (DS) and 44 .3 seconds for Chaining (All) .Fig. 3 illustrates qualitative examples of our proposed methods. Notably, the structural difference between the 
+
+Stitch-SP and Stitch-SPT methods is visible: Stitch-SP yields a DS tailored to a specific initial position, whereas Stitch-SPT 
+
+remains agnostic to the initial position and thereby generates a global DS toward the target. The bottom row (Figs. 3k–3o) highlights the particular strengths of Chaining in complex scenarios where Stitching fails. Specifically, Chaining is able to formulate and execute sophisticated trajectories that are otherwise challenging for a single time-invariant DS to represent while satisfying the strict decay constraints of a Lyapunov function. Overall, the simulation results confirm that both Stitching 
+
+and Chaining effectively enable zero-shot generalization to unseen tasks with a relatively high rate of success. 
+
+B. Real-Robot Experiments 
+
+Furthermore, we validate our simulated findings through real-robot experiments using the two methods with the highest success rate on 3D PC-GMM : Stitch-SPT (DS) and 
+
+Chaining (DS) . The experiments are conducted on a UR3e manipulator equipped with an OnRobot two-finger gripper, using the same configurations as in the previous section. We collect training data for three distinct demonstrations (two trajectories each): (i) grasping object 1 starting from box A, (ii) grasping object 2, and (iii) transitioning from above object 1 to box B (see first row of Fig. 4). Importantly, grasping solely refers to moving towards the object and closing the gripper without lifting it. Using this dataset, we evaluate zero-shot generalization on two unseen composite tasks, both starting from the workspace center: (1) picking up object 2 and moving it Demo 1  
+
+> Task 1
+> Demo 2 Demo 3
+> Stitch -SPT (DS)  Chain (DS)
+> Task 2
+> Stitch -SPT (DS)  Chain (DS)
+
+Fig. 4: Real-robot experiments where we collect 3 demonstrations with 2 trajectories each and test Stitch-SPT (DS) and 
+
+Chaining (DS) on two different tasks that require reversing and stitching. The environment consists of a transparent cube (object 1), a red cube (object 2), a brown box (box A), a white box (box B), and a plant acting as an obstacle. to box B, and (2) picking object 1 and moving it to box A. In order to solve task (1), the underlying policy needs to combine all the existing demonstrations. Conversely, task (2) requires the system to reverse demonstration (i) without experiencing interference from other data. As the DS outputs end-effector velocities, we map them to joint velocities via an inverse-kinematics solver and execute them with a velocity controller. Gripper actions are triggered when reaching the desired pickup location. Additionally, a complete task is defined by consecutive attractor positions. For instance, in task (1), the attractor is initially object 2, but then changed to box B once object 2 is grasped. Fig. 4 illustrates the resulting behaviors for both Stitch-SPT (DS) and Chaining (DS) . As can be seen, both methods successfully complete the tasks, confirming the efficacy of our methods as observed in the simulation datasets. Crucially, integrating trajectory stitching (or chaining) combined with the bi-directionality assumption enables the end-effector to freely move around the whole workspace while remaining within the demonstrated data manifold, allowing it to closely follow the most fitting demonstration at any given time. VII. D ISCUSSIONS 
+
+A. Methodological Trade-Offs 
+
+Each of the proposed methods offers distinct advantages while presenting specific trade-offs. Stitch-SP constructs a DS tailored to a specific initial-target pair; it generally achieves trajectory qualities comparable to Stitch-SPT , but requires less computation time. On the other hand, Stitch-SPT 
+
+generates a global DS dependent exclusively on the target position, resulting in a policy that generally accommodates any initial position within data support and thereby making it inherently more robust to large perturbations. Furthermore, it can be entirely precomputed if the set of desired target positions is known in advance. 
+
+Chaining yields the highest-quality trajectories and ex-tremely fast computation times, provided the offline pre-computation is completed. Crucially, Chaining is the only method among those evaluated capable of producing highly sophisticated, intersecting trajectories (such as those in Fig. 2 and Figs. 3k–3o) that exceed the representational capacity of a single time-invariant DS. However, because Chaining 
+
+formulates an inherently time-varying DS, it relies on the implicit assumption that the system state remains relatively close to the active graph segment. This results in a higher sensitivity to large perturbations compared to the Stitching 
+
+approaches. Ultimately, the optimal choice of method is application-dependent, balancing the need for robustness, computational performance, and trajectory complexity. 
+
+B. Incremental Learning and Scalability 
+
+One of the most significant advantages of the proposed methods is their scalability to unseen tasks within a shared workspace. Rather than collecting a new demonstration for every possible task, existing demonstrations can be reused to synthesize novel trajectories. If an entirely new region of the workspace must be reached, only a brief, localized demonstration connecting the new area to the existing spatial network is required. Thus, our methods integrate naturally with incremental learning. Incorporating a new demonstra-tion requires fitting an LPV-DS model to the new demonstra-tion, translating it into new vertices and edges, and appending them to the existing GG. Once updated, Stitching or Chaining 
+
+can be applied. Notably, prior Chaining precomputations can be retained; the system only needs to compute and store the localized dynamics of newly added segments. This flexibility is key for deployment in real-life settings where adjustability and extendibility are critical. 
+
+C. Limitations and Future Work 
+
+While the proposed framework successfully enables zero-shot generalization, it presents a few limitations — be-yond those already discussed — that motivate future work. First, the construction of the GG currently relies on user-defined hyperparameters ( ηBC , η dist , η dir ) to balance data-overlap, spatial distance, and dynamic consistency. Besides exploring the wide range of alternative edge-weight formu-lations, future work could aim to automate the parameter selection process. This could be achieved by framing the graph connectivity as an optimization problem, or by learning acceptable parameter bounds directly from the demonstration data distribution. Second, our approach aims to synthesize novel trajectories within data support. However, it does not explicitly account for changing object positions or obstacles introduced into the workspace after the demonstrations were collected. Integrat-ing real-time obstacle avoidance — for instance, using DS 
+
+modulation [12] or Control Barrier Functions [13] — could be implemented both during the GG path-finding phase and within the resulting control policy. Similarly, combining our method with, for instance, Elastic Motion Policies [6] would allow us to adapt to different object positions. Finally, the current implementation operates primarily on spatial components (Euclidean space). A highly promising avenue for future work is extending the approach to include end-effector orientations by integrating SE(3) LPV-DS [5]. The primary modification required would be adapting the edge-weight metrics used during the graph search to account for rotational manifolds. This extension highlights the un-derlying generality of the Gaussian Graph framework and provides a strong theoretical foundation for scaling to more complex robotics tasks. VIII. C ONCLUSIONS 
+
+Although there are multiple ways to learn motion policies from expert demonstrations, dynamical system (DS) based methods have proven to be data-efficient and provide fast and reactive control with stability guarantees. However, these methods often lack the ability to combine learned skills to generalize to new scenarios. In this work, we presented a framework to effectively perform zero-shot generalization from motion demonstrations of separate tasks in a shared workspace to new, undemonstrated tasks. To this end, we introduced the Gaussian Graph (GG), constructed from the components obtained by applying Linear Parameter-Varying DS (LPV-DS) to each demonstration separately. The GG thereby allows for the unification of continuous control with well-known graph algorithms. We then introduced two classes of methods: Demonstration Stitching , which com-bines GG components along a shortest path or in a shortest path tree to produce a time-invariant DS; and Demonstration Chaining , which divides a path in the GG into “stepping stones” that are sequentially traversed. The Stitching methods naturally inherit LPV-DS’s stability guarantees while reliably generalizing to new tasks, while for Chaining we provide for-mal proofs of stability and showcase the flexibility it provides in the resulting types of motions. Simulations and real-robot evaluations show their efficacy for zero-shot generalization where baselines fail. Overall, this work contributes towards developing methods that are sample-efficient, reactive, and provably convergent while effectively reusing data for unseen tasks. REFERENCES [1] B. Zitkovich, T. Yu, S. Xu, P. Xu, T. Xiao, F. Xia, J. Wu, P. Wohlhart, S. Welker, A. Wahid, et al. , “RT-2: Vision-language-action models transfer web knowledge to robotic control,” in Conference on Robot Learning , pp. 2165–2183, PMLR, 2023. [2] M. J. Kim, K. Pertsch, S. Karamcheti, T. Xiao, A. Balakrishna, S. Nair, R. Rafailov, E. Foster, G. Lam, P. Sanketi, et al. , “Open-VLA: An open-source vision-language-action model,” arXiv preprint arXiv:2406.09246 , 2024. [3] K. Kawaharazuka, T. Matsushima, A. Gambardella, J. Guo, C. Paxton, and A. Zeng, “Real-world robot applications of foundation models: A review,” Advanced Robotics , vol. 38, no. 18, pp. 1232–1254, 2024. [4] A. Billard, S. Mirrazavi, and N. Figueroa, Learning for Adaptive and Reactive Robot Control: A Dynamical Systems Approach . Mit Press, 2022. [5] S. Sun and N. Figueroa, “SE(3) linear parameter varying dynamical systems for globally asymptotically stable end-effector control,” in

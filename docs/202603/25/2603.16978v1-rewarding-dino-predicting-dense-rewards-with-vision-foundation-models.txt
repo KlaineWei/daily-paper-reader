@@ -1,0 +1,238 @@
+Title: Rewarding DINO: Predicting Dense Rewards with Vision Foundation Models
+
+URL Source: https://arxiv.org/pdf/2603.16978v1
+
+Published Time: Thu, 19 Mar 2026 00:06:45 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Rewarding DINO: Predicting Dense Rewards with Vision Foundation Models 
+
+Pierre Krack 1, Tobias J¨ ulg 1, Wolfram Burgard 1 and Florian Walter 1,2
+
+Abstract —Well-designed dense reward functions in robot manipulation not only indicate whether a task is completed but also encode progress along the way. Generally, designing dense rewards is challenging and usually requires access to privileged state information available only in simulation, not in real-world experiments. This makes reward prediction models that infer task state information from camera images attractive. A common approach is to predict rewards from expert demonstrations based on visual similarity or sequential frame ordering. However, this biases the resulting reward function towards a specific solution and leaves it undefined in states not covered by the demonstrations. In this work, we introduce Rewarding DINO, a method for language-conditioned reward modeling that learns actual reward functions rather than specific trajectories. The model’s compact size allows it to serve as a direct replacement for analytical reward functions with comparatively low computational overhead. We train our model on data sampled from 24 Meta-World+ tasks using a rank-based loss and evaluate pairwise accuracy, rank correlation, and calibration. Rewarding DINO achieves competitive performance in tasks from the training set and generalizes to new settings in simulation and the real world, indicating that it learns task semantics. We also test the model with off-the-shelf reinforcement learning algorithms to solve tasks from our Meta-World+ training set. 
+
+I. I NTRODUCTION 
+
+Performance metrics are essential for learning and evaluating robot manipulation policies. In reinforcement learning, these metrics are provided by reward functions that map a robot’s task performance to a simple numerical value. However, defining dense reward functions for robotic tasks that encode fine-grained feedback is challenging, and often depends on privileged state information available only in simulation. Modern vision foundation models can encode both high-level semantics and fine-grained visual details, suggesting that their representation may contain the information necessary to compute such rewards. We ask the evident question: can dense reward functions be predicted from pre-trained image and language embeddings, with a precision comparable to rewards computed from privileged state? Reward prediction is appealing due to its many downstream applications: policy evaluation, dataset analysis, AI safety, and reinforcement learning. The task naturally spans a broad range of difficulty and is hardware agnostic, enabling researchers to flexibly scale data and model capacity. These properties make it a promising candidate for large-scale training. Reward prediction has recently garnered significant atten-tion [ 1 ], [ 2], [ 3 ], [ 4], [ 5 ], [ 6], [ 7 ]. Most methods leverage  
+
+> 1Department of Computer Science & Artificial Intelligence, University of Technology Nuremberg, Germany. Contact: pierre.krack@utn.de
+> 2TUM School of Computation, Information and Technology, Technical University of Munich, Germany
+> Fig. 1. We collect a dataset with multiple camera views and associated rewards across multiple tasks, formulate reward modeling as a pairwise preference learning problem, and recover dense shaped reward functions.
+
+successful task demonstrations to implicitly define rewards through visual similarity or by analyzing the temporal order of frames in demonstration videos. The main focus is on scaling the methods to large datasets. However, unlike traditional ana-lytic reward functions, this ties the resulting reward prediction closely to a specific solution rather than to the task definition itself. In particular, the resulting reward models are only defined within the state space defined by the collected demonstrations. This is problematic when training a reinforcement learning policy from scratch, as the trajectories during early training phases may differ substantially from expert demonstrations. In this work, we introduce Rewarding DINO, a method that addresses these limitations by learning dense rewards that can be computed analytically. This sidesteps the lack of annotated non-expert data, allowing us to answer whether vision foundation models can and should serve as a backbone for reward prediction. Our approach enables evaluation with respect to analytical rewards and can be used to solve Meta-World+ tasks from scratch with off-the-shelf reinforcement learning algorithms. Importantly, our formulation does not sacrifice generality, as it naturally encompasses alternative supervision signals—including sparse rewards, preference data, or demonstration data. Our approach can therefore be viewed as a recipe for training precise dense reward models. 
+
+In summary, we make the following contributions: 
+
+1) We formulate reward prediction as a supervised learning problem applicable to several existing approaches. 
+
+> arXiv:2603.16978v1 [cs.RO] 17 Mar 2026
+
+2) We design and train a lightweight architecture to predict dense rewards from encodings of pre-trained vision and language models. 3) We evaluate the precision, calibration, and generalization capabilities of our approach. 4) We show a principled method for training policies from scratch using image-based reward models. II. R ELATED WORK 
+
+Our work is related to Inverse Reinforcement Learning (IRL) [ 8] in that we also learn a reward function. IRL uses unlabeled demonstrations, whereas we rely on existing reward functions to generate data. Within this scope, the work closest to ours is that of Fu et al. [ 9], who introduce language conditioning to learn goal-conditioned reward functions. More recent work focuses on predicting rewards from videos with contrastive learning. MineDojo [ 5 ], VIP [ 6 ], and LIV [ 7]use a CLIP-like objective [ 10 ] to align images of solved tasks with corresponding textual goal descriptions. In particular, VIP and LIV focus on pre-trained representations for robot policies and show that they can be interpreted as progress indicators. The limitation of such an approach is that visual similarity cannot always be equated with task progress. Another line of work has investigated the use of Vision-Language Models (VLMs) for success detection. In Robo-Fume [ 11 ], the authors use a VLM fine-tuned on task success detection to fine-tune pre-trained policies on novel tasks. Similarly, Yuqing et al. fine-tune VLMs to reliably detect success and evaluate the precision of success detection [ 12 ]. Different from these works, Rewarding DINO learns a dense reward function. Large Language Models (LLMs) and VLMs have also been used to generate code for reward functions. Yu et al. [ 13 ]generate residuals for optimization using model predictive control. Kwon et al. [ 14 ] utilize an LLM directly inside a Reinforcement Learning (RL) loop as a reward function. Eureka [ 15 ] is also based on an LLM, but uses it to iteratively improve its reward function code after observing policies trained with the generated reward. Instead, Rewarding DINO does not generate code but directly maps observations to scalar rewards. Several recent works focus on reward learning, leveraging large demonstration datasets and the order of frames within demonstration videos to recover a reward signal. RankNet [ 1]introduces the idea and employs an adversarial algorithm to train models with the learned rewards. ReWiND [ 3] proposes video rewinding to learn reverse progress, and fine-tunes pretrained policies on new tasks where the initial policy performs adequately. RoboMeter [ 2] attempts to further mitigate the lack of negative examples by including an additional prediction head, which is trained separately to prefer expert demonstrations to failed or suboptimal trajectories. They then train an SAC policy to shape the noise of a pre-trained diffusion model using DSRL [ 16 ]. The authors of RoboReward [ 3 ]present a dataset and a benchmark, where partially and unsolved tasks are generated via counterfactual prompts generated by a VLM. Both augmentations also address the lack of suboptimal and failed trajectories.  
+
+> Fig. 2. Model architecture overview. The text and image encoders are frozen. We train only the small head, which fuses language and image tokens through FiLM. The inputs are two 512 ×512 images and a textual goal description; the output is a single scalar.
+
+We focus on developing a simple, data-efficient, and effective supervised formulation for learning well-defined, dense rewards from pretrained vision and language representations, without sacrificing generality. This formulation allows us to directly evaluate reward prediction against an analytical ground truth and to measure how this translates into training RL policies. III. M ETHOD 
+
+This section describes our reward learning method. Our goal is to map visual observations from a robot manipulation task to a numeric score based on a natural language task description. While sequential models can be more expressive, we focus on learning simple reward functions that, like typical analytical reward functions, depend only on the current state of the robot and the environment, not on history. Reward functions can be concatenated by changing the prompt over time. Given an observation ot = ( I1, I2) composed of two image embeddings I1, I2, and an embedding of a textual goal de-scription g, the objective is to learn a function f (ot , g) that computes a scalar score s inducing the same ordering over states as a ground truth reward rt . In the following, we motivate and describe our modeling choices and the objective function before describing the dataset collection. 
+
+A. Model Architecture 
+
+Figure 2 provides an overview of our architecture. One of our key ideas is that a strong, dense image representation, combined with a goal embedding, reduces reward learning to measuring distances to and between objects specified by the goal description and verifying discrete conditions related to the environment state. The model must therefore fuse image embeddings with embeddings of goal descriptions to infer the corresponding reward. Because this is only possible with a clear and unobstructed view of all task-relevant objects, we use two camera perspectives to reduce occlusions and ambiguities that can arise from single-view observations. We chose DINOv3 [ 17 ] in its variant ViT-S/16 as our image embedding model, a Vision Transformer (ViT) with 21 M parameters trained with a particular emphasis on dense features. The model’s comparatively small size reduces the computational costs for inferencing rewards, which is a key prerequisite for deploying our model as a drop-in replacement for analytical reward functions. To encode goals, we use allMiniLM-L6-v2 , a bidirectional encoder representations from transformers (BERT) model [ 18 ] distilled using deep self-attention [ 19 ] and fine-tuned using the approach described in sentence BERT (SBERT) [20]. Since we rely on dense spatial information, we use the full patch embedding matrix of DINOV3, a grid of tokens with positional information, each representing a specific part of the image. We do not use the class token, which represents the whole image in a single token. Moreover, we use four one-by-one convolution kernels to project each 384-dimensional token into a 4-dimensional vector. This is equivalent to having four separate linear layers, each applied to each token individually. The result is concatenated into a vector and fed into a small multi-layer perceptron (MLP)—the reward head. The reward head consists of four linear layers with sizes 4096, 512, 64, and 8. Each of them is followed by layer normalization [ 21 ], and we use LeakyReLU [ 22 ] activation functions. The first three layers merge the goal description using FiLM [23]. FiLM is a simple alternative to cross-attention for condi-tioning. Both FiLM and cross-attention learn parameters for a parameterized function. Whereas cross-attention computes matrices to be used in a matrix multiplication, FiLM computes a vector to be used in a simpler affine transformation γ ⊙ x + β ,where ⊙ represents the Hadamard product, and γ and β are the FiLM parameters. FiLM rescales and shifts the individual feature dimensions, and gains representational power from nonlinearities in consecutive modulated layers. The FiLM parameters are computed by a FiLM generator . In our case, the generator is another small MLP which takes the goal embedding as input, and outputs the parameters γ and β for each of the first three layers of the reward head. Our model maps each image observation deterministically to a single scalar score s. A consequence of this design is that the outputs of our model, when interpreted as a scoring function, induce a total pre-order over observations, provided the goal embedding does not change. 
+
+B. Pairwise Ranking Loss 
+
+Rewards can be interpreted as a numerical representation of preferences over trajectories, as posited by the reward hypothesis [ 24 ] and formalized in Bowling et al. [ 25 ]. As shown by Ng et al. [ 26 ], optimal policies are invariant to positive affine transformations of the reward function, implying many different reward functions can induce the same preference relationship over trajectories. In short, the absolute scale of rewards is not generally meaningful. Instead, the ordering they induce matters more. We reflect this in our training objective by using a pairwise logistic loss, as introduced in RankNet [ 27 ], rather than regressing absolute reward values. Let 
+
+y =
+
+ 1 if r0 > r1
+
+−1 if r1 > r0
+
+(1) be a binary classification label and ∆s = s0 − s1 the difference between the predicted scores of the first and second sample.  
+
+> Fig. 3. Plot of the TCP Cartesian coordinates in the training dataset for the door-open task after binning. The histogram on the right shows the distribution of rewards in the sample.
+
+The logistic pairwise loss can be written as 
+
+ℓ(∆s) = log 
+
+
+
+1 + exp 
+
+ −y∆s
+
+τ
+
+ 
+
+, (2) where r0 and r1 are the ground truth rewards, and τ is a temperature parameter controlling the sharpness of the loss. Lower values of τ result in higher errors for mis-ordered pairs, which then decay faster once the pair is ordered correctly, and vice-versa. Pairs with equal rewards do not express a strict preference, so we exclude them from training. This avoids imposing arbitrary equality constraints on predicted scores for indifferent pairs. The pairwise formulation allows us to use arbitrary reward scales across tasks, train with binary success indicators, or use the order of frames in demonstrations. Note that the pairwise logistic loss is conceptually similar to contrastive losses, as introduced by Hadsell et al. [ 28 ], and shares many of their advantages. It focuses optimization on ambiguous or misordered pairs while avoiding the need to predict potentially irrelevant absolute reward values. 
+
+C. Data Generation and Sampling 
+
+The goal of our method is to learn reward prediction based on existing expert rewards. For data collection, we thus assume that a task environment with an appropriate reward function is given. In robotics, collecting a comprehensive dataset is difficult in itself. Collecting random data often fails to cover a large state space, whereas using expert policies typically yields trajectories that are similar. We therefore collect both random and expert trajectories, where the expert policies switch to a random policy when the task is solved and back to expert when it becomes unsolved. Note that a naive random policy is a poor data-collection strategy, as the robot mostly remains in one place, depending on how actions are defined. In our case, we pick a random action and repeat it n times to cover a larger space. Since we collect trajectories and associated step-wise re-wards, we can verify the coverage in both Cartesian and reward space. If rewards correspond to progress along tasks, covering a broad spectrum of rewards implies coverage of task-relevant states. A good coverage in Cartesian space does not imply a good coverage in task space and vice versa. Even after ensuring broad coverage of both rewards and Cartesian coordinates, the dataset remains unbalanced, as can be seen in the reward histogram for an example task in Figure 3). Despite randomization, there are many samples corresponding to the initial positions of the task and, accordingly, low rewards. Analogously, there are many samples where the task is solved and, accordingly, high rewards. The combination of reward and Cartesian coordinates provides insights into which samples are unique. Based on this insight, we partition the dataset into unique bins of reward and Cartesian coordinates and then sample one element from each bin. This deduplication strategy, which removes samples where both the reward and the Cartesian coordinates differ by at most 0.01, roughly halves the number of samples. Figure 3 depicts the retained samples from a single task after binning. IV. R ESULTS 
+
+To evaluate our model, we consider different metrics to quantify the quality of the rewards predicted by the model relative to analytical ground-truth rewards on separately col-lected trajectories, and show the performance gap between random and expert trajectories. As reward prediction from images will degrade, for example, if a scene is occluded, we show a natural probabilistic interpretation of our model that allows for quantifying the confidence of the predicted rewards. We further investigate generalization to new task variations (e.g. open vs. close an object) and visual domain shift (simulated vs. real-world experiments). To analyze whether our model can replace analytical reward functions, we also train policies with proximal policy optimization (PPO) [ 29 ] across multiple tasks and compare them against the ground-truth dense reward and sparse rewards. 
+
+A. Experiment Setup 
+
+In the scope of this work, we focus on manipulation tasks centered around a robot with a gripper that manipulates objects on a table. We capture multiple images per sample, one of which is always from a gripper-mounted camera. We use Meta-World+ [ 30 ] and a simulated pick-cube replica of our lab setup to collect data for our experiments. Our lab setup consists of a Franka Research 3 robot mounted on a table. A RealSense camera is attached to the gripper, and 4 other RealSense cameras show the scene from different angles. We simulate the scene in MuJoCo [ 31 ] using Robot Control Stack [ 32 ] and use a ManiSkill-inspired [ 33 ] reward function. The time interval between consecutive samples significantly affects the difficulty. In our case, our model is trained to distinguish rewards from states that are 1/80 s apart in the Meta-World+ tasks and 1/30 s apart in the pick cube task. 
+
+1) Dataset: We use 24 of the Meta-World+ environments, selecting those that include variations (e.g., opening versus closing a door) so that the model must rely on language instructions. We keep drawer-close and its mostly binary rewards as a separate test task, to investigate the model’s  
+
+> Fig. 4. All the scenes and objects encountered in the training set. The objects move around, and the tasks have variations. The training tasks are: assembly, disassemble, button-press-topdown, door-open, door-close, window-close, window-open, drawer-open, faucet-open, faucet-close, handle-press, handle-pull, handle-press-side, handle-pull-side, door-lock, door-unlock, stick-pull, stick-push, plate-slide, plate-slide-side, plate-slide-back, plate-slide-back-side, coffee-pull, coffee-push, and our simulated pick task.
+
+generalization capabilities. Figure 4 shows all the tasks in our dataset. The dataset collection requires only a single hyperparameter 
+
+n to specify the number of times an action is repeated. This is necessary because it is task- and environment-dependent. Sampling is parameterized by εc and εr, which determine the bin resolution for the cartesian positions and the rewards, respectively. After normalizing rewards, we use them to identify duplicate samples. In our case, if the Cartesian distance between two samples is less than a centimeter ( εc = 0.01 ) and the rewards differ by less than 1% of the total reward variation within the task ( εr = 0.01 ), we consider the samples duplicates. In total, our dataset consists of 770 trajectories, totaling 169,018 distinct steps after binning, and 809,886 images. Our sampling procedure draws from more than 900 million step pairs and more than 4 billion image pairs. 
+
+2) Model Training: During training, the position of the gripper-mounted camera is randomized, and the second camera view is sampled from multiple alternatives. We sample only pairs with unequal rewards, since our loss is not defined for pairs with equal rewards. We also sample the language prompts for each task from a pre-defined set. We use the Adam optimizer [ 34 ] with decoupled weight decay, introducing hyperparameters β1 and β2 that we set to their default values, along with a weight decay hyperparameter. The temperature, τ, in the loss function is perhaps the most important hyperparameter as it determines the loss landscape. In our experiments, the training turned out to be relatively insensitive to the choice of hyperparameters. We set the learning rate to 0.0003 , the weight decay to 0.03 , and the loss temperature to 2. Furthermore, we use a batch size of 512, which, in our environment, is the maximum that still improves throughput, and train the model for 3000 epochs, where each epoch consists of 100,000 pairs. B. Reward Quality Metrics 
+
+We quantify the quality of the rewards predicted by the model using the ground-truth analytical rewards from the task environments. Because our model is not trained to regress exact values, a direct numerical comparison of the predictions with the ground truth is not possible. Instead, we start by measuring the pairwise accuracy between observation pairs. 
+
+1) Pairwise Accuracy: We measure the pairwise accuracy on observation pairs from the same task, including distinct trajectories, using the same camera perspectives and language prompt, and on a separate dataset collected as described in Section III-C . We only consider pairs where the normalized rewards differ by at least 0.01 (as in the training procedure) and select the best-performing camera configuration and prompt for each task. The stratified accuracies are reported in Figure 5. Our model can accurately rank pairs with a small reward difference. The accuracy exceeds 80% when the reward difference is between 0.06 and 0.7. For larger reward differences, accuracy drops, which can be explained by expert policies switching to random as soon as the task is solved. In such cases, two states can appear visually similar but have drastically different rewards, and our model cannot, for example, determine the exact frame when an object slips from the robot’s gripper. 
+
+2) Rank Correlation: Next, we measure whether the rank induced by our model’s predictions matches the rank defined by the ground-truth rewards. We use random policies, as described in Section III-C , and expert policies, in which the task finishes as soon as it is solved. Kendall’s tau is a rank-correlation metric with an intuitive interpretation. It can be written as 
+
+τ = 2
+
+n(n − 1) ∑ 
+
+> i<j
+
+sgn (xi − x j) sgn (yi − y j), (3) where n is the number of samples, and xk and yk are scalars of a first and a second sequence. In the absence of ties, a Kendall tau correlation of −1 represents a flipped order, 1indicates that the order is identical, and 0.5 indicates that 75% of the consecutive pairs are ordered correctly. We use a bias-corrected implementation that considers ties. This metric is more difficult than pairwise accuracy: Kendall tau only considers consecutive pairs, which will necessarily have closer rewards, especially in random trajectories where the rewards stay low. Unlike pairwise accuracy, it considers only pairs from the same trajectory. We report Kendall tau for expert and random trajectories in Figure 6. Note the large difference between expert and random trajectories, even though our model is trained on both. This intuitively makes sense, since the rewards from random trajectories are much lower. Thus, their order is based on much smaller differences in reward. Predicting rewards for random trajectories is therefore significantly more difficult, yet crucial for reinforcement learning from scratch, where policies are initially random. 
+
+C. Probabilistic Interpretation 
+
+Predicting rewards from images poses several challenges. Parts of the scene may be occluded or outside the cameras’ fields of view, and image resolution dictates the precision with which rewards can be predicted. As such, it is a natural fit for 0.2 0.4 0.6 0.8 1  
+
+> ∆r
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> P (correct  | ∆r)
+> 0
+> Fig. 5. Pairwise accuracy across all training tasks on newly collected trajectories. We calculate the pairwise accuracy stratified by reward difference. The y-axis is the likelihood that a pair of samples from the same task but potentially different episodes, using the same prompt and camera configuration, is ranked correctly, given a binned difference in ground-truth rewards on the x-axis. disassemble
+> handle-press
+> handle-pull
+> door-unlock
+> assembly
+> stick-push
+> door-lock
+> plate-slide-back
+> handle-press-side
+> handle-pull-side
+> stick-pull
+> window-open
+> faucet-open
+> plate-slide-back-side
+> plate-slide
+> window-close
+> plate-slide-side
+> faucet-close
+> drawer-open
+> coffee-pull
+> coffee-push
+> door-open
+> door-close
+> button-press-topdown
+> −0.4
+> −0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> τ
+> expert random
+> Fig. 6. Distributions of Kendall’s tau ( τ) per environment and per policy. Kendall’s tau is computed on ten expert and ten random trajectories for each environment.
+
+probabilistic modeling. With our approach, the distance between two logits naturally leads to a probabilistic interpretation. The larger the distance, the higher the likelihood that one state is better than another. We calibrate our model’s output based on the difference between two scores with temperature calibration and isotonic regression and report the estimated calibration error (ECE) between binned pairs in Figure 7. The temperature-calibrated model fits a single parameter τ so that our model prediction ˆp(s0 > s1) = σ (( s0 −s1)/τ) aligns with the empirical likelihood that p(r0 > r1). Isotonic regression, on the other hand, fits a piecewise monotonic transformation of s0 − s1. Both are calibrated on a train split of the evaluation data, and the plots show the results for a test split. The temperature-calibrated reward model exhibits an ECE of 0.043, and the one calibrated with isotonic regression exhibits an ECE of 0.001. In other words, when our model assigns a probability of x% to state a having a higher reward than state 
+
+b, then it is, on average, off by 4 .3% or 0 .1% respectively. 
+
+D. Generalization to New Prompts, Tasks, and Domains 
+
+For our model to be versatile, generalization to settings outside the training set is essential. We analyze generalization 0.5 1      
+
+> ˆp(ab)
+> 0.5 1
+> p(a  b)
+> 0
+> ideal
+> 0.5 1
+> ˆp(ab)
+> 0.5 1
+> 0
+> ideal Fig. 7. Reliability diagram of the probabilistic interpretation of the model after temperature scaling. The diagonal line represents a perfectly calibrated model. When the model is overconfident, the line is below the diagonal and vice versa.
+
+with respect to variations in the input prompt, the task, and in a sim-to-real setting. 
+
+1) Prompt Variation: We start by investigating the simplest form of generalization: across multiple paraphrases of the prompt. Given that we already train on multiple prompt variations and use a frozen pre-trained language model to embed goal descriptions, we expect low variance between train and test prompts. Indeed, pairwise accuracy decreases by 0.002, and per-trajectory Kendall tau decreases by 0.018. 
+
+2) Task Variation: Next, we investigate generalization to task variations: can the model predict a dense reward for the drawer-close task, even though it was only shown the drawer-open task during training? Given the small scale of the dataset, generalization is challenging and requires the model to learn a semantic understanding of the environment and the task based on the representations provided by the pre-trained encoders. In our experiments, pairwise accuracy drops from 0.93 to 0.51, a decrease of 0.42 points, and Kendall tau drops from 0.82 to 0.47, a decrease of 0.34. This is due to the ground truth rewards from Meta-World+ being mostly binary for drawer-close and dense for drawer-open. The effect stems from the random trajectories, in which the ground-truth reward is almost always zero, and the model’s predictions are dense. On expert trajectories, the metrics are substantially better: Kendall’s tau drops from 0.94 to 0.72. Overall, these results highlight the usefulness of the pre-trained encodings for reward prediction. 
+
+3) Sim-to-Real: To analyze the models’ sim-to-real perfor-mance, we include a pick-cube task simulated in MuJoCo and trained on data collected from different camera angles. We also record expert trajectories on real hardware and predict their rewards. Because there is no ground truth for the hardware setup, we present a qualitative evaluation of the reward model on the real setup in Figure 8. Figure 10 shows similar plots for simulated Meta-World+ tasks. The shaped reward signal computed on the sim-to-real task also demonstrates that our method does not overfit to individual pixels or specific feature dimensions of the encoded image, but instead learns to infer a reward based on relationships among multiple semantically meaningful dimensions in the image embeddings. 1 50 100 150 200 50 100 150 200       
+
+> Timestep
+> −25 0
+> s
+> Fig. 8. Qualitative evaluation of sim-to-real reward prediction. The images correspond to the two camera angles the model sees. The prompt is known from the training set. 200 ,000 400 ,000 600 ,000 800 ,000 1,000 ,000
+> Training step
+> 0.2 0.4 0.6 0.8 1
+> Fraction solved
+> 0
+> dense potential sparse
+> Fig. 9. Fraction of runs solved for each reward over the course of one million training steps. The shaded area shows 95% bootstrapped confidence intervals.
+
+E. Reinforcement Learning 
+
+Finally, we train policies from scratch using PPO on eight tasks on which the reward model was trained. The observation and action spaces are unmodified from Meta-World+ (proprioceptive and object state, relative Cartesian TCP actions). Our selection includes difficult and easy tasks, as well as tasks where our model performs poorly: assembly, button-press-topdown, door-open, drawer-open, faucet-close, plate-slide, window-close, and window-open. We train PPO for at most one million steps and stop training once the policy achieves a 100% success rate across ten evaluation rollouts, during which actions are deterministic. We use Stable-Baselines3 (SB3)’s [35] default PPO hyperparameters. Instead of replacing the rewards with our model’s reward, we use binary success indicators as the base reward and augment it with potential-based reward shaping (PBRS) based on our model [ 26 ]. PBRS suits the use case of a reward model from images particularly well, as it comes with a theoretical guarantee that the optimal policy remains unchanged, circumventing well-known failure modes of RL [ 36 ]. Let 
+
+φ : S → R be a function of states s ∈ S and F : S × A × S → R
+
+with F(s, a, s′) = γφ (s′) − φ (s). Then F is called a potential-based shaping function, and the optimal policy when replacing 1 125 250 375 500 100 200 300 400 500                      
+
+> Timestep
+> 012
+> r
+> −50 050
+> s121 41 61 81 010 20 30 40 50 60 70 80
+> Timestep
+> 0510
+> r020
+> sFig. 10. Predicted (orange) and ground truth (blue) rewards for a random policy on a known task (button-press-topdown, left) and an expert policy on an unknown task (door-close, right). Note that the ground-truth reward for door-close is mostly binary. Our model predicts higher rewards at the beginning, which then decrease as the expert policy moves farther away from the drawer (compare t=1with t=21 ), before peaking when the robot closes the drawer. A reward model trained on this expert policy would encourage the robot to first move away from the drawer before closing it.
+
+a reward R with R + F remains unchanged. In our case, we utilize our model as the potential function φ . Note, however, that our reward model is not a function of state, but a function of a partial observation of state, and the PBRS guarantees do not apply, as we will discuss in the next session. Figure 9 shows the fraction of runs solved after each evaluation. We evaluate every 50,000 training steps and consider the task solved if the policy can solve it ten times in a row. We compare our method with the analytical rewards of Meta-World+ and a sparse version, and show 95% bootstrapped confidence intervals. While some tasks are solved with sparse rewards (e.g. window-close), most are only solved with dense or predicted shaped rewards, whereas assembly is not solved at all. 
+
+F. Limitations 
+
+A theoretical limitation of our model is that it is not Markov with respect to the true state, i.e. the reward is not a function of state. The reason is that an image is only a partial observation of the true state, so our model can assign the same reward to identical images when part of the state relevant to the task is not observable. This also violates the theoretical guarantees of PBRS, although in practice, in Meta-World+ and with our two-camera configurations, the entire scene is usually visible. A reward model based on images can, however, still be theoretically sound, provided it has a memory unit or can observe the entire trajectory. The reward is then Markov with respect to so-called belief states [ 37 ]. Even the theoretical guarantees of PBRS can then be recovered as shown by Eck et al. [38]. As discussed in Section III-B , our loss is not defined on equal pairs, and our model is also not trained to detect successes. While success detection is important, it is difficult to incorporate in a principled manner. It usually implies equal rewards, which a model outputting real scalars can hardly achieve. The auxiliary head approach proposed by Liang et al. [ 2] is a promising addition. V. C ONCLUSION AND FUTURE WORK 
+
+In this paper, we present Rewarding DINO, a method for training dense reward functions from analytical rewards using pre-trained image and language representations. Our results show that modern vision encoders contain sufficient information to recover precise reward signals. The learned rewards are well-calibrated, generalize across prompt paraphrases and task variations, and enable dense reward prediction on real robots, despite the small dataset size. Importantly, our method is simple and general enough to incorporate diverse datasets for reward learning. It can also be used for RL in a principled manner using PBRS. By evaluating against a ground truth and training policies from scratch, we show the effect of replacing analytical rewards with predicted imperfect rewards. Our work can serve as a foundation for training reward models on larger datasets and with larger model capacities. Scaling model capacity with sequence models, in particular, may improve the reliability of RL algorithms by maintaining PBRS’s theoretical guarantees. Overall, we demonstrate that precise image-based reward models can be trained with compact architectures and datasets when using strong pretrained representations. ACKNOWLEDGMENT 
+
+This work has been partially supported by the Robotics Institute Germany (RIG) (grant no. 16ME1006) funded by the German Federal Ministry of Research, Technology and Space (BMFTR). The authors acknowledge the HPC resources provided by the Erlangen National HPC Center (NHR@FAU) under the BayernKI project no. v106be. REFERENCES [1] D. Yang, D. Tjia, J. Berg, D. Damen, P. Agrawal, and A. Gupta, “Rank2Reward: Learning shaped reward functions from passive video,” in Proc. of the IEEE Int. Conference on Robotics & Automation (ICRA) ,2024. [2] A. Liang, Y. Korkmaz, J. Zhang, M. Hwang, A. Anwar, S. Kaushik, A. Shah, A. S. Huang, L. Zettlemoyer, D. Fox, et al. , “Robometer: Scaling general-purpose robotic reward models via trajectory comparisons,” 2026,  
+
+> arXiv:2603.02115 [cs.RO].
+
+[3] T. Lee, A. Wagenmaker, K. Pertsch, P. Liang, S. Levine, and C. Finn, “RoboReward: General-purpose vision-language reward models for robotics,” 2026, arXiv:2601.00675 [cs.RO]. [4] J. Zhang, Y. Luo, A. Anwar, S. A. Sontakke, J. J. Lim, J. Thomason, E. Biyik, and J. Zhang, “ReWiND: Language-guided rewards teach robot policies without new demonstrations,” 2025, arXiv:2505.10911 [cs.RO]. [5] L. Fan, G. Wang, Y. Jiang, A. Mandlekar, Y. Yang, H. Zhu, A. Tang, D.-A. Huang, Y. Zhu, and A. Anandkumar, “MineDojo: Building open-ended embodied agents with internet-scale knowledge,” in Advances in Neural Information Processing Systems (NEURIPS) , 2022. [6] Y. J. Ma, S. Sodhani, D. Jayaraman, O. Bastani, V. Kumar, and A. Zhang, “VIP: Towards universal visual reward and representation via value-implicit pre-training,” in Proc. of the Int. Conf. on Learning Representations (ICLR) , 2023. [7] Y. J. Ma, V. Kumar, A. Zhang, O. Bastani, and D. Jayaraman, “LIV: Language-image representations and rewards for robotic control,” in 
+
+Proc. of Machine Learning Research (PMLR) , 2023. [8] A. Y. Ng and S. J. Russell, “Algorithms for inverse reinforcement learning,” in Proc. of the Int. Conference on Machine Learning (ICML) ,2000. [9] J. Fu, A. Korattikara, S. Levine, and S. Guadarrama, “From language to goals: Inverse reinforcement learning for vision-based instruction following,” in Proc. of the Int. Conf. on Learning Representations (ICLR) ,2019. [10] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, G. Krueger, and I. Sutskever, “Learning transferable visual models from natural language supervision,” in Proc. of Machine Learning Research (PMLR) , 2021. [11] J. Yang, M. S. Mark, B. Vu, A. Sharma, J. Bohg, and C. Finn, “Robot fine-tuning made easy: Pre-training rewards and policies for autonomous real-world reinforcement learning,” in Proc. of the IEEE Int. Conference on Robotics & Automation (ICRA) , 2024. [12] D. Yuqing, K. Ksenia, D. Misha, R. Akhil, L. Jessica, H. Felix, d. F. Nando, and S. Cabi, “Vision-language models as success detectors,” in 
+
+Proc. of Machine Learning Research (PMLR) , 2023. [13] W. Yu, N. Gileadi, C. Fu, S. Kirmani, K.-H. Lee, M. G. Arenas, H.-T. L. Chiang, T. Erez, L. Hasenclever, J. Humplik, B. Ichter, T. Xiao, P. Xu, A. Zeng, T. Zhang, N. Heess, D. Sadigh, J. Tan, Y. Tassa, and F. Xia, “Language to rewards for robotic skill synthesis,” in Proc. of Machine Learning Research (PMLR) , 2023. [14] M. Kwon, S. M. Xie, K. Bullard, and D. Sadigh, “Reward design with language models,” in Proc. of the Int. Conf. on Learning Representations (ICLR) , 2023. [15] Y. J. Ma, W. Liang, G. Wang, D.-A. Huang, O. Bastani, D. Jayaraman, Y. Zhu, L. Fan, and A. Anandkumar, “Eureka: Human-level reward design via coding large language models,” in Proc. of the Int. Conf. on Learning Representations (ICLR) , 2024. [16] A. Wagenmaker, M. Nakamoto, Y. Zhang, S. Park, W. Yagoub, A. Naga-bandi, A. Gupta, and S. Levine, “Steering your diffusion policy with latent space reinforcement learning,” 2025, arXiv:2506.15799 [cs.RO]. [17] O. Sim ´eoni, H. V. Vo, M. Seitzer, F. Baldassarre, M. Oquab, C. Jose, V. Khalidov, M. Szafraniec, S. Yi, M. Ramamonjisoa, F. Massa, D. Haziza, L. Wehrstedt, J. Wang, T. Darcet, T. Moutakanni, L. Sentana, C. Roberts, A. Vedaldi, J. Tolan, J. Brandt, C. Couprie, J. Mairal, H. J ´egou, P. Labatut, and P. Bojanowski, “DINOv3,” 2025, arXiv:2508.10104 [cs.CV]. [18] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “BERT: Pre-training of deep bidirectional transformers for language understanding,” in Proc. of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT) , 2019. [19] W. Wang, F. Wei, L. Dong, H. Bao, N. Yang, and M. Zhou, “MiniLM: Deep self-attention distillation for task-agnostic compression of pre-trained transformers,” in Advances in Neural Information Processing Systems (NEURIPS) , 2020. [20] N. Reimers and I. Gurevych, “Sentence-BERT: Sentence embeddings using siamese bert-networks,” in Proc. of the Conf. on Empirical Methods in Natural Language Processing (EMNLP) , 2019. [21] J. L. Ba, J. R. Kiros, and G. E. Hinton, “Layer normalization,” 2016, 
+
+arXiv:1607.06450 [stat.ML]. [22] A. L. Maas, A. Y. Hannun, A. Y. Ng, et al. , “Rectifier nonlinearities improve neural network acoustic models,” in Proc. of the Int. Conference on Machine Learning (ICML) , 2013. [23] E. Perez, F. Strub, H. de Vries, V. Dumoulin, and A. Courville, “FiLM: Visual reasoning with a general conditioning layer,” in Proc. of the National Conference on Artificial Intelligence (AAAI) , 2018. [24] R. S. Sutton and A. Barto, Reinforcement learning , second edition ed., ser. Adaptive computation and machine learning. The MIT Press. [25] M. Bowling, J. D. Martin, D. Abel, and W. Dabney, “Settling the reward hypothesis,” in Proc. of the Int. Conference on Machine Learning (ICML) ,2023. [26] A. Y. Ng, D. Harada, and S. J. Russell, “Policy invariance under reward transformations: Theory and application to reward shaping,” in Proc. of the Int. Conference on Machine Learning (ICML) , 1999. [27] C. Burges, T. Shaked, E. Renshaw, A. Lazier, M. Deeds, N. Hamilton, and G. Hullender, “Learning to rank using gradient descent,” in Proc. of the Int. Conference on Machine Learning (ICML) , 2005. [28] R. Hadsell, S. Chopra, and Y. LeCun, “Dimensionality reduction by learning an invariant mapping,” in Proc. of the IEEE Computer Society Conference on Computer Vision and Pattern Recognition (CVPR) , 2006. [29] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” 2017, arXiv:1707.06347 
+
+[cs.LG]. [30] R. McLean, E. Chatzaroulas, L. McCutcheon, F. R ¨oder, T. Yu, Z. He, K. Zentner, R. Julian, J. K. Terry, I. Woungang, N. Farsad, and P. S. Castro, “Meta-World+: An improved, standardized, RL benchmark,” in 
+
+Advances in Neural Information Processing Systems (NEURIPS) , 2025. [31] E. Todorov, T. Erez, and Y. Tassa, “MuJoCo: A physics engine for model-based control,” in Proc. of the IEEE/RSJ Int. Conference on Intelligent Robots and Systems (IROS) , 2012. [32] T. J ¨ulg, P. Krack, S. Bien, Y. Blei, K. Gamal, K. Nakahara, J. Hechtl, R. Calandra, W. Burgard, and F. Walter, “Robot Control Stack: A lean ecosystem for robot learning at scale,” https://arxiv.org/abs/2509.14932, 2025. [33] T. Mu, Z. Ling, F. Xiang, D. C. Yang, X. Li, S. Tao, Z. Huang, Z. Jia, and H. Su, “ManiSkill: Generalizable manipulation skill benchmark with large-scale demonstrations,” in Advances in Neural Information Processing Systems (NEURIPS) , 2021. [34] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in 
+
+Proc. of the Int. Conf. on Learning Representations (ICLR) , 2019. [35] A. Raffin, A. Hill, A. Gleave, A. Kanervisto, M. Ernestus, and N. Dormann, “Stable-Baselines3: Reliable reinforcement learning imple-mentations,” Journal of Machine Learning Research (JMLR) , 2021. [36] J. Randløv and P. Alstrøm, “Learning to drive a bicycle using reinforce-ment learning and shaping.” in Proc. of the Int. Conference on Machine Learning (ICML) , 1998. [37] L. P. Kaelbling, M. L. Littman, and A. R. Cassandra, “Planning and acting in partially observable stochastic domains,” Artificial Intelligence ,1998. [38] A. Eck, L.-K. Soh, S. Devlin, and D. Kudenko, “Potential-based reward shaping for finite horizon online pomdp planning,” Autonomous Agents and Multi-Agent Systems , 2016.

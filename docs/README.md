@@ -6,118 +6,100 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-24
-- 运行时间：2026-03-24 19:53:25 UTC
+- 最新运行日期：2026-03-25
+- 运行时间：2026-03-25 19:54:48 UTC
 - 运行状态：成功
-- 本次总论文数：32
-- 精读区：20
+- 本次总论文数：26
+- 精读区：14
 - 速读区：12
 
 ### 今日简报（AI）
-今日深度研读 32 篇前沿论文，聚焦 VLA 模型与世界模型在具身智能领域的实战突破。
-满分论文揭示了世界模型强化学习与 ROI 驱动注意力机制在提升机器人视觉表征与操作精度上的巨大潜力。
-建议优先关注 VLA 系统如何通过模拟环境与感知优化，实现更具鲁棒性的机器人技能学习。
-- 详情：[/202603/24/README](/202603/24/README)
+今日精选 26 篇前沿论文，重点攻克工业机器人少样本姿态纠正与生成式推荐的推理难题。
+Agile-VLA 通过隐式锚点实现精准工业操作，同时语义 ID 推理被证明能显著增强生成式推荐效果。
+建议深入探索大模型在垂直工业场景的具身智能应用，以及逻辑推理与个性化分发的深度融合。
+- 详情：[/202603/25/README](/202603/25/README)
 
 ### 精读区论文标签
-1. [Towards Practical World Model-based Reinforcement Learning for Vision-Language-Action Models](/202603/24/2603.20607v1-towards-practical-world-model-based-reinforcement-learning-for-vision-language-action-models)  
+1. [Agile-VLA: Few-Shot Industrial Pose Rectification via Implicit Affordance Anchoring](/202603/25/2603.22899v1-agile-vla-few-shot-industrial-pose-rectification-via-implicit-affordance-anchoring)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：基于模型强化学习的VLA微调与世界建模
-2. [ROI-Driven Foveated Attention for Unified Egocentric Representations in Vision-Language-Action Systems](/202603/24/2603.20668v1-roi-driven-foveated-attention-for-unified-egocentric-representations-in-vision-language-action-systems)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：用于机器人控制的视觉-语言-动作系统
-3. [RoboAlign: Learning Test-Time Reasoning for Language-Action Alignment in Vision-Language-Action Models](/202603/24/2603.21341v1-roboalign-learning-test-time-reasoning-for-language-action-alignment-in-vision-language-action-models)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：通过强化学习改进视觉-语言-动作模型
-4. [AgenticRec: End-to-End Tool-Integrated Policy Optimization for Ranking-Oriented Recommender Agents](/202603/24/2603.21613v1-agenticrec-end-to-end-tool-integrated-policy-optimization-for-ranking-oriented-recommender-agents)  
+   evidence：资源受限边缘平台上的VLA模型与分层框架
+2. [Reasoning over Semantic IDs Enhances Generative Recommendation](/202603/25/2603.23183v1-reasoning-over-semantic-ids-enhances-generative-recommendation)  
    标签：评分：10.0/10、query:llmrec
-   evidence：基于大模型的智能体推荐与策略优化
-5. [VP-VLA: Visual Prompting as an Interface for Vision-Language-Action Models](/202603/24/2603.22003v1-vp-vla-visual-prompting-as-an-interface-for-vision-language-action-models)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：解耦高层规划与底层执行的VLA框架
-6. [Closed-Loop Verbal Reinforcement Learning for Task-Level Robotic Planning](/202603/24/2603.22169v1-closed-loop-verbal-reinforcement-learning-for-task-level-robotic-planning)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：结合VLM和LLM的机器人任务级规划语言强化学习
-7. [DualCoT-VLA: Visual-Linguistic Chain of Thought via Parallel Reasoning for Vision-Language-Action Models](/202603/24/2603.22280v1-dualcot-vla-visual-linguistic-chain-of-thought-via-parallel-reasoning-for-vision-language-action-models)  
-   标签：评分：10.0/10、query:slm-rl
-   evidence：VLA模型中用于复杂多步任务的思维链
-8. [Large Reward Models: Generalizable Online Robot Reward Generation with Vision-Language Models](/202603/24/2603.16065v2-large-reward-models-generalizable-online-robot-reward-generation-with-vision-language-models)  
+   evidence：基于大模型和语义ID的生成式推荐
+3. [AsgardBench -- Evaluating Visually Grounded Interactive Planning Under Minimal Feedback](/202603/25/2603.15888v2-asgardbench----evaluating-visually-grounded-interactive-planning-under-minimal-feedback)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：利用VLM作为奖励生成器进行机器人策略在线优化
-9. [Task-Specified Compliance Bounds for Humanoids via Lipschitz-Constrained Policies](/202603/24/2603.16180v2-task-specified-compliance-bounds-for-humanoids-via-lipschitz-constrained-policies)  
+   evidence：具身智能中的视觉对齐交互式规划与高层动作序列生成
+4. [Rewarding DINO: Predicting Dense Rewards with Vision Foundation Models](/202603/25/2603.16978v1-rewarding-dino-predicting-dense-rewards-with-vision-foundation-models)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于人形机器人双足运动和控制的强化学习
-10. [GigaWorld-Policy: An Efficient Action-Centered World--Action Model](/202603/24/2603.17240v2-gigaworld-policy-an-efficient-action-centered-world--action-model)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：用于机器人策略学习和高效动作解码的世界-动作模型
-11. [Is Your LLM-as-a-Recommender Agent Trustable? LLMs' Recommendation is Easily Hacked by Biases (Preferences)](/202603/24/2603.17417v2-is-your-llm-as-a-recommender-agent-trustable-llms-recommendation-is-easily-hacked-by-biases-preferences)  
+   evidence：利用视觉模型进行机器人操作的稠密奖励预测
+5. [Causal Direct Preference Optimization for Distributionally Robust Generative Recommendation](/202603/25/2603.22335v1-causal-direct-preference-optimization-for-distributionally-robust-generative-recommendation)  
    标签：评分：9.0/10、query:llmrec
-   evidence：评估LLM作为推荐代理在实际领域中的偏差
-12. [ProRL Agent: Rollout-as-a-Service for RL Training of Multi-Turn LLM Agents](/202603/24/2603.18815v1-prorl-agent-rollout-as-a-service-for-rl-training-of-multi-turn-llm-agents)  
+   evidence：用于生成式推荐LLM的因果直接偏好优化
+6. [Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning](/202603/25/2603.22430v1-model-predictive-control-with-differentiable-world-models-for-offline-reinforcement-learning)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：多轮LLM智能体长程行为的强化学习训练
-13. [Multi-Robot Learning-Informed Task Planning Under Uncertainty](/202603/24/2603.20544v1-multi-robot-learning-informed-task-planning-under-uncertainty)  
+   evidence：结合可微世界模型与模型预测控制的离线强化学习
+7. [SG-VLA: Learning Spatially-Grounded Vision-Language-Action Models for Mobile Manipulation](/202603/25/2603.22760v1-sg-vla-learning-spatially-grounded-vision-language-action-models-for-mobile-manipulation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：多机器人长程任务规划
-14. [StageCraft: Execution Aware Mitigation of Distractor and Obstruction Failures in VLA Models](/202603/24/2603.20659v1-stagecraft-execution-aware-mitigation-of-distractor-and-obstruction-failures-in-vla-models)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：通过执行感知推理减轻VLA模型中的失效
-15. [RoboECC: Multi-Factor-Aware Edge-Cloud Collaborative Deployment for VLA Models](/202603/24/2603.20711v1-roboecc-multi-factor-aware-edge-cloud-collaborative-deployment-for-vla-models)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：专为VLA模型设计的边云协同部署框架
-16. [PivotRL: High Accuracy Agentic Post-Training at Low Compute Cost](/202603/24/2603.21383v1-pivotrl-high-accuracy-agentic-post-training-at-low-compute-cost)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：利用强化学习进行长程智能体任务的后训练
-17. [TagLLM: A Fine-Grained Tag Generation Approach for Note Recommendation](/202603/24/2603.21481v1-tagllm-a-fine-grained-tag-generation-approach-for-note-recommendation)  
+   evidence：用于移动操控的空间落地VLA模型
+8. [KARMA: Knowledge-Action Regularized Multimodal Alignment for Personalized Search at Taobao](/202603/25/2603.22779v1-karma-knowledge-action-regularized-multimodal-alignment-for-personalized-search-at-taobao)  
    标签：评分：9.0/10、query:llmrec
-   evidence：基于大模型的笔记推荐标签生成
-18. [Demystifying Reinforcement Learning for Long-Horizon Tool-Using Agents: A Comprehensive Recipe](/202603/24/2603.21972v1-demystifying-reinforcement-learning-for-long-horizon-tool-using-agents-a-comprehensive-recipe)  
+   evidence：微调大模型用于个性化搜索和下一物品预测
+9. [VLGOR: Visual-Language Knowledge Guided Offline Reinforcement Learning for Generalizable Agents](/202603/25/2603.22892v1-vlgor-visual-language-knowledge-guided-offline-reinforcement-learning-for-generalizable-agents)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于长程工具使用智能体的强化学习及模型缩放效应
-19. [One Model, Two Markets: Bid-Aware Generative Recommendation](/202603/24/2603.22231v1-one-model-two-markets-bid-aware-generative-recommendation)  
+   evidence：微调VLA模型用于未来状态预测与离线强化学习
+10. [GateSID: Adaptive Gating for Semantic-Collaborative Alignment in Cold-Start Recommendation](/202603/25/2603.22916v1-gatesid-adaptive-gating-for-semantic-collaborative-alignment-in-cold-start-recommendation)  
    标签：评分：9.0/10、query:llmrec
-   evidence：用于序列推荐的生成式推荐系统框架
-20. [UniDex: A Robot Foundation Suite for Universal Dexterous Hand Control from Egocentric Human Videos](/202603/24/2603.22264v1-unidex-a-robot-foundation-suite-for-universal-dexterous-hand-control-from-egocentric-human-videos)  
+   evidence：推荐系统中语义与协同对齐的自适应门控
+11. [VLA-IAP: Training-Free Visual Token Pruning via Interaction Alignment for Vision-Language-Action Models](/202603/25/2603.22991v1-vla-iap-training-free-visual-token-pruning-via-interaction-alignment-for-vision-language-action-models)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于灵巧手控制的统一视觉-语言-动作 (VLA) 策略
+   evidence：针对VLA模型在操作任务中的视觉Token剪枝技术
+12. [Describe-Then-Act: Proactive Agent Steering via Distilled Language-Action World Models](/202603/25/2603.23149v1-describe-then-act-proactive-agent-steering-via-distilled-language-action-world-models)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：用于主动智能体引导的蒸馏语言-动作世界模型
+13. [Gaze-Regularized Vision-Language-Action Models for Robotic Manipulation](/202603/25/2603.23202v1-gaze-regularized-vision-language-action-models-for-robotic-manipulation)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：用于机器人操作的视觉-语言-动作模型
+14. [Neural ODE and SDE Models for Adaptation and Planning in Model-Based Reinforcement Learning](/202603/25/2603.23245v1-neural-ode-and-sde-models-for-adaptation-and-planning-in-model-based-reinforcement-learning)  
+   标签：评分：9.0/10、query:slm-rl
+   evidence：基于模型的强化学习，利用神经微分方程进行规划与自适应
 
 ### 速读区论文标签
-1. [Confusion-Aware In-Context-Learning for Vision-Language Models in Robotic Manipulation](/202603/24/2603.15134v1-confusion-aware-in-context-learning-for-vision-language-models-in-robotic-manipulation)  
+1. [Gym-V: A Unified Vision Environment System for Agentic Vision Research](/202603/25/2603.15432v1-gym-v-a-unified-vision-environment-system-for-agentic-vision-research)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：用于机器人操作和鲁棒性的视觉语言模型
-2. [KiRAS: Keyframe Guided Self-Imitation for Robust and Adaptive Skill Learning in Quadruped Robots](/202603/24/2603.15179v1-kiras-keyframe-guided-self-imitation-for-robust-and-adaptive-skill-learning-in-quadruped-robots)  
+   evidence：强化学习代理的统一视觉环境
+2. [Geometry-Aligned LLM Fine-Tuning for Sequential Narrow-Opening Planning](/202603/25/2603.16028v1-geometry-aligned-llm-fine-tuning-for-sequential-narrow-opening-planning)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：四足机器人技能学习与控制的强化学习
-3. [SAGE: Multi-Agent Self-Evolution for LLM Reasoning](/202603/24/2603.15255v2-sage-multi-agent-self-evolution-for-llm-reasoning)  
+   evidence：利用微调LLM进行长程几何推理与路径点规划
+3. [ARISE: Agent Reasoning with Intrinsic Skill Evolution in Hierarchical Reinforcement Learning](/202603/25/2603.16060v1-arise-agent-reasoning-with-intrinsic-skill-evolution-in-hierarchical-reinforcement-learning)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：具有显式规划的长程多步推理强化学习
-4. [MoE-ACT: Scaling Multi-Task Bimanual Manipulation with Sparse Language-Conditioned Mixture-of-Experts Transformers](/202603/24/2603.15265v1-moe-act-scaling-multi-task-bimanual-manipulation-with-sparse-language-conditioned-mixture-of-experts-transformers)  
+   evidence：用于智能体推理的分层强化学习
+4. [Enforcing Task-Specified Compliance Bounds for Humanoids via Anisotropic Lipschitz-Constrained Policies](/202603/25/2603.16180v1-enforcing-task-specified-compliance-bounds-for-humanoids-via-anisotropic-lipschitz-constrained-policies)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：具身智能的轻量级多任务模仿学习
-5. [Interference-Aware K-Step Reachable Communication in Multi-Agent Reinforcement Learning](/202603/24/2603.15054v1-interference-aware-k-step-reachable-communication-in-multi-agent-reinforcement-learning)  
+   evidence：用于人形机器人运动和复杂动作控制的强化学习
+5. [Communication-Aware Multi-Agent Reinforcement Learning for Decentralized Cooperative UAV Deployment](/202603/25/2603.16141v1-communication-aware-multi-agent-reinforcement-learning-for-decentralized-cooperative-uav-deployment)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：用于复杂协作任务的多智能体强化学习
-6. [SAGE: Multi-Agent Self-Evolution for LLM Reasoning](/202603/24/2603.15255v1-sage-multi-agent-self-evolution-for-llm-reasoning)  
+   evidence：用于无人机分布式部署与控制的多智能体强化学习
+6. [HIPO: Instruction Hierarchy via Constrained Reinforcement Learning](/202603/25/2603.16152v1-hipo-instruction-hierarchy-via-constrained-reinforcement-learning)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：用于长程多步推理的分层多智能体框架
-7. [Meta-TTRL: A Metacognitive Framework for Self-Improving Test-Time Reinforcement Learning in Unified Multimodal Models](/202603/24/2603.15724v1-meta-ttrl-a-metacognitive-framework-for-self-improving-test-time-reinforcement-learning-in-unified-multimodal-models)  
+   evidence：通过约束强化学习实现分层指令遵循
+7. [Controlling Fish Schools via Reinforcement Learning of Virtual Fish Movement](/202603/25/2603.16384v1-controlling-fish-schools-via-reinforcement-learning-of-virtual-fish-movement)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：多模态模型中的测试时强化学习
-8. [Counteractive RL: Rethinking Core Principles for Efficient and Scalable Deep Reinforcement Learning](/202603/24/2603.15871v1-counteractive-rl-rethinking-core-principles-for-efficient-and-scalable-deep-reinforcement-learning)  
+   evidence：用于控制真实环境代理运动的强化学习
+8. [Rationale Matters: Learning Transferable Rubrics via Proxy-Guided Critique for VLMReward Models](/202603/25/2603.16600v1-rationale-matters-learning-transferable-rubrics-via-proxy-guided-critique-for-vlmreward-models)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：针对复杂MDP的高效可扩展强化学习
-9. [Compute Allocation for Reasoning-Intensive Retrieval Agents](/202603/24/2603.14635v2-compute-allocation-for-reasoning-intensive-retrieval-agents)  
+   evidence：视觉语言模型奖励模型的强化学习
+9. [100x Cost & Latency Reduction: Performance Analysis of AI Query Approximation using Lightweight Proxy Models](/202603/25/2603.15970v1-100x-cost--latency-reduction-performance-analysis-of-ai-query-approximation-using-lightweight-proxy-models)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：长程智能体推理密集型检索
-10. [RecBundle: A Next-Generation Geometric Paradigm for Explainable Recommender Systems](/202603/24/2603.16088v1-recbundle-a-next-generation-geometric-paradigm-for-explainable-recommender-systems)  
+   evidence：用于降低大模型成本和延迟的轻量级代理模型
+10. [Efficient LLM Serving for Agentic Workflows: A Data Systems Perspective](/202603/25/2603.16104v1-efficient-llm-serving-for-agentic-workflows-a-data-systems-perspective)  
    标签：评分：6.0/10、query:llmrec
-   evidence：用于可解释推荐系统的几何范式，旨在解决系统性偏差
-11. [DyJR: Preserving Diversity in Reinforcement Learning with Verifiable Rewards via Dynamic Jensen-Shannon Replay](/202603/24/2603.16157v1-dyjr-preserving-diversity-in-reinforcement-learning-with-verifiable-rewards-via-dynamic-jensen-shannon-replay)  
+   evidence：智能体工作流和LLM调用的服务框架
+11. [Agentic AI for SAGIN Resource Management_Semantic Awareness, Orchestration, and Optimization](/202603/25/2603.16458v1-agentic-ai-for-sagin-resource-managementsemantic-awareness-orchestration-and-optimization)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：用于大语言模型推理和样本效率的强化学习
-12. [AdaMem: Adaptive User-Centric Memory for Long-Horizon Dialogue Agents](/202603/24/2603.16496v1-adamem-adaptive-user-centric-memory-for-long-horizon-dialogue-agents)  
+   evidence：基于LLM的智能体用于自主资源管理与规划
+12. [Rationale Matters: Learning Transferable Rubrics via Proxy-Guided Critique for VLM Reward Models](/202603/25/2603.16600v2-rationale-matters-learning-transferable-rubrics-via-proxy-guided-critique-for-vlm-reward-models)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：大模型智能体的长程交互与多步推理
+   evidence：强化学习用于VLM奖励模型和准则生成
 
 
 <div class="dpr-home-promo-card">

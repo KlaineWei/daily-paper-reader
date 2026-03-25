@@ -1,0 +1,1174 @@
+Title: Controlling Fish Schools via Reinforcement Learning of Virtual Fish Movement
+
+URL Source: https://arxiv.org/pdf/2603.16384v1
+
+Published Time: Wed, 18 Mar 2026 01:02:10 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Controlling Fish Schools via Reinforcement Learning of Virtual Fish Movement 
+
+Yusuke Nishii 1 and Hiroaki Kawashima ∗1,2 1Faculty of Engineering, Kyoto University, Kyoto, Japan 
+
+> 2
+
+Graduate School of Informatics, Kyoto University, Kyoto, Japan 
+
+Note: This report presents an English translation of the original Japanese bachelor’s the-sis submitted by Yusuke Nishii in 2018 to the Undergraduate School of Electrical and Elec-tronic Engineering, Faculty of Engineering, Kyoto University, under the supervision of Hiroaki Kawashima. The research was conducted between 2017 and 2018 while the authors were affili-ated with Kyoto University. This translation includes minor revisions for clarity. The original thesis was completed on February 9, 2018, and its content reflects the state of research at that time. The translation aims to preserve the meaning and structure of the original work while making it accessible to a broader audience. The literature review and the scientific context of this work reflect the state of the field at the time of the original submission date. 
+
+Abstract 
+
+This study investigates a method to guide and control fish schools using virtual fish trained with reinforcement learning. We utilize 2D virtual fish displayed on a screen to overcome technical challenges such as durability and movement constraints inherent in phys-ical robotic agents. To address the lack of detailed behavioral models for real fish, we adopt a model-free reinforcement learning approach. First, simulation results show that re-inforcement learning can acquire effective movement policies even when simulated real fish frequently ignore the virtual stimulus. Second, real-world experiments with live fish confirm that the learned policy successfully guides fish schools toward specified target directions. Statistical analysis reveals that the proposed method significantly outperforms baseline con-ditions, including the absence of stimulus and a heuristic “stay-at-edge” strategy. This study provides an early demonstration of how reinforcement learning can be used to influence collective animal behavior through artificial agents. 
+
+# 1 Introduction 
+
+1.1 Research Background 
+
+The long-term objective of this research is to guide and control the movement of fish schools using externally controlled robotic agents. Potential applications range from choreographing fish school trajectories for aquarium exhibitions to navigating schools in aquaculture settings. In such practical scenarios, the target fish schools are expected to be relatively large, making it impractical to provide stimuli to every individual within the group. Consequently, it becomes necessary to control the entire school by stimulating only a limited number of individuals. To achieve this, it is crucial to provide stimuli tailored to the real-time state of the school, for instance, by identifying which individuals exert the strongest influence on the collective motion 
+
+> ∗
+
+Present address: Graduate School of Information Science, University of Hyogo, Kobe, Japan. Corresponding author: kawashima@gsis.u-hyogo.ac.jp 
+
+1
+
+> arXiv:2603.16384v1 [cs.RO] 17 Mar 2026
+
+and determining how they should move to guide the group toward a desired objective. This suggests that feedback control, which provides appropriate stimuli based on the evolving state of the school, is indispensable. A primary approach to such control involves the use of motion prediction models for fish schools. These models would allow for predicting the school’s response to specific stimuli and pre-evaluating control strategies against desired targets. Regarding motion models, previous studies, such as the one by Couzin et al. [1], have successfully simulated natural schooling behaviors and contributed significantly to elucidating collective mechanisms. However, at present, these models have not yet reached the level of accuracy required to predict the real-time movements of actual fish schools. 
+
+1.2 Research Objectives 
+
+Potential stimuli for influencing fish behavior include predators, food, and artificial conspecifics. However, the use of predators is expected to cause significant stress to the target fish, while the continuous provision of food can lead to health and environmental issues. Therefore, this study focuses exclusively on the use of artificial conspecifics as stimuli. To address the challenge of not having a predictive model for the target school’s movement, we propose an approach that acquires movement policies through reinforcement learning (RL) [2], with the artificial conspecific serving as the RL agent. RL is a learning framework in which an agent observes the state of the environment, determines an action based on that state, and receives a reward as an evaluation of that action to acquire a near-optimal policy. This method offers the distinct advantage of not requiring an explicit model of the environment (the target schooling behavior). While the long-term goal is to implement these artificial conspecifics as physical robots, controlling the precise motion of the robots themselves remains a significant challenge. To circumvent this, we utilize virtual fish displayed on a screen. Virtual fish not only allow for easier motion control but also offer superior durability compared to mechanical robots. Since RL requires virtual fish to interact with the school over extended periods to acquire an effective policy, the durability of virtual agents is highly suitable for the objectives of this study. Based on the above, this research aims to investigate a method for controlling fish schools by applying RL to the movements of virtual fish. For simplicity, the scale of the fish school is limited to a small number of individuals. 
+
+1.3 Related Work 
+
+Various models have been proposed to describe collective behavior in nature. Notable examples include the Kuramoto model [3, 4], originally developed to explain the synchronization of firefly flashing; the Boids model [5], which simulates the flocking behavior of birds; and the model by Couzin et al. [1], which characterizes the collective movements of fish schools. Several studies have investigated schooling behavior by providing external stimuli to fish. For instance, Swain et al. observed the reactions of fish to predator-like stimuli [6]. Kopman et al. developed a robotic conspecific that adjusts its tail-fin motion based on the real-time positions of live fish to observe their behavioral changes [7]. Furthermore, research has also focused on using visual stimuli to influence behavior. Kawashima et al. utilized a camera-display system to present virtual fish to a school, confirming that the real fish synchronized their movements with the reciprocating motion of the virtual fish [8]. A fundamental biological reaction of fish to visual stimuli is the optomotor response. This is considered a reflexive behavior in which fish follow a moving object or pattern. A well-known experimental demonstration involves placing a cylinder with vertical black-and-white stripes around a water tank; as the cylinder rotates, the fish swim along with the stripes [9]. Such 2reflexive behaviors suggest the significant potential for controlling the movement of fish schools through precisely designed visual stimulation. 
+
+1.4 Structure of the Report 
+
+The remainder of this report is organized as follows. Section 2 describes the problem formulation of this study and the configuration of the interaction system between the virtual fish and the real fish. Section 3 explains how the interaction system is modeled as a Markov Decision Process (MDP), a standard framework for representing agent-environment interactions in RL, and details the Q-learning algorithm employed in this study. Section 4 presents a preliminary evaluation using simulations to verify whether RL remains effective even when simulated real fish frequently ignore the virtual fish. Section 5 discusses the implementation of RL in a real-world environment and evaluates the performance of the acquired movement policies. Finally, Section 6 concludes this study and suggests directions for future work. 
+
+# 2 Interaction System for Fish Schools and Virtual Fish 
+
+2.1 Problem Formulation 
+
+For simplicity, this study considers a fish school consisting of a small number of individuals of the same species. The target species should be easy to obtain and maintain, and possess strong schooling tendencies. To satisfy these criteria, we use the Rummy-nose tetra ( Hemigrammus bleheri 1). Generally, the positions of fish in a tank vary freely in three-dimensional (3D) space. However, in this study, the experiments are conducted in a narrow environment to treat the fish positions as two-dimensional (2D) coordinates. The internal dimensions of the tank used for housing and experiments are 34 .0 cm in width, 14 .0 cm in length (front-to-back distance), and 28 .3 cm in height. During experiments, partition plates are used to restrict the swimming area to 30 .4 cm 
+
+in width, 5.0 cm in length, and 12 .5 cm in height. A display is placed against the back of the tank to present virtual fish, and the interaction is observed using a camera positioned in front of the tank. A schematic diagram of this system is shown in Fig. 1. Details regarding the presentation of virtual fish and the camera-based observation are provided in Sections 2.2 and 2.3, respectively. 
+
+2.2 Rationale for Using Virtual Fish 
+
+First, we discuss the justification for using virtual fish on a screen. Fish schools are formed through reactions between individuals, categorized as follows: 
+
+Attraction: Individuals recognize conspecifics visually and move toward each other. 
+
+Alignment: Individuals follow the movements of neighbors through the optomotor response. 
+
+Repulsion: Individuals maintain distance from neighbors based on lateral line sensations to avoid collisions. Among these, attraction leads to “aggregation,” where fish gather in close proximity, and align-ment leads to the formation of a “school,” where they move in a unified direction. Therefore, we expect that the movement of the school can be controlled by inducing attraction and alignment, reactions primarily based on visual stimuli, using virtual fish. Indeed, it has been reported that when a school of three Rummy-nose tetras was presented with virtual fish performing periodic    
+
+> 1Hemigrammus bleheri has been reclassified as Petitella bleheri in 2020, while the original name is retained in this translation to maintain consistency with the 2018 source text.
+
+3Camera 
+
+Fish tank Display 
+
+## Update the control strategy 
+
+Controller 
+
+## Get the state of real fish school Decide the motion of virtual fish 
+
+## Reinforcement learning Real-time feedback system Figure 1: Overview of the interaction system between a fish school and virtual fish. 
+
+Figure 2: Image and arrangement of the virtual fish, including the background color. reciprocating motions via a camera-display system, the real fish tended to synchronize with the virtual ones [8]. Thus, the use of virtual fish is considered valid. Next, we consider the design of the virtual fish. Since the front-to-back dimension of the swimming area is restricted, we place a display 2 against the back of the tank. As previously mentioned, attraction is triggered by visual recognition of conspecifics. Therefore, it is effective to use virtual fish that resemble the target species in shape, size, and texture. Consequently, we use an image created by photographing real fish, as shown in Fig. 2. The background color is kept uniform across the display.      
+
+> 2ASUS MB168B (15.6-inch, resolution 1366 ×768 , pixel pitch 0.252 mm , response time 11 ms , USB 3.0 inter-face).
+
+4Figure 3: Example of a captured image. Due to the light from the display, the real fish appear dark as silhouettes. 
+
+2.3 Camera-Based Measurement of Fish Schools 
+
+A camera 3 is positioned in front of the tank to capture the interaction. The frame rate is set to 10 fps , which is sufficient to capture the movements of the fish. An example of a captured image is shown in Fig. 3. We define a “viewport” as a plane that collapses the front-to-back dimension within the restricted swimming area. Coordinates within the viewport are expressed as (xviewport , y viewport ), normalized such that xviewport , y viewport ∈ [0 , 1] .The correspondence between the captured image coordinates (xcamera , y camera ) and the view-port coordinates (xviewport , y viewport ) is approximately expressed as: 
+
+xviewport = a x camera + b, (1) 
+
+yviewport = c y camera + d. (2) The constants a, b, c, d are obtained by manually selecting the four boundaries corresponding to the viewport in an image captured before the experiment. Similarly, the relationship between the viewport coordinates and the display coordinates 
+
+(xdisplay , y display ) is approximated as: 
+
+xdisplay = e x viewport + f, (3) 
+
+ydisplay = g y viewport + h. (4) To determine the constants e, f, g, h , two points with known display coordinates are shown before the experiment. Their positions in the captured image are manually identified and converted to viewport coordinates using Eqs. (1) and (2). This allows us to calculate e, f, g, h using the corresponding coordinate pairs in the display coordinate system and the viewport coordinate system. Through this process, both the positions in the captured images and the positions on the display can be represented consistently within the viewport coordinate system. 
+
+# 3 Reinforcement Learning of Virtual Fish Movement 
+
+3.1 Markov Decision Process for Fish School Control 
+
+First, we outline the general framework of RL based on Sutton and Barto [2]. In RL, the entity that performs learning and decision-making is called the agent , and the entity it interacts      
+
+> 3FLIR Flea 3 FL3-U3-13E4C-C (resolution 1280 ×1080 , color, max frame rate 60 fps , USB 3.0 interface), lens: FUJINON HF9HA-1B (aperture F1.4–F16, focal length 9 mm ).
+
+5  
+
+   
+
+ !"  #"
+
+ !"$%
+
+
+
+  &"$%Figure 4: Interaction between the agent and the environment in reinforcement learning. with is called the environment . The agent and environment interact at each discrete time step 
+
+n = 0 , 1, . . . . Specifically, the agent observes a state sn ∈ S (where S is the state space) from the environment and, based on this, selects an action an ∈ A (where A is the action space). By performing action an, the agent influences the environment, resulting in the observation of the next state sn+1 and a corresponding reward rn+1 ∈ R. This interaction is illustrated in Fig. 4. When the system satisfies the Markov property, that is, when sn+1 and rn+1 are determined probabilistically only by sn and an, the model is called a Markov Decision Process (MDP). An MDP with finite sets S and A is known as a finite MDP. In many cases, RL aims to address situations that can be approximated as finite MDPs. The goal of the agent is to learn actions an
+
+that maximize the long-term cumulative reward rn+1 , r n+2 , . . . , formulated as the maximization of the discounted return Rn using a discount rate γ ∈ [0 , 1] :
+
+Rn =
+
+> ∞
+
+X
+
+> k=0
+
+γkrn+k+1 . (5) Here, we model the fish school control problem for RL. For simplicity, we focus on controlling the x-coordinate, the primary direction of movement, while ignoring the y-coordinate. The control objective is to guide the centroid of the real fish school toward the edges of the tank. The target direction is switched between the left and right edges at appropriate intervals. By assuming left-right symmetry, we consider that the policy learned to guide the school toward one edge is equally effective for the opposite direction. The discrete time step n corresponds to the time when the (10 n)-th frame is captured by the camera; thus, the duration of each step is 1 s . Continuous time is denoted by t, and the continuous time corresponding to step n is denoted by tn.Before defining S and A, we define regions called cells within the viewport. Cells are defined by dividing the viewport horizontally into W intervals. For a given number of divisions W , a cell w ∈ { 0, 1, . . . , W − 1} is defined in the viewport coordinate system as: 
+
+ xy
+
+
+
+x ∈
+
+ wW , w + 1 
+
+W
+
+
+
+, y ∈ [0 , 1] 
+
+
+
+when guiding toward the right edge, 
+
+ xy
+
+
+
+x ∈
+
+ W − w − 1
+
+W , W − wW
+
+
+
+, y ∈ [0 , 1] 
+
+
+
+when guiding toward the left edge. (6) This cell definition is illustrated in Fig. 5. The state is defined as a pair of wreal and wvirtual , representing the cells containing the centroids of the real fish school and that of the virtual fish, respectively. Thus, the state space is: 
+
+S = {(wreal , w virtual ) | wreal , w virtual ∈ { 0, 1, 2, . . . , W − 1}} . (7) 6 
+
+w = 0 $ = % − 1 $ = % − 1 w = 0Figure 5: Definition of cells. When the number of divisions is W , the cell at the target end is defined as W − 1, and the cell at the opposite end is defined as 0.Next, we define the actions. The movement of the virtual fish at each step is determined as follows: 
+
+Step 1: Determine the target point xvirtual -target .1. Obtain the current centroid positions xreal and xvirtual .2. Determine the cell wvirtual containing xvirtual .3. Select a cell displacement ∆w ∈ { 0, ±1, ±2, . . . , ±∆wmax }.4. Set the target cell wvirtual -target :
+
+˜wvirtual -target = wvirtual + ∆ w (8) 
+
+wvirtual -target =
+
+
+
+0 if ˜wvirtual -target < 0,
+
+˜wvirtual -target if 0 ≤ ˜wvirtual -target ≤ W − 1,W − 1 if W − 1 < ˜wvirtual -target .
+
+(9) 5. Using the x-coordinate center of wvirtual -target (xvirtual -target ) and the y-coordinate of the real fish centroid ( yreal ), set the target point: 
+
+xvirtual -target =
+
+xvirtual -target 
+
+yreal 
+
+
+
+. (10) 
+
+Step 2: Move toward the target point until the next step. The centroid follows a first-order lag motion: 
+
+dxvirtual 
+
+dt = 1
+
+τvirtual 
+
+(xvirtual -target − xvirtual ), (11) 
+
+1
+
+τvirtual 
+
+> 0 (constant ). (12) Since the motion of the virtual fish is determined by ∆w, we define ∆w as the action. Thus, the action space is: 
+
+A = {0, ±1, ±2, . . . , ±∆wmax }. (13) Finally, the reward rn is defined based on the x-coordinate of the real fish school centroid 
+
+xreal at step n:
+
+rn =
+
+(2 × (xreal − 0.5) when guiding toward the right edge, 
+
+2 × (0 .5 − xreal ) when guiding toward the left edge. (14) Thus, rn ∈ [−1, +1] , and rn approaches +1 as the centroid xreal gets closer to the target edge. 73.2 Reinforcement Learning via Q-Learning 
+
+In this section, we describe the Q-learning algorithm, based again on Sutton and Barto [2]. The agent’s actions are determined probabilistically according to a policy π. The probability distribution of action an given state sn is: 
+
+an ∼ π(·| sn), (15) where π(a|s) represents the probability of choosing action a in state s. The expected discounted return when following policy π from state s is defined as the state-value function: 
+
+V π(s) = Eπ{Rn|sn = s}. (16) The optimal policy π∗ is defined as the policy satisfying 
+
+π∗ ∈ arg max 
+
+> π
+
+V π(s) (17) for all s ∈ S . The goal of RL is to acquire π∗. Given the optimal action-value function Q∗(s, a ) = max π Qπ(s, a ), where Qπ(s, a ) = Eπ{Rn|sn = s, a n = a}, the optimal policy can be obtained as: 
+
+π∗(a|s) = 
+
+
+
+1
+
+| arg max a′ Q∗(s, a ′)| if a ∈ arg max 
+
+> a′
+
+Q∗(s, a ′),
+
+0 otherwise. (18) Based on the Bellman optimality equation, 
+
+Q∗(s, a ) = E
+
+
+
+rn+1 + γ max  
+
+> a′
+
+Q∗(sn+1 , a ′) sn = s, a n = a
+
+
+
+, (19) the function Q(sn, a n) can be updated iteratively to approximate Q∗ by making it converge toward rn+1 + γ max a′ Q(sn+1 , a ′). The learned policy π corresponding to this approximated Q
+
+is expressed as: 
+
+π(a|s) = 
+
+
+
+1
+
+| arg max a′ Q(s, a ′)| if a ∈ arg max 
+
+> a′
+
+Q(s, a ′),
+
+0 otherwise. (20) Q-learning implements this through the following procedure: 
+
+Step 1: Initialize the action-value function Q and observe the initial state s0.
+
+Step 2: Repeat for each step n = 0 , 1, . . . , N − 1:1. Select action a in state s based on the policy πn derived from Q.2. Execute action a and observe reward r and next state s′.3. Update Q according to: 
+
+Q(s, a ) ← Q(s, a ) + α
+
+
+
+r + γ max  
+
+> a′
+
+Q(s′, a ′) − Q(s, a )
+
+
+
+, (21) 
+
+α ∈ (0 , 1) (constant, called the “step size” ). (22) 4. s ← s′
+
+Regarding πn, it is effective to perform exploration (trying various actions) in the early stages of learning and follow the best-known policy in the later stages. Thus, we use an ϵ-greedy algorithm where ϵ is decayed at each step: 
+
+ϵn = 1 − nN − 1 (23) 
+
+πn(a|s) = 
+
+
+
+1 − ϵn
+
+| arg max a′ Q(s, a ′)| + ϵn
+
+|A| if a ∈ arg max 
+
+> a′
+
+Q(s, a ′),ϵn
+
+|A| otherwise. (24) 84 Preliminary Evaluation in a Simulation Environment 
+
+When interacting with a fish school using virtual fish, the frequency with which the real fish react to the virtual fish is expected to be limited. To investigate whether an effective policy can be acquired via RL under such conditions, we perform RL in a simulation environment that mimics the movement of real fish. Furthermore, as will be discussed in Section 5, learning an effective policy in an actual inter-action system is expected to be extremely time-consuming. By using the action-value function 
+
+Q obtained in the simulation environment, where each time step can be processed much faster than in the real environment, as an initial value, we expect to reduce the learning time required in the real-world experiments. 
+
+4.1 Modeling the Movement of Real Fish 
+
+We simulate the behavior of real fish using an action model in which the decision to react to the virtual fish is determined probabilistically. By varying this probability, we examine whether RL can acquire effective policies even when real fish infrequently react to virtual fish. Based on observations of the fish during housing, the following behavioral characteristics were identified: 
+
+• They show minimal reaction to other individuals that are far away. 
+
+• When they do react to another individual, they often begin swimming toward that indi-vidual. 
+
+• Most of their movements can be viewed as a repetition of linear motions lasting for a few seconds. We developed a model for real fish that reflects these properties. For simplicity, we assume that the real fish always act as a collective school and simulate the motion of their centroid. The following parameters are held constant within each simulation: 
+
+• ∆tmax > 0: Maximum duration before the real fish switch their target point. 
+
+• θ > 0: Maximum distance at which real fish react to the virtual fish. 
+
+• p ∈ [0 , 1] : Probability that the real fish ignore the virtual fish even when they are sufficiently close. 
+
+• δx max > 0, δy max > 0: Maximum displacement of the target point when the virtual fish are ignored. 
+
+• 1/τ real > 0: Inverse of the time constant for the first-order lag system of the real fish. Let xreal =
+
+xreal 
+
+yreal 
+
+
+
+and xvirtual represent the centroid positions of the real fish school and the virtual fish, respectively. The motion of xreal is modeled as a series of movements toward a switching target point xreal -target , each of which is governed by a first-order lag system, simulated as follows: 
+
+Step 1: Randomly select a duration ∆t ∈ (0 , ∆tmax ] for which the fish move linearly. 
+
+Step 2: Determine the target point xreal -target as follows: 
+
+• If ∥xvirtual − xreal ∥ ≤ θ:9– With probability 1 − p (reaction case), set: 
+
+xreal -target = xvirtual . (25) 
+
+– With probability p (ignore case), select random relative displacements δx ∈
+
+[−δx max , +δx max ] and δy ∈ [−δy max , +δy max ], and set: 
+
+xreal -target = xreal +
+
+δx δy 
+
+
+
+. (26) 
+
+• Otherwise (out of range): Determine xreal -target using random displacements as in Eq. (26). 
+
+Step 3: During the interval ∆t, move toward xreal -target based on 
+
+dxreal 
+
+dt = 1
+
+τreal 
+
+(xreal -target − xreal ). (27) 
+
+Step 4: Repeat Steps 1 through 3. 
+
+4.2 Evaluation of Robustness Against Stochastic Behavior 
+
+4.2.1 Simulation Evaluation Conditions 
+
+We evaluate whether RL can acquire effective movement policies even in scenarios where real individuals infrequently respond to the virtual stimulus. To this end, we conduct RL for each ignoring probability p defined in the behavioral model in Section 4.1. We then investigate whether the resulting policy approximates the optimal policy by analyzing the rewards obtained when following this policy. For each ignoring probability p = 0 , 0.3, 0.6, 0.9, Q-learning is performed with the number of training steps N varied across {10 2, 10 3, 10 4, 10 5, 10 6, 10 7}. Other parameter settings are summarized in Table 1. After training, the agent follows the learned policy π (as defined in Eq. (20)) for M steps to calculate the average reward R:
+
+R = 1
+
+M
+
+> M
+
+X
+
+> n=0
+
+rn, (28) where M = 9000 . Since both the learned policy and the resulting reward R are inherently stochastic, we expect the evaluation R to vary across trials. Therefore, we repeat the training and evaluation process 10 times for each combination of p and N , and calculate the mean of R
+
+across these trials. Note that the reward R obtained under an optimal policy varies depending on the ignoring probability p. To provide a benchmark for evaluating the learned policies, we define a heuris-tic policy ˆπ that is expected to yield near-optimal rewards. In this simulation, the maximum interaction distance θ (the range within which real fish react to the virtual fish) is set to 0.3 times the viewport width, and the number of cell divisions is W = 10 . Consequently, a policy 
+
+ˆπ that targets a position three cells ahead of the real fish’s current cell wreal (i.e., wreal + 3 )is considered near-optimal. Specifically, given a state (wreal , w virtual ), the baseline policy ˆπ is defined as follows: 
+
+∆ ˜ w = wreal + 3 − wvirtual . (29) 
+
+∆w =
+
+
+
+−∆wmax if ∆ ˜ w < −∆wmax ,
+
+∆ ˜ w if − ∆wmax ≤ ∆ ˜ w ≤ ∆wmax ,
+
++∆ wmax if ∆wmax < ∆ ˜ w. 
+
+(30) 
+
+ˆπ(a|s) = 
+
+(1 if a = ∆ w, 
+
+0 otherwise. (31) 10 Table 1: Simulation parameters. θ and δx max are relative to the viewport width, and δy max is to the viewport height. Parameter Description Value 
+
+γ Discount factor (Q-learning) 0.9 
+
+α Step size (Learning rate) (Q-learning) 0.1 
+
+W Number of cells 10 
+
+∆wmax Max cell displacement per step (virtual fish) 2
+
+1/τ virtual Inverse time constant (virtual fish) 3 s −1
+
+∆tmax Max duration for target switching (real fish) 3 s 
+
+θ Max reaction distance (real fish) 0.3 
+
+δx max Max x-displacement during ignore cases (real fish) 0.2 
+
+δy max Max y-displacement during ignore cases (real fish) 0.2 
+
+1/τ real Inverse time constant (real fish) 1 s −1-0.1                
+
+> 0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1
+> 110 100 1000 10000 100000 1000000 10000000
+> R(average of 10 training)
+> N
+> p = 0.0 p = 0.0 (baseline )
+> p = 0.3 p = 0.3 (baseline )
+> p = 0.6 p = 0.6 (baseline )
+> p = 0.9 p = 0.9 (baseline )
+
+Figure 6: Average reward R in simulation. p represents the probability of the simulated real fish ignoring the virtual fish. The baseline denotes the reward obtained using ˆπ as defined in Eq. (31). Here, the maximum displacement of the virtual fish’s cell per step is set to ∆wmax = 2 , consistent with the constraints of the RL agent. We denote the reward obtained by this baseline policy ˆπ over M = 9000 steps as ˆR. Since ˆR
+
+is also expected to vary across trials, we calculate ˆR 10 times for each p and take the mean. If the mean reward R of a learned policy is sufficiently close to the mean benchmark ˆR, we consider the acquired policy to be near-optimal. 
+
+4.2.2 Results and Discussion of Simulation Evaluation 
+
+The results of the evaluation described in Section 4.2.1 are shown in Fig. 6. Regardless of the ignoring probability p, it can be observed that as the number of training steps N increases, the average reward R obtained under the learned policy approaches the reward ˆR obtained under the baseline policy ˆπ.Figure 7 shows the ratio of the mean reward R under the learned policy to the mean reward 
+
+ˆR under the baseline policy. For ignoring probabilities p = 0 , 0.3, and 0.6, the ratio reaches 11 -0.1           
+
+> 0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1
+> 1.1
+> 110 100 1000 10000 100000 1000000 10000000
+> R / R-baseline
+> N
+> p = 0.0 p = 0.3 p = 0.6 p = 0.9
+
+Figure 7: Ratio of the average reward of the learned policy to that of the baseline policy in simulation. p represents the probability of the simulated real fish ignoring the virtual fish. approximately 1.0 when the number of training steps N is sufficiently large. This suggests that the learned policies in these cases are nearly optimal. Furthermore, even in the case of 
+
+p = 0 .9, where the real fish ignore the virtual stimulus with high frequency, the ratio reaches approximately 0.7 at N = 10 7, indicating that learning progresses to a certain extent even under such challenging conditions. 
+
+# 5 Reinforcement Learning in a Real-World Environment 
+
+5.1 Acquisition of Centroid Positions for Real and Virtual Fish 
+
+The centroid position of the real fish is determined as follows. For an RGB color image, let 
+
+pu,v =
+
+
+
+ru,v 
+
+gu,v 
+
+bu,v 
+
+ represent the pixel at column u and row v. The entire image is denoted as 
+
+{pu,v }, where ru,v , gu,v , and bu,v are the red, green, and blue values at position (u, v ). For a grayscale image, the pixel value is denoted as pu,v , and the image as {pu,v }.
+
+Step 1: A binary image is obtained using background subtraction. Given a pre-recorded back-ground image { ˜pu,v } and a threshold θ, we compute for each (u, v ):
+
+p′ 
+
+> u,v
+
+=
+
+(1 if ∥pu,v − ˜pu,v ∥ > θ, 
+
+0 otherwise. (32) The resulting binary image p′ 
+
+> u,v
+
+is expected to have a value of 1 where real or virtual fish are present, and 0 elsewhere. 
+
+Step 2: As shown in Fig. 3, real fish appear as dark silhouettes due to the display’s backlighting. This color difference is used to distinguish between real and virtual fish. Using a decision function f obtained via a Support Vector Machine (SVM), we compute: 
+
+p′′  
+
+> u,v
+
+=
+
+(1 if p′ 
+
+> u,v
+
+= 1 and f (pu,v ) > 0,
+
+0 otherwise. (33) 12 Table 2: Parameters for RL and control in the real-world environment. Parameter Description Value 
+
+γ Discount factor (Q-learning) 0.9 
+
+α Step size (Learning rate) (Q-learning) 0.1 
+
+W Number of cell divisions 10 
+
+∆wmax Max cell displacement per step (virtual fish) 2
+
+1/τ virtual Inverse time constant (virtual fish) 1 s −1
+
+The SVM is pre-trained on a dataset where f (p) is +1 for real fish pixels and −1 for virtual fish pixels. 
+
+Step 3: The binary image p′′  
+
+> u,v
+
+is processed with an opening operation (an equal number of erosions and dilations) to obtain p′′′  
+
+> u,v
+
+. This ensures that pixels with a value of 1 correspond only to the real fish. 
+
+Step 4: The centroid ˜xreal of the pixels with value 1 in p′′′  
+
+> u,v
+
+is calculated as: 
+
+˜xreal =
+
+> m1,0
+> m0,0
+> m0,1
+> m0,0
+
+!
+
+where mi,j = X
+
+> u,v
+
+uivj p′′′ 
+
+> u,v
+
+. (34) Finally, ˜xreal is converted to viewport coordinates xreal using Eqs. (1) and (2). Step 3 is a procedure designed to eliminate misclassifications originating from the SVM in Step 2. Specifically, classification errors occasionally caused certain subregions to be marked as contain-ing a real fish ( p′′  
+
+> u,v
+
+= 1 ) even when no fish was present. By implementing Step 3, we successfully removed most of these false positives. Regarding the position of the virtual fish centroid, we set the time constant τimitated of the first-order lag system in Eq. (11) to be sufficiently small so that the movement speed is high enough. This allows us to assume that the virtual fish reach sufficiently close to their target point 
+
+xvirtual -target within a single time step. Consequently, the position of the virtual fish centroid at any given time is treated as the target point selected in the preceding state. 
+
+5.2 Evaluation of the Learned Policy 
+
+We investigate whether RL can yield an effective movement policy for virtual fish to guide fish schools in a real-world environment. Our analysis is based on the behavior of both real and virtual individuals under the learned policy. Since training in a real-world environment is expected to be extremely time-consuming, we initialize the action-value function Q using the values obtained from simulation (with an ignoring probability p = 0 .6 and N = 10 6 steps) to shorten the required training duration. Reinforcement learning was conducted for N = 1800 steps. The parameter settings are summarized in Table 2. Three randomly selected real fish were used for the experiment. Sub-sequently, 900 steps of control were performed on the same individuals following the learned policy (hereafter referred to as the “proposed method”). We verify whether the proposed method successfully guides the real individuals toward the target direction and determine if it is more effective than a simple, manually defined policy. We therefore investigated the behavior of real individuals for 900 steps under the following baselines: 
+
+Baseline 1 (stay at edge): The virtual fish move toward the target direction and stays at the edge of the viewport once it reaches it. 
+
+Baseline 2 (w/o stimulus): No virtual fish are displayed. 13 Table 3: Mean real fish x-coordinates for each guidance direction and the difference between them for each control method. Condition (a) Target: Left (b) Target: Right Difference (b-a) Proposed Method 0.358 0.525 0.166 
+
+Baseline 1 (stay at edge) 0.461 0.562 0.101 
+
+Baseline 2 (w/o stimulus) 0.501 0.495 −0.006 
+
+Table 4: Results of the significance tests for the difference in the mean x-coordinates of real fish based on the target guidance direction. A two-tailed Welch’s t-test was performed for each virtual fish control method to evaluate the statistical significance of the difference. Condition p-value Proposed Method 1.46 × 10 −51 
+
+Baseline 1 (stay at edge) 8.48 × 10 −15 
+
+Baseline 2 (w/o stimulus) 5.80 × 10 −1
+
+Here, the policy for Baseline 1 was defined as follows, with the maximum displacement per step set to ∆wmax = 2 to remain consistent with the proposed method: 
+
+π(a|s) = 
+
+(1 if a = +∆ wmax ,
+
+0 otherwise. (35) The reactions of real fish to the virtual fish are expected to be influenced by the preceding movements of the virtual stimuli. Therefore, to avoid carry-over effects from previous trials, a rest period of at least 10 minutes was provided between the training phase, the evaluation of the proposed method, and each baseline experiment. The centroids of both real and virtual fish were recorded at each time step and are summarized in Fig. 8. In the proposed method, the virtual fish move within the area between the target position and the area near the real fish, appearing to guide the real individuals toward the goal. We then generated histograms of the positions of real individuals (centroids) for each target guidance direction. Figures 9, 10, and 11 show the results for the Proposed Method, Baseline 1, and Baseline 2, respectively. Table 3 summarizes the mean positions and the differences between them for each target direction. A comparison reveals that the magnitude of the difference in mean positions follows the order: (a) the Proposed Method, (b) Baseline 1 (stay at edge), and (c) Baseline 2 (w/o stimulus). The histograms also appear to be sharper in the same order. We conducted Welch’s t-test (two-tailed) at a significance level of 5 % to determine whether the target direction resulted in a significant difference in the mean positions of real individuals. The sample was defined as 
+
+{xreal (tn) | guided to x = 0 (or x = 1) at step n}, (36) assuming an approximately normal distribution. The resulting p-values are shown in Table 4. These values indicate that while there was no significant difference in (c) Baseline 2, significant differences were observed in both (a) the Proposed Method and (b) Baseline 1. Thus, it can be concluded that the real individuals were significantly guided in the intended directions in both (a) and (b). Furthermore, we evaluated the degree of difference between the histograms of the x-coordinates for each target direction (Figs. 9 to 11) using the Bhattacharyya distance. As shown in Fig. 12, the results confirm that the difference in the distribution of the real individuals’ positions follows 14 0
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1
+
+1.2 
+
+> 0
+> 15
+> 30
+> 45
+> 60
+> 75
+> 90
+> 105
+> 120
+> 135
+> 150
+> 165
+> 180
+> 195
+> 210
+> 225
+> 240
+> 255
+> 270
+> 285
+> 300
+> 315
+> 330
+> 345
+> 360
+> 375
+> 390
+> 405
+> 420
+> 435
+> 450
+> 465
+> 480
+> 495
+> 510
+> 525
+> 540
+> 555
+> 570
+> 585
+> 600
+> 615
+> 630
+> 645
+> 660
+> 675
+> 690
+> 705
+> 720
+> 735
+> 750
+> 765
+> 780
+> 795
+> 810
+> 825
+> 840
+> 855
+> 870
+> 885
+> 900
+> Centroid position x
+
+Target direction Time step n 
+
+Virtual fish Real fish (a) Proposed Method 0
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1
+
+1.2 
+
+> 0
+> 15
+> 30
+> 45
+> 60
+> 75
+> 90
+> 105
+> 120
+> 135
+> 150
+> 165
+> 180
+> 195
+> 210
+> 225
+> 240
+> 255
+> 270
+> 285
+> 300
+> 315
+> 330
+> 345
+> 360
+> 375
+> 390
+> 405
+> 420
+> 435
+> 450
+> 465
+> 480
+> 495
+> 510
+> 525
+> 540
+> 555
+> 570
+> 585
+> 600
+> 615
+> 630
+> 645
+> 660
+> 675
+> 690
+> 705
+> 720
+> 735
+> 750
+> 765
+> 780
+> 795
+> 810
+> 825
+> 840
+> 855
+> 870
+> 885
+> 900
+> Centroid position x
+
+Target direction Time step n 
+
+Virtual fish Real fish 
+
+(b) Baseline 1 (stay at edge) 0
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1
+
+1.2 
+
+> 0
+> 15
+> 30
+> 45
+> 60
+> 75
+> 90
+> 105
+> 120
+> 135
+> 150
+> 165
+> 180
+> 195
+> 210
+> 225
+> 240
+> 255
+> 270
+> 285
+> 300
+> 315
+> 330
+> 345
+> 360
+> 375
+> 390
+> 405
+> 420
+> 435
+> 450
+> 465
+> 480
+> 495
+> 510
+> 525
+> 540
+> 555
+> 570
+> 585
+> 600
+> 615
+> 630
+> 645
+> 660
+> 675
+> 690
+> 705
+> 720
+> 735
+> 750
+> 765
+> 780
+> 795
+> 810
+> 825
+> 840
+> 855
+> 870
+> 885
+> 900
+> Centroid position x
+
+Time step n 
+
+Target direction Real fish 
+
+(c) Baseline 2 (w/o stimulus) 
+
+Figure 8: Time series of the x-coordinate of the real fish centroid during real-world control. 15 0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 0.00 
+
+> 0.04
+> 0.08
+> 0.12
+> 0.16
+> 0.20
+> 0.24
+> 0.28
+> 0.32
+> 0.36
+> 0.40
+> 0.44
+> 0.48
+> 0.52
+> 0.56
+> 0.60
+> 0.64
+> 0.68
+> 0.72
+> 0.76
+> 0.80
+> 0.84
+> 0.88
+> 0.92
+> 0.96
+> 1.00
+> Frequency
+
+Horizontal position of the real fish centroid x 
+
+# direction = 0 (mean = 0.358) (a) Guiding toward the left ( x = 0 )0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 0.00 
+
+> 0.04
+> 0.08
+> 0.12
+> 0.16
+> 0.20
+> 0.24
+> 0.28
+> 0.32
+> 0.36
+> 0.40
+> 0.44
+> 0.48
+> 0.52
+> 0.56
+> 0.60
+> 0.64
+> 0.68
+> 0.72
+> 0.76
+> 0.80
+> 0.84
+> 0.88
+> 0.92
+> 0.96
+> 1.00
+> Frequency
+
+Horizontal position of the real fish centroid x 
+
+# direction = 1 (mean = 0.525) 
+
+(b) Guiding toward the right ( x = 1 )
+
+Figure 9: Histograms of real fish x-coordinates (Proposed Method). Orange bins indicate the mean value’s interval. 16 0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 0.00 
+
+> 0.04
+> 0.08
+> 0.12
+> 0.16
+> 0.20
+> 0.24
+> 0.28
+> 0.32
+> 0.36
+> 0.40
+> 0.44
+> 0.48
+> 0.52
+> 0.56
+> 0.60
+> 0.64
+> 0.68
+> 0.72
+> 0.76
+> 0.80
+> 0.84
+> 0.88
+> 0.92
+> 0.96
+> 1.00
+> Frequency
+
+Horizontal position of the real fish centroid x 
+
+# direction = 0 (mean = 0.461) (a) Guiding toward the left ( x = 0 )0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 0.00 
+
+> 0.04
+> 0.08
+> 0.12
+> 0.16
+> 0.20
+> 0.24
+> 0.28
+> 0.32
+> 0.36
+> 0.40
+> 0.44
+> 0.48
+> 0.52
+> 0.56
+> 0.60
+> 0.64
+> 0.68
+> 0.72
+> 0.76
+> 0.80
+> 0.84
+> 0.88
+> 0.92
+> 0.96
+> 1.00
+> Frequency
+
+Horizontal position of the real fish centroid x 
+
+# direction = 1 (mean = 0.562) 
+
+(b) Guiding toward the right ( x = 1 )
+
+Figure 10: Histograms of real fish x-coordinates (Baseline 1: stay at edge). 17 0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 0.00 
+
+> 0.04
+> 0.08
+> 0.12
+> 0.16
+> 0.20
+> 0.24
+> 0.28
+> 0.32
+> 0.36
+> 0.40
+> 0.44
+> 0.48
+> 0.52
+> 0.56
+> 0.60
+> 0.64
+> 0.68
+> 0.72
+> 0.76
+> 0.80
+> 0.84
+> 0.88
+> 0.92
+> 0.96
+> 1.00
+> Frequency
+
+Horizontal position of the real fish centroid x 
+
+# direction = 0 (mean = 0.501) (a) Guiding toward the left ( x = 0 )0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+60 0.00 
+
+> 0.04
+> 0.08
+> 0.12
+> 0.16
+> 0.20
+> 0.24
+> 0.28
+> 0.32
+> 0.36
+> 0.40
+> 0.44
+> 0.48
+> 0.52
+> 0.56
+> 0.60
+> 0.64
+> 0.68
+> 0.72
+> 0.76
+> 0.80
+> 0.84
+> 0.88
+> 0.92
+> 0.96
+> 1.00
+> Frequency
+
+Horizontal position of the real fish centroid x 
+
+# direction = 1 (mean = 0.495) 
+
+(b) Guiding toward the right ( x = 1 )
+
+Figure 11: Histograms of real fish x-coordinates (Baseline 2: w/o stimulus). 18 00.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16 0.18  
+
+> Proposed Baseline 1
+> (stay at edge)
+> Baseline 2
+> (w/o stimulus)
+> Bhattacharyya distance between histograms
+
+Stimulus condition Figure 12: Distances between the x-coordinate distributions of real fish for leftward and rightward guidance. For each pair of histograms in Figs. 9 to 11, the effectiveness of the guidance was quantified by calculating the Bhattacharyya distance between the distributions resulting from the two target directions. the order: (a) the Proposed Method, (b) Baseline 1 (stay at edge), and (c) Baseline 2 (w/o stimulus). Consequently, it is evident that the Proposed Method (a) guided the real individuals more prominently than Baseline 1 (b). 
+
+# 6 Conclusion 
+
+In this study, we investigated whether effective movement policies for virtual fish to guide fish schools could be acquired through reinforcement learning (RL). First, there was a concern regarding whether RL could yield effective policies in scenarios where the frequency of real fish responding to virtual stimuli is not necessarily high. To address this, we established a behavioral model in which real individuals stochastically decide whether to follow or ignore virtual fish when they are sufficiently close. Our simulation results confirmed that reasonably effective policies could be obtained even when the probability of real individuals ignoring the virtual stimuli was high. Second, we verified the feasibility of fish guidance in a real-world environment using the learned policy. The results demonstrated that when the virtual fish moved based on the learned policy, the mean positions of the real fish (centroids) differed significantly depending on the target guidance direction. This confirms that the real individuals were successfully guided in the intended directions. Furthermore, we compared the learned policy with a manual baseline policy where the virtual fish simply move to and stay at the edge of the viewport in the target direction. This comparison revealed that the distribution of the real fish’s positions changed more prominently under the control of the learned policy than under the simple manual policy. These findings confirm that RL can acquire a more effective policy than a simple, human-defined one. While this study demonstrated the potential of RL-based fish school control, several issues remain for future investigation. 
+
+Validation of image-based stimuli as virtual fish: In this study, we used textures of real individuals for the visual stimuli. However, it remains unclear whether these stimuli are 19 recognized by real fish as actual members of their school. To clarify this, it is necessary to investigate whether behavioral responses differ when presenting abstract stimuli, such as striped patterns or random dots, compared to the texture-mapped virtual fish used in our experiments. 
+
+Investigation of the number of individuals In this study, the numbers of both virtual and real fish were fixed throughout the experiments. However, toward the future goal of guiding large-scale schools with a small number of virtual or robotic agents, it is necessary to examine how the interaction dynamics change when the respective numbers of real and virtual individuals are varied. 
+
+Examination of state representation in RL The state defined in this study was based on the respective centroids of the real fish school and the virtual fish group. However, even if the school is at the same position, the optimal action is expected to differ depending on whether the school is moving toward or away from the target direction. Therefore, potential improvements include incorporating information regarding the school’s velocity into the state representation. Furthermore, for the future goal of interacting with only a subset of individuals within a large-scale school, it will be necessary to target specific individuals that exert a significant influence on the collective motion. Defining the state in such scenarios would require incor-porating more microscopic information, such as the spatial relationships among individuals and the status or strength of inter-individual interactions. On the other hand, there is a trade-off where the training duration for RL increases as the size of the state space grows. Therefore, it is necessary to devise methods to incorporate the aforementioned information while effectively managing the number of elements in the state set. 
+
+Examination of action representation in RL In the experiments conducted in this study, the movement of the four virtual fish was designed such that they moved as a single coordinated unit while maintaining their relative positions. However, to achieve more effective interactions with the same number of agents, it is expected that having each virtual fish move independently to interact with different individuals within the school would be more efficient. On the other hand, similar to the challenges faced with the state space, it is necessary to de-vise methods that enable independent movement for each virtual fish while simultaneously limiting the size of the action space to a manageable level. 
+
+# Ethical Approval 
+
+All animal experiments were conducted with the approval of the Graduate School of Informatics, Kyoto University (Approval No. Inf-K17007, March 21, 2017). 
+
+# References 
+
+[1] I. D. Couzin, J. Krause, R. James, G. D. Ruxton, and N. R. Franks, Collective memory and spatial sorting in animal groups, Journal of theoretical biology , Vol. 218, No. 1, (2002), pp. 1–11. [2] R. S. Sutton and A. G. Barto, Reinforcement Learning : An Introduction , MIT Press, (1998). 20 [3] Y. Kuramoto, Self-entraiment of a population of coupled nonlinear oscillators, International Symposium on Mathematical Problems in Theoretical Physics (ed. H. Araki), Vol. 39, (1975), pp. 420–422. [4] F. A. Rodrigues, T. K. D. Peron, P. Ji, and J. Kurths, The kuramoto model in complex networks, Physics Reports , Vol. 610, (2016), pp. 1–98. [5] C. W. Reynolds, Flocks, herds, and schools: A distributed behavioral model, Computer Graphics , Vol. 21, No. 4, (1987), pp. 25–34. [6] D. T. Swain, I. D. Couzin, and N. E. Leonard, Real-time feedback-controlled robotic fish for behavioral experiments with fish schools, Proceedings of the IEEE , Vol. 100, No. 1, (2012), pp. 150–163. [7] V. Kopman, J. Laut, G. Polverino, and M. Porfiri, Closed-loop control of zebrafish response using a bioinspired robotic-fish in a preference test, Journal of The Royal Society Interface ,Vol. 10, No. 78, (2013). [8] H. Kawashima, Y. Kanechika, and T. Matsuyama, Camera-display system for the interac-tion analysis of live fish vs fish-like graphics, The 17th Meeting on Image Recognition and Understanding (MIRU 2014) , (2014). [9] G. P. Arnold, Rheotropism in fishes, Biological Reviews , Vol. 49, No. 4, (1974), pp. 515–576. 21

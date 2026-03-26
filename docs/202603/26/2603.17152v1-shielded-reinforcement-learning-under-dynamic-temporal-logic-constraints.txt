@@ -1,0 +1,438 @@
+Title: Shielded Reinforcement Learning Under Dynamic Temporal Logic Constraints
+
+URL Source: https://arxiv.org/pdf/2603.17152v1
+
+Published Time: Thu, 19 Mar 2026 00:36:23 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Shielded Reinforcement Learning Under Dynamic Temporal Logic Constraints 
+
+Sadık Bera Y¨ uksel, Ali Tevfik Buyukkocak, and Derya Aksaray 
+
+Abstract — Reinforcement Learning (RL) has shown promise in various robotics applications, yet its deployment on real systems is still limited due to safety and operational constraints. The safe RL field has gained considerable attention in recent years, which focuses on imposing safety constraints throughout the learning process. However, real systems often require more complex constraints than just safety, such as periodic recharg-ing or time-bounded visits to specific regions. Imposing such spatio-temporal tasks during learning still remains a challenge. Signal Temporal Logic (STL) is a formal language for specifying temporal properties of real-valued signals and provides a way to express such complex tasks. In this paper, we propose a framework that leverages sequential control barrier functions and model-free RL to ensure that the given STL tasks are satisfied throughout the learning process. Our method extends beyond traditional safety constraints by enforcing rich STL specifications, which can involve visits to dynamic targets with unknown trajectories. We also demonstrate the effectiveness of our framework through various simulations. 
+
+I. INTRODUCTION Reinforcement Learning (RL) has achieved remarkable success in many robotics applications, such as manipulation, locomotion, and navigation [1]. An RL agent learns to perform a task in the most optimal way by interacting with an environment and receiving feedback in the form of rewards. The learning process typically involves exploring a large number of state-action pairs to learn the optimal policy that maximizes the expected reward. This enables the agent to learn different complex tasks in unknown environments without requiring an explicit model of the system dynamics. Despite its success in policy generation, applications of RL to real robotic systems are still limited. Random exploration during learning might lead to unsafe behaviors, which can harm the robot or its surroundings. These safety concerns, e.g., collision avoidance, make the real-world training im-practical for many applications. As a result, constrained/safe RL has become an active research area (e.g., [2]). Existing approaches can be broadly categorized into two groups: methods achieving a safe policy by the end of the learn-ing (e.g., [3], [4]), and methods treating safety as a hard constraint by enforcing it during the learning (e.g., [5], [6]). However, real-world training may require several oper-ational constraints in addition to safety. Real systems are subject to practical limitations that can interrupt learning and require human intervention. For instance, robots may need 
+
+> S.B. Y¨ uksel is a PhD student in the Department of Electrical and Computer Engineering at Northeastern University. A.T. Buyukkocak is a Postdoctoral Researcher in the Department of Electrical and Computer Engineering at Northeastern University. D. Aksaray is an Assistant Professor in the Department of Electrical and Computer Engineering at Northeastern University.
+
+periodic battery recharging or resetting between episodes, which can interrupt autonomous learning. These require-ments can be defined as spatio-temporal tasks that must be satisfied to continue the learning process. In the literature, a common approach to encode such tasks is temporal logic (TL), a formal language for specifying and reasoning about complex behaviors [7]. In this paper, we focus on Signal Temporal Logic (STL) [8], which is an expressive language to specify the temporal properties of real-valued signals. Several works explored integrating temporal logic into RL. In [9], reward shaping is used to learn a policy that satisfies the STL specification, but the specification is not enforced during training. In [10], syntactically co-safe Truncated Lin-ear Temporal Logic (scTLTL) is used for reward shaping, and safety is enforced during learning by using control barrier functions (CBFs). However, this method only considers hard constraints in the form of safety (i.e., confining the agent to a safe region) and cannot express explicit time windows for the tasks due to the limited expressiveness of scTLTL. The work in [11] aims to learn the optimal policy to satisfy the given STL tasks, but focuses only on safety constraints during learning and does not leverage the full STL syntax. Moreover, [12], [13], and [14] enforce Bounded TL specifica-tions and provide probabilistic satisfaction guarantees during learning. However, the approach is limited to discrete state spaces. Furthermore, none of these works consider time-varying specifications involving dynamic target sets. The work in [15] addresses this gap by proposing sequential CBFs to satisfy STL tasks with dynamic targets, but it is not formulated in an RL setting. These limitations are critical for real-world learning, where constraint violations during training can interrupt learning, require human intervention, and reduce autonomy. The contributions of this paper are summarized as follows:  
+
+> •
+
+We propose a model-free RL framework that enforces STL specifications throughout training to ensure that complex spatio-temporal constraints are satisfied during learning rather than only by the final learned policy.  
+
+> •
+
+The framework supports a rich class of STL tasks, including those with dynamic targets with unknown tra-jectories, and enforces realistic operational constraints, such as periodic visits to a charger or resetting to a desired initial state between learning episodes.  
+
+> •
+
+We demonstrate the effectiveness of the proposed framework through simulation studies and verify its ability to enforce STL constraints during learning. 
+
+> arXiv:2603.17152v1 [cs.RO] 17 Mar 2026
+
+II. PRELIMINARIES 
+
+A. Signal Temporal Logic 
+
+In this paper, we specify the desired system behaviors using Signal Temporal Logic (STL). 
+
+Definition 1 (Signal Temporal Logic) Signal Temporal Logic (STL) [16] is a formal language used to specify temporal properties of a system over real-valued signals. In this paper, we use the following STL syntax: 
+
+Φ ::= Φ1 ∧ Φ2 | Φ1 ∨ Φ2 | F[a,b ]ϕ | G[a,b ]ϕ | φ1U[a,b ]φ2,ϕ ::= φ | ¬ ϕ | F[c,d ]φ | G[c,d ]φ, (1) 
+
+φ ::= μ | ¬ φ | φ1 ∧ φ2 | φ1 ∨ φ2,
+
+where a, b, c, d ∈ R≥0 are finite non-negative time bounds with b ≥ a and d ≥ c; F , G, U denote the finally (eventually), globally (always) and until temporal operators, respectively; ¬, ∧, ∨ denote the negation, conjunction and disjunction Boolean operators, respectively; Φ, ϕ, φ are STL specifications, and μ is a predicate of the form p(x(t)) ∼ 0,where x : R≥0 → R is a real-valued signal, p : Rn → R is a function, and ∼∈ {≥ , ≤} is a relational operator. 
+
+For any signal x, let x(t) denote its value at time t and 
+
+(x, t ) denote the part of the signal starting from t. The satisfaction of an STL specification over (x, t ) is defined as follows: 
+
+(x, t ) |= μ ⇐⇒ p(x(t)) ∼ 0,
+
+(x, t ) |= ¬μ ⇐⇒ ¬ (( x, t ) |= μ),
+
+(x, t ) |= Φ1 ∧ Φ2 ⇐⇒ (x, t ) |= Φ1 and (x, t ) |= Φ2,
+
+(x, t ) |= Φ1 ∨ Φ2 ⇐⇒ (x, t ) |= Φ1 or (x, t ) |= Φ2,
+
+(x, t ) |= Φ1U[a,b ]Φ2 ⇐⇒ ∃ t′ ∈ [t + a, t + b], (x, t ′) |= Φ2
+
+and ∀t′′ ∈ [t, t ′], (x, t ′′ ) |= Φ1,
+
+(x, t ) |= G[a,b ]Φ ⇐⇒ ∀ t′ ∈ [t + a, t + b], (x, t ′) |= Φ, 
+
+(x, t ) |= F[a,b ]Φ ⇐⇒ ∃ t′ ∈ [t + a, t + b], (x, t ′) |= Φ. 
+
+The operator F[a,b ]Φ specifies that Φ should be satisfied at least once in the interval [t+ a, t + b], while G[a,b ]Φ specifies that Φ must hold at all times within the interval [t + a, t + b].On the other hand, the Φ1U[a,b ]Φ2 operator specifies that 
+
+Φ1 must hold until Φ2 becomes true in the interval [t +
+
+a, t + b]. The horizon of an STL specification Φ, denoted as 
+
+hrz (Φ), is defined as the number of future samples required to determine the truth value of the specification [17]. In this paper, we consider STL specifications Φ composed of multiple tasks Φi in conjunction as follows: 
+
+Φ := Φ1 ∧ Φ2 ∧ · · · ∧ Φk. (2) Each task Φi includes one or more temporal operators ap-plied on inner specification φi as described in the syntax (1). For instance, Φi = G[a,b ]F[c,d ]φi or Φj = F[a,b ](φj, 1 ∨ φj, 2),where φj = φj, 1 ∨ φj, 2 is the inner specification associated with task Φj .
+
+B. Time-Varying (Zeroing) Control Barrier Functions 
+
+Consider a control affine system of the form 
+
+˙x = f (x) + g(x)u, (3) where f : Rn → Rn and g : Rn → Rn×m are locally Lipschitz continuous, x ∈ X ⊆ Rn is the state and u ∈ U ⊆ 
+
+Rm is the control. Control barrier functions (CBFs) are used to render a desired set of states forward invariant [18]. That is, let hCBF : X → R be a differentiable function and define the zero superlevel set C = {x ∈ X | hCBF (x) ≥ 0}. If the system starts in the zero superlevel set, i.e., x(0) ∈ C , then CBF conditions ensure that x(t) remains in C for all t ≥ 0.This concept is extended to time-varying sets by intro-ducing time-varying CBFs [19]. Specifically, a differentiable function b(x, t ) : X × R≥0 → R is defined as a time-varying CBF and the corresponding time-varying set C(t) = {x ∈X | b(x, t ) ≥ 0} is rendered forward invariant by the input 
+
+u ∈ U , if x(0) ∈ C (0) and there exists a locally Lipschitz continuous class K function α : R≥0 → R≥0 such that 
+
+sup 
+
+> u∈U
+
+∂b(x, t )
+
+∂x 
+
+> T
+
+(f (x) + g(x)u) + ∂b(x, t )
+
+∂t + α(b(x, t )) ≥ 0.
+
+(4) Such time-varying CBFs are useful for enforcing STL tasks as they can encode temporal properties. For example, we can steer an agent to a target region within a specific time bound by using time-varying CBFs. III. PROBLEM STATEMENT We consider a model-free RL setting, where the agent tries to learn the optimal policy through interactions with an unknown environment. The environment is modeled as a finite-horizon Markov Decision Process (MDP), denoted as 
+
+M = ( X , U, p, r ) where  
+
+> •
+
+X ⊆ Rn is the continuous state space;  
+
+> •
+
+U ⊆ Rm is the continuous input space;  
+
+> •
+
+p : X × U × X → [0 , 1] is the state transition function;  
+
+> •
+
+r : X × U × X → R is the reward function. The agent interacts with the environment over episodes of fixed length T . At each time step, it selects an action according to a policy π, which may be deterministic π :
+
+X → U , or stochastic π : X × U → [0 , 1] .The objective of the agent is to learn the optimal policy that maximizes the total expected episodic reward while ensuring that the state trajectory generated in each episode 
+
+satisfies a desired STL specification. Unlike prior work that focuses on learning how to satisfy the given STL specification through reward shaping (e.g., [9], [11]), the reward function in our problem setting is only associated with the main objective (e.g., minimizing energy, maximizing information gain, or task efficiency) and decoupled from the STL specification. Thus, we treat the STL specification as a hard constraint and aim to satisfy it throughout the entire learning process .Enforcing STL specifications during training serves as a formal certificate of desired behavior in real-world appli-cations. For example, in an autonomous driving scenario, the STL specifications may require the agent to keep its speed below the speed limit and maintain a safe following distance from the other cars, while the reward function encourages fast traversal to the destination. Similarly, in a UAV surveillance scenario, the agent may receive rewards for flying over the surveillance areas, while an STL specification mandates periodic visits to a charging station during the learning so that the agent can continue the learning process without human intervention. In such scenarios, enforcing STL constraints throughout learning is essential as violations may disrupt learning (e.g., accidents, undesirable behavior). In many practical scenarios, STL specifications may in-volve visits to dynamic target sets whose locations vary over time. For instance, in the previous UAV surveillance scenario, the charging station might be mounted on a moving ground vehicle. Dynamic target requirements can be encoded using STL formulas by imposing temporal constraints on vis-iting dynamic targets. However, introducing dynamic targets into the learning framework is challenging, especially when their future trajectories are unknown to the agent. In such cases, the agent must reason about the future locations of the target and choose its actions accordingly during learning. In our problem setting, we assume the agent has single integrator dynamics of the form: 
+
+˙x = u + d, ∥u∥ ≤ umax , ∥d∥ ≤ dmax , (5) where u is the control input and d is an unknown but bounded disturbance with known bound dmax . Each target i is also assumed to follow single integrator dynamics: 
+
+˙xtarget  
+
+> i
+
+= utarget  
+
+> i
+
+, ∥utarget  
+
+> i
+
+∥ ≤ utarget 
+
+> i, max
+
+, (6) where the control input utarget  
+
+> i
+
+is unknown but bounded by a known constant utarget 
+
+> i, max
+
+. This abstraction captures realistic movement while allowing the agent to estimate the future states of the targets conservatively. Accordingly, we formu-late the following problem: 
+
+Problem 1 Given a finite horizon MDP M = ( X , U, p, r )
+
+where the unknown state transition function p is induced by the dynamics in (5) and the reward function r is unknown, and an STL specification Φ which incorporates time-varying targets governed by the dynamics as in (6), find the optimal policy that maximizes the total expected episodic reward 
+
+π∗ = arg max  
+
+> π
+
+Eπ
+
+" TX
+
+> t=0
+
+γtrt
+
+#
+
+, (7) 
+
+such that, for every episode j in the learning 
+
+(xj , 0) |= Φ, ∀j ≥ 0, (8) 
+
+where 0 < γ ≤ 1 is the discount factor, xj : {0, 1, . . . , T } → X is the signal representing the state trajectory in episode 
+
+j over the finite episode horizon T ≥ hrz (Φ) .
+
+IV. PROPOSED SOLUTION In this section, we first discuss the challenges of enforcing STL tasks during learning. Next, we review the sequential CBF and explain how they are used to satisfy STL tasks involving visits to dynamic target sets. Finally, we explain our proposed framework that incorporates sequential CBFs into a model-free RL setting and introduce the main algo-rithm enforcing the satisfaction of STL tasks throughout the learning process. An overview of our proposed framework is illustrated in Fig. 1.         
+
+> Fig. 1: Overview of the proposed framework. At each time step, the RL agent outputs an unconstrained control input uRL t, which is then adjusted by a corrective input uCBF tcomputed using sequential CBFs to satisfy the given STL task. The final control ˜utis applied to the system, and the resulting next state and reward (xt+1 , r t)are fed back to the RL agent.
+
+A. Reinforcement Learning Under STL Constraints 
+
+Encoding STL specifications as hard constraints in RL settings introduces several challenges. First, incorporating the STL constraint into the reward function does not guarantee its satisfaction during the early stages of learning. Since the goal of RL is to maximize reward through trial and error, the satisfaction of the STL specification is eventually achieved. As a result, violations can occur throughout the training phase, which is undesirable in both simulated and real-world settings. Second, a common approach to enforce hard constraints during learning is by using CBFs (e.g., [5], [6], [10], [11]). Standard CBFs require defining a safe set and confining the agent to that set through control corrections. The safe set is stationary in the case of safety constraints (e.g., globally avoiding obstacles), or it can shrink when enforcing reachability constraints (e.g., eventually visiting a region). However, when STL specifications involve nested operators, disjunctions, or dynamic requirements that cause the safe set to move in the state-space, standard CBFs (including time-varying variants) become insufficient. While sequential CBFs [15], [20] can encode richer STL specifica-tions with dynamic predicates, their integration into an RL setting has not been explored yet. The original sequential CBF formulation does not account for system disturbances or the presence of secondary objectives such as balancing STL satisfaction with the need for exploration during learning. These aspects are essential in RL settings, and we address them to extend the use of sequential CBFs in RL problems. 
+
+B. Sequential CBFs for Dynamic STL Specifications 
+
+Sequential CBFs were first introduced in [15] and [20] to solve motion planning problems with dynamic STL objec-tives. In this paper, we build on the framework of sequential CBFs and enable RL that enforces rich STL constraints during training. In the sequential CBF formulation, the predicates of the desired STL formula are related to the dynamic target locations. As discussed in (6), we assume that the exact target locations are not known, but their control inputs are bounded by a known constant. Accordingly, the worst-case future distances to/between target regions can be defined as follows: 
+
+Definition 2 (Worst-Case Distance to Target) Let x ∈ X 
+
+be the agent’s state, P ⊆ X be a compact set corresponding to the satisfaction of an inner specification φ as defined in (1) (i.e., P := {x ∈ X | x |= φ}), and τ ∈ R≥0 be the remaining time to satisfy φ. Then the worst-case distance is defined as: 
+
+Dist wc (x, P, τ ) := Dist (x, P) + uP,max · τ, (9) 
+
+where Dist (x, P) is the signed distance from x to P.
+
+Additionally, the worst-case pairwise distance between two ordered targets is defined as follows:                
+
+> Dist wc (Pi,Pj, τ i, τ j) := sup
+> x∈P i
+> inf
+> x∗∈P j
+> ∥x−x∗∥+uPi,max ·τi+uPj,max ·τj,
+
+(10) To determine the sequence in which the dynamic targets associated with STL tasks should be visited, we use avariant of the sequence generation algorithm proposed in [15]. The original algorithm generates a feasible ordering of tasks based on their remaining time and worst-case distances as defined in (9) and (10). By considering the worst-case distances, it ensures that the generated sequence is feasible under the given dynamic targets, even without knowledge of their trajectories. Unlike [15], we introduce a minor modification to the algorithm to better align with the RL setting. While sequences involving frequent visits to targets in periodic tasks still constitute correct solutions, they leave less time for exploration. Therefore, we prioritize candidate sequences with fewer repetitions for periodic STL tasks. After generating a feasible sequence S of k tasks, we construct the following sequential CBF candidate for each task in the sequence: 
+
+bi(x, t ) := ¯ τSi (t) − Dist wc (x, PS1 , ¯τS1 (t)) 
+
+umax − dmax 
+
+(11) 
+
+−
+
+Pil=2 Dist wc 
+
+ PSl−1 , PSl , ¯τSl−1 (t), ¯τSl (t)
+
+umax − dmax 
+
+, ∀i ∈ S ,
+
+where ¯τSi (t) = min j∈{ i,..., |S|} τSj (t) denotes the actual remaining time available for completing task Si while pre-serving feasibility of all subsequent tasks in the sequence. In other words, task Si must be completed early enough so that the remaining tasks can still be satisfied before their respective deadlines. Here, τSj : R≥0 → R≥0 is the remain-ing time to satisfy the jth task in the sequence S, defined as τSj (t) = τSj (0) − t. Note that (11) is different from the original formulation in [15] by subtracting the maximum disturbance bound dmax from the agent’s maximum input 
+
+umax in the denominator. This modification ensures that the STL task is satisfiable under the worst-case disturbance. To ensure that the system satisfies the given STL tasks in the specified order, it must be governed by the most time-critical CBF among all candidate CBFs. We determine the most time-critical CBF via, 
+
+b(x, t ) = min  
+
+> i∈S
+
+bi(x, t ). (12) Extending this framework to other dynamical systems requires modifying the reachability checks in 11. The single integrator dynamics guarantee this reachability via omnidi-rectional velocity limits. For more complex dynamics, similar CBFs can be conservatively formulated utilizing turn-to-go profiles that account for the time required to rotate and translate, though a comprehensive reachability analysis for such systems remains outside the scope of this paper. 
+
+C. Proposed STL-Constrained RL Framework 
+
+We focus on a model-free RL setting, where the agent learns a policy by interacting with the environment without prior knowledge of the system dynamics or reward function. In this setting, the agent aims to maximize the cumulative episodic rewards through trial and error. Our approach is independent of the RL algorithm and can be integrated with policy gradient algorithms, such as Proximal Policy Optimization (PPO) [21], Soft Actor-Critic (SAC) [22], or Trust Region Policy Optimization (TRPO) [23]. While these RL algorithms are efficient at learning reward-driven behaviors, as discussed in section IV-A, they do not inherently guarantee the satisfaction of STL tasks during learning. To ensure that the given STL tasks are satisfied during learning, we embed the sequential CBFs defined in (11) into RL. After identifying the most time-critical CBF (12) for a task sequence S including k targets, we solve the following Quadratic Program (QP) at each time step t to compute a corrective control uCBF :
+
+(uCBF (x, t, u RL (x)) , ϵ ) = argmin 
+
+> u,ϵ
+
+∥u∥2 + Kϵϵ (13) s.t. ∂b(x, t )
+
+∂x 
+
+> T
+
+(u + uRL (x)) + ∂b(x, t )
+
+∂x target 
+
+> T
+
+utarget + ∂b(x, t )
+
+∂t 
+
++ α(b(x, t )) ≥ − ϵ
+
+∥u + uRL (x)∥ ≤ umax ,
+
+where uRL (x) ∼ πθ (·| x) is the output of the policy network parameterized by θ at state x, ϵ ∈ R+ is a slack variable with sufficiently large weight penalty Kϵ ∈ R+ that ensures the feasibility of the QP, xtarget ∈ Rnk and utarget ∈ Rmk are the stacked vectors of current target states and target inputs, respectively. To account for control input bounds, we impose the constraint ∥u + uRL (x)∥ ≤ umax . The slack variable ϵ
+
+relaxes the first constraint to ensure the feasibility of the QP when it cannot be strictly satisfied due to physical constraints (e.g., actuator limitations). The solution to the QP in (13) enforces the satisfaction of the given STL task with minimal time relaxation and control effort. The following theorem formalizes this property by providing a lower bound on the task violation (temporal relaxation). Theorem 1 Consider an agent with dynamics as in (5), and let b(x, t ) be a sequential CBF as defined in (12). Then, if 
+
+α(b) = γb for some γ > 0 and b(x0, 0) ≥ 0, the value of the barrier function along the system trajectory is bounded from below as: 
+
+b(x, t ) ≥ − ϵγ . (14) 
+
+In other words, the worst-case violation is bounded below by −ϵ/γ , and the controller derived from (13) renders the agent forward invariant within a relaxed set defined by: 
+
+Cϵ =
+
+
+
+x ∈ Rn | b(x, t ) ≥ − ϵγ
+
+
+
+.
+
+Proof: From (13), along the system trajectories we have: 
+
+˙b(x, t ) + γb(x, t ) ≥ − ϵ. (15) Multiplying both sides by the integrating factor eγt :
+
+˙b(x, t ) eγt + γb(x, t ) eγt ≥ − ϵ e γt . (16) Applying the product rule on the left-hand side: 
+
+ddt 
+
+ eγt b(x, t ) ≥ − ϵ e γt . (17) Integrating both sides from 0 to t and solving for b(x, t )
+
+yields: 
+
+b(x, t ) ≥ − ϵγ +
+
+
+
+b(x0, 0) + ϵγ
+
+
+
+e−γt ≥ − ϵγ , (18) where the last inequality follows from b(x0, 0) ≥ 0 and 
+
+e−γt ≥ 0 for all t ≥ 0.Theorem 1 can be interpreted as an upper bound on the maximum time-window relaxation in STL satisfaction. In other words, if the agent fails to satisfy a task within the original time bound, the temporal violation (relaxation) is bounded and corresponds to at most ϵγ time steps. After finding the corrective control uCBF by solving the QP, the final control executed by the agent at state x and time t is as follows: 
+
+˜u(x, t ) = uRL (x) + uCBF (x, t, u RL (x)) . (19) Here, the corrective control uCBF modifies the uncon-strained RL output uRL to ensure that the executed control respects the STL specification. To improve the generalization of the learned policy, the agent’s state should be randomized at the start of each learning episode [24]. However, the initial states must be chosen such that the given STL task can be satisfied starting from that state. For example, if the agent is initially far away from the target regions, it might not be able to visit all targets within the desired time windows. Here, we formally define the set of feasible initial states from which the given STL task can be satisfied: 
+
+Definition 3 (Feasible State Set) Given an MDP M =(X , U, p, r ), an STL specification Φ which incorporates dynamic targets, we define the feasible state set as follows: 
+
+X Φf easible = {x ∈ X | SΦf easible (x)̸ = ∅} , (20) 
+
+where SΦf easible (x) is the set of feasible sequences for the specification Φ starting from state x.
+
+In other words, if a feasible sequence can be found from a given state, then the overall STL task, as in (2), can be satisfied starting from that state. Having a feasible sequence simply means that bi(x, t ) is nonnegative for all tasks i in the sequence, which means each task can be achieved on time. The complete learning algorithm is given in Alg. 1. Algorithm 1 starts by initializing an empty replay buffer and policy network weights (line 1). At the beginning of each learning iteration, a feasible initial state is sampled, and a task sequence is generated (lines 3-5). At every step, the agent selects an action ( uRL ) from its current policy network (line 7). If the current task sequence is nonempty, a quadratic program is solved to find the corrective control (uCBF ), which is then added to the policy action (lines 8-
+
+Algorithm 1: STL Constrained RL 
+
+Input : MDP M, episode horizon T , number of training iterations N , STL specification 
+
+Φ = Φ1 ∧ · · · ∧ Φk 
+
+> 1
+
+Initialize empty buffer B = ∅ and policy θ ← θ0 
+
+> 2
+
+for i from 0 to N do  
+
+> 3
+
+Randomly sample x0 from X Φf easible  
+
+> 4
+
+Reset environment  
+
+> 5
+
+Generate a feasible sequence S starting from x0
+
+using a variant of the algorithm in [15]  
+
+> 6
+
+for t from 0 to T do  
+
+> 7
+
+uRL t = πθi (xt) 
+
+> 8
+
+if S̸ = ∅ then  
+
+> 9
+
+Construct CBFs and determine the most time-critical one b via (11) and (12)  
+
+> 10
+
+uCBF t = QP (xt, u RL t , b) ▷ (13)  
+
+> 11
+
+˜ut = uRL t + uCBF t 
+
+> 12
+
+else  
+
+> 13
+
+˜ut = uRL t 
+
+> 14
+
+Take action ˜ut, observe xt+1 and rt 
+
+> 15
+
+Add transition (xt, ˜ut, x t+1 , r t) to B 
+
+> 16
+
+if S̸ = ∅ then  
+
+> 17
+
+if S(1) is hit then  
+
+> 18
+
+S = S \ {S (1) } 
+
+> 19
+
+if S(1) has alternative targets then  
+
+> 20
+
+Calculate the CBF values for the alternatives via (11)  
+
+> 21
+
+Update S if any alternative yields a higher CBF value  
+
+> 22
+
+Update θi using B via the selected RL algorithm to obtain θi+1 11); otherwise, the unmodified action is used as the given STL task is already satisfied (line 13). The resulting action is executed, and the transition is saved in the buffer (lines 14-15). When the agent reaches the target region associated with the first task S(1) , it is removed from the sequence (lines 16-18). If the new first task has alternative targets (i.e., involves disjunction), we evaluate the corresponding CBF values and replace S(1) with the alternative yielding the highest value (lines 19–21). Finally, the policy network is updated using the experience stored in the buffer via the selected RL algorithm (line 22). V. CASE STUDIES We validate the proposed framework through two case studies in a simulation environment. For the learning algo-rithm, we employ Soft Actor-Critic (SAC) [22]. The policy (actor) and value (critic) networks are feed-forward neural networks consisting of 4 hidden layers of size 256. Each learning episode has a finite length and terminates only when the horizon is reached. To improve generalization, the agent’s state is randomized within the feasible state set between episodes. The implementation is done in Python 3.10 and trained on an NVIDIA RTX 4070 GPU. In all case studies, the agent follows the dynamics in (5) and operates under bounded and uniformly distributed distur-bance. Its primary learning objective is to reach a predefined goal region and monitor it under unknown disturbance. Note that the future trajectories of the targets are unknown to the agent. Instead, it can only access instantaneous positions and velocities of the targets, which can be obtained through sensor-based methods. 
+
+Case 1. We consider a scenario where the agent must periodically recharge its battery during training. Figure 2a illustrates the simulation environment used for this case. Two mobile charging stations move back and forth along their respective roads according to the dynamics in 6, and the agent must visit either one of them periodically in each learning episode. We express this task with the following STL specification: 
+
+Φ1 = G[0 ,210] F[0 ,90] (Charger 1 ∨ Charger 2). (21) This specification enforces that, within each learning episode of length 300 time steps, the agent must visit at least one of the chargers within every window of 90 time steps. Due to the sequence update mechanism in Alg. 1 (lines 19-21), the  
+
+> (a) (b) Fig. 2: Simulation environment setups: (a) Case 1 and (b) Case 2.
+
+agent always navigates to the nearest charging station as it yields a higher CBF value. Figure 3 compares the learning curves of SAC networks trained with and without the STL task Φ1. The unconstrained SAC agent achieves higher episodic rewards as it can focus solely on reward maximization without considering temporal logic tasks. On the other hand, the agent trained under the STL task Φ1 converges to a lower episodic reward since it must periodically leave the high-reward area to satisfy the STL task. Furthermore, the constrained agent achieved a 99.56% satisfaction rate of the STL task, which demonstrates that our framework was able to enforce the given STL task effectively throughout the entire learning process. 
+
+Remark 1 Rare failure cases occur when the agent reaches the charging stations slightly after the specified time win-dows, which is effectively extending the deadline instead of failing the task. This is due to the fact that the CBF condition in (13) is relaxed by a slack variable when input bounds prevent satisfying the inequality. However, Theorem 1 provides a lower bound on the resulting time relaxation. 
+
+Case 2. In this case, we consider a more complex STL task where the agent needs to navigate to two different dynamic target regions within specific time windows and remain inside each for specific durations, while also visiting a dynamic charging station periodically. The STL specification that expresses this task is given as follows: 
+
+Φ2 =F[0 ,60] G[0 ,10] T arget 1 ∧ F[150 ,180] G[0 ,10] T arget 2
+
+∧ G[0 ,190] F[0 ,110] Charger. (22) This specification requires the agent to visit T arget 1 within the first 60 time steps and remain there for 10 consecutive steps. Then, it must visit T arget 2 between time steps 150 and 180 and remain there for 10 steps. Additionally, it must visit the charging station every 110 time steps within each learning episode of length 300 time steps. Both T arget 1 and 
+
+T arget 2 move randomly inside the simulation environment, while the charging station moves in a circular trajectory. Note     
+
+> Fig. 3: Learning curve comparisons of SAC models trained without STL tasks (orange) and with the STL specifications Φ1(blue) and Φ2(green). Results are averaged over 10 independent training runs, and the shaded regions represent the confidence intervals of two standard deviations.
+
+that neither the targets’ nor the charger’s future trajectories are known to the agent. As shown in Fig. 3, the learning curve of the SAC agent trained under the STL task Φ2 converges to an optimal policy. Since this task requires more visits to target regions and two targets are moving randomly, the agent needs to spend a larger portion of the learning episodes on satisfying the STL task. Consequently, the learning curve for this case converges to a lower episodic reward compared to the unconstrained model and the model trained under Φ1. Furthermore, the specification was satisfied with a rate of 95.2% during the learning process. The success rate is slightly lower compared to Case 1, since Φ2 imposes stricter deadlines with more sequential requirements, and the randomly moving targets can spread apart significantly, which forces the agent to travel longer distances within limited time windows. Similar to Case 1, the violations here are mainly satisfying the STL task with bounded temporal relaxation. A video showcasing the training processes for both Case 1 and Case 2 is available at: https://youtu.be/rYU4wgfgLyA .VI. CONCLUSION We introduce a framework that extends sequential control barrier functions to RL settings to enforce complex STL tasks during learning. Unlike prior work that primarily focused on safety, our framework handles richer spatio-temporal speci-fications, including visits to dynamic targets with unknown trajectories. By formulating sequential CBFs under bounded disturbances and input limits, our method ensures STL satis-faction throughout the learning process rather than only after training. We also provide a theorem that quantifies a lower bound on task violation, which guarantees the achievement of the desired STL task under bounded delays. We validate the framework in simulation with bounded disturbances, where the agent learns its primary objective while satisfying STL tasks such as periodic visits to moving charging stations and timed visits to randomly moving targets. Future work will extend the framework to more general settings with more complex objectives and agent dynamics. REFERENCES [1] J. Kober, J. A. Bagnell, and J. Peters, “Reinforcement learning in robotics: A survey,” The International Journal of Robotics Research , vol. 32, no. 11, pp. 1238–1274, 2013. [Online]. Available: https://doi.org/10.1177/0278364913495721 [2] J. Garcıa and F. Fern´ andez, “A comprehensive survey on safe rein-forcement learning,” Journal of Machine Learning Research , vol. 16, no. 1, pp. 1437–1480, 2015. [3] J. Achiam, D. Held, A. Tamar, and P. Abbeel, “Constrained policy optimization,” 2017. [Online]. Available: https://arxiv.org/abs/1705. 10528 [4] A. Wachi, Y. Sui, Y. Yue, and M. Ono, “Safe exploration and optimiza-tion of constrained mdps using gaussian processes,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 32, no. 1, 2018. [5] R. Cheng, G. Orosz, R. M. Murray, and J. W. Burdick, “End-to-end safe reinforcement learning through barrier functions for safety-critical continuous control tasks,” 2019. [Online]. Available: https://arxiv.org/abs/1903.08792 [6] Y. Emam, G. Notomista, P. Glotfelter, Z. Kira, and M. Egerstedt, “Safe reinforcement learning using robust control barrier functions,” 2022. [Online]. Available: https://arxiv.org/abs/2110.05415 [7] C. Baier and J.-P. Katoen, Principles of model checking . MIT press, 2008. [8] O. Maler and D. Nickovic, “Monitoring temporal properties of con-tinuous signals,” in International symposium on formal techniques in real-time and fault-tolerant systems . Springer, 2004, pp. 152–166. [9] D. Aksaray, A. Jones, Z. Kong, M. Schwager, and C. Belta, “Q-learning for robust satisfaction of signal temporal logic specifications,” in 2016 IEEE 55th Conference on Decision and Control (CDC) .IEEE, 2016, pp. 6565–6570. [10] X. Li and C. Belta, “Temporal logic guided safe reinforcement learning using control barrier functions,” 2019. [Online]. Available: https://arxiv.org/abs/1903.09885 [11] J. Chen, Y. Zou, and S. Li, “Safe reinforcement learning for signal temporal logic tasks using robust control barrier functions,” in 2023 42nd Chinese Control Conference (CCC) , 2023, pp. 8627–8632. [12] D. Aksaray, Y. Yazıcıo˘ glu, and A. S. Asarkaya, “Probabilistically guar-anteed satisfaction of temporal logic constraints during reinforcement learning,” in 2021 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2021, pp. 6531–6537. [13] X. Lin, A. Koochakzadeh, Y. Yazıcıo˘ glu, and D. Aksaray, “Reinforce-ment learning under probabilistic spatio-temporal constraints with time windows,” in 2023 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2023, pp. 8680–8686. [14] X. Lin, S. B. Y¨ uksel, Y. Yazıcıo˘ glu, and D. Aksaray, “Probabilistic satisfaction of temporal logic constraints in reinforcement learning via adaptive policy-switching,” arXiv preprint arXiv:2410.08022 , 2024. [15] A. T. Buyukkocak, D. Aksaray, and Y. Yazıcıo˘ glu, “Sequential control barrier functions for mobile robots with dynamic temporal logic specifications,” Robotics and Autonomous Systems , vol. 176, p. 104681, 2024. [Online]. Available: https://www.sciencedirect.com/ science/article/pii/S0921889024000642 [16] O. Maler and D. Nickovic, “Monitoring temporal properties of contin-uous signals,” in Formal Techniques, Modelling and Analysis of Timed and Fault-Tolerant Systems , Y. Lakhnech and S. Yovine, Eds. Berlin, Heidelberg: Springer Berlin Heidelberg, 2004, pp. 152–166. [17] A. Dokhanchi, B. Hoxha, and G. Fainekos, “On-line monitoring for temporal logic robustness,” 2014. [Online]. Available: https: //arxiv.org/abs/1408.0045 [18] A. D. Ames, X. Xu, J. W. Grizzle, and P. Tabuada, “Control barrier function based quadratic programs for safety critical systems,” IEEE Transactions on Automatic Control , vol. 62, no. 8, p. 3861–3876, Aug. 2017. [Online]. Available: http: //dx.doi.org/10.1109/TAC.2016.2638961 [19] L. Lindemann and D. V. Dimarogonas, “Control barrier functions for signal temporal logic tasks,” IEEE Control Systems Letters , vol. 3, no. 1, pp. 96–101, 2019. [20] A. T. Buyukkocak, D. Aksaray, and Y. Yazıcıo˘ glu, “Control barrier functions with actuation constraints under signal temporal logic spec-ifications,” in 2022 European Control Conference (ECC) . IEEE, 2022. [21] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” 2017. [Online]. Available: https://arxiv.org/abs/1707.06347 [22] T. Haarnoja, A. Zhou, P. Abbeel, and S. Levine, “Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor,” 2018. [Online]. Available: https://arxiv.org/abs/1801.01290 [23] J. Schulman, S. Levine, P. Moritz, M. I. Jordan, and P. Abbeel, “Trust region policy optimization,” 2017. [Online]. Available: https://arxiv.org/abs/1502.05477 [24] C. Zhang, O. Vinyals, R. Munos, and S. Bengio, “A study on overfitting in deep reinforcement learning,” 2018. [Online]. Available: https://arxiv.org/abs/1804.06893

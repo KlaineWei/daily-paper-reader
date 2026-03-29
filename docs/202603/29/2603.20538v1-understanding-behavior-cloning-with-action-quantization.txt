@@ -1,0 +1,5421 @@
+Title: Understanding Behavior Cloning with Action Quantization
+
+URL Source: https://arxiv.org/pdf/2603.20538v1
+
+Published Time: Tue, 24 Mar 2026 00:21:01 GMT
+
+Number of Pages: 38
+
+Markdown Content:
+# Understanding Behavior Cloning with Action Quantization 
+
+## Haoqun Cao, Tengyang Xie University of Wisconsin–Madison 
+
+hcao65@wisc.edu, tx@cs.wisc.edu 
+
+Abstract 
+
+Behavior cloning is a fundamental paradigm in machine learning, enabling policy learning from expert demonstrations across robotics, autonomous driving, and generative models. Autoregressive models like transformer have proven remarkably effective, from large language models (LLMs) to vision-language-action systems (VLAs). However, applying autoregressive models to continuous control requires discretizing actions through quantization, a practice widely adopted yet poorly understood theoretically. This paper provides theoretical foundations for this practice. We analyze how quantization error propagates along the horizon and interacts with statistical sample complexity. We show that behavior cloning with quantized actions and log-loss achieves optimal sample complexity, matching existing lower bounds, and incurs only polynomial horizon dependence on quantization error, provided the dynamics are stable and the policy satisfies a probabilistic smoothness condition. We further characterize when different quantization schemes satisfy or violate these requirements, and propose a model-based augmentation that provably improves the error bound without requiring policy smoothness. Finally, we establish fundamental limits that jointly capture the effects of quantization error and statistical complexity. 
+
+# 1 Introduction 
+
+Behavior cloning (BC), the approach of learning a policy from expert demonstrations via supervised learning (Pomerleau, 1988; Bain and Sammut, 1995), has emerged as a foundational paradigm across artificial intelligence. In robotics and autonomous driving, BC enables learning complex manipulation and navigation skills directly from human demonstrations (Black et al., 2024). In generative AI, next-token prediction with cross-entropy (the standard pretraining objective for large language models) can be viewed as behavior cloning from demonstration data. A key architectural choice driving recent progress is the use of autoregressive (AR) models. AR transformers have proven remarkably effective both in language modeling and, more recently, in vision-language-action (VLA) models for robotics (Brohan et al., 2022; Chebotar et al., 2023; Kim et al., 2024). However, applying AR models to continuous control introduces a fundamental design decision: continuous action signals must be quantized (or tokenized ) into discrete symbols. This involves mapping each continuous action vector to a finite token via a quantizer (e.g., per-dimension binning), after which the learner models a distribution over a finite action alphabet. Quantization can (i) reduce effective model complexity, (ii) improve coverage of the hypothesis class under finite-data constraints, and (iii) leverage state-of-the-art transformer architectures designed for discrete prediction (Driess et al., 2025). While action quantization has been widely explored in practice, from uniform binning (Brohan et al., 2022, 2023) to learned vector quantization (Lee et al., 2024; Belkhale and Sadigh, 2024) and time-series compression (Pertsch et al., 2025), its theoretical underpinnings remain poorly understood. This paper aims to provide theoretical foundations for understanding when and why action quantization works (or fails) in behavior cloning. Raw BC is already vulnerable to distribution shift : small deviations from the expert can drive the learner into states rarely covered by training data. Action quantization introduces an additional, inevitable mismatch; even with perfect fitting, the quantizer induces nonzero distortion that can compound over long horizons. We study how quantization error and statistical estimation error jointly propagate in finite-horizon MDPs. While prior work analyzes statistical limits of BC (e.g., Ross and Bagnell, 1
+
+> arXiv:2603.20538v1 [cs.LG] 20 Mar 2026
+
+2010; Ross et al., 2011; Rajaraman et al., 2020; Foster et al., 2024) and, separately, optimal lossy quantization (e.g., Widrow et al., 1996; Ordentlich and Polyanskiy, 2025), there is little understanding of their interaction ;and this paper aims to fill this gap. 
+
+Contributions. We study behavior cloning with log-loss (Foster et al., 2024) under action quantization, and make the following contributions: 1. We establish an upper bound on the regret as a function of the sample size and the quantization error, assuming stable dynamics and smooth quantized policies (expert and learner). 2. We show that a general quantizer can have small in-distribution quantization error yet still violate the smoothness requirement, which can lead to large regret; in contrast, binning-based quantizers are better behaved in this respect. 3. We propose a model-based augmentation that bypasses the smoothness requirement on the quantized policy and yields improved horizon dependence for the quantization term. 4. We prove information-theoretic lower bounds that depend on both the sample size and the quantization error, and show that our upper bound generally matches these limits. 
+
+## 1.1 Related Work 
+
+Sample Complexity and Fundamental Limits of Imitation Learning. The sample complexity of behavior cloning with 0-1 loss is studied in Ross et al. (2011) and Rajaraman et al. (2020). Let the sample size be n and the horizon be H. Essentially, a regret of H2 
+
+> n
+
+is established for deterministic and ˜O( H2 
+
+> n
+
+) up to logarithmic factors for stochastic experts, with a modified algorithm in tabular setting. In a recent work of Foster et al. (2024), they study behavior cloning with Log-loss in a function class Π, and through a more fine-grained analysis through Hellinger distance, they establish a upper bound of H log |Π| 
+
+> n
+
+for deterministic experts and H
+
+√ log |Π| 
+
+> n
+
+for stochastic experts with realizability and finite class assumptions. In terms of lower bound, Rajaraman et al. (2020) showed in tabular setting that H2 
+
+> n
+
+is tight. For stochastic experts, Foster et al. (2024) showed that 
+
+√ 1 
+
+> n
+
+is inevitable if the we allow the expert to be suboptimal. 
+
+Behavior Cloning in Continuous Control Problem. Another line of research studies behavior cloning through a control-theoretic lens (Chi et al., 2023; Pfrommer et al., 2022; Block et al., 2023; Simchowitz et al., 2025; Zhang et al., 2025). They focus on deterministic control problems where both the expert policy and the dynamics are deterministic, and use stability conditions to bound the rollout deviation in the metric space. Essentially, they point out that in continuous action spaces, imitating a deterministic expert under deterministic transitions is difficult, and cannot be done with 0–1 or log loss (Simchowitz et al., 2025). Our work also tries to address this issue by discretizing the continuous action space via quantization, while controlling the quantization error. 
+
+Quantization in Generative Models. Quantization methods are widely used in modern generative models, where data are first compressed into discrete representations and then learned through a generative model (Van Den Oord et al., 2017; Esser et al., 2021; Tian et al., 2024). In sequential decision-making settings such as robotic manipulation, there is also a growing body of work that adopts action quantization. Brohan et al. (2022, 2023); Kim et al. (2024) use a binning quantizer that discretizes each action dimension into uniform bins. Other works adopt vector-quantized action representations (Lee et al., 2024; Belkhale and Sadigh, 2024; Mete et al., 2024): they train an encoder–decoder with a codebook as a vector quantizer under a suitable loss, and then model the distribution over the resulting discrete codes. Dadashi et al. (2021) study learning discrete action spaces from demonstrations for continuous control. More recently, Pertsch et al. (2025) perform action quantization via time-series compression. Despite strong empirical progress, theoretical guarantees for these widely used settings remain limited. 22 Preliminaries 
+
+## 2.1 Background 
+
+Markov Decision Process. We consider such a finite-horizon Markov decision processes. Formally, a Markov decision process M = ( X , U, T, r, H ). Among them X ⊂ Rdx , U ⊂ Rdu are continuous state and action spaces. The horizon is H. T is probability transition functions T = {Th}Hh=0 , where Th : X ×U → ∆( X ), h ≥ 1
+
+and T0(∅) is the initial state distribution. r is a reward function r = {rh}, r h : X × U → [0 , 1] . A (time-variant, markovian) policy is a sequence of conditional probability function π = {πh : X → ∆( U)}. In this paper, we assume there is an expert policy denoted with π∗. We denote the distribution of the whole trajectory 
+
+τ = ( x1: H+1 , u 1: H ) generated by deploying π on dynamic T as Pπ,T . We denote the accumulative reward under π (and transition T) as J(π) = EPπ,T [∑Hh=1 r(xh, u h)] .
+
+Quantizer. Let q : U → ˜U be a (measurable) quantizer, where ˜U ⊂ U is a finite set of representative actions. For any policy π, define the pushforward (quantized) policy 
+
+(q#π)h(˜ u | x) := πh
+
+(q−1(˜ u) | x), ˜u ∈ ˜U.
+
+For any (x, ˜u) such that π∗
+
+> h
+
+(q−1( ˜u) | x) > 0, we define the expert-induced dequantization kernel ρh(· | ˜u, x ) ∈
+
+∆( U) as the conditional law 
+
+ρh(· | ˜u, x ) := Law (uh | ˜uh = ˜ u, x h = x), u h ∼ π∗
+
+> h
+
+(· | xh), ˜uh = q(uh).
+
+Equivalently, 
+
+ρh(du | ˜u, x ) = 1{u ∈ q−1(˜ u)}π∗
+
+> h
+
+(du | x)
+
+π∗
+
+> h
+
+(q−1(˜ u) | x) , if π∗
+
+> h
+
+(q−1(˜ u) | x) > 0.
+
+For (x, ˜u) such that π∗
+
+> h
+
+(q−1( ˜u) | x) = 0 , we extend ρh(· | ˜u, x ) by setting it to an arbitrary reference distribution ν˜u supported on q−1( ˜u). As a result, the kernel ρh(· | ˜u, x ) is now specified for all (x, ˜u) ∈ X × ˜U.Now, given any quantized policy ˆπh(· | x) ∈ ∆( ˜U), we define the induced raw-action policy by mixing ρh:
+
+(ρ ◦ ˆπ)h(du | x) := ∑ 
+
+> ˜u∈˜U
+
+ρh(du | ˜u, x )ˆ πh(˜ u | x). (1) Similarly, define the ρ-perturbed transition kernel by 
+
+(T ◦ ρ)h(· | x, ˜u) := 
+
+∫
+
+> U
+
+Th(· | x, u )ρh(du | ˜u, x ). (2) By construction, ρh(· | ˜u, x ) is supported on q−1( ˜u), hence q#( ρ ◦ ˆπ) = ˆπ. Moreover, since ρ is the expert-induced kernel, we also have ρ ◦ (q#π∗) = π∗.
+
+Type of Quantizers. Fix a metric ∥ · ∥ on U. Later we assume the reward is Lipschitz and the dynamics are stable with respect to this metric (typically the Euclidean norm). We consider the following two quantizers: the binning-based one and a learning-based quantizer. Let εq > 0 be a small quantity that denotes the quantization error of the quantizer. For binning-based quantizer, we assume that it holds, 
+
+∥q(u) − u∥ ≤ εq , ∀u ∈ U . (3) For a learning-based quantizer, we assume, 
+
+εq = 1
+
+H EPπ∗,T 
+
+[ H∑
+
+> h=1
+
+∥uh − q(uh)∥
+
+]
+
+. (4) Notice that the binning-based quantizer also satisfies Eq. (4), so it is a special case of a learning-based quantizer. Later, we will express the quantization error in terms of εq .32.2 Behavior Cloning 
+
+We will consider doing behavior cloning in a user-specified policy class Π ⊂ { πh : X → ∆( U)}Hh=1 . In most of this paper, Π will consist of quantized policies, in which case each πh is supported at ˜U. We will also use the same notation for a general policy class when the intended output space is clear from the context. 
+
+Warm-up: log-loss BC with raw actions (Foster et al., 2024). In the standard setting where raw actions are observed, log-loss BC solves 
+
+ˆπ ∈ argmax 
+
+> π∈Π
+> n
+
+∑
+
+> i=1
+> H
+
+∑
+
+> h=1
+
+log πh(uih | xih), {xi
+
+> 1: H+1
+
+, u i 
+
+> 1: H
+
+}ni=1 ∼ Pπ∗,T .
+
+Since the trajectory density under Pπ,T factorizes as T1(x1) ∏Hh=1 πh(uh | xh)Th(xh+1 | xh, u h) and T does not depend on π, the above objective is exactly the MLE over the family {Pπ,T }π∈Π.For rewards in [0 , 1] , we have the standard coupling bound 
+
+J(π∗) − J(ˆ π) ≤ H · TV 
+
+(
+
+Pπ∗,T , Pˆπ,T )
+
+.
+
+Moreover, the TV term can be controlled by the (squared) Hellinger distance D2 
+
+> H
+
+: in Appendix A we show that 
+
+TV 
+
+(
+
+Pπ∗,T , Pˆπ,T )
+
+≲ D2
+
+> H
+
+(
+
+Pπ∗,T , Pˆπ,T )
+
+, π ∗ deterministic ,
+
+TV 
+
+(
+
+Pπ∗,T , Pˆπ,T )
+
+≲
+
+√
+
+D2 
+
+> H
+
+(Pπ∗,T , Pˆπ,T ), in general .
+
+Combining these with standard MLE guarantees in Hellinger distance (e.g., Geer, 2000) yields regret rates 
+
+O(H log |Π|/n ) for deterministic experts and O(H√log |Π|/n ) for stochastic experts, matching Foster et al. (2024). 
+
+Log-loss BC with action quantization. Now suppose the learner only observes quantized actions 
+
+˜uih := q(uih) and learns a quantized policy ˆπh(· | x) ∈ ∆( ˜U). Then the observed data distribution over (x, ˜u)
+
+is Pq#π∗,(T ◦ρ). Log-loss BC, 
+
+ˆπ ∈ argmax 
+
+> π∈Π
+> n
+
+∑
+
+> i=1
+> H
+
+∑
+
+> h=1
+
+log πh(˜ uih | xih), (5) is the MLE over the family {Pπ, (T ◦ρ)}π∈Π and therefore (statistically) controls the discrepancy between 
+
+Pq#π∗,(T ◦ρ) and Pˆπ, (T ◦ρ). However, deployment executes representative actions ˜u ∈ ˜U ⊂ U in the original environment, generating rollouts from Pˆπ,T . In general, guarantee from optimizing Eq. (5) does not directly translate to control of the rollout distribution Pˆπ,T since Pˆπ, (T ◦ρ)̸ = Pˆπ,T . Thus, beyond the usual statistical estimation error, one must account for an additional quantization-induced mismatch between the distribution being learned and the distribution being executed, which is an approximation effect of discretizing a continuous action space and is not eliminated by increasing n. Our goal is to characterize when this mismatch does not compound badly with H, so that log-loss BC remains learnable under quantization. 
+
+# 3 Regret Analysis Under Stable Dynamic and Smooth Policy 
+
+Intuitively, quantization causes the learner to take actions that deviate from the expert’s actions in certain metric space. Such deviations are then propagated through the dynamics. Therefore, stability of the dynamics mitigates this error amplification. Similarly, if the expert policy is non-smooth, the quantized actions may be substantially suboptimal relative to the expert actions, which can also lead to large regret. In this section, we show that log-loss BC is learnable provided that the dynamics are stable and the expert policy is smooth. 43.1 Incremental Stability and Total Variation Continuity 
+
+Here we introduce the notions of stability and smoothness needed for our results. Our stability notion comes from a concept that has been extensively studied in control theory (e.g., Sontag et al., 1989; Lohmiller and Slotine, 1998; Angeli, 2002) and recently leveraged in provable imitation learning (e.g., Pfrommer et al., 2022; Block et al., 2023; Simchowitz et al., 2025; Zhang et al., 2025). We slightly modify this notion to make it applicable to stochastic dynamics and stochastic policies. To this end, we begin by representing the transition kernel via an explicit noise variable, and then introduce a coupling between two trajectory distributions induced by shared noise. 
+
+Definition 1 (Noise representation of a transition kernel) . We say that Th admits a noise representation if there exist a measurable space Ω, a probability measure PWh ∈ ∆(Ω) , and a measurable map fh : X ×U × Ω → X 
+
+such that for all (x, u ) ∈ X × U ,if ω ∼ Pω,h , then fh(x, u, ω ) ∼ Th(· | x, u ).
+
+In particular, the initial state distribution can be represented as x1 = f0(ω0) with ω0 ∼ Pω, 0.
+
+We will make such an assumption on the underlying dynamic fh throughout the paper, which holds in general cases if Th is a density or is deterministic as we show in Appendix B.1. 
+
+Assumption 1. For each h ∈ { 0, . . . , H }, the transition kernel Th admits a noise representation (fh, P Wh )
+
+such that, for every (x, u ) ∈ X × U , the map ω 7 → fh(x, u, ω ) is injective PWh -almost surely (i.e., given 
+
+(xh, u h, x h+1 ), the corresponding noise ωh is uniquely determined, PWh -a.s.). 
+
+Definition 2. ( Shared-noise coupling ) Fix a noise representation (fh, P Wh )Hh=0 satisfying the invertibility assumption. Given a trajectory τ = ( x1: H+1 , u 1: H ), define ω0(τ ) as the (a.s. unique) element such that 
+
+x1 = f0(ω0(τ )) , and for each h ∈ [H] define ωh(τ ) as the (a.s. unique) element such that 
+
+xh+1 = fh
+
+(xh, u h, ω h(τ )).
+
+Given two policies π0 and π1, a coupling μ of Pπ0,T and Pπ1,T is called a shared-noise coupling if, for 
+
+μ-a.e. (τ 0, τ 1),
+
+ωh(τ 0) = ωh(τ 1), ∀h ∈ { 0, 1, . . . , H }.
+
+With the above two definitions in place, we introduce a probabilistic notion of incremental input-to-state stability (P-IISS). We use a modulus γ that maps any finite list of nonnegative scalars to a nonnegative scalar. We say γ is of class K if it is continuous, coordinate-wise increasing, and satisfies γ(0 , . . . , 0) = 0 . We will write γ ((rt)kt=1 
+
+) to represent γ(r1, . . . , r k). We will also use ∥ · ∥ for the state metric (usually it is the Euclidean norm). 
+
+Definition 3. ( Probabilistic Incremental-Input-to-State-Stability) Define events, 
+
+Φh = {∥ u0 
+
+> t
+
+− u1 
+
+> t
+
+∥ ≤ d, ∀t ∈ [h]},
+
+Ψh = {∥ x0 
+
+> t+1
+
+− x1
+
+> t+1
+
+∥ ≤ γ ((∥u0 
+
+> k
+
+− u1
+
+> k
+
+∥)tk=1 
+
+) , ∀t ∈ [h]}.
+
+We call the trajectory distribution Pπ0,T (γ, δ )-d-locally probabilistically incremental-input-to-state stable (P-IISS) if and only if there exists γ ∈ K , for any other policy π1 and the related trajectory distribution Pπ1,T ,it holds that for any shared noise coupling μ, μ(Φ h ∩ Ψch) ≤ δ, ∀h ∈ [H].In addition, we say Pπ0,T is γ-globally P-IISS if μ(Ψ ch) = 0 , ∀h ∈ [H]. Furthermore, if γ in particular satisfies, 
+
+γ ((∥uk − u′
+
+> k
+
+∥)tk=1 
+
+) =
+
+> t
+
+∑
+
+> k=1
+
+Cη t−k∥uk − u′
+
+> k
+
+∥, C > 0, η ∈ (0 , 1) ,
+
+then we call it probabilistically exponentially-incremental-input-to-state-stable (P-EIISS). 
+
+5Definition 3 captures the following intuition: the dynamics are incrementally stable only when the action mismatch stays within a stable region of radius d, and under the expert policy this region is entered (and maintained) with high probability. Here d specifies the locality scale under which two trajectories can remain stable, while δ accounts for stochasticity in the dynamics: even if the action mismatch is controlled so that the system stays in the stable regime, the injected noise may still push the state into an unstable region with small probability. In Appendix B.2, we compare P-IISS to existing IISS-type notions in the literature and we also provide an example showing that a locally contractive system perturbed by Gaussian noise, coupled with a gaussian expert policy satisfies P-IISS. Next, we introduce a smoothness notion for policies. This notion is first brought up in Block et al. (2023). 
+
+Definition 4. (Relaxed Total Variation Continuity; RTVC) Fix ε′ ≥ 0 and define the {0, 1}-valued transport cost cε′ (u, u ′) := 1{∥ u − u′∥ > ε ′}. For two distributions P, Q ∈ ∆( U), define the induced OT distance 
+
+Wcε′ (P, Q ) := inf  
+
+> μ∈Γ( P,Q )
+
+Eμ
+
+[cε′ (U, U ′)] = inf  
+
+> μ∈Γ( P,Q )
+
+μ (∥U − U ′∥ > ε ′) ,
+
+where Γ( P, Q ) is the set of couplings of (P, Q ). We say a policy π is ε′-RTVC with modulus κ : R≥0 → R≥0
+
+if for all h and all x, x ′ ∈ X ,
+
+Wcε′ (πh(· | x), π h(· | x′)) ≤ κ (∥x − x′∥) .
+
+When ε′ = 0 , Wc0 (P, Q ) = TV( P, Q ), and we will call 0-RTVC as total-variation continuity (TVC). 
+
+Later, we will require the expert quantized policy q#π∗ to satisfy TVC or RTVC. 
+
+Remark 1. We adopt the thresholded 0–1 transport cost cε′ to obtain a soft notion of continuity that ignores small action perturbations below ε′. A more natural alternative is the distance cost c(u, u ′) := ∥u − u′∥,which leads to Wasserstein continuity. Wasserstein continuity is not sufficient to establish the desired bound. For example, for deterministic policy, Wasserstein continuity reduces to the familiar Lipschitz continuity(or modulus-of-continuity). In Appendix B.3, we show that Lipschitz policies still imitate Lipschitz expert with exponential compounding error. 
+
+## 3.2 Upper Bound 
+
+In this section, we present our first result, combining the statistical and quantization error, provided that the expert trajectory is stable and policy is smooth. Let ¯Pπ,T, ˜π denote the law of the extended trajectory 
+
+¯τ = ( x1: H+1 , u 1: H , ˜u1: H ) generated as follows. Sample x1 ∼ T0(∅). For each h ∈ [H], given xh, draw a pair (uh, ˜uh) from a coupling kernel Lh(·, · | xh) ∈ ∆( U × U ) whose marginals are uh | xh ∼ πh(· | xh) and 
+
+˜uh | xh ∼ ˜πh(· | xh), and then evolve the state by sampling xh+1 ∼ Th(· | xh, u h). Notice that given xh, the dependence between uh, ˜uh is governed by the chosen coupling Lh (and will be specified later when needed). The following proposition is our most general bound: it reduces the regret to a total variation distance between the expert and learner extended trajectory laws, together with several in-distribution terms evaluated under the expert. 
+
+Theorem 1. Consider two pairs of policies π0, ˜π0 and π1, ˜π1 and the associated extended trajectory laws 
+
+¯Pπ0,T, ˜π0
+
+and ¯Pπ1,T, ˜π1
+
+. Assume Pπ0,T is (γ, δ )-d-locally P-IISS and ˜π1 is ε′-RTVC with modulus κ. Let 
+
+π2 := ˜ π1. If the reward function is Lr -Lipschitz, then it holds that 
+
+∣∣J(π0) − J(π2)∣∣ ≲ H2δ + H · TV (¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+) + H · ¯Pπ0,T, ˜π0 (∃h ∈ [H], ∥˜uh − u0
+
+> h
+
+∥ > d − ε′)
+
++ H · E¯Pπ0,T , ˜π0
+
+{ H∑
+
+> h=1
+
+[
+
+κ(γ((∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1 
+
+> k=1
+
+)) + 1
+
+H Lr
+
+(
+
+γ((∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1
+
+> k=1
+
+) + ∥u0 
+
+> h
+
+− ˜u0
+
+> h
+
+∥ + ε′)] }
+
+.
+
+When applying this result, we substitute (π0, ˜π0) = ( π∗, q #π∗) and (π1, ˜π1) = ( ρ ◦ ˆπ, ˆπ). The total variation term is then statistically controlled via log-loss, while the remaining terms under ¯Pπ∗,T,q #π∗
+
+depend only on the expert and the quantizer and are assumed to be given in our setting. Consequently, this bound does not 6suffer from exponential compounding (for an appropriate γ and κ). Now we present the concrete bounds about stochastic and deterministic experts. To reduce some irrelevant terms and make the bound simple, we will have structural assumption on modulus γ and κ as well as the quantizer. 
+
+Theorem 2. Suppose q#π∗ is stochastic. Suppose every policy in Π is TVC with modulus κ being a linear function, and q#π∗ ∈ Π. Then suppose that Pπ∗,T is globally P-EIISS, then w.p. at least 1 − δ,
+
+J(π∗) − J(ˆ π) ≲ H ·
+
+√ log( |Π|δ−1)
+
+n + H2 · εq .
+
+Theorem 3. Suppose q#π∗ is deterministic. If q is a binning quantizer as defined in Eq. (3), and every policy in Π is kε q -RTVC with modulus κ for a constant k > 0 and q#π∗ ∈ Π. Suppose Pπ∗,T is γ−globally P-IISS, with γ satisfying, 
+
+γ(( rt)ht=1 ) = γ( max  
+
+> 1≤t≤h
+
+rt), ∀h ∈ [H],
+
+where we slightly abuse the notation γ. Then w.p. at least 1 − δ,
+
+J(π∗) − J(ˆ π) ≲ H · log( |Π|δ−1)
+
+n + H2κ (γ(( k + 1) εq )) + H[γ(( k + 1) εq ) + ( k + 1) εq ].
+
+Those results are both direct corollaries of Theorem 1. We will show in Section 4 that the assumptions that we make will hold reasonably. Notice that the first result is on stochastic quantized expert, the 
+
+√ 1 
+
+> n
+
+rate matches the rate in Foster et al. (2024). For the deterministic quantized expert, we assume the policy class is RTVC and the quantizer is a binning quantizer. We will show in Section 4 that such assumption is necessary. 
+
+Proof Sketch. We sketch the proof of Theorem 1. The core observation is that ˜u1 
+
+> h
+
+(under ¯Pπ1,T, ˜π1
+
+) and u2
+
+> h
+
+(under Pπ2,T ) are both sampled from the same RTVC policy ˜π1
+
+> h
+
+, but at two different states x1 
+
+> h
+
+and x2
+
+> h
+
+. Thus, by the ε′-RTVC property, we can choose a stepwise coupling such that, for each h and conditioning on the past, 
+
+Pr (∥˜u1 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′∣∣x1
+
+> h
+
+, x 2
+
+> h
+
+, past ) ≤ γRTVC 
+
+(∥x1 
+
+> h
+
+− x2
+
+> h
+
+∥).
+
+Define the “good history” event Ah := {∥ ˜u1 
+
+> t
+
+− u2 
+
+> t
+
+∥ ≤ ε′, ∀t ≤ h − 1}. Conditioning on Ah, stability (P-IISS) converts the state mismatch into past action mismatch, and using the triangle inequality ∥u1 
+
+> t
+
+− u2 
+
+> t
+
+∥ ≤ ∥u1 
+
+> t
+
+− ˜u1 
+
+> t
+
+∥ + ∥˜u1 
+
+> t
+
+− u2 
+
+> t
+
+∥ ≤ ∥ u1 
+
+> t
+
+− ˜u1 
+
+> t
+
+∥ + ε′ on Ah, we obtain 
+
+Pr (∥˜u1 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′ | Ah
+
+) ≤ E [γRTVC 
+
+(∥x1 
+
+> h
+
+− x2
+
+> h
+
+∥)∣ ∣Ah
+
+]
+
+> (P-IISS)
+
+≲ E
+
+[
+
+γRTVC 
+
+(
+
+γ((∥u1 
+
+> t
+
+− ˜u1 
+
+> t
+
+∥ + ε′)h−1
+
+> t=1
+
+))∣ ∣∣Ah
+
+]
+
++ δ. 
+
+Iterating over h yields an in-distribution control of the “wrong-event” probability, of the form 
+
+Pr( AcH ) ≲ Hδ +
+
+> H
+
+∑
+
+> h=1
+
+E
+
+[
+
+γRTVC 
+
+(
+
+γ((∥u1 
+
+> t
+
+− ˜u1 
+
+> t
+
+∥ + ε′)h−1
+
+> t=1
+
+))] 
+
+,
+
+where the expectation is taken under the corresponding extended rollout law. Two technical simplifications were made above. First, Pπ1,T need not be stable. Second, the expectations are initially under ¯Pπ1,T, ˜π1
+
+rather than the expert-side law ¯Pπ0,T, ˜π0
+
+. Both are handled by inserting a change-of-measure step: we add a total variation term to transfer bounds from ¯Pπ1,T, ˜π1
+
+to ¯Pπ0,T, ˜π0
+
+.Additionally, P-IISS is stated under a shared-noise coupling. However, our change-of-measure step relies on a maximal coupling that attains the total variation distance, and it is not a priori clear that such a coupling can be realized as shared-noise. This issue is resolved by Lemma 21, which shows that a maximal (TV-attaining) coupling can indeed be implemented via shared noise, so the stability argument remains valid. Finally, notice that the Log-loss guarantee we showed in Section 2.2 does not directly bound the distance between Pπ∗,T,q #π∗
+
+and P(ρ◦ˆπ),T, ˆπ (as we substitute (π0, ˜π0) = ( π∗, q #π∗) and (π1, ˜π1) = ( ρ ◦ ˆπ, ˆπ)), however Lemma 14 shows that this distance is the same as the distance of the marginal distribution Pq#π∗,(T ◦ρ) and Pˆπ, (T ◦ρ).7Practical Takeaways. The main practical takeaway is that, when applying behavior cloning with quanti-zation (tokenization), the stability of the system plays a crucial role. Since quantization inevitably incurs information loss, the learned policy must deviate from the expert trajectory to some extent. Without sufficiently strong open-loop stability, such deviations can accumulate and lead to unbounded error. For example, if the modulus γ in our P-IISS definition is arbitrarily large, then the resulting regret bound can also become arbitrarily poor. 
+
+## 3.3 A Discussion on Regression-BC 
+
+As another direct corollary of our Theorem 1, we discuss the phenomenon highlighted in Simchowitz et al. (2025). They study policy learning via regression behavioral cloning (regression-BC), which learns a policy by minimizing a metric-based regression loss to expert actions, evaluated under the expert state distribution: 
+
+ˆπ := argmin 
+
+> π∈Π
+> H
+
+∑
+
+> h=1
+
+E¯Pπ∗,T , ˆπ [∥u∗ 
+
+> h
+
+− ˆuh∥],
+
+where Π is a policy class and u∗ 
+
+> h
+
+∼ π∗
+
+> h
+
+(·| x∗
+
+> h
+
+), ˆuh ∼ ˆπh(·| x∗
+
+> h
+
+). This setting is unrelated to quantization. Roughly speaking, Simchowitz et al. (2025) proves an algorithmic lower bound showing that, for certain simple policy classes, optimizing the above regression loss can still lead to exponential compounding of error in the resulting regret. We show that under stability, using a TVC learner may prevent such exponential compounding. 
+
+Proposition 4. Assume Pπ∗,T globally P-EIISS. If ˆπ is TVC with modulus κ being linear , then 
+
+J(π∗) − J(ˆ π) ≲ H ·
+
+> H
+
+∑
+
+> h=1
+
+E¯Pπ∗,T , ˆπ [∥u∗ 
+
+> h
+
+− ˆuh∥].
+
+This proposition directly links regret to the regression training error, with only a linear-in-H compounding factor. While this does not match the horizon-free guarantees in, e.g., Zhang et al. (2025), the gap is attributable to working with TVC (as we will clarify in the next section). Nevertheless, it already shows that, once the regression objective is optimized within a TVC policy class, the resulting regret is correspondingly controlled rather than exponentially amplified. 
+
+# 4 When Policies Violate Smoothness: Characterization and Model-Based Remedy 
+
+In the previous section, we require the learner’s policy to be (relaxed) total variation continuous. Intuitively, once the learner is off expert distribution, such property will forces the learner to behave as if it was still on expert trajectory, with a cost of the distance between off-distribution state and in distribution state. This corrects the actions taken on OOD states, but also introducing an suboptimal factor H on the regret in terms of quantization error. Now, we will first point out when quantized expert policy may violate such assumption and the consequence, then talk about how to attain a better rate without requiring TVC policy. 
+
+## 4.1 When Are Policies Non-Smooth 
+
+Stochastic Expert is reasonable to be TVC. The upper bound we establish so far requires the whole policy class to be TVC or RTVC, and the quantized expert policy to be realizable. Thus the quantized expert policy should also be TVC or RTVC. In general, many stochastic policies are TVC (e.g. Gaussian policy, shown in Appendix B.3) and Block et al. (2023) introduces a way to augment any policy to a TVC one by probabilistic smoothing (shown in Appendix B.3). Given the raw expert policy is TVC, Lemma 15 guarantees that the quantized policy is still TVC for any measurable quantizer. Thus our Theorem 2 holds in most cases for stochastic expert given the required stability of the dynamic. 8Deterministic Expert almost cannot be TVC. In contrast, TVC is essentially incompatible with deterministic expert policies. Indeed, if πh(· | x) = δπh(x) is deterministic, then 
+
+TV (δπh(x), δ πh(x′)
+
+) = 1{πh(x)̸ = πh(x′)}.
+
+If πh is not locally constant, then for every δ > 0 there exist x, x ′ with ∥x − x′∥ < δ but πh(x)̸ = πh(x′),hence the left-hand side equals 1 at arbitrarily small scales. Therefore any modulus γ satisfying 
+
+1{πh(x)̸ = πh(x′)} ≤ γ(∥x − x′∥),
+
+must obey γ(r) = 1 for all r > 0, which is a trivial modulus and result in trivial upper bound. Consequently, we should not expect deterministic policy to satisfy TVC. 
+
+When Deterministic Expert can be RTVC. Nevertheless, a deterministic quantized expert can still be RTVC with a nontrivial modulus. In what follows, we will first describe what we mean by nontrivial modulus, then we provide a necessary condition for RTVC. We will also show that a binning-quantizer will naturally satisfy RTVC. 
+
+Proposition 5. Let us consider a L-Lipschitz deterministic policy π.
+
+(i) Suppose that the quantized policy q#π satisfies ε′-RTVC with a nontrivial modulus κ : R≥0 → R≥0, in the sense that, there exists δ0 > 0 such that κ(r) < 1 for all r ∈ (0 , δ 0]. Then the quantizer q must satisfy, 
+
+∀∥ x − x′∥ ≤ δ0, ∥q(πh(x)) − q(πh(x′)) ∥ ≤ ε′.
+
+(ii) Suppose the quantizer q is a binning quantizer in the sense of Eq. (3). Let ε′ > 2εq and define 
+
+δ0 := ε′ − 2εq
+
+L > 0.
+
+Then the quantized policy q#π is ε′-RTVC with the following nontrivial modulus: 
+
+κ(r) = 1{r > δ 0}.
+
+The above proposition suggests that, for deterministic policies, the necessary condition (i) implies that a RTVC policy must have certain uniform structure, which cannot be preserved by the general learning-based quantizer applied to a deterministic policy, wheres Part (ii) shows that a binning quantizer does preserve it and, moreover, yields an explicit modulus. This can be directly combined with Theorem 3. Let us consider modulus 
+
+γ as in Theorem 3 and k > 2 be some constant. Then whenever the raw expert policy π∗ is L-Lipschitz with L < (k−2) εq  
+
+> γ(( k+1) εq)
+
+, Part (ii) implies that q#π∗ is kε q -RTVC with modulus κ(r) = 1{r > (k − 2) εq /L }. So realizability in a RTVC policy class can hold . Moreover, κ(γ(( k + 1) εq )) = 0 , so substituting this modulus into Theorem 3 eliminates the H2 term in the upper bound. And this upper bound will be valid. Notice that doing this requires bounding the Lipschitz constant of raw expert policy by (k−2) εq  
+
+> γ(( k+1) εq)
+
+. This condition becomes less restrictive when the state deviation is less sensitive to the action deviation, that is, when 
+
+γ(( k + 1) εq ) is smaller. 
+
+The Price of Non-Smooth Policies. Now we prove an algorithmic lower bound, showing that using the Log-loss BC with quantized action may incur much larger quantization error than εq , when the quantized expert fails to be RTVC. Here we assume access to infinitely many samples. Thus, the error we capture comes from deploying the quantized expert, not from finite-sample effects. The error term is expressed in terms of εq .
+
+Theorem 6. For deterministic dynamic, there exists Pπ∗,T and a learning-based quantizer q such that π∗ is deterministic and Lipschitz, Pπ∗,T is globally P-EIISS, and the state distribution of x∗ 
+
+> h
+
+(under raw expert distribution) has positive density. Meanwhile it holds that, 
+
+1
+
+H EPπ∗,T 
+
+[ H∑
+
+> h=1
+
+∥u∗ 
+
+> h
+
+− q(u∗
+
+> h
+
+)∥
+
+]
+
+= O(εq ),
+
+9J(π∗) − J(q#π∗) = H · Ω(1) .
+
+For stochastic dynamic, there exists Pπ∗,T and a learning-based quantizer q such that the noise distribution is Gaussian, π∗ is deterministic and Lipschitz, Pπ∗,T is globally P-EIISS, and the state distribution of x∗ 
+
+> h
+
+has positive density . Meanwhile it holds that, 
+
+1
+
+H EPπ∗,T 
+
+[ H∑
+
+> h=1
+
+∥u∗ 
+
+> h
+
+− q(u∗
+
+> h
+
+)∥
+
+]
+
+= O(εq ),J(π∗) − J(q#π∗) = H · Ω( 1
+
+| log εq | ).
+
+For the above result, we show that even when the quantization error under the expert distribution is small, on the order of O(εq ), deploying the quantized policy can induce rollouts under a drastically different state distribution and lead to large regret (e.g., Ω(1) ≫ O(εq ) or Ω(1 /| log εq |) ≫ O(εq )). Moreover, this failure mode cannot be remedied by stability of the dynamics or by benignness of the unquantized policy. 
+
+Practical Takeaways. When applying behavior cloning with action quantization (tokenization), the choice of quantizer is crucial. Our theory suggests that, although some learned quantizers may achieve low error on the expert distribution (or during training on raw expert data), they can incur much larger errors at deployment due to non-smoothness. In contrast, a smooth quantized policy (i.e., a TVC or RTVC policy) like using the binning-based quantizers can guarantee that the quantization error at deployment remains comparable to that on the expert distribution. Interestingly, we also observe similar design in recent empirical works, for example, Pertsch et al. (2025) used binning-based action tokenization in the frequency-space, which naturally filters the non-smooth components, and outperforms the learning-based action tokenization. 
+
+## 4.2 A Model-Based Augmentation 
+
+When (R)TVC policies are inaccessible, we introduce a simple modification that bypasses this requirement. It also improves the horizon dependence of the quantization error, since we no longer need to pay an additional cost associated with correcting out-of-distribution (OOD) states via (R)TVC. The key observation is that deploying the learned policy on the true state during inference can be risky and may lead to OOD rollouts. Instead, we execute the learned policy on a simulated state that is generated only from the training data and the initial state (the initial state distribution can be also seen as part of expert distribution) and thus is intended to stay within (or close to) the expert distribution. Concretely, we additionally learn a transition model \(T ◦ ρ) that predicts the next state given the current state xh and the quantized action ˜uh, trained by maximum likelihood. At inference time, starting from the observed initial state xL 
+
+> 1
+
+, we roll out an auxiliary trajectory τ a = {(xah, u ah)}Hh=1 by sampling from the learned policy and the learned transition model, with xa 
+
+> 1
+
+= xL 
+
+> 1
+
+. We then execute the resulting action sequence {uah}Hh=1 in the real environment from the same initial state. In this way, we effectively “copy” quantized actions along an in-distribution trajectory, and the resulting quantization error can be controlled via the stability condition. Denote M ⊂ { (T ◦ ρ)h : ˜U × X → ∆( X )}Hh=1 as the transition model class, we present Algorithm 1. Now we provide the regret guarantee of our algorithm. 
+
+Theorem 7. (Convergence-Theorem of Model-augmented Imitation Learning) 
+
+Suppose that Pπ∗,T is globally P-EIISS. Assume realizibility for both (T ◦ ρ) ∈ M and q#π∗ ∈ Π. Denote the return of the model-augmented algorithm as J(alg ), we have with probability at least 1 − δJ(π∗) − J(alg ) ≤ H ·
+
+[√ log( |Π|δ−1) + log( |M| δ−1)
+
+n + εq
+
+]
+
+.
+
+Notice that, compared with Theorem 2 and Theorem 3, this bound has a milder dependence on the horizon in the quantization term. This is not for free, since we need both additional log |M| , reflecting the complexity 10 Algorithm 1 Log-loss BC with auxiliary rollout 
+
+Require: Dataset D = {(x(i)1: H , u (i)1: H )}ni=1 ; quantizer q; horizon H; policy class Π; transition class T ; real dynamics {Th}Hh=0  
+
+> 1:
+
+Training (MLE with quantized actions) 
+
+ˆπ, \(T ◦ ρ) = argmax  
+
+> π, (T◦ρ)∈Π×M
+> n
+
+∑
+
+> i=1
+> H
+
+∑
+
+> h=1
+
+[
+
+log πh
+
+(q(u(i) 
+
+> h
+
+) | x(i)
+
+> h
+
+) + log( T ◦ ρ)h
+
+(x(i) 
+
+> h+1
+
+| x(i) 
+
+> h
+
+, q (u(i) 
+
+> h
+
+))] 
+
+> 2:
+
+Inference  
+
+> 3:
+
+Sample xL 
+
+> 1
+
+∼ T0, set xa 
+
+> 1
+
+= xL 
+
+> 1
+> 4:
+
+for h = 1 to H do  
+
+> 5:
+
+uah ∼ ˆπh(· | xah) 
+
+> 6:
+
+xah+1 ∼ \(T ◦ ρ)h(· | xah, u ah) 
+
+> 7:
+
+end for  
+
+> 8:
+
+for h = 1 to H do  
+
+> 9:
+
+uLh ← uah 
+
+> 10:
+
+Observe xLh+1 ∼ Th(· | xLh , u Lh ) and (optionally) collect rh 
+
+> 11:
+
+end for  
+
+> 12:
+
+return ˆπ, \(T ◦ ρ) and total return ∑Hh=1 rh
+
+of the transition model class. And we also assume realizability for the transition class. Admittedly, learning an H-step transition model can be challenging, and |M| may itself hide extra H-dependent factors. This issue may be mitigated by applying the model augmentation only over short sub-horizons (rather than the entire trajectory), in the spirit of action chunking (Zhao et al., 2023). We will leave it as the future work. 
+
+# 5 Lower Bound 
+
+In this section, we establish lower bounds for offline imitation learning under action quantization. We show that the overall error has two sources: finite-sample estimation error and intrinsic quantization error. These contributions are additive in the sense that eliminating one does not remove the other. We present separate lower bounds for stochastic and deterministic experts, which exhibit different sample-complexity behavior, while the quantization term attains the same rate in both cases. We restrict attention to non-anticipatory offline imitation learning algorithms: for each time step h, the learned component ˆπh is constructed using only the training data up to step h (i.e., all trajectory prefixes {(xit, u it)}t≤h), and it does not use any data from future steps t > h .
+
+Theorem 8. (Deterministic Expert) For any non-anticipatory offline imitation learning algorithm on quantized data, there exists (Pπ∗,T , q, r ) such that q#π∗ is deterministic and π∗ is deterministic and Lπ -Lipschitz, r is 1-Lipschitz, Pπ∗,T is γ-globally P-IISS with γ(( rk)hk=1 ) = r1, such that 
+
+sup 
+
+> u∈U
+
+∥u − q(u)∥ ≤ εq ,
+
+E[J(π∗) − J(ˆ π)] ≳ H( 1
+
+n + εq ).
+
+Theorem 9. (Stochastic Expert) If we allow π∗ to be sub-optimal, then for any non-anticipatory offline imitation learning algorithm on quantized data, there exists (Pπ∗,T , q, r ) such that Pπ∗,T is γ-globally P-IISS with γ(( rk)hk=1 ) = r1, π∗ is stochastic and state independent, and r is 1-Lipschitz, such that, 
+
+sup 
+
+> u∈U
+
+∥u − q(u)∥ ≤ εq ,
+
+P
+
+(
+
+J(π∗) − J(ˆ π) ≥ cH · (
+
+√ 1
+
+n + εq )
+
+)
+
+≥ 18 .
+
+11 These two lower bounds are largely in line with intuition. In offline imitation learning with quantized data, one cannot in general hope to improve upon a rate of order H · (error stat + error quantization ), since the learner must effectively recover information across all H stages. It is also natural that the lower bound is additive in the statistical and quantization errors: even if one source of error were removed entirely, the other would still remain. Notice that in the stochastic expert case, the statistical term scales as H√n , this matches the lower bound established in Foster et al. (2024). Comparing these lower bounds with our upper bounds, we see that the sample-size-dependent terms are matched by Theorem 2, Theorem 3, and Theorem 7 (for stochastic experts), while the quantization-dependent term is matched by Theorem 7. 
+
+# 6 Conclusion 
+
+In this work, we study behavior cloning in continuous space when actions are quantized. For a fixed quantizer, we establish a quadratic-in-horizon upper bound for log-loss behavior cloning on quantized actions, which captures both finite-sample error and quantization error, by introducing a stability notion for the dynamics and assuming the quantized policy class is probabilistically smooth. We discuss two widely used quantizers and characterize when they satisfy the required smoothness condition. Our results indicate that, under log-loss behavior cloning, binning-based quantizers are preferable to general learning-based quantizers, especially when cloning a deterministic policy. We then introduce a model-based augmentation that bypasses the smoothness requirement on the quantized policy. Finally, we derive information-theoretic lower bounds that, in general, match our upper bounds. 
+
+# Acknowledgements 
+
+We thank Ali Jadbabaie and Alexander Rakhlin for their feedback on earlier versions of this work. We acknowledge support of the DARPA AIQ Award. 
+
+# References 
+
+David Angeli. A lyapunov approach to incremental stability properties. IEEE Transactions on Automatic Control , 47(3):410–421, 2002. Michael Bain and Claude Sammut. A framework for behavioural cloning. In Machine intelligence 15 , pages 103–129, 1995. Suneel Belkhale and Dorsa Sadigh. Minivla: A better vla with a smaller footprint, 2024. Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, et al. \pi _0: A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164 , 2024. Adam Block, Ali Jadbabaie, Daniel Pfrommer, Max Simchowitz, and Russ Tedrake. Provable guarantees for generative behavior cloning: Bridging low-level stability and high-level behavior. Advances in Neural Information Processing Systems , 36:48534–48547, 2023. Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Joseph Dabis, Chelsea Finn, Keerthana Gopalakrishnan, Karol Hausman, Alex Herzog, Jasmine Hsu, et al. Rt-1: Robotics transformer for real-world control at scale. arXiv preprint arXiv:2212.06817 , 2022. Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Xi Chen, Krzysztof Choromanski, Tianli Ding, Danny Driess, Avinava Dubey, Chelsea Finn, et al. Rt-2: Vision-language-action models transfer web knowledge to robotic control, 2023. URL https://arxiv.org/abs/2307.15818 , 2023. Yevgen Chebotar, Quan Vuong, Karol Hausman, Fei Xia, Yao Lu, Alex Irpan, Aviral Kumar, Tianhe Yu, Alexander Herzog, Karl Pertsch, et al. Q-transformer: Scalable offline reinforcement learning via autoregressive q-functions. In Conference on Robot Learning , pages 3909–3928. PMLR, 2023. 12 Cheng Chi, Siyuan Feng, Yilun Du, Zhenjia Xu, Eric Cousineau, Benjamin Burchfiel, and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion. In Robotics: Science and Systems , 2023. Robert Dadashi, Léonard Hussenot, Damien Vincent, Sertan Girgin, Anton Raichuk, Matthieu Geist, and Olivier Pietquin. Continuous control with action quantization from demonstrations. arXiv preprint arXiv:2110.10149 , 2021. Danny Driess, Jost Tobias Springenberg, Brian Ichter, Lili Yu, Adrian Li-Bell, Karl Pertsch, Allen Z Ren, Homer Walke, Quan Vuong, Lucy Xiaoyang Shi, et al. Knowledge insulating vision-language-action models: Train fast, run fast, generalize better. arXiv preprint arXiv:2505.23705 , 2025. Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12873–12883, 2021. Andras Farago. On non-markovian performance models. CoRR , abs/2012.07152, 2020. URL https: //arxiv.org/abs/2012.07152 .Dylan J Foster, Adam Block, and Dipendra Misra. Is behavior cloning all you need? understanding horizon in imitation learning. Advances in Neural Information Processing Systems , 37:120602–120666, 2024. Sara A Geer. Empirical Processes in M-estimation , volume 6. Cambridge university press, 2000. Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, et al. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. Seungjae Lee, Yibin Wang, Haritheja Etukuru, H Jin Kim, Nur Muhammad Mahi Shafiullah, and Lerrel Pinto. Behavior generation with latent actions. arXiv preprint arXiv:2403.03181 , 2024. Friedrich Liese. ϕ-divergences, sufficiency, bayes sufficiency, and deficiency. Kybernetika , 48(4):690–713, 2012. Winfried Lohmiller and Jean-Jacques E Slotine. On contraction analysis for non-linear systems. Automatica ,34(6):683–696, 1998. Atharva Mete, Haotian Xue, Albert Wilcox, Yongxin Chen, and Animesh Garg. Quest: Self-supervised skill abstractions for learning continuous control. Advances in Neural Information Processing Systems , 37: 4062–4089, 2024. Sean P Meyn and Richard L Tweedie. Markov chains and stochastic stability . Springer Science & Business Media, 2012. Or Ordentlich and Yury Polyanskiy. Optimal quantization for matrix multiplication. IEEE Transactions on Information Theory , 2025. Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess, Suraj Nair, Quan Vuong, Oier Mees, Chelsea Finn, and Sergey Levine. Fast: Efficient action tokenization for vision-language-action models. arXiv preprint arXiv:2501.09747 , 2025. Daniel Pfrommer, Thomas Zhang, Stephen Tu, and Nikolai Matni. Tasil: Taylor series imitation learning. 
+
+Advances in Neural Information Processing Systems , 35:20162–20174, 2022. Dean A Pomerleau. Alvinn: An autonomous land vehicle in a neural network. Advances in neural information processing systems , 1, 1988. Nived Rajaraman, Lin Yang, Jiantao Jiao, and Kannan Ramchandran. Toward the fundamental limits of imitation learning. Advances in Neural Information Processing Systems , 33:2914–2924, 2020. Stéphane Ross and Drew Bagnell. Efficient reductions for imitation learning. In Proceedings of the thirteenth international conference on artificial intelligence and statistics , pages 661–668. JMLR Workshop and Conference Proceedings, 2010. 13 Stéphane Ross, Geoffrey Gordon, and Drew Bagnell. A reduction of imitation learning and structured prediction to no-regret online learning. In Proceedings of the fourteenth international conference on artificial intelligence and statistics , pages 627–635. JMLR Workshop and Conference Proceedings, 2011. Max Simchowitz, Daniel Pfrommer, and Ali Jadbabaie. The pitfalls of imitation learning when actions are continuous. arXiv preprint arXiv:2503.09722 , 2025. Eduardo D Sontag et al. Smooth stabilization implies coprime factorization. IEEE transactions on automatic control , 34(4):435–443, 1989. Keyu Tian, Yi Jiang, Zehuan Yuan, Bingyue Peng, and Liwei Wang. Visual autoregressive modeling: Scalable image generation via next-scale prediction. Advances in neural information processing systems , 37: 84839–84865, 2024. Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. Advances in neural information processing systems , 30, 2017. Bernard Widrow, Istvan Kollar, and Ming-Chang Liu. Statistical theory of quantization. IEEE Transactions on instrumentation and measurement , 45(2):353–361, 1996. Wing Hung Wong and Xiaotong Shen. Probability inequalities for likelihood ratios and convergence rates of sieve mles. The Annals of Statistics , pages 339–362, 1995. Thomas T Zhang, Daniel Pfrommer, Nikolai Matni, and Max Simchowitz. Imitation learning in continuous action spaces: Mitigating compounding error without interaction. arXiv preprint arXiv:2507.09061 , 2025. Tong Zhang. From ε-entropy to kl-entropy: Analysis of minimum information complexity density estimation. 
+
+The Annals of Statistics , pages 2180–2210, 2006. Tony Z Zhao, Vikash Kumar, Sergey Levine, and Chelsea Finn. Learning fine-grained bimanual manipulation with low-cost hardware. arXiv preprint arXiv:2304.13705 , 2023. 14 Appendix 
+
+# A Supervised Learning Guarantee 
+
+MLE Guarantee. We will first state the standard result from MLE estimator (e.g. Geer (2000), Zhang (2006)). Consider a setting where we receive {zi}ni=1 i.i.d. from z ∼ g⋆, where g⋆ ∈ ∆( Z). We have a class 
+
+G ⊆ ∆( Z) that may or may not contain g⋆. We analyze the following maximum likelihood estimator: 
+
+ˆg = arg max 
+
+> g∈G
+> n
+
+∑
+
+> i=1
+
+log (g(zi)). (6) To provide sample complexity guarantees that support infinite classes, we appeal to the following notion of covering number (e.g., Wong and Shen (1995) which tailored to the log-loss. 
+
+Definition 5 (Covering number) . For a class G ⊆ ∆( Z), we say that a class G′ ⊂ ∆( Z) is an ε-cover if for all g ∈ G , there exists g′ ∈ G ′ such that for all z ∈ Z , log (g(z)/g ′(z)) ≤ ε. We denote the size of the smallest such cover by Nlog (G, ε ).
+
+Proposition 10. The maximum likelihood estimator in Eq. (6) has that with probability at least 1 − δ,
+
+D2 
+
+> H
+
+(ˆ g, g ⋆) ≤ inf 
+
+> ε> 0
+
+{ 6 log (2Nlog (G, ε )/δ )
+
+n + 4 ε
+
+}
+
++ 2 inf  
+
+> g∈G
+
+log (1 + Dχ2 (g⋆∥g)).
+
+In particular, if G is finite, the maximum likelihood estimator satisfies 
+
+D2 
+
+> H
+
+(ˆ g, g ⋆) ≤ 6 log (2|G| /δ )
+
+n + 2 inf  
+
+> g∈G
+
+log (1 + Dχ2 (g⋆∥g)).
+
+Note that the term inf g∈G log (1 + Dχ2 (g⋆∥g)) corresponds to misspecification error, and is zero if g⋆ ∈ G .The proof can be found in Foster et al. (2024). Now back to our settings. Notice that throughout the paper, we consider the following two Log-loss estimators, 
+
+ˆπ = argmax 
+
+> π∈Π
+
+Llog (π) = argmax 
+
+> π∈Π
+> n
+
+∑
+
+> i=1
+> H
+
+∑
+
+> h=1
+
+log( πh(˜ uih|xih)) ˆπ, [T ◦ ρ = argmax  
+
+> π,T ◦ρ
+
+Llog (π, T ◦ ρ) = argmax 
+
+> π∈Π
+> n
+
+∑
+
+> i=1
+> H
+
+∑
+
+> h=1
+
+[log( πh(˜ uih|xih)) + log(( T ◦ ρ)h(xih+1 |˜uih, x ih)) ] .
+
+(7) Now we specialize Proposition 10 to the following result. 
+
+Proposition 11. Suppose realizibility for both q#π∗ and (T ◦ ρ), the estimator learned in Eq. (7) has that with probability at least 1 − δ,
+
+D2
+
+> H
+
+(
+
+Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ))
+
+≲ log( |Π|δ−1)
+
+n ,D2
+
+> H
+
+(
+
+Pq#π∗,(T ◦ρ), Pˆπ, [T ◦ρ)
+
+≲ log( |Π|δ−1) + log( |M| δ−1)
+
+n .
+
+Next we will connect the hellinger distance with the total variation distance. For a fixed transition T, let us define, 
+
+ρ(π∗∥π) := Ex∗    
+
+> 1: H,u ∗
+> 1: H,˜u1: H∼Pπ∗,T ,π
+
+[I(∃h ∈ [H], ˜uh̸ = u∗
+
+> h
+
+)] .
+
+Lemma 12. (Foster et al., 2024) If π∗ is deterministic, then it holds, 
+
+ρ(π∗∥π) ≤ 4D2 
+
+> H
+
+(Pπ∗,T , Pπ,T ).
+
+15 Lemma 13. (Connection to a Trajectory-wise L∞ metric for determinisitic q#π∗) If π∗ is deterministic, then 
+
+TV 
+
+(
+
+Pπ∗,T , Pπ,T )
+
+= ρ(π∗∥π).
+
+Proof. For notational simplicity, denote P = Pπ∗,T , Q = Pπ,T . Since π∗ is deterministic, we abuse π∗ 
+
+> h
+
+to denote the expert action mapping. Suppose π satisfies that, 
+
+∀h ∈ [H], π h({π∗
+
+> h
+
+(x)}| x) > 0, ∀x ∈ X . (8) (this means the policy π has positive probability measure on the point that deterministic π∗ will choose). Then we can find a common dominating measure, and the two associated density are, 
+
+p = T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+δπ∗
+
+> h(xh)
+
+(uh)Th(xh+1 |xh, u h)
+
+q = T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+[1(uh = π∗
+
+> h
+
+(xh)) πh({π∗
+
+> h
+
+(x)}| xh) + πh(uh|xh)] Th(xh+1 |xh, u h).
+
+Then we have, 
+
+1 − TV (P, Q ) = 
+
+∫
+
+p ∧ qdτ =
+
+∫
+
+T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+Th(xh+1 |xh, u h) min {δπ∗
+
+> h(xh)
+
+(uh), π h({π∗
+
+> h
+
+(x)}| xh)}dτ 
+
+=
+
+∫ 
+
+> supp (P)
+
+T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+Th(xh+1 |xh, u h)π({π∗
+
+> h
+
+(xh)}| xh)= EP
+
+[ H∏
+
+> h=1
+
+πh({π∗
+
+> h
+
+(xh)}| xh)
+
+]
+
+= Ex1: H∗ ,u ∗ 
+
+> 1: H∼P
+
+[ H∏
+
+> h=1
+
+E˜uh∼πh(·| xh)1{˜uh = u∗
+
+> h
+
+}
+
+]
+
+= 1 − Ex∗    
+
+> 1: H,u ∗
+> 1: H,˜u1: H∼Pπ∗,T , ˆπ
+
+[I(∃h ∈ [H], ˜uh̸ = u∗
+
+> h
+
+)] .
+
+where the second equation above is because other than this point π∗
+
+> h
+
+(x), δπ∗
+
+> h(xh)
+
+(·) = 0 . The third equation is because πh({π∗
+
+> h
+
+(xh)}| xh) ∈ (0 , 1) . The last two equation is by definition of expectation. If Eq. (8) does not hold, then both sides will be 1, and the result still holds. Thus we prove the result. 
+
+Remark 2. Notice that at the beginning we assume that π has positive measure on a point. Essentially, in continuous case, π is usually a density, so ρ(π∗∥π) will become 1, the log-loss bound depend on ρ(π∗∥π) (e.g. Lemma D.2 in Foster et al. (2024)) will become the maximum H, which is a useless trivial upper bound. This also validates the belif that in continuous and deterministic expert case, imitation learning through log-loss will fail, as mentioned in Simchowitz et al. (2025). However if we quantize the action space, then π is supported on finite points, and it can have positive mass on a point. So the statistical learning is possible. 
+
+Now we again define ¯Pπ0,T,π 1
+
+as the law of extended trajectory {x1: H , u 1: H , ˜u1: H } where {x1: H , u 1: H } ∼ Pπ0,T 
+
+and ˜uh ∼ π1(·| xh). Now consider two extended measure ¯Pπ∗,T,q #π∗
+
+and ¯P(ρ◦ˆπ),T, ˆπ . Notice that if we take marginal of those two extended trajectory on (state, raw action) trajectory, then the marginals are Pπ∗,T and 
+
+P(ρ◦ˆπ),T . If we take marginals on (state, quantized action) trajectory, the marginals are Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ).The next lemma shows that for TV distance and Hellinger distance, the distance is the same between those extended measures and projected measures. 
+
+Lemma 14. For π∗ and ˆπ, define the induced raw policy and transition as in Eq. (1) and Eq. (2), we have 
+
+TV (Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ)) = TV (Pπ∗,T , Pρ◦ˆπ,T ) = TV (Pπ∗,T,q #π∗
+
+, P(ρ◦ˆπ),T, ˆπ ),D2 
+
+> H
+
+(Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ)) = D2 
+
+> H
+
+(Pπ∗,T , Pρ◦ˆπ,T ) = D2 
+
+> H
+
+(Pπ∗,T,q #π∗
+
+, P(ρ◦ˆπ),T, ˆπ ).
+
+16 Proof. We denote the density of Pπ∗,T,q #π∗
+
+, P(ρ◦ˆπ),T, ˆπ w.r.t. a common dominating measure as pπ∗,T,q #π∗
+
+and p(ρ◦ˆπ),T, ˆπ . Notice that we have, 
+
+pπ∗,T,q #π∗
+
+= T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+q#π∗
+
+> h
+
+(˜ uh|xh)ρh(uh|˜uh, x h)Th(xh+1 |xh, u h)= T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+π∗
+
+> h
+
+(uh|xh)I(˜ uh = q(uh)) Th(xh+1 |xh, u h)
+
+p(ρ◦ˆπ),T, ˆπ = T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+ˆπh(˜ uh|xh)ρh(uh|˜uh, x h)Th(xh+1 |xh, u h)= T0(x1)
+
+> H
+
+∏
+
+> h=1
+
+(ρ ◦ ˆπ)h(uh|xh)I(˜ uh = q(uh)) Th(xh+1 |xh, u h).
+
+Notice that the associated likelihood ratio is, 
+
+pπ∗,T,q #π∗
+
+p(ρ◦ˆπ),T, ˆπ =
+
+> H
+
+∏
+
+> h=1
+
+q#π∗
+
+> h
+
+(˜ uh|xh)ˆπh(˜ uh|xh) =
+
+> H
+
+∏
+
+> h=1
+
+π∗
+
+> h
+
+(uh|xh)(ρ ◦ ˆπ)h(uh|xh) .
+
+We define two projection mapping ϕ1(x1: H+1 , u 1: H , ˜u1: H ) = ( x1: H+1 , u 1: H ), ϕ2(x1: H+1 , u 1: H , ˜u1: H ) = ( x1: H+1 , ˜u1: H ).Since the likelihood ratio is a function of only ϕ1 or ϕ2, by Lemma 15, we have proved that both TV distance are equal to the TV distance of the two extended measure (without projection), so does the Hellinger distance. 
+
+Lemma 15. Consider two probability measure P, Q on a measurable space X . Y is another measurable space, 
+
+ϕ is a measurable mapping ϕ : X → Y . Then we have, 
+
+TV (ϕ#P, ϕ #Q) ≤ TV (P, Q ), D 2 
+
+> H
+
+(ϕ#P, ϕ #Q) ≤ D2 
+
+> H
+
+(P, Q ).
+
+If P ≪ Q, then the equality above holds whenever there exists measurable g, such that 
+
+dP dQ (x) = g(ϕ(x)) .
+
+The proof can be found in Theorem 3.1 of Liese (2012). 
+
+# B Discussion on P-IISS and RTVC 
+
+## B.1 Verification of Assumption 1 
+
+Proposition 16 (Existence of an invertible noise representation) . Assume X ⊆ RdX is a Borel set. Suppose that for every (x, u ) ∈ X × U , Th(· | x, u ) is either (i) deterministic : Th(· | x, u ) = δ ¯fh(x,u ) for some measurable ¯fh : X × U → X , or (ii) has a density : Th(· | x, u ) is absolutely continuous w.r.t. Lebesgue measure and the associated density is strictly positive a.e. w.r.t. Lebesgue measure.. Then Th admits a noise representation (fh, P Wh ) satisfying the invertibility assumption as in Assumption 1 . Proof. If Th(· | x, u ) = δ ¯fh(x,u ), take Ωh = {0}, PWh = δ0, and define fh(x, u, 0) = ¯fh(x, u ). Then ω ∼ PWh
+
+implies fh(x, u, ω ) = ¯fh(x, u ) a.s., hence fh(x, u, ω ) ∼ δ ¯fh(x,u ) = Th(· | x, u ). Injectivity holds trivially since 
+
+Ωh is a singleton. 17 Now we discuss the stochastic transition case. Assume Th(· | x, u ) is absolutely continuous w.r.t. Lebesgue measure on Rd with (jointly) measurable density th(· | x, u ). Let Ωh = [0 , 1] dX and PWh = Unif ([0 , 1] dX ). For each (x, u ), write x′ = ( x′
+
+> 1
+
+, . . . , x ′ 
+
+> dX
+
+) and define the conditional CDFs recursively by 
+
+F1(z | x, u ) := 
+
+∫
+
+> (−∞ ,z ]
+
+th, 1(s | x, u ) ds, F k(z | x, u, x ′
+
+> 1: k−1
+
+) := 
+
+∫
+
+> (−∞ ,z ]
+
+th,k (s | x, u, x ′
+
+> 1: k−1
+
+) ds, 
+
+for k = 2 , . . . , d X , where th, 1 is the first marginal density induced by th and th,k (· | x, u, x ′
+
+> 1: k−1
+
+) is the usual conditional density induced by th. Define the (generalized) inverse/quantile maps 
+
+Qk(w | x, u, x ′
+
+> 1: k−1
+
+) := inf {z ∈ R : Fk(z | x, u, x ′
+
+> 1: k−1
+
+) ≥ w}, w ∈ [0 , 1] .
+
+Given ω = ( w1, . . . , w dX ) ∈ [0 , 1] dX , construct x′ = fh(x, u, ω ) by 
+
+x′ 
+
+> 1
+
+= Q1(w1 | x, u ), x′ 
+
+> k
+
+= Qk(wk | x, u, x ′
+
+> 1: k−1
+
+), k = 2 , . . . , d. 
+
+By the standard inverse-transform sampling argument, if ω ∼ Unif ([0 , 1] dX ), the resulting x′ = fh(x, u, ω )
+
+satisfies x′ ∼ Th(· | x, u ).For invertibility, the above quantile maps are a.s. genuine inverses (since the density is positive), and we can recover the noise by 
+
+w1 = F1(x′ 
+
+> 1
+
+| x, u ), wk = Fk(x′ 
+
+> k
+
+| x, u, x ′
+
+> 1: k−1
+
+), k = 2 , . . . , d. 
+
+Hence ω 7 → fh(x, u, ω ) is injective PWh -a.s. The same construction applies to the initial distribution (take h = 0 and drop (x, u )), yielding x1 = f0(ω0).
+
+## B.2 Stability of the Dynamic 
+
+A function β(x, t ) is class KL if it is continuous, β(·, t ) is continuous, strictly increasing and β(0 , t ) = 0 for each fixed t, and β(x, ·) is decreasing for each fixed x. We begin by recalling the standard notion of IISS from the literature. 
+
+Definition 6. ( Definition 4.1 in (Angeli, 2002)) A system xt+1 = f (xt, u t) is incrementally input-to-state stable(IISS) if there exists a KL function β and γ ∈ K such that, 
+
+∥xt − x′
+
+> t
+
+∥ ≤ β(∥x1 − x′
+
+> 1
+
+∥, t ) + γ (( ∥uk − u′
+
+> k
+
+∥)1≤k≤t−1) .
+
+This notion is open-loop in the sense emphasized in Simchowitz et al. (2025) and Zhang et al. (2025): the stability bound is stated directly in terms of the difference between two input sequences. Building on this perspective, Simchowitz et al. (2025) and section 3 of Zhang et al. (2025) adopt Definition 6 and further require γ to take an exponential form, as in our P-EIISS notion. A related but distinct line of work considers a closed-loop version of incremental stability. In particular, Pfrommer et al. (2022), Block et al. (2023), and section 4 of Zhang et al. (2025) formulate stability at the closed-loop level; see, for example, Definition 3.1 of Pfrommer et al. (2022) for a precise statement. The above notions are typically stated for noiseless dynamics and as global properties of the system. In particular, any noiseless globally IISS system (which corresponds to Definition 6 above) is trivially γ-globally P-IISS. Our notion in Definition 3 should be viewed as a stochastic and localized variant of the open-loop perspective. Specifically, it allows stochastic noise in the dynamics and stochastic expert policies, and it does not require global IISS. Instead, it is enough that the system satisfy an IISS-type property locally on a subset. We next present a sufficient condition that guarantees Definition 3. 
+
+Proposition 17. Suppose X ⊂ RdX and U ⊂ RdU . Consider a closed set S ⊂ X . Consider the stochastic dynamics xt+1 = f (xt, u t) + ωt with ωt ∼ N (0 , σ 2In) and a Gaussian expert policy π∗ 
+
+> t
+
+(xt) = N (μ(xt), σ 2 
+
+> π
+
+I).The system starts with x1 = 0 . Let us assume 
+
+18 (A1) Contractive Dynamic. There exist η ∈ (0 , 1) and C > 0 such that for all x, x ′ ∈ S and all u, u ′ ∈ Rm,
+
+∥f (x, u ) − f (x′, u ′)∥ ≤ η∥x − x′∥ + C∥u − u′∥.
+
+(A2) Mean policy Lipschitz. The mean map μ is Lμ-Lipschitz on S:
+
+∥μ(x) − μ(x′)∥ ≤ Lμ∥x − x′∥, ∀x, x ′ ∈ S. 
+
+(A3) Margin for the mean dynamics. Define the deterministic nominal trajectory 
+
+¯xt+1 = f (¯ xt, μ (¯ xt)) , ¯x1 = 0
+
+and assume there exists ρ > 0,
+
+dist(¯ xt, S c) ≥ 2ρ, ∀t ∈ [H].
+
+Define a geometric sum and a closed-loop constant as, 
+
+AH (L) := 
+
+> H−1
+
+∑
+
+> j=0
+
+Lj , L cl := η + CL μ.
+
+And define, 
+
+• Gain function: γt
+
+((ak)tk=1 
+
+) := ∑tk=1 Cη t−kak, t = 1 , . . . , H :
+
+• Input radius: d := ρCA H (η) .
+
+• Failure probability, 
+
+δ = H exp 
+
+(
+
+− 12
+
+(( ρ  
+
+> 2σA H(Lcl )
+
+− √dX
+
+)
+
+> +
+
+)2)
+
++ H exp 
+
+(
+
+− 12
+
+(( ρ   
+
+> 2Cσ πAH(Lcl )
+
+− √dU
+
+)
+
+> +
+
+)2)
+
+,
+
+where (z)+ := max {z, 0}.Then Pπ∗,T is (γ, δ )-d-P-IISS. 
+
+Remark 3. Notice that we allow the dynamic to be only locally contractive and we also allow stochastic dynamic and expert policy here. This setting is not covered in previous line of work (Pfrommer et al. (2022), Block et al. (2023), Simchowitz et al. (2025), Zhang et al. (2025)). Essentially, the failure probability δ is of order O (Hε q )) if Lcl ∈ (0 , 1) and σ2 = σ2 
+
+> π
+
+∈ O( 1log |εq | ), and the stability distance d ∈ O(1) .Proof. Denote the expert action u∗ 
+
+> t
+
+= μ(x∗ 
+
+> t
+
+) + ζt and the system noise as ωt. Consider any shared-noise coupling μ. Denote G as event, 
+
+G = {C max  
+
+> t≤H
+
+∥ζt∥ + max  
+
+> t≤H
+
+∥ωt∥ ≤ ρAH (Lcl ) }.
+
+Suppose that G holds under μ, then we have, if x∗ 
+
+> t
+
+, ¯xt ∈ S
+
+∥x∗ 
+
+> t+1
+
+− ¯xt+1 ∥ = ∥f (x∗ 
+
+> t
+
+, μ (x∗ 
+
+> t
+
+) + ζt) + ωt − f (¯ xt, μ (¯ xt)) ∥≤ (η + CL μ)∥x∗ 
+
+> t
+
+− ¯xt∥ + C∥ζt∥ + ∥ωt∥≤ (η + CL μ)∥x∗ 
+
+> t
+
+− ¯xt∥ + ρAH (Lcl ) .
+
+Notice that the initial value is ∥x∗ 
+
+> 1
+
+− ¯x1∥ = 0 and through iterating, we have, 
+
+∥x∗ 
+
+> t
+
+− ¯xt∥ ≤ ρAH (Lcl )
+
+> t−1
+
+∑
+
+> k=0
+
+Lk 
+
+> cl
+
+≤ ρ, ∀h ∈ [H] ⇒ dist (x, S c) > ρ. 
+
+19 Notice that for any other trajectory that shares the same noise {ˆx1: H , ˆu1: H }, let us define, 
+
+ΦH := {∥ u∗ 
+
+> t
+
+− ˆut∥ ≤ ρCA H (η) , ∀t ∈ [H]}.
+
+When G holds, if ΦH holds, then we have, if x∗ 
+
+> t
+
+, ˆxt ∈ S
+
+∥ˆxt+1 − x∗
+
+> t+1
+
+∥ = ∥f (ˆ xt, ˆut) − f (x∗ 
+
+> t
+
+, u ∗ 
+
+> t
+
+)∥≤ η∥ˆxt − x∗ 
+
+> t
+
+∥ + C∥ˆut − u∗ 
+
+> t
+
+∥≤ η∥ˆxt − x∗ 
+
+> t
+
+∥ + ρAh(η) .
+
+(9) Since ˆx1 = x∗ 
+
+> 1
+
+∈ S, by iteration, we have, 
+
+∥ˆxt − x∗ 
+
+> t
+
+∥ ≤ ρAh(η)
+
+> t−1
+
+∑
+
+> k=0
+
+ηk ≤ ρ, ⇒ dist (ˆ xt, S c) > 0, ˆxt ∈ S, ∀t ∈ [H].
+
+In the meantime, since when G and ΦH holds, x∗ 
+
+> t
+
+, ˆxt ∈ S, ∀h ∈ [H], therefore events, 
+
+ΨH = {∥ ˆxt − x∗ 
+
+> t
+
+∥ ≤ 
+
+> t−1
+
+∑
+
+> k=1
+
+Cη t−k∥u∗ 
+
+> k
+
+− ˆuk∥, ∀t ∈ [H]}
+
+hold due to Eq. (9). Thus we have proved that under G, ΦH ⇒ ΨH . Then we have, 
+
+μ(Φ H ∩ ΨcH ) ≤ μ(Gc) ≤ μ(max  
+
+> t≤H
+
+∥ζt∥ > ρ
+
+2CA H (Lcl ) ) + μ(max  
+
+> t≤H
+
+∥ωt∥ > ρ
+
+2AH (Lcl ) ).
+
+For g ∼ N (0 , τ 2Id), the standard bound 
+
+P(∥g∥ > t ) ≤ exp 
+
+(
+
+− 12
+
+(( tτ − √d)
+
+> +
+
+)2)
+
+.
+
+Since ωt, ζ t are independent, using a union bound gives, 
+
+μ(Φ H ∩ ΨcH ) ≤ H exp 
+
+(
+
+− 12
+
+(( ρ  
+
+> 2σA H(Lcl )
+
+− √dX
+
+)
+
+> +
+
+)2)
+
++ H exp 
+
+(
+
+− 12
+
+(( ρ   
+
+> 2Cσ πAH(Lcl )
+
+− √dU
+
+)
+
+> +
+
+)2)
+
+.
+
+## B.3 Smoothness of the Policy 
+
+Gaussian policies are TVC with linear modulus. Consider a Gaussian policy with mean μh(x) and variance σ2I. Notice that for x, x ′ ∈ X , we have, TV (πh(· | x), π h(· | x′)) = erf 
+
+( ∥μh(x) − μh(x′)∥
+
+2√2σ
+
+)
+
+,
+
+where, erf (x) = 2
+
+√π
+
+∫ x
+
+> 0
+
+e−t2
+
+dt ≤ 2
+
+√π x. 
+
+Suppose μh(x) is Lμ-Lipschitz, then we have, TV (πh(· | x), π h(· | x′)) ≤ Lμ∥x − x′∥√2σ .
+
+Therefore Gaussian policy is TVC with a linear modulo. Next we discuss another notion of smoothness for the policy. 20 Definition 7 (Wp-continuity) . Fix p ≥ 1. A stochastic policy π(· | x) on RdU is Wp-continuous on S if there exists modulus κ : R≥0 → R≥0 such that 
+
+Wp
+
+(πh(· | x), π h(· | x′)) ≤ κ(∥x − x′∥), ∀x, x ′ ∈ X .
+
+where Wp denotes the p-Wasserstein distance. 
+
+The fact is Wasserstein continuity does not ensure that the in-distribution regression error can be used to control the regret. To see this, simply notice that for p = 2 , if the policy is deterministic and κ(·) is a linear function, then Wp continuous policy are Lipschitz policies. However, Lipschitz learner’s may still incur an exponential compounding error. For example, let us consider the linear system xt+1 = Ax t + Bu t. Let the expert control policy be 
+
+π∗(xt) = Kx t + δ, and the learner be ˆπ(xt) = Kx t (heuristically, we can also think of it as the quantized expert). Then notice that we have, 
+
+> H
+
+∑
+
+> h=1
+
+EPπ∗,T ∥π∗(xh) − ˆπ(xh)∥ = Hδ, 
+
+> H
+
+∑
+
+> h=1
+
+Ex∗   
+
+> t∼Pπ∗,T ,ˆxt∼Pˆπ,T
+
+∥x∗ 
+
+> t
+
+− ˆxt∥ =
+
+> H−1
+
+∑
+
+> h=1
+
+(A + BK )H−1−hBδ. 
+
+Essentially, both the expert and the learner is Lipschitz. Notice that if we require Pπ∗,T to be IISS, a sufficient condition is ρ(A) < 1 (where ρ means the spectral radius). However this does not control (A + BK ). Thus the regret can be exponentially larger than the training error. Next we talk about when is a policy being TVC. We will show two simple results. The first is that for an arbitrary policy, after Gaussian smoothing, it is TVC with a linear modulo function. 
+
+Proposition 18. (Lemma 3.1 of (Block et al., 2023)) Let π = ( πh) be any policy. Define the Gaussian-smoothed policy as πσ = ( πσ,h ) be distributed, 
+
+πσ,h (·| xh) = 
+
+∫
+
+πh(·| ˜xh)N (˜ xh; xh, σ 2)d˜xh.
+
+Then πσ is γTVC -TVC with γTVC (u) = u 
+
+> 2σ
+
+.
+
+Moreover, by Lemma 15, if π is TVC, then q#π is still TVC for any measurable quantizer q.
+
+# C Proofs from Section 3 
+
+## C.1 Supporting Lemmas 
+
+Below are two lemmas about some standard coupling argument. 
+
+Lemma 19. (The coupling that reaches the infimum exists) Let d, k ∈ N. Let ∆ := {(x, y ) ∈ Rd ×Rd : x = y}.For Borel probability measures P, Q on Rd, let P(P, Q ) denote the set of all couplings of (P, Q ) on Rd × Rd.
+
+(i) For any P, Q on Rd,
+
+sup 
+
+> μ∈P (P,Q )
+
+μ(∆) = 1 − dTV (P, Q ),
+
+and the supremum is attained by some μ⋆ ∈ P (P, Q ) (we will call it maximal coupling from now on). 
+
+(ii) Let R be a Borel probability measure on Rk, and let z 7 → Pz and z 7 → Qz be Borel stochastic kernels on 
+
+Rd. Then for R-almost every z there exists μ⋆z ∈ P (Pz , Q z ) with 
+
+μ⋆z (∆) = 1 − dTV (Pz , Q z ).
+
+21 Moreover, one can choose z 7 → μ⋆z Borel-measurably, and the probability measure 
+
+π⋆(dx, dy, dz ) = μ⋆z (dx, dy )R(dz )
+
+has Z ∼ R and conditionals X | Z = z ∼ Pz , Y | Z = z ∼ Qz .
+
+The proof can be found in Lemma C.1 and Corollary C.1 of Block et al. (2023). 
+
+Lemma 20. (Glueing Lemma) Suppose that X, Y, Z are random variables taking value in Polish spaces 
+
+X , Y, Z. Let μ1 ∈ ∆( X × Y ), μ 2 ∈ ∆( Y × Z ) be couplings of (X, Y ) and (Y, Z ) respectively. Then there exists a coupling μ ∈ ∆( X × Y × Z ) on (X, Y, Z ) such that under μ, (X, Y ) ∼ μ1 and (Y, Z ) ∼ μ2.
+
+The proof can be found in Lemma C.2 of Block et al. (2023). The below lemma shows that the coupling that reaches the TV distance is also a shared-noise coupling, which will help us to transform stability of expert to learner. 
+
+Lemma 21. If the dynamics xh+1 = f (xh, u h, ω h), h ∈ [H] are invertible in ωh (i.e. given ( (xh, x h+1 , u h)one can uniquely recover ωh), then there exists a maximal coupling (i.e. the coupling that achieves the TV distance.) between Pπ0,T and Pπ1,T that is also a shared-noise coupling. Proof. For notational convenience, let us denote P = Pπ0,T , Q = Pπ1,T . Let us denote the common support of P, Q as T . Denote ω = ω0: H , with support Ω (we abuse the notation). The distribution of ω denoted with 
+
+ν. First we prove that TV (P, Q ) = 
+
+∫
+
+TV (Pω , Q ω )dν (ω),
+
+where Pω , Q ω are the conditional distribution of the trajectory given the noise. Assume for this proof that Ω and T are countable (just to use sums; the general case replaces sums by integrals and goes through verbatim). Given a trajectory τ = ( x1: H+1 , u 1: H ) ∈ T , define ˆω(τ ) = ( ˆω0(τ ), . . . , ˆωH (τ )) ∈ Ω
+
+to be the unique noise sequence such that 
+
+xh+1 = f (xh, u h, ˆωh(τ )), h = 0 , 1, . . . , H. 
+
+Then there is a measurable partition 
+
+T = ⊎
+
+> ω∈Ω
+
+Tω , Tω = {τ :̂ω(τ ) = ω},
+
+where ⊎ denotes the disjoint union (i.e., T = ⋃ 
+
+> ω∈Ω
+
+Tω and Tω ∩ T ω′ = ∅ for ω̸ = ω′). And the conditional laws Pω , Q ω satisfy Pω (τ ) = Qω (τ ) = 0 for τ / ∈ T ω . The unconditional laws are mixtures 
+
+P (τ ) = ∑
+
+> ω∈Ω
+
+ν(ω)Pω (τ ), Q(τ ) = ∑
+
+> ω∈Ω
+
+ν(ω)Qω (τ ).
+
+On a countable space, 
+
+dTV (P, Q ) = 1 − ∑ 
+
+> τ∈T
+
+min {P (τ ), Q (τ )}.
+
+Using the block-disjoint support, 
+
+∑ 
+
+> τ∈T
+
+min {P (τ ), Q (τ )} = ∑ 
+
+> τ∈T
+
+min 
+
+{ ∑ 
+
+> ω
+
+ν(ω)Pω (τ ), ∑
+
+> ω
+
+ν(ω)Qω (τ )
+
+}
+
+= ∑ 
+
+> τ∈T
+
+min {ν(̂ω(τ )) P̂ω(τ ) (τ ), ν (̂ω(τ )) Q̂ω(τ ) (τ )}
+
+= ∑
+
+> ω∈Ω
+
+ν(ω) ∑ 
+
+> τ∈T ω
+
+min {Pω (τ ), Q ω (τ )},
+
+22 where the second equation is because Pω (τ ) = 0 , ω ̸ = ˆω(τ ), the third equation is because T = ⊎ 
+
+> ω∈Ω
+
+Tω .Hence 
+
+dTV (P, Q ) = 1 − ∑ 
+
+> τ∈T
+
+min {P (τ ), Q (τ )}
+
+= 1 − ∑
+
+> ω
+
+ν(ω) ∑ 
+
+> τ∈T ω
+
+min {Pω (τ ), Q ω (τ )}
+
+= ∑
+
+> ω
+
+ν(ω)
+
+(
+
+1 − ∑ 
+
+> τ∈T ω
+
+min {Pω (τ ), Q ω (τ )}
+
+)
+
+= ∑
+
+> ω
+
+ν(ω)dTV (Pω , Q ω ) = 
+
+∫
+
+dTV (Pω , Q ω )dν (ω).
+
+Now that the desired equation is proved. We can seek to construct a shared-noise coupling that reaches the TV distance. To do so, we first construct a distribution kernel L(τ 0, τ 1|ω) such that 
+
+L(τ 0̸ = τ 1|ω) = TV (Pω , Q ω ).
+
+This is always guaranteed by Lemma 19. Then we construct μ as μ(·) = ∫ L(·| ω)dν (ω). Then, μ is clearly a 
+
+shared-noise coupling, meanwhile it’s also a maximal coupling since 
+
+μ(τ 0̸ = τ 1) = 
+
+∫
+
+L(τ 0̸ = τ 1|ω)dν (ω) = 
+
+∫
+
+TV (Pω , Q ω )dν (ω) = TV (P, Q ).
+
+## C.2 Proof of Theorem 1 
+
+We first prove a upper bound on the bad event , then Theorem 1 can be established by law of Total Expectation. 
+
+Lemma 22. Consider two pairs of policies π0, ˜π0 and π1, ˜π1. Then if Pπ0,T is (γ, δ ) − d-locally P-IISS, and 
+
+˜π1 is ε′-RTVC with modulus κ. Now denote π2 := ˜π1. Then there exists a shared-noise coupling of Pπ0,T, ˜π0
+
+and Pπ2,T such that, 
+
+μ ({∪ Hh=1 ∥˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′}) ≤
+
+> H
+
+∑
+
+> h=1
+
+E¯Pπ0,T , ˜π0
+
+[κ(γ(∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1 
+
+> k=1
+
+)] + Hδ 
+
++¯Pπ0,T, ˜π0 ({∃ h, ∥˜u0 
+
+> h
+
+− u0
+
+> h
+
+∥ > d − ε′}) + TV (¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+).
+
+(10) 
+
+Proof. We construct a coupling ¯μ of ¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+, Pπ2,T as follows. Let μ0,1 be the maximal coupling between ¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+. By Lemma 21, we know μ0,1 can be a shared-noise coupling. Now we construct the coupling μ12 between Pπ1,T, ˜π1
+
+and Pπ2,T : first we let μ1,2 to be a shared-noise coupling, then for any 
+
+(x1
+
+> h
+
+, x 2
+
+> h
+
+) ∈ X 2, by Lemma 19, there exists a distribution Γh(d˜u2
+
+> h
+
+, du ′|x1
+
+> h
+
+, x 2
+
+> h
+
+) that attains the infimum of the RTVC probability (remind readers again that π2 = ˜π1). Now conditioning on x1
+
+> h
+
+, consider another coupling of 
+
+u1
+
+> h
+
+, ˜u1 
+
+> h
+
+conditioning on x1 
+
+> h
+
+as Lh(du 1
+
+> h
+
+, d ˜u1
+
+> h
+
+|x1
+
+> h
+
+), which is the conditional distribution of u1
+
+> h
+
+, ˜u1 
+
+> h
+
+| x1 
+
+> h
+
+in ¯Pπ1,T, ˜π1
+
+.Then we use the glueing lemma to glue Γh and Lh to construct a joint distribution of u1
+
+> h
+
+, ˜u1
+
+> h
+
+, u 2 
+
+> h
+
+given x1
+
+> h
+
+, x 2
+
+> h
+
+such that ˜u1
+
+> h
+
+, u 2
+
+> h
+
+|x1
+
+> h
+
+, x 2 
+
+> h
+
+∼ Γh(·| x0
+
+> h
+
+, x 1
+
+> h
+
+) and u1
+
+> h
+
+, ˜u1
+
+> h
+
+|x1 
+
+> h
+
+∼ Lh(·, ·| x1
+
+> h
+
+). By doing this for every h, now we have specified the whole distribution of μ1,2(since the distribution is determined by the noise distribution and action distribution). Finally, we use gluing lemma again to glue μ0,1 and μ1,2 and get ¯μ. Notice that under 
+
+¯μ all three trajectories share noise. Therefore the marginal of Pπ0,T, ˜π0
+
+and Pπ2,T , denoted with μ, is also a shared-noise coupling. Let Fstate h := σ(x01: h, x 11: h, x 21: h, u 01: h−1, ˜u01: h−1, u 11: h−1, ˜u11: h−1, u 21: h−1), define Ah = {∥ ˜u1 
+
+> h
+
+− u2
+
+> h
+
+∥ ≤ ε′}. Then by the construction of Γh, we have, 
+
+¯μ (Ach|F state h ) ≤ κ(∥x1 
+
+> h
+
+− x2
+
+> h
+
+∥), ¯μ a.s. 23 Then notice that, 
+
+¯μ
+
+( H
+
+∪ 
+
+> h=1
+
+Ach ∩ ( H
+
+∩ 
+
+> k=1
+
+∥˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ ≤ d − ε′)
+
+)
+
+≤ ¯μ
+
+( H
+
+∪ 
+
+> h=1
+
+Ach ∩ ( H
+
+∩ 
+
+> k=1
+
+∥˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ ≤ d − ε′) ∩ { ¯τ 0 = ¯ τ 1}
+
+)︸ ︷︷ ︸
+
+> (1)
+
++ μ0,1(¯ τ 0̸ = ¯ τ 1)
+
+︸ ︷︷ ︸  
+
+> =TV (¯Pπ0,T , ˜π0,¯Pπ1,T , ˜π1)
+
+(1) ≤ ¯μ
+
+( H
+
+∪
+
+> h=1
+
+(∩h−1 
+
+> t=1
+
+At ∩ Ach) ∩ ( H
+
+∩ 
+
+> k=1
+
+∥˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ ≤ d − ε′) ∩ { ¯τ 0 = ¯ τ 1}
+
+)
+
+≤
+
+> H
+
+∑
+
+> h=1
+
+¯μ
+
+(
+
+(∩h−1 
+
+> t=1
+
+At ∩ Ach) ∩ ( H
+
+∩ 
+
+> k=1
+
+∥˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ ≤ d − ε′) ∩ { ¯τ 0 = ¯ τ 1}
+
+)
+
+≤
+
+> H
+
+∑
+
+> h=1
+
+[¯ μ ((∩h−1 
+
+> t=1
+
+At ∩ Ach) ∩ Φh−1 ∩ Ψh−1 ∩ { ¯τ 0 = ¯ τ 1}) + ¯ μ ((∩h−1 
+
+> t=1
+
+At ∩ Ach) ∩ Φh−1 ∩ Ψch−1
+
+) ∩ { ¯τ 0 = ¯ τ 1}]
+
+≤
+
+> H
+
+∑
+
+> h=1
+
+[
+
+¯μ
+
+(
+
+(∩h−1 
+
+> t=1
+
+At ∩ Ach) ∩ Φh−1 ∩ Ψh−1 ∩ { ¯τ 0:x0
+
+> h
+
+= ¯ τ 1:x1
+
+> h
+
+}
+
+)] 
+
++
+
+> H
+
+∑
+
+> h=1
+
+μ(Φ h−1 ∩ Ψch−1),
+
+where we abuse the notation to denote, 
+
+Φh = {∥ u0 
+
+> t
+
+− u2 
+
+> t
+
+∥ ≤ d, ∀t ∈ [h]}, Ψh = {∥ x0 
+
+> t+1
+
+− x2
+
+> t+1
+
+∥ ≤ γ(∥u0 
+
+> k
+
+− u2
+
+> k
+
+∥)tk=1 , ∀t ∈ [h]}.
+
+Above, the second inequality is a standard decomposition of ∩Ach. The thrid inequality is because the events are disjoint. The fourth equation is by ∩h−1 
+
+> t=1
+
+At ∩ (∩h−1 
+
+> k=1
+
+{∥ ˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ ≤ d − ε′}) ∩ { ¯τ 0 = ¯τ 1} implies Φh−1.Then the second part above is bounded by Hδ (since the marginal of (τ 0, τ 2) is a shared-noise coupling). And the first term above is further bounded by 
+
+¯μ
+
+(
+
+(∩h−1 
+
+> t=1
+
+At ∩ Ach) ∩ Φh−1 ∩ Ψh−1 ∩ { ¯τ 0:x0
+
+> h
+
+= ¯ τ 1:x1
+
+> h
+
+}
+
+)
+
+= E¯μ
+
+[
+
+I(( ∩h−1 
+
+> t=1
+
+At) ∩ Φh−1 ∩ Ψh−1 ∩ { ¯τ 0:x0
+
+> h
+
+= ¯ τ 1:x1
+
+> h
+
+}) · E[I(Ach) | F state h ]
+
+]
+
+≤ E¯μ
+
+[
+
+I(( ∩h−1 
+
+> t=1
+
+At) ∩ Φh−1 ∩ Ψh−1 ∩ { ¯τ 0:x0
+
+> h
+
+= ¯ τ 1:x1
+
+> h
+
+}) · κ(∥x1 
+
+> h
+
+− x2
+
+> h
+
+∥)
+
+]
+
+≤ E¯μ[I(( ∩h−1 
+
+> t=1
+
+At) ∩ Φh−1 ∩ Ψh−1 ∩ { ¯τ 0:x0
+
+> h
+
+= ¯ τ 1:x1
+
+> h
+
+}) · κ(γ(∥u1 
+
+> k
+
+− u2
+
+> k
+
+∥)h−1 
+
+> k=1
+
+)] 
+
+≤ E¯μ
+
+[
+
+I({¯τ 0:x0
+
+> h
+
+= ¯ τ 1:x1
+
+> h
+
+})κ(γ(∥u1 
+
+> k
+
+− ˜u1
+
+> k
+
+∥ + ε′)h−1 
+
+> k=0
+
+)
+
+]
+
+≤ Eμ
+
+[κ(γ(∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1 
+
+> k=0
+
+)] .
+
+Here the first equation is since (∩h−1 
+
+> t=1
+
+At) ∩ Φh−1 ∩ Ψch−1 ∩ { ¯τ 0:x0
+
+> h
+
+= ¯τ 1:x1
+
+> h
+
+} is Fstate h -measurable. And the first inequality is due to the RTVC property. The second inequality is because Ψh−1 is true, so we use the stability condition given by Ψh−1. For the last but not least inequality, it is due to that ∩h−1 
+
+> t=1
+
+At holds, and we use the triangle inequality. For the last inequality, we use the property that {¯τ 0:xh = ¯τ 1:xh } to replace trajectory 0 with trajectory 1. And notice that the final expectation is only taken on μ since it only involves trajectory 0 and 2. Finally, we plug them all in one inequality, and marginalize μ to ¯Pπ0,T, ˜π0
+
+if the corresponding term only involves the zero trajectory. We get, 
+
+μ ({∪ Hh=1 ∥˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′}) = ¯ μ ({∪ Hh=1 ∥˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′})
+
+≤ ¯μ
+
+(
+
+{∪ Hh=1 ∥˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′} ∩ ( H
+
+∩
+
+> k=1
+
+{∥ ˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ ≤ d − ε′})
+
+)
+
++ μ (∪Hk=1 {∥ ˜u0 
+
+> k
+
+− u0
+
+> k
+
+∥ > d − ε′})
+
+≤ E¯Pπ0,T , ˜π0
+
+[ H∑
+
+> h=1
+
+κ(γ(∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1 
+
+> k=1
+
+)
+
+]
+
++ Hδ + TV (¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+)+ ¯Pπ0,T, ˜π0 (∃h ∈ H, ∥˜uh − u0
+
+> h
+
+∥ > d − ε′) .
+
+Now we restate Theorem 1 and then prove it with the lemma above. 24 Theorem 1. Consider two pairs of policies π0, ˜π0 and π1, ˜π1 and the associated extended trajectory laws 
+
+¯Pπ0,T, ˜π0
+
+and ¯Pπ1,T, ˜π1
+
+. Assume Pπ0,T is (γ, δ )-d-locally P-IISS and ˜π1 is ε′-RTVC with modulus κ. Let 
+
+π2 := ˜ π1. If the reward function is Lr -Lipschitz, then it holds that 
+
+∣∣J(π0) − J(π2)∣∣ ≲ H2δ + H · TV (¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+) + H · ¯Pπ0,T, ˜π0 (∃h ∈ [H], ∥˜uh − u0
+
+> h
+
+∥ > d − ε′)
+
++ H · E¯Pπ0,T , ˜π0
+
+{ H∑
+
+> h=1
+
+[
+
+κ(γ((∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1 
+
+> k=1
+
+)) + 1
+
+H Lr
+
+(
+
+γ((∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1
+
+> k=1
+
+) + ∥u0 
+
+> h
+
+− ˜u0
+
+> h
+
+∥ + ε′)] }
+
+.
+
+Proof. Let μ be the desired shared noise coupling between ¯Pπ0,T, ˜π0
+
+and Pπ2,T (existence guaranteed by Lemma 22). Again we abuse the notation to denote, 
+
+Φh = {∥ u0 
+
+> t
+
+− u2 
+
+> t
+
+∥ ≤ d, ∀t ∈ [h]}, Ψh = {∥ x0 
+
+> t+1
+
+− x2
+
+> t+1
+
+∥ ≤ γ(∥u0 
+
+> k
+
+− u2
+
+> k
+
+∥)tk=1 , ∀t ∈ [h]}.
+
+Notice that , 
+
+Eμ
+
+{
+
+[
+
+> H
+
+∑
+
+> h=1
+
+r(x0
+
+> h
+
+, u 0
+
+> h
+
+) − r(x2
+
+> h
+
+, u 2
+
+> h
+
+)] I
+
+( H
+
+∩
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ ≤ ε′} ∩ H
+
+∩
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u0
+
+> h
+
+∥ ≤ d − ε′}
+
+)}
+
+≤ Eμ
+
+{
+
+[
+
+> H
+
+∑
+
+> h=1
+
+r(x0
+
+> h
+
+, u 0
+
+> h
+
+) − r(x2
+
+> h
+
+, u 2
+
+> h
+
+)] I
+
+( H
+
+∩
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ ≤ ε′} ∩ ΦH
+
+)}
+
+≤ Eμ
+
+{
+
+[
+
+> H
+
+∑
+
+> h=1
+
+r(x0
+
+> h
+
+, u 0
+
+> h
+
+) − r(x2
+
+> h
+
+, u 2
+
+> h
+
+)] I
+
+( H
+
+∩
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ ≤ ε′} ∩ ΦH ∩ ΨH
+
+)}
+
++ H · μ(Φ H ∩ ΨcH )
+
+≤ Eμ
+
+{
+
+[
+
+> H
+
+∑
+
+> h=1
+
+Lr (∥x0 
+
+> h
+
+− x2
+
+> h
+
+∥ + ∥u0 
+
+> h
+
+− u2
+
+> h
+
+∥)] I
+
+( H
+
+∩
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ ≤ ε′} ∩ ΨH
+
+)}
+
++ Hδ 
+
+≤ E¯Pπ0,T ,π 1
+
+{ H∑
+
+> h=1
+
+Lr (γ(∥u0 
+
+> t
+
+− ˜u0 
+
+> t
+
+∥ + ε′)h−1 
+
+> t=1
+
++ ∥u0 
+
+> h
+
+− ˜u0
+
+> h
+
+∥ + ε′)
+
+}
+
++ Hδ, 
+
+where in the last inequality, we use the stability condition ΨH , and we upper bound each ∥u0 
+
+> t
+
+− u2 
+
+> t
+
+∥ by 
+
+∥u0 
+
+> t
+
+− ˜u0 
+
+> t
+
+∥ + ε′, since ∩Hh=1 {∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ ≤ ε′} holds. At the meantime, we have, 
+
+Eμ
+
+{
+
+[
+
+> H
+
+∑
+
+> h=1
+
+r(x0
+
+> h
+
+, u 0
+
+> h
+
+) − r(x2
+
+> h
+
+, u 2
+
+> h
+
+)] I
+
+( H
+
+∪
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′} ∪ H
+
+∪
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u0
+
+> h
+
+∥ > d − ε′}
+
+)}
+
+≤ H ·
+
+[
+
+μ( H
+
+∪
+
+> h=1
+
+{∥ ˜u0 
+
+> h
+
+− u2
+
+> h
+
+∥ > ε ′}) + ¯Pπ0,T,π 1 ({∃ h, ∥˜u0 
+
+> h
+
+− u0
+
+> h
+
+∥ > d − ε′})]
+
+≤ H · E¯Pπ0,T ,π 1
+
+[ H∑
+
+> h=1
+
+κ(γ(∥u0 
+
+> k
+
+− ˜u0
+
+> k
+
+∥ + ε′)h−1 
+
+> k=1
+
+)
+
+]
+
++ Hδ + H · TV (¯Pπ0,T, ˜π0
+
+, ¯Pπ1,T, ˜π1
+
+)+ H · ¯Pπ0,T,π 1 (∃h ∈ H, ∥˜uh − u0
+
+> h
+
+∥ > d − ε′) .
+
+## C.3 Proof of Theorem 2, Theorem 3 and Proposition 4 
+
+Proof of Theorem 2 and Theorem 3. 
+
+Proof. Those two bounds are direct result of Theorem 1 by plugging in the definition of quantization error into specific modulus κ and γ, meanwhile the irrelevant terms will vanish because of global stability assumption. Finally, we apply Lemma 14, TV (Pπ∗,T,q #π∗
+
+, P(ρ◦ˆπ),T, ˆπ ) = TV (Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ)).
+
+25 And we use the statistical guarantee which gives us, TV (Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ)) ≤ log |Π|δ−1
+
+n , if q#π∗ deterministic ,
+
+TV (Pq#π∗,(T ◦ρ), Pˆπ, (T ◦ρ)) ≤
+
+√ log |Π|δ−1
+
+n , if q#π∗ stochastic ,
+
+Plug this in, we have proved the desired upper bound. 
+
+Proof of Proposition 4. 
+
+Proof. This is a direct corollary of Theorem 1, by using π1 = π0 = π∗, ˜π1 = ˜ π0 = ˆ π.
+
+# D Proofs from Section 4 
+
+## D.1 Proof of Proposition 5 
+
+Proof. Proof of (i). Notice that if the condition holds, then for x, x ′ such that ∥x − x′∥ < δ 0, we have, 
+
+Wcε′ (q#πh(· | x), q #πh(·| x′)) = 1{∥ q(πh(x)) − q(πh(x′)) ∥ > ε ′} ≤ 1(∥x − x′∥ > δ 0) = 0 .
+
+Therefore it must holds that, 
+
+∀∥ x − x′∥ ≤ δ0, ∥q(πh(x)) − q(πh(x′)) ∥ ≤ ε′
+
+Proof of (ii). Fix any h ∈ [H] and any x, x ′ ∈ X . By the triangle inequality, 
+
+∥q(πh(x)) − q(πh(x′)) ∥ ≤ ∥ q(πh(x)) − πh(x)∥ + ∥πh(x) − πh(x′)∥ + ∥πh(x′) − q(πh(x′)) ∥.
+
+Since q is a binning quantizer, it satisfies ∥q(u) − u∥ ≤ εq for all u ∈ U , and since πh(·) is L-Lipschitz, we have 
+
+∥q(πh(x)) − q(πh(x′)) ∥ ≤ 2εq + L∥x − x′∥.
+
+If ∥x − x′∥ ≤ δ0, then by the definition δ0 = ( ε′ − 2εq )/L ,
+
+∥q(πh(x)) − q(πh(x′)) ∥ ≤ 2εq + Lδ 0 = 2 εq + ( ε′ − 2εq ) = ε′,
+
+and hence 
+
+Wcε′ (q#πh(· | x), q #πh(· | x′)) = 1 {∥ q(πh(x)) − q(πh(x′)) ∥ > ε ′} = 0 ≤ κ(∥x − x′∥).
+
+If ∥x − x′∥ > δ 0, then κ(∥x − x′∥) = 1 and trivially Wcε′ (·, ·) ≤ 1 = κ(∥x − x′∥). Combining the two cases, we conclude that q#π∗ is ε′-RTVC with modulus κ(r) = 1{r > δ 0}.
+
+## D.2 Proof of Theorem 6 
+
+Proof of Theorem 6, deterministic dynamic part. We use a seemingly very benign scalar dynamic, policy and reward: let f (x, u ) = Ax + Bu , where A, B > 0 and λ := A + B < 1. The deterministic expert policy is π∗(x) = arctan (x) with reward function r(x, u ) = 1 − | u − arctan (x)|. The initial distribution is 
+
+X1 ∼ N (0 , 1) . In this whole proof we will denote this homogeneous Markov chain by Xt.We specify three non-overlapping intervals, let d > k 
+
+> 2
+
+> B 
+
+> 1−λ
+
+, Ak < 1 (e.g. A = 0 .2, B = 0 .3, k = 1 , d = 0 .6
+
+works), 
+
+IP =
+
+[
+
+− kε q
+
+2 , kε q
+
+2
+
+]
+
+, IT1 = [ dε q , (d + 1) εq ], IT2 = [ Adε q + B, A (d + 1) εq + B].
+
+26 Claim 1. For any t ≥ 1,
+
+EPπ∗,T [I(Xt ∈ IT1 )] ≤ 1
+
+√2πA t−1 exp 
+
+(
+
+− d2ε2
+
+> q
+
+2λ2( t−1) 
+
+)
+
+· εq ,
+
+EPπ∗,T [I(Xt ∈ IT2 )] ≤ 1
+
+√2πA t−1 exp 
+
+(
+
+− B2
+
+2λ2( t−1) 
+
+)
+
+· Aε q .
+
+Proof. Under the expert policy ut = π∗(Xt) = arctan (Xt), the closed-loop system is the deterministic recursion 
+
+Xt+1 = f π∗
+
+(Xt), f π∗
+
+(x) := Ax + B arctan( x),
+
+with random initialization X1 ∼ N (0 , 1) . Hence for t ≥ 1,
+
+Xt = ( f π∗
+
+)◦(t−1) (X1).
+
+Since A, B > 0, we have 
+
+(f π∗
+
+)′(x) = A + B
+
+1 + x2 ≥ A∀x ∈ R,
+
+so f π∗
+
+is strictly increasing and C1, hence invertible with C1 inverse. Therefore Xt admits a density pt, and the change-of-variables formula yields, for t ≥ 1,
+
+pt(y) = p1
+
+((f π∗
+
+)−(t−1) (y))∣∣∣((f π∗ )◦(t−1) )′ ((f π∗ )−(t−1) (y))∣∣∣
+
+,
+
+where p1(z) = 1√2π e−z2/2 is the standard normal density. By the chain rule, for t ≥ 1,
+
+((f π∗
+
+)◦(t−1) )′(x) = 
+
+> t−2
+
+∏
+
+> s=0
+
+(f π∗
+
+)′ (
+
+(f π∗
+
+)◦s(x)
+
+)
+
+≥ At−1,
+
+hence 
+
+pt(y) ≤ 1
+
+At−1 p1
+
+(
+
+(f π∗
+
+)−(t−1) (y)
+
+)
+
+.
+
+Next, using | arctan( x)| ≤ | x|, we obtain 
+
+∣∣f π∗
+
+(x)∣∣ ≤ A|x| + B| arctan( x)| ≤ (A + B)|x| = λ|x|, λ := A + B < 1.
+
+Let x = ( f π∗
+
+)−1(y). Then |y| = |f π∗
+
+(x)| ≤ λ|x|, so |(f π∗
+
+)−1(y)| ≥ | y|/λ , and iterating gives, for t ≥ 1,
+
+∣∣∣(f π∗
+
+)−(t−1) (y)
+
+∣∣∣ ≥ |y|
+
+λt−1 .
+
+Since p1 is decreasing in |z|, it follows that 
+
+p1
+
+(
+
+(f π∗
+
+)−(t−1) (y)
+
+)
+
+≤ 1
+
+√2π exp 
+
+(
+
+− y2
+
+2λ2( t−1) 
+
+)
+
+,
+
+and therefore, for all y ∈ R and t ≥ 1,
+
+pt(y) ≤ 1
+
+√2πA t−1 exp 
+
+(
+
+− y2
+
+2λ2( t−1) 
+
+)
+
+.
+
+For any interval J, we have 
+
+Eπ∗ [I(Xt ∈ J)] = P(Xt ∈ J) = 
+
+∫
+
+> J
+
+pt(y)dy ≤ | J| · sup 
+
+> y∈J
+
+pt(y).
+
+27 For IT1 = [ dε q , (d + 1) εq ], |IT1 | = εq and y ≥ dε q for all y ∈ IT1 , hence 
+
+sup 
+
+> y∈IT1
+
+pt(y) ≤ 1
+
+√2πA t−1 exp 
+
+(
+
+− d2ε2
+
+> q
+
+2λ2( t−1) 
+
+)
+
+,
+
+which implies 
+
+Eπ∗ [I(Xt ∈ IT1 )] ≤ 1
+
+√2πA t−1 exp 
+
+(
+
+− d2ε2
+
+> q
+
+2λ2( t−1) 
+
+)
+
+· εq .
+
+Similarly, for IT2 = [ Adε q + B, A (d + 1) εq + B], we have 
+
+Eπ∗ [I(Xt ∈ IT2 )] ≤ 1
+
+√2πA t−1 exp 
+
+(
+
+− B2
+
+2λ2( t−1) 
+
+)
+
+· Aε q .
+
+This proves the claim. We define the quantizer on those intervals: 
+
+q(π∗(x)) := 
+
+   
+
+> (d+12)
+> B
+
+εq , x ∈ IP ,
+
+1, x ∈ IT1 , 
+
+> (d+1)(1 −A2)
+> B
+
+εq − A, x ∈ IT2 ,π∗(x) + δ(x), otherwise ,
+
+with |δ(x)| < ε q . We let δ(x) < 0, x ∈ R<0 \ IP . Let q0 := B 
+
+> 1−λ
+
+and ρt := k  
+
+> 2−q0(1 −λt−1)
+> λt−1
+
+, and It = [ −ρtεq , 0] .
+
+Claim 2. X1 ∈ It ⇒ Xt ∈ IP ∪ IT1 ∪ IT2 .Proof. First notice that under the quantizer q, we have ∀s,
+
+Xs ∈ IP ∪ IT1 ∪ IT2 , ⇒ Xt ∈ IT1 ∪ IT2 , t > s Xs < 0, X s /∈ IP ⇒ Xs+1 < 0,
+
+where the second equation is since A, B > 0, δ (x) < 0. Therefore for X1 ∈ [−ρtεq , 0) , if ∃s < t, X s ∈
+
+IP ∪ IT1 ∪ IT2 , then Xt ∈ IP ∪ IT1 ∪ IT2 . Otherwise, since Xs < 0, X s /∈ IP , ∀s < t , it holds that, 
+
+Xs+1 = Ax s + B arctan( Xs) + Bδ (Xs)
+
+≥ (A + B)Xs − Bε q = λX s − Bε q
+
+⇒ Xt ≥ λt−1X1 − B
+
+1 − λ (1 − λt−1)εq = λt−1X1 − q0(1 − λt−1)εq ≥ −k
+
+2 εq .
+
+Meanwhile Xt < 0, this means Xt ∈ IP . Thus the claim is proved. From Claim 2, we also know that X1 ∈ It ⇒ Xt+1 ∈ IT1 ∪ IT2 . Therefore we have, 
+
+Eq#π∗
+
+[I(Xt+1 ∈ IT1 ∪ IT2 )] = Pq#π∗ (Xt+1 ∈ IT1 ∪ IT2
+
+) ≥ P(X1 ∈ It) = Φ( ρtεq ) − 12 , t ≥ 1.
+
+Now notice that we have, 
+
+1
+
+H
+
+> H
+
+∑
+
+> h=1
+
+EPπ∗,T [∥u∗ 
+
+> h
+
+− q(u∗
+
+> h
+
+)∥] = 1
+
+H
+
+> H
+
+∑
+
+> h=1
+
+Eπ∗
+
+[|δ(X∗
+
+> h
+
+)|(I(IT1 ∪ IT2 ) + I(IcT1 ∩ IcT2 )) ]
+
+> Claim 1
+
+≤ Θ(1) 
+
+H
+
+> H
+
+∑
+
+> h=1
+
+(
+
+εq + 1
+
+√2πA h exp( − d2ε2
+
+> q
+
+2λ2h ) · εq + 1
+
+√2πA h exp( − B2
+
+2λ2h ) · Aε q
+
+)
+
+28 ≲ εq + Θ( εq | log εq |
+
+H ) = O(εq ), when H = ω(| log εq |).
+
+Finally, notice that on IT1 ∪ IT2 , the quantization error is at least A, therefore, 
+
+J(π∗) − J(q#π∗) = 
+
+> H
+
+∑
+
+> h=1
+
+Eq#π∗ [|δ(xh)|]
+
+≥
+
+> H
+
+∑
+
+> h=2
+
+A
+
+(
+
+Φ( ρh−1εq ) − 12
+
+)
+
+≳ (H − Θ( | log εq |)) = O(H), when H = ω(| log εq |).
+
+Proof of Theorem 6, stochastic dynamic part. Setup The initial distribution is T0(∅) = N (0 , 1) .Consider a scaler linear system f (x, u ) = Ax + Bu , the noisy dynamic is xt+1 = f (xt, u t) + ωt, ω t ∼ N (0 , σ 2 
+
+> ω
+
+).The policy is π∗(x) = arctan( x). Now we define three intervals as, 
+
+IP = [ −kε q , kε q ], I T1 = [2 kε q , (2 k + 2 Ak )εq ], I T2 = [ B + 2 Akε q , B + A(2 k + 2 Ak )εq ].
+
+We design the quantizer to be, 
+
+q(π∗(x)) = 
+
+ 
+
+> (2+ A)kε q
+> B
+
+, x ∈ IP ,
+
+1, x ∈ IT1 ,
+
+− (1+2 A2)kε q 
+
+> B
+
+− A, x ∈ IT2 ,π∗(x) + δ(x), otherwise .
+
+By constructing such a quantizer , we can always maintain the loop IP → IT1 → IT2 → IP under noiseless dynamic. For the rest of the value, we set a binning quantizer such that |δ(x)| < c δ εq .We will denote λ = A + B, I T = IT1 ∪ IT2 , I A = IT ∪ IP . For a constant R > 0, define CR = [ −R, R ]. Under the quantized expert, the state sequences will form a homogeneous Markov chain on a continuous space, we denote the chain with (Xt)t≥0. The quantized policy induced transition is denoted with T q#π∗
+
+. Now we will first show that the stable distribution for this Markov chain exists, when deploying the quantized policy in the noisy dynamic. 
+
+Claim 3. There exists a stable distribution on X denoted as ν(·). It also holds the geometric convergence to the stable distribution 
+
+∥dq#π∗ 
+
+> t
+
+− ν∥TV ≤ M ρ t
+
+for a constant M > 0 and ρ ∈ (0 , 1) , where dq#π∗ 
+
+> t
+
+is the state distribution at step t under policy q#π.Proof. Define the Lyapunov function 
+
+V (x) := 1 + x2.
+
+Conditioning on Xt = x, using E[ωt] = 0 and Var( ωt) = σ2 
+
+> ω
+
+,
+
+T q#π∗
+
+V (x) := E[V (Xt+1 ) | Xt = x] = 1 + (Ax + Bq (π∗(x)) )2 + σ2 
+
+> ω
+
+.
+
+Choose R large enough so that IA ⊂ int (CR). For x / ∈ CR, the binning quantizer satisfies q(π∗(x)) = 
+
+π∗(x) + δ(x) with |δ(x)| < c δ εq , hence 
+
+(Ax + Bq (π∗(x)) )2 ≤ (Ax + Bπ ∗(x))2 + 2 Bc δ εq
+
+∣∣Ax + Bπ ∗(x)∣∣ + B2c2 
+
+> δ
+
+ε2 
+
+> q
+
+.
+
+Using | arctan( x)| ≤ π/ 2 and |Ax + Bπ ∗(x)| ≤ λ|x|,
+
+T q#π∗
+
+V (x) ≤ 1 + A2x2 + πAB |x| + π2 
+
+> 4
+
+B2 + 2 Bc δ λε q |x| + O(ε2 
+
+> q
+
+) + σ2 
+
+> ω
+
+.
+
+29 Since A2 < λ (as A2 − A < 0 < B gives A2 < A + B = λ), the right-hand side minus λV (x) equals 
+
+(A2 − λ)x2 + (πAB + 2 Bc δ λε q
+
+)|x| + (1 + π2 
+
+> 4
+
+B2 + σ2 
+
+> ω
+
+− λ) + O(ε2 
+
+> q
+
+),
+
+which is a quadratic in |x| with strictly negative leading coefficient A2 − λ < 0, hence negative for all |x|
+
+large enough. Thus, enlarging R if necessary, we have T q#π∗
+
+V (x) ≤ λV (x) for all |x| > R . Set 
+
+c := sup 
+
+> x∈CR
+
+{T q#π∗
+
+V (x) − λV (x)} < ∞,
+
+where finiteness holds because T q#π∗
+
+V is continuous and CR is compact. Then, for all x ∈ R,
+
+T q#π∗
+
+V (x) ≤ λV (x) + c 1CR (x), (11) which is a geometric Foster–Lyapunov drift condition towards the bounded set CR.Because the noise ωt has a strictly positive continuous Gaussian density, the Markov chain admits a strictly positive continuous transition density. It follows by standard arguments that the chain is ψ-irreducible and aperiodic, and that CR is a small (petite) set. Combining these properties with the drift condition (11) , by Theorem 15.0.1 of Meyn and Tweedie (2012) yields the result. Another thing to notice is we take expectation w.r.t. ν(x) for Eq. (11), since νT q#π∗
+
+= ν, then we have, 
+
+ν(V ) := Eν [V (x)] ≤ λν (V ) + cν (CR)
+
+⇒ ν(CR) ≥ (1 − λ)ν(V )
+
+c ≥ 1 − λc . (12) Now our goal is to lower bound the probability on IT under the stable distribution. To do so, we evaluate how many steps it take to move from outside of those intervals back. Define 
+
+τ XIA = inf {t ≥ 0 : Xt ∈ IA}.
+
+Define Px as the probability measure on the chain (Xt)t≥0 starting at x. We now evaluate sup x∈CR\IA Px(τ XIA ≥
+
+m). Our goal is to find an approriate m, such that this quantity can be upper bounded by a constant. 
+
+Claim 4. Define Kδ := Bc δ 
+
+> 1−λ
+
+, Kω :=
+
+√2/π σ ω  
+
+> εq(1 −λ)
+
+, consider a constant u ∈ (0 , k − Kδ − Kω ), for Tmix :=
+
+⌊ log R     
+
+> (k−u−(Kδ+Kω )) εq
+> |log λ|
+
+⌋+ = Θ 
+
+(
+
+log 1
+
+> εq
+
+)
+
+, it holds that, 
+
+sup 
+
+> x∈CR\IA
+
+Px(τ XIA ≥ Tmix ) ≤ 2 exp 
+
+(
+
+− u2ε2 
+
+> q
+
+(1 − λ2)2σ2
+
+> ω
+
+)
+
+:= η (13) 
+
+Proof. Let us define, 
+
+Rt := λtR + ( Kδ + Kω )εq + St := rt + St, S t := 
+
+> t−1
+
+∑
+
+> j=0
+
+λj (|ωt−1−j |) − E|ω0|).
+
+Notice that under {τ xIA > T mix }, it holds |Xt| ≤ Rt, t ≤ Tmix . And since rTmix < (k − u)εq , this means 
+
+STmix ≥ uε q .
+
+∀x, P (τ xIA > T mix ) ≤ P (rTmix + Smix ≥ kε q ) ≤ P (STmix > uε q ).
+
+Since |ωs| is a 1-Lipschitz function of ωs ∼ N (0 , σ 2 
+
+> ω
+
+), by Gaussian concentration, |ωs| − E|ω0| is sub-Gaussian with parameter σω . Hence St = ∑t−1 
+
+> j=0
+
+λj (|ωt−1−j | − E|ω0|) is sub-Gaussian with variance proxy 
+
+σ2
+
+> ω
+
+∑t−1 
+
+> j=0
+
+λ2j ≤ σ2 
+
+> ω
+> 1−λ2
+
+, and for any t > 0,
+
+P (|St| ≥ uε q ) ≤ 2 exp 
+
+(
+
+− u2ε2
+
+> q
+
+2σ2
+
+> ω
+
+∑t−1 
+
+> j=0
+
+λ2j
+
+)
+
+≤ 2 exp 
+
+(
+
+− u2ε2 
+
+> q
+
+(1 − λ2)2σ2
+
+> ω
+
+)
+
+.
+
+30 To make sure η < 1, we will require σω = o(εq ), so that so that u appropriately selected can be positive, and the ratio εq 
+
+> σω
+
+in η will not make it near 1. Since when x ∈ IA, Px(τ xIA ≥ Tmix ) = 0 , we have sup x∈CR Px(τ XIA ≥
+
+Tmix ) ≤ η. Now we know that with at least a O(1) probability, before Θ
+
+(
+
+log( 1 
+
+> εq
+
+)
+
+)
+
+steps, the state will travels back into IA, entering the loop again. However this only holds for a bounded subset CR. To further proceed, we will try to restrict the Markov chain to CR and use the new Markov chain to derive the result. Now denote 
+
+σ0 := inf {t ≥ 0 : Xt ∈ CR}, σ n+1 = inf {t > σ n : Xt ∈ CR}, Y n := Xσn .
+
+We know that Yn is a Markov Chain on CR.
+
+Claim 5. Yn is positive recurrence with unique stable distribution, 
+
+μ(·) = ν(· ∩ CR)
+
+ν(CR) .
+
+Proof. This is lemma 2 of Farago (2020) Let Qx denote the law of the censored chain (Yn)n≥0 with Y0 = x.
+
+Claim 6. For any x ∈ CR and m ≥ 1, it holds that 
+
+Qx(τ YIA ≥ m) ≤ Px(τ XIA ≥ m).
+
+Proof. If x ∈ IA, then the inequality holds. If x / ∈ IA, suppose τ XIA < m . Then there exists 0 ≤ t < m such that Xt ∈ IA. By the construction of the censored chain, there exists l ≥ 0 such that the l-th visit of (Yt)
+
+corresponds to time t of (Xt). Hence, 
+
+τ YIA ≤ l ≤ t < m. 
+
+Therefore, 
+
+{τ XIA < m } ⊂ { τ YIA < m },
+
+which implies the claim. Taking m = Tmix , we obtain 
+
+sup 
+
+> x∈CR
+
+Qx(τ YIA ≥ Tmix ) ≤ η. 
+
+Next, we bound EQ 
+
+> x
+
+[τ YIA ] for x ∈ CR. By the Markov property of (Yn), we have 
+
+Qx(τ YIA ≥ (m + 1) Tmix ) = EQ
+
+> x
+
+[1{τ YIA ≥ mT mix }QYmT mix (τ YIA ≥ Tmix )]
+
+≤ ηQx(τ YIA ≥ mT mix ).
+
+Iterating yields 
+
+Qx(τ YIA ≥ mT mix ) ≤ ηm, m ≥ 1.
+
+Consequently, for x ∈ CR
+
+EQ 
+
+> x
+
+[τ YIA ] = ∑
+
+> n≥0
+
+Qx(τ YIA ≥ n) ≤ Tmix 
+
+∑
+
+> k≥0
+
+ηk = Tmix 
+
+1 − η .
+
+Finally, define the return time 
+
+τ + 
+
+> IA
+
+:= inf {n ≥ 1 : Yn ∈ IA}.
+
+For Y0 ∼ μ(· | IA), it holds that 
+
+EQ[τ + 
+
+> IA
+
+| Y0 ∈ IA] ≤ 1 + sup 
+
+> x∈CR
+
+EQ 
+
+> x
+
+[τ YIA ] ≤ 1 + Tmix 
+
+1 − η .
+
+31 Then we use Theorem 10.4.9 of (Meyn and Tweedie, 2012) and get, 
+
+μ(IA) ≥ 1 − η
+
+1 − η + Tmix 
+
+.
+
+Now we analyze the probabilistic structure inside IA. We use P (x, B ) to denote the one-step transition probability starting at x to B for chain (Xt)t≥0 and Q(x, B ) for chain (Yt)t≥0.Let us define, 
+
+a := sup 
+
+> x∈IP
+
+P (x, I cT1 ) = P (kε q , I cT1 ) = 32 − Φ
+
+( 2kAε q
+
+σω
+
+)
+
+, b := sup 
+
+> x∈IT1
+
+P (x, I cT2 ) = 32 − Φ
+
+( 2kA 2εq
+
+σω
+
+)
+
+.
+
+Since σω ∈ o(εq ), the ratio εq /σ ω → ∞ , so Φ
+
+( 2kAε q
+
+> σω
+
+)
+
+→ 1 and hence 1 − a, 1 − b → 12 . In particular, 
+
+a, b, 1 − a, 1 − b are all Θ(1) , which is essential for the lower bound below not to degenerate. Now we do a more fine-grained analysis to decompose μ(IA) into μ(IP ) and μ(IT ) by constant a, b . First let us define, 
+
+aY := sup 
+
+> x∈IP
+
+Q(x, I cT1 ), b Y := sup 
+
+> x∈IT1
+
+Q(x, I cT2 ).
+
+Claim 7. 
+
+aY ≤ a, b Y ≤ b
+
+Proof. This is proved as long as noticing that, X1 ∈ IT1 ⊂ CR ⇒ σ1 = 1 , Y 1 = X1 ∈ IT1 .Now let p0 := μ(IP ), p 1 := μ(IT1 ), p 2 := μ(IT2 ). Since μ is invariance to Q, we have, 
+
+p1 =
+
+∫
+
+> CR
+
+μ(y)Q(y, I T1 )dy ≥
+
+∫
+
+> IP
+
+μ(y)Q(y, I T1 )dy ≥ (1 − aY )p0
+
+p2 ≥ (1 − bY )p1, p 0 + p1 + p2 = μ(IA).
+
+We can solve this linear inequalities and have, 
+
+p1 + p2 ≥ (1 − aY )p0 + (1 − aY )(1 − bY )p0
+
+⇒ p1 + p2 ≥ (1 − aY )(2 − bY )[ μ(IA) − (p1 + p2)] 
+
+⇒ p1 + p2 ≥ μ(IA) (1 − aY )(2 − bY )1 + (1 − aY )(2 − bY ) ≥ μ(IA) (1 − a)(2 − b)1 + (1 − a)(2 − b) .
+
+Finally we plug in the lower bound of μ(IA), then we get, 
+
+ν(IT |CR) = μ(IT ) ≥ 1 − η
+
+1 − η + Tmix 
+
+(1 − a)(2 − b)1 + (1 − a)(2 − b) .
+
+Finally, by the geometric ergodic property and utilizing Eq. (12) we have, 
+
+dq#π∗ 
+
+> t
+
+(IT ) ≥ν(IT ) − M ρ t = Θ( 1
+
+| log(1 /ε q )| ) − M ρ t
+
+1
+
+H
+
+> H
+
+∑
+
+> t=1
+
+dq#π∗ 
+
+> t
+
+(IT ) ≥ Θ( 1
+
+| log(1 /ε q )| ) − M 1
+
+H(1 − ρ) .
+
+Now we calculate the quantization error on the expert distribution (unquantized). We have the following claim. 32 Claim 8. For all t ≥ 1,
+
+P{Xt ∈ IT1 } ≤ exp 
+
+(
+
+− 2k2ε2
+
+> q
+
+τ 2
+
+> t
+
+)
+
+, (14) 
+
+where 
+
+τ 2 
+
+> t
+
+:= λ2( t−1) + σ2
+
+> ω
+
+1 − λ2( t−1) 
+
+1 − λ2 , t ≥ 1.
+
+Proof. Write Xt = gt(X1, ω 1, . . . , ω t−1) as a deterministic function of the independent Gaussians X1 ∼ N (0 , 1) 
+
+and ωi ∼ N (0 , σ 2 
+
+> ω
+
+). Since f π∗
+
+is λ-Lipschitz, the chain rule gives |∂X t/∂X 1| ≤ λt−1 and |∂X t/∂ω i| ≤ λt−1−i.Introduce the standardized variables ˜X1 = X1, ˜ωi = ωi/σ ω , all i.i.d. N (0 , 1) . The Lipschitz constant of the map ( ˜X1, ˜ω1, . . . , ˜ωt−1) 7 → Xt satisfies 
+
+L2 
+
+> t
+
+= λ2( t−1) +
+
+> t−1
+
+∑
+
+> i=1
+
+λ2( t−1−i) σ2 
+
+> ω
+
+= τ 2 
+
+> t
+
+.
+
+By Gaussian concentration , Xt − E[Xt] is sub-Gaussian with proxy variance τ 2 
+
+> t
+
+. Since f π∗
+
+is an odd function and the noise is symmetric, E[Xt] = 0 by induction. Therefore P{Xt ≥ r} ≤ exp (−r2/(2 τ 2 
+
+> t
+
+)) for every r ≥ 0.Since IT1 ⊂ [2 kε q , ∞), setting r = 2 kε q gives the claim. We now show the in-distribution quantization error is O(εq ). First we will require σω = O( εq    
+
+> |log εq|α
+
+) with 
+
+α > 12 . Define 
+
+t∗ := min 
+
+{
+
+t ≥ 1 : exp 
+
+(
+
+− 2k2ε2
+
+> q
+
+τ 2
+
+> t
+
+)
+
+≤ εq
+
+}
+
+.
+
+Since τ 2 
+
+> t
+
+is dominated by λ2( t−1) until the noise floor σ2 
+
+> ω
+
+/(1 − λ2) takes over, we have t∗ = O(| log εq |). For all t ≥ t∗, τ 2 
+
+> t
+
+≤ τ 2 
+
+> t∗
+
+, so the tail bound is at most εq .Since IT2 is farther from the origin than IT1 and Xt is symmetric around zero, P{Xt ∈ IT2 } ≤ P{Xt ∈ IT1 }
+
+for all t. Therefore, 
+
+1
+
+H
+
+> H
+
+∑
+
+> t=1
+
+[dπ∗ 
+
+> t
+
+(IT1 ) + dπ∗ 
+
+> t
+
+(IT2 )] ≤ 2 t∗
+
+H + 1
+
+H
+
+> H
+
+∑
+
+> t=t∗+1
+
+2 exp 
+
+(
+
+− 2k2ε2
+
+> q
+
+τ 2
+
+> t
+
+)
+
+≤ O(| log εq |)
+
+H + εq .
+
+Taking H = Ω( | log εq |/ε q ), the first term is also O(εq ), giving 
+
+1
+
+H
+
+> H
+
+∑
+
+> t=1
+
+[dπ∗ 
+
+> t
+
+(IT1 ) + dπ∗ 
+
+> t
+
+(IT2 )] = O(εq ),
+
+which is also the order of quantization error since the quantizer only induces constant error on IT1 and IT2 ,and the error on quantized expert is, 
+
+1
+
+H Eq#π∗
+
+[ H∑
+
+> h=1
+
+∥ arctan( xh) − q(uh)∥
+
+]
+
+≥ Θ( 1
+
+| log(1 /ε q )| ) − M 1
+
+H(1 − ρ) = Ω( 1
+
+| log εq | ).
+
+33 D.3 Proof of Theorem 7 
+
+Proof. We state again our notation here. The expert trajectory is upper indexed by ∗. The auxiliary trajectory is upper indexed by a. The rolled-out trajectory is upper indexed by L.We construct the coupling in this way. First let us denote ¯Pπ∗,T,q as the joint distribution of the expert trajectory, explicitly including the noise {ω∗ 
+
+> 0: H
+
+, u ∗ 
+
+> 1: H
+
+, ˜u∗ 
+
+> 1: H
+
+, x ∗
+
+> 1: H+1
+
+}, where we remind the readers again that 
+
+x∗ 
+
+> h+1
+
+= fh(x∗
+
+> h
+
+, u ∗
+
+> h
+
+, ω ∗
+
+> h
+
+), ˜u∗ 
+
+> h
+
+= q(u∗
+
+> h
+
+). Notice that the marginal of {x∗
+
+> 1: H+1
+
+, ˜u∗ 
+
+> 1: H
+
+} ∼ Pq#π∗,T ◦ρ. For a learned policy and model ˆπ, \(T ◦ ρ), denote the trajectory as {xa
+
+> 1: H+1
+
+, u a 
+
+> 1: H
+
+} ∼ Pˆπ, \(T ◦ρ). Now we define μ as the maximal coupling between Pˆπ, \(T ◦ρ) and Pq#π∗,T ◦ρ. Following the same spirit as in Lemma 21, we know that we can make sure under μ, x∗ 
+
+> 1
+
+= xa 
+
+> 1
+
+μ a.s. Then we use the glueing lemma to glue ¯Pπ∗,T,q and μ to become μ′.Finally, under μ′, we define the rolled-out trajectory as xL 
+
+> 1
+
+= x∗
+
+> 1
+
+, u Lh = uah, ω Lh = ω∗
+
+> h
+
+, x Lh+1 = fh(xLh , u Lh , ω Lh ).Now notice that the marginal of {xL
+
+> 1: H+1
+
+, u L 
+
+> 1: H
+
+}, and {xa
+
+> 1: H+1
+
+, u a 
+
+> 1: H
+
+} is exactly the measure generated by the rolled-out algorithm. This means that, 
+
+J(π∗) − J(alg ) = Eμ′
+
+[ H∑
+
+> h=1
+
+rh(x∗
+
+> h
+
+, u ∗
+
+> h
+
+) − rh(xLh , u Lh )
+
+]
+
+.
+
+We denote the exponential summation modulus as γ first, now notice that 
+
+Eμ′
+
+[( H∑
+
+> h=1
+
+rh(x∗
+
+> h
+
+, u ∗
+
+> h
+
+) − rh(xLh , u Lh )
+
+)
+
+I
+
+( H
+
+∩
+
+> h=1
+
+{˜u∗ 
+
+> h
+
+= uLh }
+
+)]
+
+≤Eμ′
+
+[( H∑
+
+> h=1
+
+Lr (∥x∗ 
+
+> h
+
+− xLh ∥ + ∥u∗ 
+
+> h
+
+− uah∥)
+
+)
+
+I
+
+( H
+
+∩
+
+> h=1
+
+{˜u∗ 
+
+> h
+
+= uah}
+
+)]
+
+≤Eμ′
+
+[ H∑
+
+> h=1
+
+Lr (γ(∥u∗ 
+
+> t
+
+− ˜u∗ 
+
+> t
+
+∥)h−1 
+
+> t=1
+
++ ∥u∗ 
+
+> h
+
+− ˜u∗
+
+> h
+
+∥)
+
+]
+
+,
+
+where the second inequality is because by the construction of μ′, the coupling between expert trajectory and rolled-out trajectory is a shared-noise coupling, and we assume global P-EIISS. Then, on the complement event, we have 
+
+Eμ′
+
+[( H∑
+
+> h=1
+
+rh(x∗
+
+> h
+
+, u ∗
+
+> h
+
+) − rh(xLh , u Lh )
+
+)
+
+I
+
+( H
+
+∪
+
+> h=1
+
+{˜u∗
+
+> h
+
+̸ = uah}
+
+)]
+
+≤ H · μ′( H
+
+∪
+
+> h=1
+
+{˜u∗
+
+> h
+
+̸ = uah}) ≤ H · μ′(τ ∗̸ = τ a)
+
+≤ H · TV (Pq#π∗,(T ◦ρ), Pˆπ, ˆ(T, ◦ρ)).
+
+Now by Proposition 11, for any δ > 0, it holds with probability at least 1 − δ,TV (Pq#π∗,(T ◦ρ), Pˆπ, ˆ(T, ◦ρ)) ≤
+
+√
+
+D2
+
+> H
+
+(
+
+Pq#π∗,(T ◦ρ), Pˆπ, [T ◦ρ
+
+)
+
+≲
+
+√ log( |Π|δ−1) + log( |T | δ−1)
+
+n .
+
+Then we plug in γ, we have, 
+
+Eμ′
+
+[ H∑
+
+> h=1
+
+Lr (γ(∥u∗ 
+
+> t
+
+− ˜u∗ 
+
+> t
+
+∥)h−1 
+
+> t=1
+
++ ∥u∗ 
+
+> h
+
+− ˜u∗
+
+> h
+
+∥
+
+]
+
+≲ EPπ∗,T 
+
+[ H∑
+
+> h=1
+
+∥u∗ 
+
+> t
+
+− ˜u∗ 
+
+> t
+
+∥
+
+]
+
+= Hε q .
+
+Combining the bounds on two events, we have proved the desired bound. 34 E Proofs from Section 5 
+
+## E.1 Proof of Theorem 8 
+
+Proof. Consider X = U = [0 , 1] . T0 = (1 − ∆) δ0 + ∆ δ1. Denote πa 
+
+> 1
+
+(·| x) = δ0, πb
+
+> 1
+
+(·| x) = δx. We consider set of rewards ra 
+
+> 1
+
+(x, u ) = 1 − u, rb
+
+> 1
+
+(x, u ) = xu + (1 − x)(1 − u), r ah(x, u ) = rbh(x, u ) = x, h ≥ 2. Let the two dynamic be: f a = ra, f b = rb. One can easily verify that Pa and Pb is (δ, η )-stable with any δ > 0 and 
+
+η ((rk)Hk=1 
+
+) = r1.Consider two instances (T0, f a, π a, r a) and (T0, f b, π b, r b). For any algorithm that seeing the quantized data, denote ˆθ(Sqn) := ∫ ud ˆπ(Sqn)( du |1) 
+
+Ja(πa) − Ja(ˆ π) = H∆[1 − (1 − ˆθ(Sqn))] + H(1 − ∆) 
+
+∫ 10
+
+1 − (1 − u)dˆπ1(u|0) 
+
+≥ H∆|ˆθ(Sqn) − θ∗(πa)|, θ ∗(πa) := Eu1∼πa 
+
+> 1(·| 1)
+
+[u1],Jb(πb) − Jb(ˆ π) = H∆[1 − ˆθ(Sqn))] + H(1 − ∆) 
+
+∫ 10
+
+ud ˆπ1(u|0) 
+
+≥ H∆|θ∗(πb) − ˆθ(Sqn)|, θ ∗(πb) := Eu1∼πb 
+
+> 1(·| 1)
+
+[u1].
+
+Therefore, we can define the metric as ρ(π, π ′) := |Eu1∼π1(|1) [u1] − Ea′
+
+> 1∼π1(|1)
+
+[u′
+
+> 1
+
+]|. Using the standard Le Cam two-point argument, the algorithm must have, 
+
+max {E[Jra (πa) − Jra (ˆ π)] , E[Jrb (πb) − Jrb (ˆ π)] } ≥ ∆H
+
+4 (1 − DTV (Pa⊗n, Pb⊗n)) .
+
+Notice that it holds that, TV (Pa⊗n, Pb⊗n) ≤
+
+√
+
+D2 
+
+> H
+
+(Pa⊗n, Pb⊗n) = √2
+
+√
+
+1 − (1 − 12 D2 
+
+> H
+
+(Pa, Pb)) n.
+
+Through computation, it holds that 1 − 12 D2 
+
+> H
+
+(Pa, Pb)) = 1 − ∆. Set ∆ = 13n . By the limiting behavior of 
+
+(1 − 13n )n, we know for large enough n, it holds that TV (Pa⊗n, Pb⊗n) ≤ 0.8 (via numerical computation), then we have Hn lower bound. Now we show how to achieve the additional Hε q for the lower bound. This is trivial. First we specify the quantization scheme. Consider a uniform binning quantizer q : [0 , 1] → R. Partition [0 , 1] into K consecutive subintervals of equal length 1/K ,denoted {Ik}Kk=1 , with I1 = [0 , 1 
+
+> K
+
+] and IK = [ K−1 
+
+> K
+
+, 1] . For k = 2 , . . . , K − 1,the endpoints may be chosen arbitrarily as open or closed, provided that the Ik are pairwise disjoint and ⋃Kk=1 Ik = [0 , 1] . Let mk = 2k−12K be the midpoint of Ik. Then 
+
+q(x) = mk for x ∈ Ik, k = 1 , . . . , K. 
+
+Notice that under such a quantizer, 
+
+max  
+
+> i∈[K]
+
+diam (q−1(¯ ui)) = εq , 1
+
+H Eπ∗
+
+[
+
+> H
+
+∑
+
+> h=1
+
+∥u∗ 
+
+> h
+
+− q(u∗
+
+> h
+
+)∥] ≤ εq .
+
+If we change πa into π˜a and πb into π˜b as 
+
+π˜a 
+
+> 1
+
+(u|x) = δεq , π ˜b
+
+> 1
+
+(u|x) = xδ 1−εq + (1 − x)δεq ,
+
+and let, 
+
+r0
+
+> u
+
+(u) = uI(u ≤ 1 − εq ) + (2 − 2εq − u)I(u ≥ 1 − εq )
+
+r1
+
+> u
+
+(u) = (1 − 2εq + u)I(u ≤ εq ) + (1 − u)I(u > ε q )
+
+35 r˜a 
+
+> 1
+
+(x, u ) = r1
+
+> u
+
+(u), r ˜b
+
+> 1
+
+(x, u ) = xr 0
+
+> u
+
+(u) + (1 − x)r1
+
+> u
+
+(u),f ˜a 
+
+> 1
+
+= r˜a 
+
+> 1
+
+, f ˜b = r˜b
+
+> 1
+
+, f ˜ah (x, u ) = f˜bb (x, u ) = x. 
+
+Notice that we have, 
+
+Ja(πa) − Ja(ˆ π) ≥ H∆
+
+[∫ εq
+
+> 0
+
+ud ˆπ1(u|1) + 
+
+∫ 1
+
+> εq
+
+εq dˆπ(u|1) 
+
+]
+
++ H(1 − ∆) 
+
+[∫ εq
+
+> 0
+
+ud ˆπ1(u|0) + 
+
+∫ 1
+
+> εq
+
+εq dˆπ(u|0) 
+
+]
+
+J˜a(π˜a) − J˜a(ˆ π) ≥ H∆
+
+∫ εq
+
+> 0
+
+(εq − u)dˆπ1(u|1) + H(1 − ∆) 
+
+∫ εq
+
+> 0
+
+(εq − u)dˆπ1(u|0) 
+
+⇒ Ja(πa) − Jra (ˆ π) + Jr˜a (π˜a) − Jr˜a (ˆ π) ≥ H∆εq + H(1 − ∆) εq = Hε q .
+
+This is because when πa changes to π˜a, ˆπ will remain unchanged since it can only access the quantized data, and the distribution of the quantized data under πa and π˜a are the same for the given quantizer. One can also verify that it holds, 
+
+Jb(πb) − Jb(ˆ π) ≥ H∆
+
+[∫ 1−εq
+
+> 0
+
+εq dˆπ1(u|1) + 
+
+∫ 11−εq
+
+(1 − u)dˆπ(u|1) 
+
+]
+
++ H(1 − ∆) 
+
+[∫ εq
+
+> 0
+
+ud ˆπ1(u|0) + 
+
+∫ 1
+
+> εq
+
+εq dˆπ(u|0) 
+
+]
+
+J˜b(π˜b) − J˜b(ˆ π) ≥ H∆
+
+∫ 11−εq
+
+[(1 − εq ) − (2 − 2εq − u)] dˆπ1(u|1) + H(1 − ∆) 
+
+∫ εq
+
+> 0
+
+(εq − u)dˆπ1(u|0) 
+
+⇒ Jb(πb) − Jb(ˆ π) + J˜b(π˜b) − J˜b(ˆ π) ≥ Hε q .
+
+Then we have, 
+
+Ja(πa) − Ja(ˆ π) + J˜a(π˜a) − J˜a(ˆ π) ≥ 12 Ja(πa) − Ja(ˆ π) + 12 Hε q ,
+
+max {Ja(πa) − Ja(ˆ π), J ˜a(π˜a) − J˜a(ˆ π)} ≥ 14 Ja(πa) − Ja(ˆ π) + 14 Hε q ,
+
+max {E[Ja(πa) − Ja(ˆ π)] , E[J˜a(π˜a) − J˜a(ˆ π)] , E[Jb(πb) − Jb(ˆ π)] , E[J˜b(π˜b) − J˜b(ˆ π)] }≥ max { 14 E[Ja(πa) − Ja(ˆ π)] + 14 Hε q , 14 E[Jb(πb) − Jb(ˆ π)] + 14 Hε q }≥ c( Hn + Hε q ).
+
+## E.2 Proof of Theorem 9 
+
+Proof. We will show that it suffices to prove the lower bound for the simple distribution estimation problem for the initial action distribution. Consider X = A = [ −1, 2] . We construct the dynamic as f1(x, u ) = 
+
+u, f h(x, u ) = x, h ≥ 2. And a policy class Π = {πa, π b} with 
+
+πa 
+
+> 1
+
+(u|x) = ( 12 + ∆) δ1(u) + ( 12 − ∆) δ0(u), π b
+
+> 1
+
+(u|x) = ( 12 − ∆) δ1(u) + ( 12 + ∆) δ0(u),
+
+and πah = πbh = δ1, h ≥ 2. The policy after h ≥ 2 does not matter. Let Pa and Pb denote the distribution of a single trajectory x1, a 1, . . . , x H under (f, π a) and (f, π b). Consider reward as 
+
+ra 
+
+> 1
+
+(x1, u 1) = u1, r ah(xh, u h) = xh, h ≥ 2
+
+rb
+
+> 1
+
+(x1, u 1) = 1 − u1, r ah(xh, u h) = 1 − xh, h ≥ 2.
+
+Notice that under different combinations of reward and policy, denote ˆθ(Sqn) = ∫ 2 
+
+> −1
+
+ud ˆπ1(u)( Sqn), it has 
+
+Jra (πa) − Jra (ˆ π) = ( 12 + ∆) H − H ˆθ(Sqn),Jrb (πa) − Jrb (ˆ π) = ( 12 − ∆) H − H[1 − ˆθ(Sqn)] ,
+
+36 Jra (πb) − Jra (ˆ π) = ( 12 − ∆) H − H ˆθ(Sqn),Jrb (πb) − Jrb (ˆ π) = ( 12 + ∆) H − H[1 − ˆθ(Sqn)] .
+
+Notice that we have, 
+
+max 
+
+{
+
+Pa[Jra (πa) − Jra (ˆ π) ≥ ∆H], Pa[Jrb (πa) − Jrb (ˆ π) ≥ ∆H],
+
+Pb[Jrb (πb) − Jrb (ˆ π) ≥ ∆H], Pb[Jra (πb) − Jra (ˆ π) ≥ ∆H]}
+
+≥ max 
+
+{
+
+Pa[( 12 + ∆ )H − ˆθ(Sqn)H ≥ ∆H], Pa[ˆθ(Sqn)H − ( 12 + ∆ )H ≥ ∆H],
+
+Pb[ˆθ(Sqn)H − ( 12 − ∆)H ≥ ∆H], Pb[( 12 − ∆)H − ˆθ(Sqn)H ≥ ∆H]}
+
+≥ 12 max 
+
+{
+
+Pa[∣ ∣( 12 + ∆) − ˆθ(Sqn)∣∣H ≥ ∆H], Pb[∣ ∣ˆθ(Sqn) − ( 12 − ∆) ∣∣H ≥ ∆H]}
+
+= 12 max 
+
+{
+
+Pa[∣ ∣( 12 + ∆) − ˆθ(Sqn)∣∣ ≥ ∆], Pb[∣ ∣ˆθ(Sqn) − ( 12 − ∆) ∣∣ ≥ ∆]}
+
+≥ 14
+
+(
+
+Pa[∣ ∣( 12 + ∆) − ˆθ(Sqn)∣∣ ≥ ∆] + Pb[∣ ∣ˆθ(Sqn) − ( 12 − ∆) ∣∣ ≥ ∆])
+
+.
+
+Now consider the hypothesis test task that distinguishing between πa and πb. The decision rule is accepting 
+
+πa if |ˆθ − ( 12 + ∆) | ≤ ∆ and accepting πb otherwise, then by Bretagnolle-Huber inequality, we have, 
+
+Pa[∣ ∣( 12 +∆) −ˆθ(Sqn)∣∣ ≥ ∆]+Pb[∣ ∣ˆθ(Sqn)−( 12 −∆) ∣∣ ≥ ∆] ≥ Pa[rejecting πa]+ Pb[rejecting πb] ≥ 1−DTV (Pa⊗n, Pb⊗n).
+
+And it holds that, 
+
+DTV (Pa⊗n, Pb⊗n) ≤ √1 − (1 − 4∆ 2)n.
+
+Take ∆ = 351√n , then for large n, it holds that DTV (Pa⊗n, Pb⊗n) ≤ 78 . Then it holds that, 
+
+max 
+
+{
+
+Pa[Jra (πa) − Jra (ˆ π) ≥ 3H
+
+5√n
+
+], Pa[Jrb (πa) − Jrb (ˆ π) ≥ 3H
+
+5√n
+
+],
+
+Pb[Jrb (πb) − Jrb (ˆ π) ≥ 3H
+
+5√n
+
+], Pb[Jra (πb) − Jra (ˆ π) ≥ 3H
+
+5√n
+
+]}
+
+≥ 18 .
+
+Finally, we introduce the extra Hε q term. Let q be defined the same way as in the proof of Theorem 8. Let, 
+
+π˜a 
+
+> 1
+
+(u|x) = ( 12 + ∆) δ1+ εq (u) + ( 12 − ∆) δεq (u), π ˆa 
+
+> 1
+
+(u|x) = ( 12 + ∆) δ1−εq (u) + ( 12 − ∆) δ−εq (u)
+
+π˜b
+
+> 1
+
+(u|x) = ( 12 − ∆) δ(1 −εq )(u) + ( 12 + ∆) δ−εq (u), π ˆb
+
+> 1
+
+(u|x) = ( 12 − ∆) δ1+ εq (u) + ( 12 + ∆) δεq (u).
+
+Now notice that, we should have, 
+
+P˜a[Jra (π˜a) − Jra (ˆ π) ≥ 3H
+
+5√n + Hε q ] = Pa[Jra (πa) − Jra (ˆ π) ≥ 3H
+
+5√n ]
+
+Pˆa[Jrb (πˆa) − Jrb (ˆ π) ≥ 3H
+
+5√n + Hε q ] = Pa[Jrb (πa) − Jrb (ˆ π) ≥ 3H
+
+5√n ]
+
+P˜b[Jra (π˜b) − Jra (ˆ π) ≥ 3H
+
+5√n + Hε q ] = Pb[Jra (πa) − Jra (ˆ π) ≥ 3H
+
+5√n ]
+
+37 Pˆb[Jrb (πˆb) − Jrb (ˆ π) ≥ 3H
+
+5√n + Hε q ] = Pb[Jrb (πb) − Jrb (ˆ π) ≥ 3H
+
+5√n ].
+
+This is because ˆπ should be the same under P˜a and Pa. Therefore we have, 
+
+max 
+
+{
+
+Pa[Jra (π˜a) − Jra (ˆ π) ≥ 3H
+
+5√n + 12 Hε q
+
+], Pa[Jrb (πˆa) − Jrb (ˆ π) ≥ 3H
+
+5√n + 12 Hε q
+
+],
+
+Pb[Jrb (π˜b) − Jrb (ˆ π) ≥ 3H
+
+5√n + 12 Hε q
+
+], Pb[Jra (πˆb) − Jra (ˆ π) ≥ 3H
+
+5√n + 12 Hε q
+
+]}
+
+≥ 18 .
+
+38

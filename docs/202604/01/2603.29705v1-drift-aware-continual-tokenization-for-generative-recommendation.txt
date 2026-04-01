@@ -1,0 +1,782 @@
+Title: Drift-Aware Continual Tokenization for Generative Recommendation
+
+URL Source: https://arxiv.org/pdf/2603.29705v1
+
+Published Time: Wed, 01 Apr 2026 01:12:20 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Drift-Aware Continual Tokenization for Generative Recommendation 
+
+# Yuebo Feng 
+
+Fudan University Shanghai, China ybfeng25@m.fudan.edu.cn 
+
+# Jiahao Liu 
+
+Fudan University Shanghai, China jiahaoliu21@m.fudan.edu.cn 
+
+# Mingzhe Han 
+
+Fudan University Shanghai, China mzhan22@m.fudan.edu.cn 
+
+# Dongsheng Li 
+
+Microsoft Research Asia Shanghai, China dongshengli@fudan.edu.cn 
+
+# Hansu Gu 
+
+Independent Seattle, United States hansug@acm.org 
+
+# Peng Zhang 
+
+Fudan University Shanghai, China zhangpeng_@fudan.edu.cn 
+
+# Tun Lu 
+
+Fudan University Shanghai, China lutun@fudan.edu.cn 
+
+# Ning Gu 
+
+Fudan University Shanghai, China ninggu@fudan.edu.cn 
+
+## Abstract 
+
+Generative recommendation commonly adopts a two-stage pipeline in which a learnable tokenizer maps items to discrete token se-quences (i.e. identifiers) and an autoregressive generative recom-mender model (GRM) performs prediction based on these identifiers. Recent tokenizers further incorporate collaborative signals so that items with similar user-behavior patterns receive similar codes, substantially improving recommendation quality. However, real-world environments evolve continuously: new items cause identifier collision and shifts, while new interactions induce collaborative drift in existing items (e.g., changing co-occurrence patterns and popularity). Fully retraining both tokenizer and GRM is often pro-hibitively expensive, yet naively fine-tuning the tokenizer can alter token sequences for the majority of existing items, undermining the GRM’s learned token–embedding alignment. To balance plas-ticity and stability for collaborative tokenizers, we propose DACT ,a Drift- Aware Continual T okenization framework with two stages: (i) tokenizer fine-tuning, augmented with a jointly trained Collabo-rative Drift Identification Module (CDIM) that outputs item-level drift confidence and enables differentiated optimization for drift-ing and stationary items; and (ii) hierarchical code reassignment using a relaxed-to-strict strategy to update token sequences while limiting unnecessary changes. Experiments on three real-world datasets with two representative GRMs show that DACT consis-tently achieves better performance than baselines, demonstrating effective adaptation to collaborative evolution with reduced disrup-tion to prior knowledge. Our implementation is publicly available at https://github.com/HomesAmaranta/DACT for reproducibility.  
+
+> Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference acronym ’XX, Woodstock, NY
+> ©2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+## CCS Concepts 
+
+• Information systems → Personalization ; Collaborative fil-tering .
+
+## Keywords 
+
+Generative Recommendation, Continual Tokenization, Collabora-tive Drift 
+
+ACM Reference Format: 
+
+Yuebo Feng, Jiahao Liu, Mingzhe Han, Dongsheng Li, Hansu Gu, Peng Zhang, Tun Lu, and Ning Gu. 2018. Drift-Aware Continual Tokenization for Generative Recommendation. In Proceedings of Make sure to enter the correct conference title from your rights confirmation email (Conference acronym ’XX). 
+
+ACM, New York, NY, USA, 11 pages. https://doi.org/XXXXXXX.XXXXXXX 
+
+## 1 Introduction 
+
+In recent years, generative recommendation [ 4 , 42 ] has emerged as a new paradigm that reformulates recommendation as a sequence generation task, different from traditional discriminative meth-ods [ 23 – 25 , 47 ]. Most approaches follow a two-stage design: a learn-able tokenizer (e.g., RQ-VAE) maps items into discrete hierarchical token sequences as identifiers [ 8, 35 , 38 ], and then Generative Rec-ommender Model (GRM) performs autoregressive generation and prediction based on these tokens [ 29 ]. In contrast to constructing tokens solely from static content (e.g., titles, descriptions, photos), recent studies incorporate collaborative signals from collaborative filtering (CF) models into the tokenizer [ 41 , 43 –45 , 55 ]. This ensures that items sharing similar collaborative signals in user behaviors are assigned similar token sequences [ 41 ]. This enables the tokenizer to capture both semantic information and collaborative relationship, leading to substantial performance gains in generative recommen-dation. However, in real-world systems, with numerous new items and interactions arriving continuously, two challenges naturally arise: (1) During training, the tokenizer has not observed new items, which leads to identifier collision and shifts [ 27 , 36 , 46 ], conse-quently leading to a decline in the performance of generative rec-ommend model. (2) New interactions reflect underlying changes,                   
+
+> arXiv:2603.29705v1 [cs.IR] 31 Mar 2026 Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Trovato et al. User
+> behaviors
+> Tok.
+> collaborative
+> signals
+> <a_3> <b_ 1>…
+> <a_3> <b_3> …
+> <a_3> <b_5> …
+> <a_9> <b_7> …
+> Push away
+> Pull together
+> Tok.
+> <a_3> <b_ 1>…
+> <a_3> <b_3> …
+> <a_3> <b_5> …
+> <a_9> <b_7> …
+> collaborative
+> signals
+> Drift!
+> (a ) Normal days (b) Near Christmas
+
+Figure 1: An example of item popularity and co-occurrence drift over time. 
+
+including shifts in item popularity and evolving item co-occurrence patterns [ 7, 10 , 15 ]. If tokens are not adaptively updated to reflect such collaborative drift, outdated identifier will fail to represent the latest collaborative characteristics of items, becoming a key bottle-neck for GRM performance [ 6, 20 , 34 ]. As illustrated in Figure 1, in normal days, LED light strings co-occur more frequently with items such as floor lamps and tents, and thus share some codes. When Christmas approaches, LED light strings are widely used to deco-rate Christmas trees, and Christmas trees shift from long-tail items to popular ones, indicating collaborative signal drift. In this case, if the identifiers stay unchanged, it will be hard for GRM to capture the emerging co-occurrence pattern between LED light strings and Christmas trees, causing the Christmas trees to be under-ranked. Although jointly retraining the tokenizer and the generative recommendation model (GRM) can resolve the mismatch caused by collaborative evolution, such a solution is often impractical due to its prohibitive computational cost and training latency [ 50 ]. A more natural alternative is to incrementally fine-tune the tokenizer to absorb new collaborative signals. However, finetuning the tokenizer actually leads to more than 90% of existing items experience changes in their token sequences [ 36 ]. Such drastic alteration invalidates the learned semantic representations from the previous stage, as token embeddings constitute the vast majority of parameters in industrial recommender systems [31]. From the perspective of continual learning, we are facing the well-known dilemma of how to balance learning plasticity (adapting to new knowledge) and memory stability (retaining past knowl-edge) [ 26 , 40 ]. Recent works have begun to investigate this problem within the recommendation domain[ 50 , 51 ]. For GRM, introducing dedicated modules enables the model to capture both long- and short-term user preferences [ 37 , 51 ]; for the learnable tokenizer, incremental updates typically assign tokens to new items while keeping old-item codes fixed for stability based on their static se-mantic information [ 36 , 52 ]. However, increasing works has intro-duced collaborative signals into the tokenizer [ 41 , 43 , 55 ], which makes previous incremental methods inadequate, as they typically operate under the assumption of static item semantics, failing to capture the collaborative drift of existing items induced by evolving user behaviors. Meanwhile, the quality and alignment of item token sequences serve as the fundamental guarantee for GRM’s recom-mendation effectiveness, acting as a prerequisite for performance improvement [19, 20, 28]. Consequently, the core research problem addressed in this paper is: in the incremental learning of collaborative-aware tokenizers, how can we accurately identify the subset of items undergoing significant collaborative semantic drift, and design a mechanism to selectively adapt their codes while strictly constraining stationary items? We term this a drift-aware selective adaptation strategy, which aims to achieve plasticity by adapting to evolving collabo-rative signals, while simultaneously ensuring the stability of the GRM’s token embedding knowledge. To this end, we propose DACT , a Drift-Aware Continual Tok-enization framework for generative recommendation incorporating collaborative signal. DACT captures and adapts to collaborative drift through two stages. In the first stage, we fine-tune the tok-enizer to update the latent representations of each item. To accu-rately identify drifting items, we introduce a Collaborative Drift 
+
+Identification Module (CDIM) which is jointly trained with the tokenizer in an end-to-end manner. By learning drift patterns, this module outputs a drift confidence for each item. Based on this confi-dence, we adopt a differentiated training strategy: for drifting items, we encourage them to align with the latest collaborative signals; for stationary items, we apply additional constraints that anchor the current representations to those learned in the previous stage. In the second stage, we perform hierarchical code reassignment. Specifically, based on the updated latent representations, we employ a relaxed-to-strict hierarchical reassignment strategy to update the token sequence for each item, effectively balancing stability and plasticity. Overall, the key advantage of our framework is its drift-aware selective strategy. By dynamically balancing plasticity and stability, it adapts to collaborative evolution efficiently, while preserving the alignment between item tokens and the GRM’s learned embedding space. Our main contributions are summarized as follows: 
+
+• We study incremental learning for collaboration-aware to-kenizers in generative recommendation, and formulate a drift-aware selective adaptation problem that aims to update drifted items while keeping stationary items stable. 
+
+• We propose DACT , a two-stage framework that combines drift identification and selective token adaptation. In particu-lar, we introduce an end-to-end CDIM to estimate item-level drift and enable differentiated updates for drifting and sta-tionary items. 
+
+• We evaluate DACT on three real-world datasets with two representative GRMs, and report improved performance over strong incremental-update baselines under the same setting. 
+
+## 2 Preliminaries 
+
+We follow recent generative recommendation frameworks with a two-stage pipeline [ 36 , 41 ]: a collaborative tokenizer maps items into discrete tokens, and a generative recommender performs au-toregressive prediction over these token sequences. Drift-Aware Continual Tokenization for Generative Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+## 2.1 Collaboration-aware Tokenizer 
+
+RQ-VAE Tokenizer. We implement the tokenizer as an 𝐿 -level residual-quantization VAE (RQ-VAE). For item 𝑖 , we extract static semantic information such as title and description, and obtain a se-mantic embedding z𝑖 ∈ R𝑑 using a pre-trained content encoder [ 35 ]. We then feed z𝑖 into a learnable item encoder 𝐸 (·) , which produces a latent representation r𝑖 = Encoder (z𝑖 ).RQ-VAE assigns tokens at each level by looking up a codebook 
+
+C𝑙 = {e𝑙 𝑚 }𝑀 𝑚 =1, where 𝑀 is the codebook size and e𝑙 is the code embedding at level 𝑙 . Let v𝑖, 1 = r𝑖 be the initial residual. At level 𝑙 ,we define the probability of choosing token 𝑚 as 
+
+𝑝 (𝑚 | v𝑖,𝑙 ) = exp  −∥ v𝑖,𝑙 − e𝑙 𝑚 ∥2/𝑇 Í𝑀 𝑗 =1 exp 
+
+
+
+−∥ v𝑖,𝑙 − e𝑙 𝑗 ∥2/𝑇 
+
+ , (1) where 𝑇 is the temperature. Then select the token index by 
+
+𝑐 𝑖,𝑙 = arg max  
+
+> 𝑚
+
+𝑝 (𝑚 | v𝑖,𝑙 ), v𝑖,𝑙 +1 = v𝑖,𝑙 − e𝑙 𝑐 𝑖,𝑙 , (2) where 𝑐 𝑖,𝑙 is the 𝑙 -th assigned token for item 𝑖 and v𝑖,𝑙 +1 is the resid-ual vector at the 𝑙 -th level. Thus each item can be mapped to a hierarchical token sequence c𝑖 = [𝑐 𝑖, 1, . . . , 𝑐 𝑖,𝐿 ] and the correspond-ing quantized embedding 
+
+ˆr𝑖 =
+
+> 𝐿
+
+∑︁ 
+
+> 𝑙 =1
+
+e𝑙 𝑐 𝑖,𝑙 . (3) A decoder reconstructs the input representation as ˆz𝑖 = Decoder (ˆr𝑖 ),and we optimize the reconstruction loss 
+
+Lrecon = ∥z𝑖 − ˆz𝑖 ∥2. (4) To update the codebook and stabilize the encoder output, we adopt the standard quantization loss: 
+
+Lrq =
+
+> 𝐿
+
+∑︁ 
+
+> 𝑙 =1
+
+
+
+∥sg [v𝑖,𝑙 ] − e𝑙 𝑐 𝑖,𝑙 ∥2 + 𝜇 ∥v𝑖,𝑙 − sg [e𝑙 𝑐 𝑖,𝑙 ] ∥ 2 
+
+, (5) where sg [·] denotes the stop-gradient operator and 𝜇 is a hyperpa-rameter. 
+
+Collaborative signals injection. To incorporate collaborative sig-nals from a well-trained CF recommender model (e.g., SASRec [ 14 ]and LightGCN [ 9]) into the code sequence, existing collaboration-aware tokenizers [ 18 , 32 , 41 , 48 , 54 , 55 ] commonly introduce an auxiliary collaborative alignment objective during tokenizer train-ing, which acts on the tokenizer encoder and encourages the learned latent representation to capture both content and interaction sig-nals. Formally, given an item 𝑖 and its collaborative embedding h𝑖 ,the collaborative alignment loss can be written as 
+
+Lcf = 𝑓 (z𝑖 , h𝑖 ), (6) where 𝑓 (·) can be instantiated in various ways (e.g., co-occurring item alignment [ 54 ] or regularization [ 41 ]). Following LETTER [ 41 ], we obtain CF embeddings for items and align them with the tok-enizer’s quantized embedding ˆr𝑖 using a collaborative regularization objective: 
+
+Lcf = − log exp (sim (ˆr𝑖 , h𝑖 )) 
+
+Í𝑗 ∈ B exp (sim (ˆr𝑗 , h𝑖 )) , (7) where 𝑗 ranges over items in the mini-batch B and sim (· , ·) denotes cosine similarity. The overall tokenizer objective is 
+
+ LRQ-VAE = Lrecon + L rq ,
+
+LTokenizer = LRQ-VAE + 𝜆 Lcf . (8) where 𝜆 controls the strength of collaborative regularization. 
+
+## 2.2 Generative Recommender Model 
+
+Given a user 𝑢 with interaction history S𝑢 = [𝑖 1, . . . , 𝑖 𝑇 ], the tok-enizer maps each item 𝑖 𝑡 to a discrete token sequence and we con-catenate them as the input token sequence x𝑢 = [𝑥 𝑢, 1, . . . , 𝑥 𝑢, |x𝑢 | ].A generative recommender models next-token prediction via au-toregressive factorization: 
+
+𝑝 (x𝑢 ) = 
+
+> |x𝑢 |
+
+Ö
+
+> 𝑡 =1
+
+𝑝 (𝑥 𝑢,𝑡 | 𝑥 𝑢, <𝑡 ), (9) and the next token is predicted by 
+
+ˆ𝑥 𝑢,𝑡 = arg max   
+
+> 𝑣 ∈ V
+
+𝑝 (𝑣 | 𝑥 𝑢, <𝑡 ), (10) where V is the token vocabulary. During training, we minimize the negative log-likelihood of the ground-truth next tokens: 
+
+LNLL = −∑︁   
+
+> 𝑢 ∈ U |x𝑢 |
+
+∑︁  
+
+> 𝑡 =1
+
+log 𝑝 (𝑥 𝑢,𝑡 | 𝑥 𝑢, <𝑡 ). (11) 
+
+## 2.3 Continuous Learning for GRM 
+
+With new items and new interactions arriving over time , contin-uous learning is essential for GRM. We denote the data stream as 
+
+{D 0, D1, . . . , D𝑝 , . . . }, where 𝑝 denotes the 𝑝 -th time period. We de-note the model parameters at period 𝑝 as 𝑀 𝑝 , where 𝑀 0 represents the parameters of the model pre-trained on D0. When perform-ing incremental training at time period 𝑝 , we initialize the model parameters with 𝑀 𝑝 −1 and update them using the data from D𝑝 .
+
+## 3 Methods 
+
+In our framework, we decompose the item token update procedure into two stages. In the first stage, to obtain latent representations aligned with evolving collaborative signals, we introduce a CDIM trained end-to-end with the tokenizer, as illustrated in Fig. 2. In the second stage, we perform hierarchical code reassignment based on the fine-tuned latent representations from Stage 1. 
+
+## 3.1 Drift-Aware Tokenizer Adaptation 
+
+3.1.1 Collaborative Drift Identification Module. To capture item-level collaborative drift patterns, we introduce the CDIM, which is jointly trained with the tokenizer during fine-tuning. CDIM learns a reusable set of drift patterns and update-policy prototypes. For each item, CDIM predicts a drift confidence score 𝑑 𝑖 . It takes three inputs: (i) the latent representation of item 𝑖 from the previous period 
+
+𝑝 −1, denoted as r𝑝 −1 
+
+> 𝑖
+
+; (ii) its current latent representation during training , denoted as ˜r𝑝 𝑖 ; and (iii) collaborative embedding h𝑝 𝑖 from fine-tuned CF recommender models in period 𝑝 . For newly arrived items, we compute r𝑝 −1 by feeding their semantic embeddings into the previous-stage tokenizer encoder at period 𝑝 − 1. It compares how r𝑝 −1 
+
+> 𝑖
+
+and ˜r𝑝 𝑖 match the new collaborative signal, together with the latent representation change, and then queries the most relevant Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Trovato et al. Encoder                   
+
+> Semantic
+> embeddings
+> Latent
+> representations Drift
+> Confidence
+> selector
+> low
+> high
+> 123456123456123456
+
+- 2 - 4 - 6             
+
+> 246++=3
+> Latent representations
+> from Period p−1
+> Assignment distribution
+> from Period p−1
+
+𝓛 global 
+
+> Quantized
+> embedding
+
+𝓛 cf 
+
+𝓛 anchor   
+
+> CF embeddings
+> Key slots Value slots query
+
+𝓛 𝒓𝒆𝒈 
+
+> Decoder
+
+𝓛 RQ -VAE        
+
+> 𝒅
+> ℎ+
+> ℎ−
+> ℎ−
+> ℎ−
+> ቊ
+> Code
+> embedding
+> Code sequence <a_2> <a_4> <a_6>
+> Name: Floor Lamp
+> Description: Used for lighting
+> and decoration…
+> CDIM
+
+Figure 2: The framework of drift-aware tokenizer adaptation in DACT. DACT introduces CDIM to learn drift patterns and update-policy prototypes, which predicts a drift confidence score to guide the differentiated training strategy. Additionally, a global code-assignment stability constraint is applied to all items. 
+
+drift pattern to make an update decision. During training, CDIM is only used to guide the differentiated update strategy and thus is 
+
+not needed at inference time. 
+
+Pattern memory. We maintain two learnable slots: key slots 
+
+K ∈ R𝑆 ×𝐷 representing drift patterns, and value slots V ∈ R𝑆 ×𝐷 
+
+representing the corresponding update policies, where 𝑆 is the num-ber of slots and 𝐷 is the hidden dimension. At the first continual update period ( 𝑝 = 1), we randomly initialize the pattern memory 
+
+{K, V}. For subsequent periods ( 𝑝 > 1), we warm-start CDIM by loading {K𝑝 −1, V𝑝 −1 } from the previous period 𝑝 − 1, and continue optimizing them end-to-end together with the tokenizer. 
+
+Query construction. We measure the alignment between the previous-period and current-period latent representations and the latest collaborative embedding, and use their difference as change information. 
+
+s𝑝 −1 
+
+> 𝑖
+
+= r𝑝 −1 
+
+> 𝑖
+
+⊙ h𝑝 𝑖 , ˜s𝑝 𝑖 = ˜r𝑝 𝑖 ⊙ h𝑝 𝑖 , Δ˜r𝑝 𝑖 = ˜r𝑝 𝑖 − r𝑝 −1 
+
+> 𝑖
+
+, (12) where ⊙ denotes element-wise product. We then concatenate them to form the query vector: 
+
+q𝑖 = concat 
+
+h
+
+s𝑝 −1 
+
+> 𝑖
+
+, ˜s𝑝 𝑖 , Δ˜r𝑝 𝑖 
+
+i
+
+. (13) To stabilize training, we stop gradients through ˜r𝑝 𝑖 (i.e., detach it from the computation graph). 
+
+Pattern matching and confidence prediction. We compute at-tention weights over key slots: 
+
+𝜶 𝑖 = Softmax 
+
+ q𝑖 K⊤
+
+𝜏 
+
+
+
+, (14) where 𝜏 is a temperature. We aggregate value slots and map the result to a drift confidence: 
+
+𝑑 𝑖 = 𝜎 (𝑀𝐿𝑃 (𝜶 𝑖 V)) , (15) where 𝜎 (·) is the sigmoid and 𝑑 𝑖 ∈ ( 0, 1) indicates the confidence of triggering a code update for item 𝑖 (higher means more likely drifting, lower means more likely stationary). To prevent a triv-ial shortcut solution with uninformative confidences, we add a lightweight regularizer on the confidence: 
+
+Lreg = 1
+
+|I| ∑︁ 𝑖 ∈ I 
+
+𝑑 2 
+
+> 𝑖
+
+, (16) where I denotes the set of items and |I| is the number of items. 
+
+3.1.2 Differentiated Update Strategy. Based on the drift confidence 
+
+𝑑 𝑖 predicted by CDIM, we apply differentiated update strategy. Alternative gating schemes such as per-item thresholding can be prone to collapsing toward a single side (e.g., selecting almost all or almost no items), especially under indirect supervision. Therefore, We select the top-𝐾 items with the highest confidence as the drifting set I𝑑 , and treat the remaining items as the stationary set I𝑠 :
+
+I𝑑 = arg topK  
+
+> 𝑖 ∈ I
+
+𝑑 𝑖 , I𝑠 = I \ I 𝑑 , (17) where 𝐾 ∈ ( 0, 1) is a ratio hyperparameter that specifies the fraction of items selected as drifting. To enable end-to-end training, we use a straight-through estimator [ 1] for the non-differentiable indexing operation, so that gradients from the downstream losses Ldrift and 
+
+Lstable (Eqs. 18 and 20) can flow back to CDIM. We then apply differentiated objectives to encourage plasticity for drifting items and stability for stationary items. 
+
+Drifting items ( I𝑑 ). For items in I𝑑 , we encourage their latent representations to adapt freely to the latest collaborative signals. Accordingly, we minimize the following objective: 
+
+Ldrift = 1
+
+|I 𝑑 |∑︁ 𝑖 ∈ I 𝑑 
+
+
+
+LRQ-VAE (𝑖 ) + 𝜆 Lcf (𝑖 )
+
+
+
+. (18) Drift-Aware Continual Tokenization for Generative Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Stationary items ( I𝑠 ). For items in I𝑠 , we constrain their latent representations to preserve identifier stability and, in turn, prevent disrupting the GRM’s learned token-embedding alignment. We introduce an anchoring regularizer: 
+
+Lanchor (𝑖 ) = ˜r𝑝 𝑖 − r𝑝 −1
+
+> 𝑖
+> 2
+
+, 𝑖 ∈ I 𝑠 , (19) and define the stationary item objective as 
+
+Lstable = 1
+
+|I 𝑠 |∑︁ 𝑖 ∈ I 𝑠 
+
+
+
+LRQ-VAE (𝑖 ) + 𝛼 Lanchor (𝑖 ) + 𝜆 Lcf (𝑖 )
+
+
+
+, (20) where 𝛼 controls the strength of anchoring. We retain the CF term for stationary items to keep their representations weakly aligned with the current collaborative space, preventing their latent repre-sentations from becoming obsolete. 
+
+3.1.3 Global Code-Assignment Stability Constraint. To preserve identifier stability, we regularize the token-assignment distribution across all items. Specifically, for each item 𝑖 and level 𝑙 , we denote the assignment distribution as the 𝑀 -dimensional probability vector 
+
+p𝑖,𝑙 = 𝑝 (1 | v𝑖,𝑙 ), . . . , 𝑝 (𝑀 | v𝑖,𝑙 ) ∈ R𝑀 , (21) where 𝑝 (𝑚 | v𝑖,𝑙 ) is defined in Eq. 1, with temperature 𝑇 to control the sharpness of the assignment distribution. We focus on the first codebook layer ( 𝑙 = 1), and compute the corresponding distributions at periods 𝑝 −1 and 𝑝 , denoted as p𝑝 −1
+
+> 𝑖, 1
+
+and p𝑝 𝑖, 1, respectively. We penalize their shift by averaging the KL divergence over all items: 
+
+Lglobal = 1
+
+|I| ∑︁ 𝑖 ∈ I 
+
+𝐷 KL 
+
+
+
+p𝑝 −1 
+
+> 𝑖, 1
+
+∥ p𝑝 𝑖, 1
+
+
+
+. (22) We apply Lglobal only to the first layer, since deeper residual layers are more sensitive to quantization noise; moreover, their reassignment is explicitly controlled by our hierarchical strategy in Sec. 3.2. 
+
+3.1.4 Overall Objective. The overall drift-aware tokenizer adapta-tion objective is 
+
+LTokenizer = Ldrift + 𝜃 Lstable + 𝛽 Lglobal + 𝜁 L𝑟𝑒𝑔 , (23) where 𝜃 controls the relative update strength between drifting and stationary items, and 𝛽 controls the strength of the global code-assignment stability constraint. For CDIM, under the straight-through estimator, gradients from 
+
+Ldrift , Lstable , and Lreg jointly shape the confidence scores. Intu-itively, assigning a truly drifting item to the stationary set incurs a stronger optimization tension between the anchoring term and alignment to the latest collaborative signals, which is typically harder to minimize; in contrast, genuinely stationary items tend to exhibit lower collaborative mismatch and can better balance the anchoring constraint. As a result, CDIM is encouraged to assign higher drift confidence to drifting items and lower confidence to stationary ones, leading to a better overall objective. 
+
+## 3.2 Code Reassignment Strategy 
+
+Due to the residual-quantization nature of RQ-VAE, later codebook layers quantize progressively smaller residuals and therefore tend to encode finer-grained information. Meanwhile, to maximally pre-serve the token–embedding alignment learned by the GRM at stage 
+
+Table 1: Statistics of the datasets.                 
+
+> Dataset #Users #Items #Interactions Sparsity Beauty 22,363 12,101 198,502 99.927% Tools 16,638 10,217 134,476 99.921% Toys 19,412 11,924 167,597 99.928%
+
+𝑝 !−!1 , we aim to minimize unnecessary token changes. Accordingly, we adopt a relaxed-to-strict strategy: 
+
+Layer-1: Active Adaptation. For the first layer, we always reassign codes by running inference with the fine-tuned tokenizer at stage 
+
+𝑝 :
+
+𝑐 𝑝 𝑖, 1 ← arg max  
+
+> 𝑘
+
+𝑝 
+
+
+
+𝑘 | v𝑝 𝑖, 1
+
+
+
+, (24) where v𝑝 𝑖, 1 = r𝑝 𝑖 . This is because the first-layer token captures the dominant semantic cluster. Any change here indicates a significant collaborative drift that must be reflected immediately. 
+
+Deeper-layers: Conditional Stability. For deeper layers ( 𝑙 ≥ 2), we apply a conditional update rule. We trigger reassignment if and only if the first-layer code changes ( 𝑐 𝑝 𝑖, 1 ≠ 𝑐 𝑝 −1 
+
+> 𝑖, 1
+
+). Otherwise, we force the subsequent tokens to remain unchanged: 𝑐 𝑝 𝑖,𝑙 ← 𝑐 𝑝 −1 
+
+> 𝑖,𝑙
+
+. This design filters out minor fluctuations in the latent space, thereby stabilizing the majority of identifiers. After reassignment, we obtain the updated token sequences for each item in period 𝑝 . We then fine-tune the GRM for period 𝑝 on the evolving interaction data using these updated tokens as item identifiers, by minimizing the next-token prediction loss in Eq. 11, which balances stability and plasticity. 
+
+## 4 Experiment 
+
+In this section, we conduct extensive experiments on three real-world datasets with two representative GRMs to answer the follow-ing research questions: RQ1: How does DACT perform compared with different baselines? RQ2: How do the key components of DACT affect performance? RQ3: How sensitive is DACT to dif-ferent hyperparameter settings? RQ4: Compared with standard continuous learning methods, how efficient is DACT in terms of training speed? 
+
+## 4.1 Experimental Settings 
+
+4.1.1 Datasets. We use three real-world datasets spanning dif-ferent domains: Beauty , Tools , and Toys from Amazon. Beauty contains user interactions with a large number of beauty prod-ucts; Toys covers diverse toys and game items; and Tools records user behaviors on hardware tools and home improvement equip-ment. Following prior work [ 29 , 36 ], we preprocess the data by filtering out users and items with fewer than 5 interactions. We sort interactions chronologically and obtain period-wise datasets 
+
+{D 0, . . . , D4 }. We refer to these periods as 𝑃 0, . . . , 𝑃 4, where D0
+
+(period 𝑃 0) contains the first 60% interactions for pre-training and 
+
+D1, . . . , D4 (periods 𝑃 1–𝑃 4) equally partition the remaining 40% in-teractions for continual updates [ 37 ]. We construct user sequences for training and evaluation using a sliding-window strategy [ 51 ], Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Trovato et al. 
+
+Table 2: Overall performance of baselines and DACT on TIGER. The best results are highlighted in bold, and the second-best results are underlined . "Tok." is the abbreviation for the tokenizer, while " ×", "FT", "RT" refer to "Frozen", "Fine-tuning" and "Retraining" respectively. Dataset Method Period 1 Period 2 Period 3 Period 4                                                                                                                                                                                                                                                                                                                                                                                 
+
+> Tok. GRM H@5 H@10 N@5 N@10 H@5 H@10 N@5 N@10 H@5 H@10 N@5 N@10 H@5 H@10 N@5 N@10 Beauty
+> ××0.0279 0.0443 0.0151 0.0192 0.0207 0.0341 0.0105 0.0139 0.0172 0.0268 0.0086 0.0111 0.0147 0.0223 0.0070 0.0089 FT ×0.0065 0.0104 0.0035 0.0045 0.0049 0.0106 0.0020 0.0034 0.0026 0.0044 0.0011 0.0016 0.0041 0.0092 0.0019 0.0031
+> ×FT 0.0274 0.0469 0.0162 0.0226 0.0211 0.0407 0.0128 0.0191 0.0293 0.0524 0.0185 0.0259 0.0336 0.0514 0.0207 0.0265 FT FT 0.0270 0.0483 0.0169 0.0237 0.0218 0.0422 0.0129 0.0194 0.0328 0.0547 0.0200 0.0270 0.0316 0.0575 0.0205 0.0288 FT RT 0.0253 0.0401 0.0156 0.0203 0.0208 0.0378 0.0125 0.0180 0.0392 0.0628 0.0245 0.0321 0.0321 0.0534 0.0198 0.0267 Reformer 0.0285 0.0483 0.0171 0.0235 0.0246 0.0438 0.0153 0.0214 0.0328 0.0544 0.0212 0.0281 0.0285 0.0515 0.0189 0.0263 DACT 0.0299 0.0531 0.0191 0.0266 0.0267 0.0465 0.0167 0.0230 0.0398 0.0605 0.0250 0.0316 0.0368 0.0609 0.0228 0.0305
+> Tools
+> ××0.0201 0.0283 0.0103 0.0123 0.0188 0.0285 0.0102 0.0126 0.0146 0.0227 0.0080 0.0101 0.0128 0.0191 0.0069 0.0084 FT ×0.0045 0.0067 0.0019 0.0025 0.0017 0.0054 0.0007 0.0017 0.0025 0.0050 0.0013 0.0019 0.0021 0.0034 0.0011 0.0014
+> ×FT 0.0175 0.0330 0.0113 0.0163 0.0224 0.0312 0.0132 0.0160 0.0246 0.0322 0.0162 0.0187 0.0178 0.0310 0.0110 0.0152 FT FT 0.0192 0.0347 0.0114 0.0164 0.0196 0.0315 0.0123 0.0162 0.0214 0.0372 0.0138 0.0188 0.0205 0.0317 0.0130 0.0166 FT RT 0.0134 0.0231 0.0082 0.0113 0.0174 0.0291 0.0117 0.0155 0.0158 0.0230 0.0101 0.0125 0.0209 0.0312 0.0128 0.0161 Reformer 0.0231 0.0360 0.0143 0.0184 0.0213 0.0317 0.0141 0.0175 0.0234 0.0354 0.0146 0.0186 0.0205 0.0314 0.0124 0.0158 DACT 0.0239 0.0414 0.01453 0.0201 0.0233 0.0355 0.0149 0.0187 0.0255 0.0380 0.0164 0.0204 0.0246 0.0374 0.0151 0.0192
+> Toys
+> ××0.0184 0.0303 0.0101 0.0132 0.0154 0.0229 0.0083 0.0102 0.0185 0.0278 0.0096 0.0119 0.0132 0.0250 0.0070 0.0010 FT ×0.0059 0.0135 0.0025 0.0044 0.0048 0.0089 0.0025 0.0035 0.0055 0.0116 0.0024 0.0040 0.0075 0.0135 0.0029 0.0045
+> ×FT 0.0159 0.0260 0.0103 0.0136 0.0152 0.0272 0.0092 0.0130 0.0282 0.0398 0.0176 0.0214 0.0235 0.0398 0.0154 0.0206 FT FT 0.0176 0.0305 0.0117 0.0159 0.0192 0.0326 0.0116 0.0159 0.0284 0.0456 0.0185 0.0240 0.0262 0.0430 0.0169 0.0223 FT RT 0.0176 0.0329 0.0120 0.0169 0.0159 0.0252 0.0100 0.0130 0.0196 0.0311 0.0116 0.0153 0.0248 0.0389 0.0160 0.0205 Reformer 0.0188 0.0301 0.0127 0.0163 0.0176 0.0266 0.0110 0.0139 0.0240 0.0382 0.0154 0.0200 0.0232 0.0373 0.0156 0.0201 DACT 0.0208 0.0353 0.0140 0.0186 0.0200 0.0318 0.0117 0.0155 0.0309 0.0523 0.0197 0.0267 0.0269 0.0455 0.0179 0.0239
+
+and split the data into training/validation/test sets using the leave-one-out protocol. The statistics of users, items, and sparsity are reported in Table 1. 
+
+4.1.2 Backbones and Baseline. We deploy DACT on two represen-tative generative recommendation backbones. For TIGER [ 35 ], fol-lowing prior work, we adopt a T5-based encoder–decoder architec-ture as the GRM and fine-tune it in a standard way. For LCRec [ 53 ],we fine-tune a decoder-only LLM initialized from Qwen2.5-1.5B-Instruct following [ 36 ], using LoRA for parameter-efficient training; in each period, we load the LoRA weights from the previous period for continual updates. During incremental learning, the tokenizer and the GRM can be either continuously fine-tuned or kept frozen, leading to fol-lowing baselines: (1) Both frozen , where the tokenizer and the GRM are fixed; (2) Fine-tuning tokenizer while GRM is frozen; (3) Fine-tuning GRM while GRM is incrementally updated; (4) 
+
+Both fine-tuning ; (5) Reformer [ 36 ], which applies the tokenizer-side incremental strategy to allocate identifiers for newly arrived items. In addition, for TIGER , we further compare: (6) Fine-tuning tokenizer and retraining GRM ; For LCRec , since it is trained with LoRA in a continual manner, full retraining is prohibitively expensive; instead, we compare two LoRA-based continual recom-mendation baselines: (7) LSAT , which retrains a LoRA module to capture short-term preferences while cumulatively updating an-other LoRA module for long-term preferences; and (8) PESO , which adds a proximal regularizer on LoRA updates to balance stability and plasticity. For fine-tuning, at period 𝑝 , each model is initialized from the checkpoint trained on D𝑝 −1 and is trained only on data from D𝑝 ;for retraining, the model is initialized from scratch and trained on all data accumulated up to period 𝑝 , i.e., Ð𝑝 𝑡 =0 D𝑡 . Similarly, the latest collaborative signals are obtained from a CF model fine-tuned on D𝑝 .
+
+4.1.3 Implementation Details. For the tokenizer in the initial stage, we use an RQ-VAE with a 3-layer codebook with 256 code embed-dings of 32 dimensions in each layer, and train it with AdamW for 20K steps. Following prior works [ 35 , 41 ], we set learning rate as 1e-3, 𝜇 as 0.25 and 𝜆 as 0.02. For the continuous stage of DACT, we train for 5,000 steps with a learning rate of 1e-4 and 𝜁 as 0.001, 𝑆 
+
+as 32, 𝐷 as 64, and search 𝛼 in a range of {0.5, 1.0, 2.0, 5.0}, 𝜃 in a range of {0.001, 0.1, 0.5, 1.0}, 𝛽 in a range of {0.5, 1.0, 5, 10}, 𝐾 in a range of{0.1, 0.3, 0.7, 0.9}. 
+
+4.1.4 Evaluation Metrics. We evaluate recommendation perfor-mance using two widely adopted HR@k (H@k) and NDCG@k (N@k) [ 29 ]. Following prior work [ 35 , 36 , 41 ], we set 𝑘 = 5 and 10. 
+
+## 4.2 Overall Performance(RQ1) 
+
+4.2.1 Performance on TIGER. The comparison between our method and the baselines on the TIGER backbone is reported in Table 2, from which we observe that: 
+
+• Freezing both the tokenizer and GRM leads to consistent degra-dation from Period 1 to Period 4, confirming continual preference evolution. Fine-tuning only the tokenizer can even cause sharp drops, as naive updates may trigger widespread token reassign-ment and break identifier consistency, undermining the GRM’s learned token–embedding alignment. 
+
+• Incrementally updating both the tokenizer and GRM generally outperforms updating only the GRM, since the tokenizer must reflect newly introduced collaborative signals (e.g., evolving pop-ularity and co-occurrence). With a fixed tokenizer, the GRM is trained on stale token sequences that no longer match current item semantics. 
+
+• Reformer improves over a frozen tokenizer by adapting codes for newly arrived items. It can be competitive in early periods by keeping old-item codes fixed and preserving token–embedding Drift-Aware Continual Tokenization for Generative Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Table 3: Overall performance of baselines and DACT on LC-Rec. Dataset Method Period 1 Period 2 Period 3 Period 4 
+
+Tok. GRM H@5 H@10 N@5 N@10 H@5 H@10 N@5 N@10 H@5 H@10 N@5 N@10 H@5 H@10 N@5 N@10 Beauty 
+
+× × 0.0136 0.0237 0.0080 0.0112 0.0096 0.0186 0.0055 0.0084 0.0049 0.0129 0.0027 0.0053 0.0079 0.0141 0.0050 0.0069 FT × 0.0042 0.0064 0.0022 0.0028 0.0038 0.0069 0.0022 0.0032 0.0011 0.0023 0.0006 0.0010 0.0021 0.0036 0.0011 0.0016 
+
+× FT 0.0228 0.0394 0.0134 0.0188 0.0100 0.0198 0.0058 0.0089 0.0136 0.0257 0.0073 0.0111 0.0183 0.0334 0.0109 0.0157 FT FT 0.0229 0.0420 0.0139 0.0200 0.0215 0.0431 0.0125 0.0194 0.0245 0.0486 0.0148 0.0225 0.0319 0.0545 0.0194 0.0267 LSAT 0.0177 0.0294 0.0109 0.0147 0.0106 0.0198 0.0065 0.0102 0.0106 0.0219 0.0065 0.00102 0.0172 0.0314 0.0110 0.0155 PESO 0.0211 0.0347 0.0128 0.0171 0.0183 0.0351 0.0110 0.0163 0.0109 0.0256 0.0063 0.0110 0.0214 0.0362 0.0125 0.0172 Reformer 0.0215 0.0428 0.0119 0.0187 0.0100 0.0257 0.0047 0.0096 0.0202 0.0389 0.0111 0.0170 0.0272 0.0455 0.0166 0.0224 DACT 0.0262 0.0477 0.0157 0.0225 0.0239 0.0440 0.0144 0.0209 0.0270 0.0546 0.0165 0.0253 0.0300 0.0576 0.0189 0.0279 
+
+Tools 
+
+× × 0.0125 0.0207 0.0082 0.0108 0.0112 0.0203 0.0074 0.0103 0.0095 0.0169 0.0059 0.0083 0.0109 0.0173 0.0068 0.0089 FT × 0.0038 0.0062 0.0024 0.0031 0.0033 0.0058 0.0021 0.0029 0.0024 0.0042 0.0015 0.0020 0.0027 0.0046 0.0017 0.0023 
+
+× FT 0.0157 0.0269 0.0102 0.0138 0.0147 0.0246 0.0093 0.0124 0.0110 0.0194 0.0061 0.0088 0.0050 0.0123 0.0028 0.0052 FT FT 0.0214 0.0310 0.0134 0.0165 0.0162 0.0276 0.0100 0.0136 0.0218 0.0333 0.0146 0.0183 0.0214 0.0360 0.0134 0.0181 LSAT 0.0153 0.0259 0.0088 0.0123 0.0146 0.0237 0.0083 0.0113 0.0121 0.0189 0.0098 0.0125 0.0157 0.0264 0.0101 0.0135 PESO 0.0183 0.0285 0.0116 0.0149 0.0162 0.0244 0.0103 0.0130 0.0097 0.0193 0.0059 0.0089 0.0160 0.0287 0.0100 0.0140 Reformer 0.0164 0.0300 0.0102 0.0146 0.0114 0.0205 0.0072 0.0101 0.0121 0.0223 0.0067 0.0100 0.0130 0.0275 0.0070 0.0117 DACT 0.0226 0.0364 0.0152 0.0196 0.0181 0.0325 0.0109 0.0155 0.0209 0.0372 0.0136 0.0188 0.0246 0.0355 0.0147 0.0181 
+
+alignment, but falls behind over time as fixed identifiers fail to track collaborative drift of existing items. 
+
+• DACT consistently performs best by jointly handling (i) code assignment for new items and (ii) selective code updates for drift-ing items, while constraining stationary identifiers to preserve token–embedding alignment and avoid disruptive token shifts. In some periods, fine-tuning tokenizer and retraining GRM can be stronger, likely because that period requires longer-term pref-erence consolidation that benefits from retraining the GRM on accumulated data. 
+
+4.2.2 Performance on LC-Rec. The overall performance compari-son on the LCRec backbone is reported in Table 3. Compared with the TIGER results, we have the following observations: 
+
+• Consistent with TIGER, on the Qwen2.5-1.5B-Instruct-based LC-Rec backbone, freezing the GRM causes a steady performance drop from Period 1 to Period 4 on both datasets. 
+
+• Reformer degrades faster on LC-Rec as periods progress. A plau-sible reason is that LLM-based GRMs can overfit to the collabo-rative semantics encoded in token sequences; when signals drift, outdated tokens become misleading priors, leading to larger per-formance drops and underscoring the need to update existing identifiers. 
+
+• LSAT and PESO often outperform fine-tuning the GRM alone, likely due to their emphasis on long/short-term preferences and stability, respectively. However, with a frozen tokenizer (similar to Reformer), identifiers cannot reflect evolving collaborative signals, so their gains diminish as drift accumulates. 
+
+• DACT consistently matches or outperforms both fine-tuning baselines by balancing plasticity and stability: it updates tokens for drifting items to expose current collaborative signals, enabling more effective learning by the LLM-based GRM. 
+
+## 4.3 Ablation Study(RQ2) 
+
+To thoroughly examine the role of each component in DACT, we conduct an ablation study on the Tools dataset with the TIGER 
+
+backbone. Specifically, we take the variant that fine-tunes both the P1 P2 P3 P4  
+
+> 0.025
+> 0.030
+> 0.035
+> 0.040
+> 0.045
+> 0.050 FT Tok+FT GRM
+> DACT w/o CDIM
+> DACT w/o Diff
+> DACT w/o Global
+> DACT w/o Re-assign
+> DACT
+
+(a) H@10 P1 P2 P3 P4  
+
+> 0.016
+> 0.018
+> 0.020
+> 0.022
+> 0.024
+> 0.026
+> FT Tok+FT GRM
+> DACT w/o CDIM
+> DACT w/o Diff
+> DACT w/o Global
+> DACT w/o Re-assign
+> DACT
+
+(b) N@10 
+
+Figure 3: Ablation study on the Tools dataset (TIGER). 
+
+tokenizer and the GRM as our reference setting, and then progres-sively remove key designs in DACT: (1) removing CDIM and ran-domly selecting items for differentiated update strategy (w/o CDIM); (2) removing the differentiated update strategy (w/o Diff); (3) re-moving global code-assignment stability constraint (w/o Global); and (4) removing the code re-assignment strategy (w/o Re-assign). Figure 3 shows that DACT achieves the best performance, vali-dating the necessity of each component. Removing CDIM causes a large drop, indicating that effective differentiated updates require accurate drift identification. Both the differentiated update strat-egy and the global stability constraint improve over the reference, suggesting they are complementary in balancing plasticity and stability. Finally, removing the reassignment strategy degrades per-formance, confirming the benefit of layer-wise differentiated token reassignment. 
+
+## 4.4 Further Analysis 
+
+4.4.1 plasticity: Adaptation to Drift(RQ2). We further investigate whether DACT can perceive the evolution of the collaborative landscape and accordingly fine-tune the tokenizer to adapt to col-laborative signal drift over time. To quantify the capability of the tokenizer in capturing evolving collaborative signals, we measure the alignment between the quantized embeddings from Eq. 3 and the 
+
+CF embeddings of the current period. Specifically, for each period, we compute the cosine similarity between the two representations for every item, and report the average over all items. We consider two tokenizer settings: a frozen tokenizer and our DACT-updated tokenizer. The results are reported in Figure 4. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Trovato et al. P1 P2 P3 P4     
+
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Toys
+> P1 P2 P3 P4
+> Tools
+> Frozen Tok. DACT
+
+Figure 4: Average cosine similarity between quantized em-beddings and CF embeddings on Toys and Tools. (a) Assignment by frozen tokenizer  (b) Assignment by DACT -updated tokenizer 
+
+(a) Frozen Tok. (a) Assignment by frozen tokenizer  (b) Assignment by DACT -updated tokenizer  (b) DACT 
+
+Figure 5: Visualization of Period 1 CF embeddings from Tools, where colors denote first-layer token assignments and stars denote code embeddings. 
+
+For the frozen tokenizer (Frozen Tok.), similarity steadily de-clines over time, reflecting collaborative drift as the initial semantic space becomes increasingly misaligned with evolving collaborative signals. In contrast, DACT maintains relatively stable similarity across periods, indicating better adaptation to the latest collabora-tive patterns. To intuitively understand how DACT handles specific instances of drift, we selected 200 items from Tools and visualized their CF embeddings in Period 1 using t-SNE [ 33 ]. The items are colored according to their assigned tokens in the first layer of the codebook. As shown in Figure 5, we visualize the token assignments in Period 1 using (a) a frozen tokenizer inherited from Period 0 and (b) the tokenizer updated by DACT, and the corresponding code embed-dings are marked by stars. In both subfigures, most items lie close to the code embedding of their assigned token, suggesting that the first-layer tokens generally capture the dominant collaborative sig-nals. However, in Fig. 5(a), the items highlighted by circles deviate from their original code embedding and become closer to other code embeddings, indicating that their collaborative semantics have drifted in Period 1. In contrast, Fig. 5(b) shows that DACT reassigns these drifted items to tokens whose code embeddings better match their current CF embeddings, thereby adapting the identifiers to the latest collaborative signals. 
+
+4.4.2 Stability: Changes of Code Assignment(RQ2). To examine the stability of our method, we measure the average code-assignment H@10 N@10     
+
+> 0.00
+> 0.01
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> Warm
+> H@10 N@10
+> Cold
+> Fine-tuning GRM Both Fine-tuning Reformer DACT
+
+Figure 6: Warm/Cold item performance of TIGER on Toys across different methods. 
+
+change rate of each layer across periods and compare it with naively fine-tuning the tokenizer. Here, Overall indicates whether an item changes its code in at least one layer. The results are reported in Table 4. 
+
+Table 4: Average code change rates across layers for different methods on the Tools dataset. Method Layer 1 Layer 2 Layer 3 Overall 
+
+Fine-tuning 0.7052 0.9696 0.9892 0.9999 DACT ( 𝐾 = 0.1) 0.1331 0.1237 0.1300 0.1331 DACT ( 𝐾 = 0.3) 0.2975 0.2812 0.2918 0.2975 DACT ( 𝐾 = 0.7) 0.4592 0.4435 0.4524 0.4592 DACT ( 𝛽 = 10 ) 0.2200 0.2065 0.2157 0.2200 DACT ( 𝛽 = 5) 0.2975 0.2812 0.2918 0.2975 DACT ( 𝛽 = 0.5) 0.4091 0.3902 0.4012 0.4091 From Table 4, DACT yields substantially lower code change rates than full fine-tuning across all layers, whereas fine-tuning triggers large-scale reassignment and near-complete changes in deeper lay-ers (Layer 2/3). Besides, we find that smaller 𝐾 or larger 𝛽 further reduces change rates, leading to more stable code assignments. 
+
+4.4.3 Investigation on Warm/Cold items(RQ2). To examine DACT’s capability of adapting to newly emerged items, we partition items into warm and cold sets following [ 36 ]. Specifically, items that ap-pear in the training data of the tokenizer at period 𝑃 0 are regarded as warm items, while items that first appear after 𝑃 0 are treated as cold items. We evaluate TIGER on the Toys dataset and report re-sults on period 𝑃 1. Figure 6 compares DACT with three competitive baselines on warm and cold items, respectively. We can find Re-former performs better than both fine-tuning and only fine-tuning tokenizer on cold items, indicating its effectiveness in assigning identifiers to newly emerged items. However, Reformer underper-forms joint tokenizer fine-tuning on warm items, highlighting the necessity of adapting to newly arriving collaborative signals. By considering both newly emerged items and new interactions, our method achieves the best overall performance. 
+
+4.4.4 Hyper-Parameter Analysis(RQ3). We analyze key hyper-parameters of DACT on the Tools dataset with the TIGER backbone. Figure 7 Drift-Aware Continual Tokenization for Generative Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 0.5 1 2 5               
+
+> 0.032
+> 0.034
+> 0.036
+> 0.038
+> 0.040
+> Avg HR@10
+> HR@10
+> NDCG@10
+> 0.01 0.1 0.5 1
+> 0.034
+> 0.035
+> 0.036
+> 0.037
+> 0.038
+> 0.039
+> HR@10
+> NDCG@10
+> 0.1 1510
+> T
+> 0.035
+> 0.036
+> 0.037
+> 0.038
+> 0.039
+> HR@10
+> NDCG@10
+> 0.1 0.5 510
+> 0.034
+> 0.035
+> 0.036
+> 0.037
+> 0.038
+> 0.039
+> HR@10
+> NDCG@10
+> 0.05 0.1 12
+> 0.0355
+> 0.0360
+> 0.0365
+> 0.0370
+> 0.0375
+> 0.0380
+> 0.0385
+> HR@10
+> NDCG@10
+> 0.1 0.3 0.7 0.9
+> K
+> 0.034
+> 0.035
+> 0.036
+> 0.037
+> 0.038
+> 0.039
+> HR@10
+> NDCG@10 0.017
+> 0.018
+> 0.019
+> 0.020
+> 0.021
+> 0.022
+> 0.0175
+> 0.0180
+> 0.0185
+> 0.0190
+> 0.0195
+> 0.0200
+> 0.0180
+> 0.0185
+> 0.0190
+> 0.0195
+> 0.0170
+> 0.0175
+> 0.0180
+> 0.0185
+> 0.0190
+> 0.0195
+> 0.0200
+> 0.01825
+> 0.01850
+> 0.01875
+> 0.01900
+> 0.01925
+> 0.01950
+> 0.017
+> 0.018
+> 0.019
+> 0.020
+> Avg NDCG@10
+
+Figure 7: Performance of DACT based on TIGER over different hyper-parameters on Tools 
+
+reports the average H@10 and N@10 over four periods by varying one parameter at a time. 
+
+• Stable loss weight 𝜃 . Sweeping 𝜃 ∈ [0.01 , 1], the best per-formance is achieved at 𝜃 =0.1. Too small 𝜃 weakens stability constraints, while too large 𝜃 overemphasizes stability and sup-presses necessary adaptation. 
+
+• Temperature 𝑇 in global loss. The global loss regularizes the shift of the assignment distribution across periods, which en-forces not only consistent code selection but also consistent relative distances to all code embeddings. We vary 𝑇 from 0.1 to 10, and a moderate value 𝑇 = 1 performs best. 
+
+• Global loss weight 𝛽 . 𝛽 controls how strongly we constrain the first-layer assignment distribution. Larger 𝛽 yields fewer code changes but weaker adaptation; smaller 𝛽 allows more changes but less stability. Varying 𝛽 from 0.1 to 10, we find 𝛽 = 5 works best. 
+
+• Temperature 𝜏 in CDIM. By varying 𝜏 from 0.05 to 2, we observe that an overly large 𝜏 makes the attention scores in Eq. 14 overly smooth, causing different drift patterns to receive similar weights and thus weakening CDIM’s ability to distinguish drifting items. 
+
+• Top selection 𝐾 in CDIM. 𝐾 controls the split between drifting and stationary items, and thus directly affects the relative con-tributions of Ldrift and Lstable during training. Sweeping 𝐾 
+
+from 0.1 to 0.9, we observe a rise-then-fall trend: extreme values (e.g., 𝐾 =0.1 or 𝐾 =0.9) make almost all items dominated by one group, which largely nullifies the differentiated update strategy and leads to noticeable degradation. In contrast, a moderate ratio 
+
+𝐾 =0.3 achieves the best performance. 
+
+4.4.5 Time Efficiency Analysis(RQ4). We evaluate the training time consumption of the GRM under different updating strategies. Tak-ing the most efficient baseline—Fine-tune GRM without Tokenizer updates—as the unit of measurement ( 1.0), we calculate the relative training time ratios for other methods across different periods, as illustrated in Figure 8. The results demonstrate that our proposed DACT consistently achieves superior efficiency compared to strate-gies that involve joint Fine-tuning of both the Tokenizer and the GRM. Meanwhile, retraining the GRM incurs substantially higher time cost than fine-tuning, and is therefore typically impractical in real-world settings. 
+
+## 5 Related Work 5.1 Generative Recommendation 
+
+Generative recommendation formulates recommendation as se-quence generation [ 11 , 16 , 39 , 42 ]. Early work such as P5 leverages P1 P2 P3 P4 
+
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> FT Tok.+RT GRM
+> FT Tok.+FT GRM
+> DACT
+
+(a) Toys P1 P2 P3 P4  
+
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> FT Tok.+RT GRM
+> FT Tok.+FT GRM
+> DACT
+
+(b) Tools 
+
+Figure 8: Time consumption ratio of different continual learn-ing methods on TIGER, normalized by the time of only fine-tuning GRM, across two datasets. 
+
+LLMs to unify multiple tasks [ 5 ], while TIGER [ 35 ] and LETTER [ 41 ]introduce learnable codebooks (e.g., RQ-VAE) to map items into short token sequences, alleviating long textual identifiers and large ID vocabularies [ 12 ]. Beyond compression, recent methods [ 41 , 43 –45 , 48 , 55 ] incorporate collaborative signals via co-occurrence, reg-ularization, or contrastive objectives, yielding substantial gains. In real systems, however, interactions evolve continuously, call-ing for incremental learning [ 2 , 49 ]. Reformer [ 36 ] assigns codes to newly arrived items and PESO [ 51 ] explores parameter-efficient updates, but they typically assume the collaborative semantics of previously tokenized items are static, overlooking drift from popu-larity shifts, seasonality, and other temporal effects. When an old item’s interaction pattern changes, keeping its code fixed can cre-ate semantic conflicts in the token space. We explicitly study this issue and propose a drift-aware incremental codebook adaptation mechanism. 
+
+## 5.2 Continuous Learning 
+
+In practice, interactions arrive continuously and new items emerge, making incremental training indispensable under limited compu-tation and latency budgets [ 3, 13 , 22 , 30 ]. A core challenge is the stability–plasticity trade-off [ 21 , 40 ]: retaining prior knowledge while adapting to new data. Although incremental learning has been widely studied in recommender systems, generative recom-mendation introduces additional difficulty. Many GRMs adopt a decoupled tokenizer–recommender architecture, yet couple them through learned codes: stability requires existing token embeddings to remain valid, while plasticity demands timely adaptation to drift from evolving interactions. Recent methods explore efficient updates, e.g., LSAT (dual LoRA for long/short-term interests) [ 37 ], PESO (constraint-based reten-tion) [ 51 ], and Reformer (incremental coding for new items) [ 36 ]. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Trovato et al. 
+
+However, they largely overlook code updates for existing items under collaborative drift. In contrast, we selectively update codes for drifting items while constraining stationary ones, improving both effectiveness and efficiency. 
+
+## 6 Conclusion 
+
+In this work, we address collaborative drift in generative recommen-dation with DACT, a framework that continually updates tokenizers while preserving previously learned token–embedding alignments. The key idea is to separate “what should change” from “what should stay stable” when item representations evolve over time. To this end, DACT combines (i) a Collaborative Drift Identification Module (CDIM) that detects drifting versus stationary items and applies differentiated fine-tuning to avoid over-updating stable regions, and (ii) a hierarchical code reassignment strategy that constrains remapping to only the necessary subset of tokens, thereby reducing disruptive code switches and maintaining semantic consistency across stages. As a result, DACT improves both adaptation to new interactions and retention of prior knowledge, offering a practical continual tokenization solution for generative recommendation. Extensive experiments on three datasets and multiple evaluation settings demonstrate that DACT consistently outperforms strong baselines, validating its effectiveness under collaborative drift. For future work, promising directions include the following. First, building on CF-only tokenization schemes [ 17 ], it is interesting to explore alternative continual learning strategies under decoupled collaborative signals. Second, for large-scale item corpora, it re-mains to be studied whether hierarchical reassignment rules should vary across codebook layers and scales. 
+
+## References 
+
+[1] Yoshua Bengio, Nicholas Léonard, and Aaron Courville. Estimating or propa-gating gradients through stochastic neurons for conditional computation. arXiv preprint arXiv:1308.3432 , 2013. [2] Luciano Caroprese, Francesco Sergio Pisani, Bruno Miguel Veloso, Matthias Konig, Giuseppe Manco, Holger Hoos, and Joao Gama. Modelling concept drift in dynamic data streams for recommender systems. ACM Transactions on Recom-mender Systems , 3(2):1–28, 2025. [3] Jiangui Chen, Ruqing Zhang, Jiafeng Guo, Maarten de Rijke, Wei Chen, Yixing Fan, and Xueqi Cheng. Continual learning for generative retrieval over dynamic corpora. In Proceedings of the 32nd ACM international conference on information and knowledge management , pages 306–315, 2023. [4] Jiaxin Deng, Shiyao Wang, Kuo Cai, Lejian Ren, Qigen Hu, Weifeng Ding, Qiang Luo, and Guorui Zhou. Onerec: Unifying retrieve and rank with generative recommender and iterative preference alignment. arXiv preprint arXiv:2502.18965 ,2025. [5] Shijie Geng, Shuchang Liu, Zuohui Fu, Yingqiang Ge, and Yongfeng Zhang. Recommendation as language processing (rlp): A unified pretrain, personalized prompt & predict paradigm (p5). In Proceedings of the 16th ACM conference on recommender systems , pages 299–315, 2022. [6] Shengkang Gu, Jiahao Liu, Dongsheng Li, Guangping Zhang, Mingzhe Han, Hansu Gu, Peng Zhang, Ning Gu, Li Shang, and Tun Lu. Llm agent-based shilling attack on recommender systems. In Proceedings of the Nineteenth ACM International Conference on Web Search and Data Mining , pages 163–173, 2026. [7] Mingzhe Han, Dongsheng Li, Jiafeng Xia, Jiahao Liu, Hansu Gu, Peng Zhang, Ning Gu, and Tun Lu. Fedcia: Federated collaborative information aggregation for privacy-preserving recommendation. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval ,pages 1687–1696, 2025. [8] Mingzhe Han, Jiahao Liu, Dongsheng Li, Hansu Gu, Peng Zhang, Ning Gu, and Tun Lu. Feature-indexed federated recommendation with residual-quantized codebooks. arXiv preprint arXiv:2601.18570 , 2026. [9] Xiangnan He, Kuan Deng, Xiang Wang, Yan Li, Yongdong Zhang, and Meng Wang. Lightgcn: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval , pages 639–648, 2020. [10] Balázs Hidasi, Alexandros Karatzoglou, Linas Baltrunas, and Domonkos Tikk. Session-based recommendations with recurrent neural networks. arXiv preprint arXiv:1511.06939 , 2015. [11] Yupeng Hou, Jiacheng Li, Ashley Shin, Jinsung Jeon, Abhishek Santhanam, Wei Shao, Kaveh Hassani, Ning Yao, and Julian McAuley. Generating long semantic ids in parallel for recommendation. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 2 , pages 956–966, 2025. [12] Wenyue Hua, Shuyuan Xu, Yingqiang Ge, and Yongfeng Zhang. How to index item ids for recommendation foundation models. In Proceedings of the Annual International ACM SIGIR Conference on Research and Development in Information Retrieval in the Asia Pacific Region , pages 195–204, 2023. [13] Heyuan Huang, Xingyu Lou, Changwang Zhang, Chaochao Chen, Kuiyao Dong, Feng Lu, Han Lei, Yihao Wang, Wangchunshu Zhou, and Jun Wang. Training-free periodic interest augmentation in incremental recommendation. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 2885–2889, 2025. [14] Wang-Cheng Kang and Julian McAuley. Self-attentive sequential recommenda-tion. In 2018 IEEE international conference on data mining (ICDM) , pages 197–206. IEEE, 2018. [15] Yehuda Koren. Collaborative filtering with temporal dynamics. In Proceedings of the 15th ACM SIGKDD international conference on Knowledge discovery and data mining , pages 447–456, 2009. [16] Yongqi Li, Xinyu Lin, Wenjie Wang, Fuli Feng, Liang Pang, Wenjie Li, Liqiang Nie, Xiangnan He, and Tat-Seng Chua. A survey of generative search and recom-mendation in the era of large language models. arXiv preprint arXiv:2404.16924 ,2024. [17] Xinyu Lin, Haihan Shi, Wenjie Wang, Fuli Feng, Qifan Wang, See-Kiong Ng, and Tat-Seng Chua. Order-agnostic identifier for large language model-based generative recommendation. In Proceedings of the 48th international ACM SIGIR conference on research and development in information retrieval , pages 1923–1933, 2025. [18] Yuzhen Lin, Hongyi Chen, Xuanjing Chen, Shaowen Wang, Ivonne Xu, and Dongming Jiang. Cemg: Collaborative-enhanced multimodal generative recom-mendation. arXiv preprint arXiv:2512.21543 , 2025. [19] Chang Liu, Yimeng Bai, Xiaoyan Zhao, Yang Zhang, Fuli Feng, and Wenge Rong. Discrec: Disentangled semantic-collaborative modeling for generative recom-mendation. arXiv preprint arXiv:2506.15576 , 2025. [20] Enze Liu, Bowen Zheng, Cheng Ling, Lantao Hu, Han Li, and Wayne Xin Zhao. Generative recommender with end-to-end learnable item tokenization. In Proceed-ings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 729–739, 2025. [21] Jiahao Liu, Shengkang Gu, Dongsheng Li, Guangping Zhang, Mingzhe Han, Hansu Gu, Peng Zhang, Tun Lu, Li Shang, and Ning Gu. Agentcf++: Memory-enhanced llm-based agents for popularity-aware cross-domain recommendations. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 2566–2571, 2025. [22] Jiahao Liu, Dongsheng Li, Hansu Gu, Tun Lu, Jiongran Wu, Peng Zhang, Li Shang, and Ning Gu. Recommendation unlearning via matrix correction. arXiv preprint arXiv:2307.15960 , 2023. [23] Jiahao Liu, Dongsheng Li, Hansu Gu, Tun Lu, Peng Zhang, and Ning Gu. Parameter-free dynamic graph embedding for link prediction. Advances in Neural Information Processing Systems , 35:27623–27635, 2022. [24] Jiahao Liu, Dongsheng Li, Hansu Gu, Tun Lu, Peng Zhang, Li Shang, and Ning Gu. Personalized graph signal processing for collaborative filtering. In Proceedings of the ACM web conference 2023 , pages 1264–1272, 2023. [25] Jiahao Liu, Dongsheng Li, Hansu Gu, Tun Lu, Peng Zhang, Li Shang, and Ning Gu. Triple structural information modelling for accurate, explainable and interactive recommendation. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 1086–1095, 2023. [26] Jiahao Liu, Dongsheng Li, Hansu Gu, Peng Zhang, Tun Lu, Li Shang, and Ning Gu. Unbiased collaborative filtering with fair sampling. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 2555–2559, 2025. [27] Jiahao Liu, Hongji Ruan, Weimin Zhang, Ziye Tong, Derick Tang, Zhanpeng Zeng, Qinsong Zeng, Peng Zhang, Tun Lu, and Ning Gu. Distribution-aware end-to-end embedding for streaming numerical features in click-through rate prediction. arXiv preprint arXiv:2602.03223 , 2026. [28] Jiahao Liu, Yiyang Shao, Peng Zhang, Dongsheng Li, Hansu Gu, Chao Chen, Longzhi Du, Tun Lu, and Ning Gu. Filtering discomforting recommendations with large language models. In Proceedings of the ACM on Web Conference 2025 ,pages 3639–3650, 2025. [29] Jiahao Liu, Xueshuo Yan, Dongsheng Li, Guangping Zhang, Hansu Gu, Peng Zhang, Tun Lu, Li Shang, and Ning Gu. Improving llm-powered recommendations with personalized information. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 2560– 2565, 2025. Drift-Aware Continual Tokenization for Generative Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+[30] Sijia Liu, Jiahao Liu, Hansu Gu, Dongsheng Li, Tun Lu, Peng Zhang, and Ning Gu. Autoseqrec: Autoencoder for efficient sequential recommendation. In Pro-ceedings of the 32nd ACM international conference on information and knowledge management , pages 1493–1502, 2023. [31] Siyi Liu, Chen Gao, Yihong Chen, Depeng Jin, and Yong Li. Learnable embedding sizes for recommender systems. arXiv preprint arXiv:2101.07577 , 2021. [32] Xinchen Luo, Jiangxia Cao, Tianyu Sun, Jinkai Yu, Rui Huang, Wei Yuan, Hezheng Lin, Yichen Zheng, Shiyao Wang, Qigen Hu, et al. Qarm: Quantitative alignment multi-modal recommendation at kuaishou. In Proceedings of the 34th ACM International Conference on Information and Knowledge Management , pages 5915– 5922, 2025. [33] Laurens van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. 
+
+Journal of machine learning research , 9(Nov):2579–2605, 2008. [34] Haohao Qu, Wenqi Fan, Zihuai Zhao, and Qing Li. Tokenrec: Learning to tokenize id for llm-based generative recommendations. IEEE Transactions on Knowledge and Data Engineering , 2025. [35] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan Hulikal Keshavan, Trung Vu, Lukasz Heldt, Lichan Hong, Yi Tay, Vinh Tran, Jonah Samost, et al. Recommender systems with generative retrieval. Advances in Neural Information Processing Systems , 36:10299–10315, 2023. [36] Haihan Shi, Xinyu Lin, Wenjie Wang, Wentao Shi, Junwei Pan, Jiang Jie, and Fuli Feng. Incremental learning for llm-based tokenization and recommendation. In Proceedings of the 34th ACM International Conference on Information and Knowledge Management , pages 2643–2652, 2025. [37] Tianhao Shi, Yang Zhang, Zhijian Xu, Chong Chen, Fuli Feng, Xiangnan He, and Qi Tian. Preliminary study on incremental learning for large language model-based recommender systems. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management , pages 4051–4055, 2024. [38] Ziye Tong, Jiahao Liu, Weimin Zhang, Hongji Ruan, Derick Tang, Zhanpeng Zeng, Qinsong Zeng, Peng Zhang, Tun Lu, and Ning Gu. Rq-gmm: Residual quantized gaussian mixture model for multimodal semantic discretization in ctr prediction. arXiv preprint arXiv:2602.12593 , 2026. [39] Tung-Long Vuong, Julien Monteil, Hien Dang, Volodymyr Vaskovych, Trung Le, and Vu Nguyen. On the mechanisms of collaborative learning in vae recom-menders. arXiv preprint arXiv:2511.06781 , 2025. [40] Liyuan Wang, Xingxing Zhang, Hang Su, and Jun Zhu. A comprehensive survey of continual learning: Theory, method and application. IEEE transactions on pattern analysis and machine intelligence , 46(8):5362–5383, 2024. [41] Wenjie Wang, Honghui Bao, Xinyu Lin, Jizhi Zhang, Yongqi Li, Fuli Feng, See-Kiong Ng, and Tat-Seng Chua. Learnable item tokenization for generative recom-mendation. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management , pages 2400–2409, 2024. [42] Wenjie Wang, Xinyu Lin, Fuli Feng, Xiangnan He, and Tat-Seng Chua. Genera-tive recommendation: Towards next-generation recommender paradigm. arXiv preprint arXiv:2304.03516 , 2023. [43] Ye Wang, Jiahao Xun, Minjie Hong, Jieming Zhu, Tao Jin, Wang Lin, Haoyuan Li, Linjun Li, Yan Xia, Zhou Zhao, et al. Eager: Two-stream generative recommender with behavior-semantic collaboration. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pages 3245–3254, 2024. [44] Yidan Wang, Zhaochun Ren, Weiwei Sun, Jiyuan Yang, Zhixiang Liang, Xin Chen, Ruobing Xie, Su Yan, Xu Zhang, Pengjie Ren, et al. Content-based collaborative generation for recommender systems. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management , pages 2420–2430, 2024. [45] Zihan Wang, Jinghao Lin, Xiaocui Yang, Yongkang Liu, Shi Feng, Daling Wang, and Yifei Zhang. Enhancing llm-based recommendation through semantic-aligned collaborative knowledge. http://arxiv.org/abs/2504.10107 , abs/2504.10107, 2025. [46] Jiongran Wu, Jiahao Liu, Dongsheng Li, Guangping Zhang, Mingzhe Han, Hansu Gu, Peng Zhang, Li Shang, Tun Lu, and Ning Gu. Bidirectional knowledge distillation for enhancing sequential recommendation with large language models. 
+
+arXiv preprint arXiv:2505.18120 , 2025. [47] Jiafeng Xia, Dongsheng Li, Hansu Gu, Jiahao Liu, Tun Lu, and Ning Gu. Fire: Fast incremental recommendation with graph signal processing. In Proceedings of the ACM web conference 2022 , pages 2360–2369, 2022. [48] Longtao Xiao, Haozhao Wang, Cheng Wang, Linfei Ji, Yifan Wang, Jieming Zhu, Zhenhua Dong, Rui Zhang, and Ruixuan Li. Unger: Generative recommendation with a unified code via semantic and collaborative integration. ACM Transactions on Information Systems , 44(2):1–31, 2025. [49] Lu Yin YongjiWu, Defu Lian, Mingyang Yin, Neil Zhenqiang Gong, Jingren Zhou, and Hongxia Yang. Rethinking lifelong sequential recommendation with incremental multi-interest attention. arXiv preprint arXiv:2105.14060 , 2021. [50] Hyunsik Yoo, SeongKu Kang, Ruizhong Qiu, Charlie Xu, Fei Wang, and Hang-hang Tong. Embracing plasticity: Balancing stability and plasticity in continual recommender systems. In Proceedings of the 48th International ACM SIGIR con-ference on research and development in Information Retrieval , pages 2092–2101, 2025. [51] Hyunsik Yoo, Ting-Wei Li, SeongKu Kang, Zhining Liu, Charlie Xu, Qilin Qi, and Hanghang Tong. Continual low-rank adapters for llm-based generative recommender systems. arXiv preprint arXiv:2510.25093 , 2025. [52] Guangping Zhang, Peng Zhang, Jiahao Liu, Zhuoheng Li, Dongsheng Li, Hansu Gu, Tun Lu, and Ning Gu. Evalagent: Towards evaluating news recommender systems with llm-based agents. In Proceedings of the 34th ACM International Conference on Information and Knowledge Management , pages 4086–4095, 2025. [53] Bowen Zheng, Yupeng Hou, Hongyu Lu, Yu Chen, Wayne Xin Zhao, Ming Chen, and Ji-Rong Wen. Adapting large language models by integrating collaborative semantics for recommendation. In 2024 IEEE 40th International Conference on Data Engineering (ICDE) , pages 1435–1448. IEEE, 2024. [54] Bowen Zheng, Hongyu Lu, Yu Chen, Wayne Xin Zhao, and Ji-Rong Wen. Univer-sal item tokenization for transferable generative recommendation. arXiv preprint arXiv:2504.04405 , 2025. [55] Guorui Zhou, Jiaxin Deng, Jinghao Zhang, Kuo Cai, Lejian Ren, Qiang Luo, Qianqian Wang, Qigen Hu, Rui Huang, Shiyao Wang, et al. Onerec technical report. arXiv preprint arXiv:2506.13695 , 2025. 
+
+Received 20 February 2007; revised 12 March 2009; accepted 5 June 2009

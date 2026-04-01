@@ -1,0 +1,1546 @@
+Title: GEM: Guided Expectation-Maximization for Behavior-Normalized Candidate Action Selection in Offline RL
+
+URL Source: https://arxiv.org/pdf/2603.23232v1
+
+Published Time: Wed, 25 Mar 2026 01:35:40 GMT
+
+Number of Pages: 45
+
+Markdown Content:
+# GEM: Guided Expectation-Maximization for Behavior-Normalized Candidate Action Selection in Offline RL 
+
+Haoyu Wang 1, Jingcheng Wang 1∗
+
+, Shunyu Wu 1, Xinwei Xiao 11School of Automation and Intelligent Sensing, Shanghai Jiao Tong University, Shanghai, China 
+
+> 1
+
+{create arc, jcwang, shunyuwu, xxw971205 }@sjtu.edu.cn 
+
+Abstract 
+
+Offline reinforcement learning (RL) can fit strong value functions from fixed datasets, yet reliable deployment still hinges on the action-selection interface used to query them. When the dataset induces a branched or multimodal action landscape, unimodal policy extraction can blur competing hypotheses and yield “in-between” actions that are weakly supported by data, making decisions brittle even with a strong critic. We introduce GEM (Guided Expectation–Maximization), an analytical framework that makes action selection both multimodal and explicitly controllable. GEM trains a Gaussian Mixture Model (GMM) actor via critic-guided, advantage-weighted EM-style updates that preserve distinct components while shifting probability mass toward high-value regions, and learns a tractable GMM behavior model to quantify support. During inference, GEM performs candidate-based selection: it generates a parallel candidate set and reranks actions using a conservative ensemble lower-confidence bound together with behavior-normalized support, where the behavior log-likelihood is standardized within each state’s candidate set to yield stable, comparable control across states and candidate budgets. Empirically, GEM is competitive across D4RL benchmarks, and offers a simple inference-time budget knob (candidate count) that trades compute for decision quality without retraining. 
+
+# 1 Introduction 
+
+Offline reinforcement learning (RL) learns from a fixed dataset without further environment interac-tion. A central difficulty is distributional shift: once deployed decisions drift away from the dataset support, value estimates can become unreliable precisely on actions that the data do not substantiate. This failure mode has been extensively analyzed through extrapolation and approximation error, motivating a family of offline RL algorithms that constrain action selection or regularize value learning to avoid out-of-distribution (OOD) queries (Levine et al., 2020; Figueiredo Prudencio et al., 2024; Fujimoto et al., 2019; Kumar et al., 2019; Wu et al., 2019; Kumar et al., 2020; Kidambi et al., 2020; Luo et al., 2025). As a result, modern offline RL can often fit strong critics under fixed data. Deployment, however, is not only a question of how a critic is trained—it is also a question of how that critic is queried. At test time, an agent must map a state to an executable action, and this action-selection interface determines whether decisions remain near the dataset support or are pulled toward OOD regions. The most common interface in continuous control is single-shot execution of a parametric actor (often with behavioral regularization or conservative values) (Fujimoto and Gu, 2021). This interface is simple and efficient, but it hard-codes a single decision rule: it provides no  
+
+> ∗Corresponding author: jcwang@sjtu.edu.cn
+
+1
+
+> arXiv:2603.23232v1 [cs.LG] 24 Mar 2026
+
+principled way to trade additional test-time computation for improved decisions, and it offers no structured mechanism to represent multiple competing action hypotheses. Candidate-based action selection provides a practical alternative interface. Given a state, one generates a set of plausible actions and selects the best one under a scoring rule. The candidate budget becomes a clean deployment knob: it can be increased when compute is available and decreased under latency constraints, without retraining. Candidate selection is not new in offline RL—support-aware methods already generate multiple candidates and choose using a critic (Zhou et al., 2021)—but promoting deployment to an arg max over candidates changes the failure mode in a way that is easy to understate and costly to ignore offline. Naive candidate maximization can systematically amplify OOD risk. Increasing the candidate budget strengthens extreme-value effects: if the critic exhibits local overestimation or uncertainty, the maximum over a larger set is more likely to be attained by a spuriously high-valued action that is weakly supported by the dataset. In other words, the very mechanism that makes candidates attractive as a scalable interface (searching over more hypotheses) can increase off-support querying unless the selection rule explicitly controls both support and uncertainty. This motivates the central question of this paper: how can offline RL provide a candidate-based deployment interface where increasing test-time compute improves decisions rather than exacerbating OOD errors? A second, orthogonal challenge is representational mismatch in continuous actions. Many actor-extraction objectives can be interpreted as advantage-weighted regression toward a target action distribution (Peng et al., 2019; Nair et al., 2021; Kostrikov et al., 2022). When the conditional action landscape is branched or multimodal, restricting the actor to a unimodal family can blur separated hypotheses and yield ‘in-between” actions that are weakly supported by data. This mismatch is not universal, but it becomes consequential in a candidate-based interface: proposal quality determines which hypotheses are even available to be compared, while selection quality determines whether expanding the hypothesis set remains safe. We propose Guided Expectation–Maximization (GEM) , an analytical action-selection framework built around Gaussian mixture models (GMMs) that makes candidate-based deployment controllable. GEM couples (i) a critic-guided, advantage-weighted EM-style training view that preserves distinct mixture components while shifting probability mass toward high-value regions, with (ii) an inference rule that reranks a per-state candidate set using a conservative ensemble lower-confidence bound together with an explicit behavior-support signal. The key design is interface-centric: the support term is behavior-normalized within each state’s candidate set, so a single support weight has a stable meaning across states and candidate budgets. This perspective complements policy-constraint and conservative-value approaches (An et al., 2021) and is structurally different from expressive generative policies (e.g., sequence models and diffusion models) that improve expressivity but may trade away cheap deployment-time likelihood control and incur iterative inference costs (Chen et al., 2021; Wang et al., 2023; Janner et al., 2022; Hansen-Estruch et al., 2023). We select GMMs not as a claim about expressivity ceilings, but as a claim about interfaces: GMMs provide parallelizable candidate proposal, a tractable behavior likelihood for explicit support control, and interpretable components that enable mechanism-level auditing of proposal and selection. Our contributions are: We formulate offline RL deployment as an action-selection interface 
+
+problem: candidate-based selection is a practical compute knob, but naive maximization can amplify OOD errors as candidate budgets scale. We introduce GEM, which trains a multimodal GMM actor via critic-guided, advantage-weighted EM-style updates that preserve mixture components while shifting probability mass toward high-value regions. We design an inference-time scoring rule that jointly controls uncertainty and support by combining a conservative ensemble lower-confidence bound with an explicit behavior-support term that is normalized within each state’s candidate set for stable deployment control. We provide a pure test-time scaling knob via candidate search, enabling 2compute–quality tradeoffs without retraining while keeping both policy and behavior likelihood analytically tractable. 
+
+Roadmap. Section 2 presents preliminaries and motivates candidate-based deployment interfaces in offline RL. Section 3 describes GEM, including GMM actor/behavior modeling and inference-time candidate reranking. Section 4 evaluates GEM with ablations that isolate proposal design, support control, and conservatism. Section 5 discusses limitations and implications for deployment-time interfaces. 
+
+# 2 Preliminaries and Motivation 
+
+2.1 Offline RL deployment as a query interface 
+
+We consider a continuous-action Markov decision process with states s ∈ S and actions a ∈ A .Offline RL learns from a fixed dataset D = {(s, a, r, s ′)} collected by an unknown behavior policy with conditional density μ(a | s). Deployment is operational: for a given state s, which action a
+
+should be executed? A central offline failure mode is distributional shift at deployment, which can be viewed as a mismatch between what is evaluated and what is supported. When the deployed decision rule selects actions that are weakly supported under μ(· | s), value estimation is forced to extrapolate, and the resulting policy can be brittle even if the critic is accurate on-support. This motivates a 
+
+query-interface view: action selection determines which ( s, a ) pairs are actually queried at test time, and therefore directly controls OOD exposure. 
+
+2.2 Candidate-based selection as a pure deployment compute knob 
+
+Candidate-based selection replaces single-shot execution with a propose–select interface. For each state s, one constructs a candidate set 
+
+C(s) = {a0, a 1, . . . , a N }, (1) where a0 is an anchor action (deterministic proposal) and a1: N are sampled candidates. A scoring rule Score( s, a ) ranks candidates, and the executed action is typically 
+
+a⋆ ∈ arg max  
+
+> a∈C (s)
+
+Score( s, a ).
+
+This interface introduces a clean deployment knob: the candidate budget N scales test-time computation without retraining. 
+
+2.3 Extreme-value amplification as a deployment constraint 
+
+Candidate maximization is not benign in offline RL. Critics can exhibit local overestimation and uncertainty, particularly off-support. As N increases, maximization strengthens selection pressure toward outliers: with more hypotheses, it becomes more likely that at least one candidate attains a spuriously high estimated score, and the selector will systematically choose it. The interface-level implication is a hard constraint: scaling compute by increasing N must not systematically increase OOD querying .32.4 Two complementary controls: explicit support and conservative value 
+
+A scalable selection interface requires two complementary controls: an explicit measure of behavioral support, and a conservative statistic that counters uncertainty-driven outliers. 
+
+Independent support model. We represent support using a separate behavior model μφ(a | s)fit by behavior cloning to approximate the dataset density. Using μφ rather than the learned actor avoids self-certification: the actor cannot be used to certify its own support without collapsing the meaning of “on-support” into what it already proposes. 
+
+Calibration via per-state candidate-set normalization. Raw log μφ(a | s) varies in scale across states and datasets, so an additive term wp log μφ(a | s) is not a stable knob. We instead standardize support within each state’s candidate set: zscore s(x(a)) = x(a) − ¯xs
+
+max( σs, ϵ ) ,
+
+¯xs = 1
+
+|C (s)|
+
+X
+
+> a′∈C (s)
+
+x(a′),σs =
+
+vuut 1
+
+|C (s)|
+
+X
+
+> a′∈C (s)
+
+ x(a′) − ¯xs
+
+2,x(a) = log μφ(a | s).
+
+(2) so that wp admits a consistent interpretation: it trades conservative value against relative support measured in candidate-set standard deviations .
+
+Conservative value via ensembles. Support control alone does not eliminate all failures because uncertainty can persist even on-support under function approximation. Given an ensemble 
+
+{Qi(s, a )}Mi=1 , define LCB λ(s, a ) = ¯Q(s, a ) − λ Std  Qi(s, a ), (3) which targets overestimation and uncertainty-driven outliers. This term complements support: μφ
+
+controls dataset density, while LCB λ controls estimator risk. Score( s, a ) = LCB λ(s, a ) + wp · zscore s
+
+  log μφ(a | s). (4) 
+
+2.5 Analytical multimodality and an audit via NLL gap 
+
+Candidate selection can only compare proposed hypotheses. When the conditional action landscape is branched or multimodal, restricting the proposal family to unimodal forms can blur separated hypotheses into weakly supported “in-between” actions. This motivates analytical multimodality in the proposal family, together with an explicit diagnostic that audits whether mixture structure yields tangible benefit. 
+
+Multimodality diagnostic via NLL gap. We compute an NLL-gap diagnostic on dataset actions under a fitted K-component GMM πK (a | s) = PKk=1 wk(s) N a; μk(s), Σk(s). Define NLL gmm = E(s,a )∼D 
+
+h
+
+− log 
+
+> K
+
+X
+
+> k=1
+
+wk(s) N a; μk(s), Σk(s)i
+
+,
+
+4and define the “top-1” proxy by selecting k⋆(s) = arg max k wk(s) and evaluating the corresponding Gaussian NLL: NLL top1 = E(s,a )∼D 
+
+h
+
+− log N a; μk⋆(s)(s), Σk⋆(s)(s)i
+
+.
+
+We report this gap in Appendix A.1 as a dataset-level audit of conditional action multimodality. The discussion above yields three requirements for a scalable offline deployment interface: (i) a proposal mechanism that can represent multiple action hypotheses and generate candidates efficiently; (ii) an explicit, independent support signal that can be calibrated so a single weight has stable meaning across states and candidate budgets; (iii) a conservative selection rule that controls uncertainty and overestimation risk under function approximation. GEM is designed to satisfy all three simultaneously. 
+
+# 3 Method 
+
+3.1 Overview 
+
+GEM is an action-selection interface for querying offline critics under a fixed dataset. Phase I learns (i) an ensemble critic used through Eq. 3, (ii) a K-component GMM actor trained by critic-guided 
+
+EM-style updates, and (iii) an independent GMM behavior density used only for support. Phase II is the inference-time action-selection interface: given a queried state s, it constructs an anchor+ N
+
+candidate set (Eq. 1) and returns the executed action by reranking candidates with the fixed-form conservative-support score in Eq. 4. 
+
+3.2 Phase I: three learned models 
+
+Critic ensemble. We learn an ensemble {Qi}Mi=1 and a value baseline V with standard offline regression. At deployment the ensemble is used only via LCB λ in Eq. 3. 
+
+Actor GMM and guided EM-style update. The actor πθ(a | s) is a diagonal-covariance 
+
+K-component GMM with gating weights wk(s) and component parameters ( μk(s), Σk(s)). For a dataset pair ( s, a ), define the component log-joint 
+
+uk(s, a ) = log wk(s) + log N a; μk(s), Σk(s),γk(s, a ) = softmax k
+
+ uk(s, a ).
+
+We optimize the loose EM-style surrogate ELBO loose (s, a ) = 
+
+> K
+
+X
+
+> k=1
+
+γk(s, a ) uk(s, a ),
+
+optionally treating γ as fixed when taking gradients. Guidance is implemented as a per-sample weight w(s, a ) ∝ exp (βA (s, a )) (clamped for stability), where A(s, a ) is constructed from the learned critic and value baseline; guidance affects only this weighting, while responsibilities remain defined purely by {uk}. We also include a lightweight entropy bonus on the gating distribution to discourage premature collapse. 
+
+Behavior GMM μφ(a | s). We fit an independent K-component GMM behavior density μφ(a | s)by maximum likelihood on dataset actions. It is used only to evaluate log μφ(a | s) for support scoring; the support term never uses the actor density. 53.3 Phase II: candidate construction and selection 
+
+Candidates (anchor + single source). At inference time, for each queried state s, we form the candidate set C(s) in Eq. 1. The anchor is deterministic: k⋆(s) = arg max k wk(s) and a0 = μk⋆(s)(s). The remaining N candidates are sampled from exactly one source (actor or behavior), with no mixing and no fallback. 
+
+Inference-time scoring rule. At inference, for each a ∈ C (s) We score candidates using Eq. 4 and execute the top-ranked action. The inference interface outputs the executed action as the top-scoring candidate under Eq. 4. Optionally, as a variance-reduction output operator, we return the mean of the top-ksmooth actions ranked by Eq. 4 , (default ksmooth = 1). 
+
+3.4 Mechanism statements (interface-level semantics) 
+
+T1 (Unimodal projection ⇒ “in-between” actions). Statement. If the target conditional action distribution is multimodal with separated modes, projecting onto a unimodal Gaussian family can produce a central tendency lying between modes, yielding weakly supported actions. 
+
+Sketch. Reverse-KL / I-projection views align moment structure dominated by the mean; for separated mixtures the mean can fall in a low-density region, motivating multimodal proposals and the NLL-gap audit in Section 2. 
+
+T2 (“Guided” EM-style update shifts mass toward high-advantage data). Statement. 
+
+The actor update is EM-style via soft responsibilities and a responsibility-weighted surrogate, and 
+
+guided because dataset actions are reweighted by a bounded exponential of a critic-derived advantage. 
+
+Sketch. Responsibilities are determined by mixture log-joints; advantage weighting concentrates fitting pressure on higher-value data, while a gating-entropy bonus discourages premature collapse, retaining multi-hypothesis proposals. 
+
+T3 (Candidate-set z-scoring stabilizes wp). Statement. Standardizing log μφ(a | s) within 
+
+C(s) (Eq. 2) makes wp comparable across states and budgets as an exchange rate between conservative value and relative support. Sketch. Z-scoring is invariant to affine rescaling within a state, stabilizing scale and interpretation under heterogeneous likelihood magnitudes and changing |C (s)|.
+
+T4 (LCB counters budget-driven outliers). Statement. Increasing the candidate budget strengthens extreme-value selection under estimator noise; pessimism via Eq. 3 reduces the chance that larger N systematically selects high-uncertainty outliers. Sketch. Maximization over more can-didates increases the probability of spuriously high estimates; LCB penalizes ensemble disagreement, complementing behavior-normalized support in Eq. 4. Training pseudocode. For completeness, we provide Phase I training pseudocode in Appendix A (Algorithm 2). 
+
+# 4 Experiments: Auditing Test-time Inference Interfaces 
+
+4.1 Evaluation protocol and reading guide 
+
+We evaluate on D4RL continuous-control benchmarks and report normalized score (higher is better). Unless stated otherwise, all numbers are the mean over three random seeds after 10 6 gradient updates with no early stopping. At test time, GEM uses the propose–select interface from Section 3: 6Algorithm 1 GEM Inference Interface (Phase II, primary)                                                                     
+
+> Require: Learned critics {Qi}Mi=1 ; behavior density μφ; actor GMM gating wk(s) and component means μk(s).
+> Require: Inference hyperparams: budget N, pessimism λ, support weight wp, smoothing ksmooth ; candidate source
+> src ∈ { π, μ }.1: Input: queried state s.2: Anchor (mode-based deterministic proposal).
+> 3: k⋆←arg max kwk(s); a0←μk⋆(s). 4: Candidate set (anchor + single source, no mixing).
+> 5: Sample a1: N∼src (· | s); C(s)← { a0, a 1, . . . , a N}.6: Conservative value term (budget-robust).
+> 7: for all a∈ C (s)do
+> 8: Compute LCB λ(s, a ) using critic ensemble (Eq. 3). 9: end for
+> 10: Support term (relative, candidate-normalized).
+> 11: for all a∈ C (s)do
+> 12: ℓ(a)←log μφ(a|s). 13: end for
+> 14: ˜ℓ(a)←zscore s(ℓ(a)) (Eq. 2). 15: Fixed-form conservative-support score & selection.
+> 16: Score( s, a )←LCB λ(s, a ) + wp˜ℓ(a) (Eq. 4). 17: Let k←min( ksmooth ,|C (s)|). 18: Return mean of top-kactions ranked by Score( s, ·) (default k= 1).
+
+an anchor plus N sampled candidates are scored by Eq. 4 and the top-ranked action is executed. Crucially, N , λ, and the support-weight schedule wp are test-time inference knobs: we sweep them without retraining, which is the concrete meaning of the abstract claim that GEM trades compute for decision quality without retraining. We additionally report two evaluator-side audits (not training losses). SupportViolationRate 
+
+(Violation ) is the fraction of decision steps where the selected action is low-support under the behavior model after candidate-set standardization, z( log μφ(a⋆ | s)) < −2.0. CollapseDist is the per-step Euclidean distance from the selected action (top-1 under Eq. 4, before smoothing) to the nearest component mean of the behavior GMM. Suite-aggregated plots in the main paper omit error bars because cross-environment score scales differ substantially and can visually swamp the scaling trends; environment-level breakdown plots are provided in Appendix A.3. Reading guide: Section 4.2 anchors standard benchmark performance and specifies the test-time inference sweep used to select default knobs per suite. Section 4.3 motivates N =1024 via candidate-budget scaling and saturation. Section 4.4 measures the compute shape of this knob and contrasts it with sequential-step inference knobs. Sections 4.5–4.6 then fix the defaults and audit mechanism claims (support/pessimism complementarity and calibrated support normalization); the corresponding figures are collected in Appendix A. 
+
+4.2 Benchmark anchoring with full training and inference-time knob selection 
+
+Table 1 anchors end-task credibility under standard reporting while keeping the proposal and support models analytically tractable (GMM actor and GMM behavior density). All entries in this table correspond to full training runs (10 6 gradient updates, no early stopping, three-seed mean); after training, we select deployment knobs by sweeping inference-time parameters on a held-out validation protocol, then report the corresponding test performance. This separation matters operationally: the score function in Eq. 4 contains inference-only controls ( N , λ, and wp), so performance can often be improved by deployment-time tuning without retraining, aligning with the abstract claim. 7Table 1: Unified D4RL benchmark comparison (normalized score, higher is better). Suites: Locomo-tion (HalfCheetah/Hopper/Walker2d), AntMaze, and Maze2D. Task TD3+BC AWAC CQL IQL ReBRAC SAC-N EDAC DT IDQL Diffusion-QL FQL SSAR GEM(OURS)                                                                                                                                                                                                                                                                                                                         
+
+> Locomotion
+> HC-M 48.10 50.02 47.04 48.31 64.04 68.20 67.70 42.20 51.10 51.10 nan 60.00 54.42 HC-MR 44.84 45.13 45.04 44.46 51.18 60.70 62.06 38.91 45.90 47.80 nan 51.70 49.60 HC-ME 90.78 95.00 95.63 94.74 103.80 98.96 104.76 91.55 95.90 96.80 nan 98.50 100.95 H-M 60.30 63.02 59.08 67.53 102.29 40.82 101.70 65.10 65.40 90.50 nan 95.40 100.08 H-MR 64.42 98.88 95.11 97.43 94.98 100.33 99.66 81.77 92.10 101.30 nan 101.50 101.23 H-ME 101.17 101.90 99.26 107.42 109.45 101.31 105.19 110.44 108.60 111.10 nan 106.70 110.33 W-M 82.71 68.52 80.75 80.91 85.82 87.47 93.36 67.63 82.50 87.00 nan 86.40 83.51 W-MR 85.62 80.62 73.09 82.15 84.25 78.99 87.10 59.80 85.10 95.50 nan 94.10 97.02 W-ME 110.03 111.44 109.56 111.72 111.86 114.93 114.75 107.11 112.70 110.10 nan 112.40 109.74 Sum 687.97 714.53 704.56 734.67 807.67 751.71 836.28 664.51 739.30 791.20 nan 806.70 806.88 Avg 76.45 79.39 78.28 81.63 89.74 83.52 92.92 73.84 82.14 87.91 nan 89.63 89.65
+> AntMaze
+> AM-U 70.75 56.75 92.75 77.00 97.75 0.00 0.00 57.00 94.00 93.40 96.00 94.70 83.00 AM-U-D 44.75 54.75 37.25 54.25 83.50 0.00 0.00 51.75 80.20 66.20 89.00 65.10 79.33 AM-M-P 0.25 0.00 65.75 65.75 89.50 0.00 0.00 0.00 84.50 76.60 78.00 59.80 78.33 AM-M-D 0.25 0.00 67.25 73.75 83.50 0.00 0.00 0.00 84.80 78.60 71.00 59.60 82.67 AM-L-P 0.00 0.00 20.75 42.00 52.25 0.00 0.00 0.00 63.50 46.40 84.00 35.50 37.33 AM-L-D 0.00 0.00 20.50 30.25 64.00 0.00 0.00 0.00 67.90 56.60 83.00 26.70 37.00 Sum 116.00 111.50 304.25 343.00 470.50 0.00 0.00 108.75 474.90 417.80 501.00 341.40 397.66 Avg 19.33 18.58 50.71 57.17 78.42 0.00 0.00 18.12 79.15 69.63 83.50 56.90 66.28
+> Maze2D
+> MZ-U 29.41 65.65 -8.90 42.11 106.87 130.59 95.26 18.08 nan nan nan nan 59.03 MZ-M 59.45 84.63 86.11 34.85 105.11 88.61 57.04 31.71 nan nan nan nan 117.61 MZ-L 97.10 215.50 23.75 61.72 78.33 204.76 95.60 35.66 nan nan nan nan 90.16 Sum 185.96 365.78 100.96 138.68 290.31 423.96 247.90 85.45 nan nan nan nan 266.80 Avg 61.99 121.92 33.65 46.23 96.77 141.32 82.64 28.48 nan nan nan nan 88.93
+
+Inference-time sweep used for Table 1. During benchmark evaluation, we sweep the pessimism coefficient λ and the terminal support weight wend 
+
+p while keeping trained networks fixed. We use a cosine schedule for the support weight, wp(t) = wend 
+
+p + 12 (1 − wend 
+
+p ) 1 + cos (πt/T ), so wp starts at 1 and anneals to wend 
+
+p over an episode horizon of length T . The best settings selected by this sweep are: for Locomotion and Maze2D, λ= 1 and wend 
+
+p =0.4; for AntMaze, λ=3.5 and wend 
+
+p =0.2. These suite-specific defaults are then held fixed for all ablations in Sections 4.3–4.6, where each ablation changes exactly one factor at a time. 
+
+What the test-time inference interface adds (anchored to IQL). GEM uses an IQL-style training backbone, so IQL in Table 1 is the closest reference point for isolating what the test-time inference interface buys. On suite averages, GEM improves over IQL by +8 .02 on Locomotion (89.65 vs 81.63), +9 .11 on AntMaze (66.28 vs 57.17), and +42 .70 on Maze2D (88.93 vs 46.23). The largest per-task gains concentrate where candidate selection can exploit multimodal hypotheses instead of collapsing to “in-between” actions, e.g., Hopper-medium (H-M) +32 .55 (100.08 vs 67.53) and Maze2D-medium (MZ-M) +82 .76 (117.61 vs 34.85). The gains are not uniform: Walker2d-medium-expert (W-ME) is slightly below IQL ( −1.98), and AntMaze-large-play (AM-L-P) is below IQL (−4.67), consistent with GEM targeting test-time selection risk rather than long-horizon stitching or credit assignment. Relative to representative generative / sequence-style policies reported in the same table, GEM is competitive on Locomotion (89.65 vs Diffusion-QL 87.91, +1 .74; vs Decision Transformer 73.84, +15 .81) and trails Diffusion-QL on AntMaze (66.28 vs 69.63, −3.35) while remaining far above Decision Transformer (18.12, +48 .16). After anchoring standard return, the remainder of this section tests the paper’s central interface claim: GEM exposes retrain-free test-time inference knobs (candidate budget N and the scoring weights in Eq. 4) and keeps large-N maximization auditable 8and controllable via explicit support and pessimism instead of drifting toward maximizer outliers. 
+
+4.3 Candidate-budget scaling 
+
+Figure 2 evaluates the central interface constraint from Section 2: increasing N strengthens maximization pressure, so a viable deployment interface should improve decision quality without systematically drifting toward weakly supported actions. Across the tested budgets, increasing N
+
+yields consistent gains in suite-mean score on the stable suites (Locomotion and Maze2D), while the two audits remain controlled under GEM. The improvement from small budgets to large budgets is most pronounced up to N =1024, after which additional gains empirically diminish in our sweeps; we therefore use N = 1024 as a principled default that is both a strong setting and a stress point for maximization. Full environment-level scaling plots, which reveal where the suite mean is dominated by a subset of tasks, are provided in Appendix A.3. This scaling study also clarifies what is meant by “trades compute for decision quality without retraining” in practice. Changing N is purely a deployment-time compute knob, and it composes with the test-time inference sweep in Section 4.2: both N and the ( λ, w p) terms in Eq. 4 can be adjusted after training to improve outcomes or reduce risk, and the effect can be audited immediately through Violation and CollapseDist .
+
+4.4 Deployment compute profile: parallel candidates versus iterative inference 
+
+Figure 3 characterizes the practical cost shape of GEM’s deployment knobs and contrasts it with iterative generative inference. Two measured facts matter for the mechanism story. First, for GEM the latency is roughly unchanged as N increases across the measured settings (1 .25–1 .33 ms from 
+
+N =1 to N =2048), while peak allocated memory increases substantially (from 20 .76 MB at N = 1to 80 .83 MB at N =2048; full numbers in Table 3 in Appendix A.7). This indicates that GEM’s scaling largely manifests as a parallel scoring workload that saturates GPU throughput while trading additional memory for a larger candidate tensor, rather than increasing sequential latency. Second, methods with an explicit iterative-step inference knob exhibit a different cost shape: in our harness, IDQL shows a near 10 × latency increase when increasing the step count (2 .04 ms at 
+
+T =10 versus 20 .37 ms at T =100; Table 3 in Appendix A.7). This is the practical diffusion-style inference tax: sequential refinement increases wall-clock latency step-by-step, while GEM expands candidates in parallel and mainly pays in GPU memory rather than time. This contrast reflects a mechanism-level knob difference: GEM scales mainly via parallel batch size (GPU throughput/memory), whereas diffusion-style methods scale via sequential depth (latency). At the same time, we do not claim universality across implementations; we report the complete measured table and encourage treating it as an engineering profile rather than a theoretical guarantee. 
+
+4.5 Stress test at N =1024 : isolating interface controls 
+
+We now fix N = 1024 and ablate interface components to isolate which controls prevent large-N
+
+maximization from selecting unsupported or unreliable actions. We use Violation and Col-lapseDist to decompose deployment risk into two distinguishable signals—support drift and mode deviation—so we can validate that support and pessimism play complementary roles under candidate maximization. Full suite-level ablation delta plots (Score/ Violation /CollapseDist )are in Appendix A.5 (Figure 17). Removing behavior-normalized support ( no pw ) is the clearest maximization failure mode: with many candidates, the selector becomes more likely to pick weak-support outliers, which shows up directly as higher Violation . Removing pessimism ( no lcb ) exposes a different axis: score can 9degrade and CollapseDist can increase even when Violation does not rise as sharply, consistent with uncertainty-driven misranking that can persist on-support under function approximation. These two signatures are precisely why Eq. 4 keeps both terms: support constrains dataset density and mitigates OOD querying, while pessimism reduces budget-driven extreme-value amplification under critic noise. Proposal structure remains first-class because candidate maximization can only choose among proposed hypotheses. Ablations that restrict candidate sources or remove anchoring change the hypothesis set and increase reliance on sampling luck, which can shift both score and audits under large N . This reinforces the proposal/selection decomposition emphasized in Section 3: selection controls cannot recover value that proposals never include, and deterministic anchoring reduces tail-risk from unlucky candidate draws. 
+
+4.6 Support normalization and knob semantics 
+
+This subsection tests whether the support weight behaves as an interpretable deployment knob across states and candidate budgets. The goal is calibration: validate that candidate-set standardization makes wp comparable across states, not to claim that z-score normalization strictly dominates raw likelihood in every environment. The corresponding suite plots are moved to Appendix A.6: normalization-mode deltas are in Figure 18, and the wp sweep frontier is in Figure 19. Changing only the normalization mode tests scale sensitivity. Because raw log μφ(a | s) can vary substantially across states, an unnormalized support term can make wp behave like a dataset- and state-dependent knob. Candidate-set z-scoring removes this affine scale variability within each queried state, making wp
+
+closer to an exchange rate between conservative value and relative support measured in candidate-set standard deviations. The wp frontier plot visualizes this semantics directly: increasing wp pushes the selector toward relatively higher-support candidates within the current candidate set, typically reducing Violation at the cost of some return, without retraining. This is the intended deployment contract: the interface exposes controllable risk-return tradeoffs that remain inspectable under maximization. 
+
+# 5 Discussion: Test-time Inference Interfaces in Offline RL 
+
+Offline RL is often framed as learning under distribution shift, but our results point to an equally decisive factor: the test-time inference interface decides which ( s, a ) pairs the critic is actually queried on. Under candidate maximization, the interface is not an implementation detail—it is part of the algorithm’s contract, governing how arg max amplifies error, uncertainty, and support. 
+
+5.1 What GEM changes at test time 
+
+GEM turns inference into an explicit, tunable interface: it proposes hypotheses in parallel (with a deterministic anchor) and selects using a fixed-form score that couples conservative value (ensemble LCB) with an independent support signal normalized per-state over the candidate set. This yields retrain-free knobs— N , λ, and the wp schedule—that trade compute and risk against return, with effects directly visible in both performance and audits. 
+
+5.2 Mechanistic lessons from the audits 
+
+Candidate maximization creates an extreme-value hazard: as N grows, the chance of selecting a spurious maximizer rises. The ablations isolate two controls with non-overlapping roles: support 10 primarily prevents coverage failures (low-support selections), while pessimism mitigates estimation risk (high-disagreement outliers that can remain problematic even on-support). Reporting Viola-tion and CollapseDist separately therefore serves a purpose: it decomposes failure modes so post-training tuning can target the right risk. A second lesson is knob semantics. Raw log μφ(a | s) has heterogeneous scale across states and tasks; candidate-set standardization makes wp behave closer to a cross-state exchange rate between conservative value and relative support within the current candidate set. This is a calibration claim—stable meaning—not a claim of universal dominance. 
+
+5.3 Compute shape as a deployment consideration 
+
+Compute tradeoffs are resource-shaped. In our harness, scaling N primarily increases memory with little latency change, consistent with parallel scoring; iterative refinement, in contrast, increases sequential latency with steps. These knobs therefore target different deployment regimes, and reporting the cost “shape” makes compute–quality tradeoffs interpretable beyond headline scores. 
+
+5.4 Limits and implications 
+
+The interface view also makes limits concrete. AntMaze often benefits from stitching or waypoint-level planning; we intentionally use a no-stitching protocol to isolate interface effects. Support audits inherit the quality of μφ, and memory grows with N , which can constrain high-dimensional action spaces. Finally, conservative support-aligned selection can cap return when high-reward actions are rare or poorly modeled by μφ, motivating better support modeling and state-dependent budgeting. Two natural directions follow: (i) adaptive inference that allocates N and ( λ, w p) from uncer-tainty/support cues, and (ii) richer proposal families that retain an independent, calibrated support interface. The broader takeaway is simple: deployable offline RL is not just a learned critic and actor—it is the inference interface that queries them, and making that interface controllable and auditable is a direct lever for reliability without retraining. 
+
+# Impact Statement 
+
+Our work aims to improve the reliability of offline reinforcement learning (RL) when the deployed environment differs from the offline data distribution, by better handling multi-modal action distributions and reducing pathological action selection under distribution shift. If successful, such methods could benefit real-world applications where online data collection is costly or risky (e.g., robotics, industrial control), potentially improving data efficiency and reducing the need for unsafe exploration. However, offline RL methods can also amplify harms if deployed in safety-critical settings without sufficient safeguards. In particular, failures under distribution shift may lead to unsafe actions, and performance can be sensitive to the quality, coverage, and biases of the offline dataset. More expressive policies that capture multiple behavioral modes may additionally be misapplied to select actions that appear plausible under the model but are undesirable in practice. These risks are not unique to our approach but are relevant to its intended use. To mitigate potential negative impacts, we emphasize that the proposed method should be used with (i) strong offline evaluation across diverse conditions and stress tests for distribution shift, (ii) conservative deployment practices such as action constraints, safety filters, or human oversight when applicable, and (iii) careful dataset documentation and auditing to understand coverage gaps 11 and bias. We also encourage reporting failure cases and ablations that clarify when the method degrades, to reduce the likelihood of overconfident real-world use. 
+
+# References 
+
+Gaon An, Seungyong Moon, Jang-Hyun Kim, and Hyun Oh Song. Uncertainty-based offline reinforcement learning with diversified q-ensemble. In Proceedings of the 35th International Conference on Neural Information Processing Systems , NIPS ’21, Red Hook, NY, USA, 2021. Curran Associates Inc. ISBN 9781713845393. Lili Chen, Kevin Lu, Aravind Rajeswaran, Kimin Lee, Aditya Grover, Misha Laskin, Pieter Abbeel, Aravind Srinivas, and Igor Mordatch. Decision transformer: Reinforcement learning via sequence modeling. In M. Ranzato, A. Beygelzimer, Y. Dauphin, P.S. Liang, and J. Wortman Vaughan, editors, Advances in Neural Information Processing Systems , volume 34, pages 15084–15097. Curran Associates, Inc., 2021. Rafael Figueiredo Prudencio, Marcos R. O. A. Maximo, and Esther Luna Colombini. A survey on offline reinforcement learning: Taxonomy, review, and open problems. IEEE Transactions on Neural Networks and Learning Systems , 35(8):10237–10257, 2024. doi: 10.1109/TNNLS.2023. 3250269. Scott Fujimoto and Shixiang (Shane) Gu. A minimalist approach to offline reinforcement learning. In M. Ranzato, A. Beygelzimer, Y. Dauphin, P.S. Liang, and J. Wortman Vaughan, editors, 
+
+Advances in Neural Information Processing Systems , volume 34, pages 20132–20145. Curran Associates, Inc., 2021. Scott Fujimoto, David Meger, and Doina Precup. Off-policy deep reinforcement learning without exploration. In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , pages 2052–2062. PMLR, 09–15 Jun 2019. Philippe Hansen-Estruch, Ilya Kostrikov, Michael Janner, Jakub Grudzien Kuba, and Sergey Levine. Idql: Implicit q-learning as an actor-critic method with diffusion policies, 2023. Michael Janner, Yilun Du, Joshua B. Tenenbaum, and Sergey Levine. Planning with diffusion for flexible behavior synthesis. In International Conference on Machine Learning , 2022. Rahul Kidambi, Aravind Rajeswaran, Praneeth Netrapalli, and Thorsten Joachims. Morel: Model-based offline reinforcement learning. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin, editors, Advances in Neural Information Processing Systems , volume 33, pages 21810–21823. Curran Associates, Inc., 2020. Ilya Kostrikov, Ashvin Nair, and Sergey Levine. Offline reinforcement learning with implicit q-learning. In International Conference on Learning Representations , 2022. Aviral Kumar, Justin Fu, Matthew Soh, George Tucker, and Sergey Levine. Stabilizing off-policy q-learning via bootstrapping error reduction. In H. Wallach, H. Larochelle, A. Beygelzimer, F. d 'Alch´ e-Buc, E. Fox, and R. Garnett, editors, Advances in Neural Information Processing Systems , volume 32. Curran Associates, Inc., 2019. 12 Aviral Kumar, Aurick Zhou, George Tucker, and Sergey Levine. Conservative q-learning for offline reinforcement learning. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin, editors, Advances in Neural Information Processing Systems , volume 33, pages 1179–1191. Curran Associates, Inc., 2020. Sergey Levine, Aviral Kumar, George Tucker, and Justin Fu. Offline reinforcement learning: Tutorial, review, and perspectives on open problems. arXiv preprint arXiv:2005.01643 , 2020. Qin-Wen Luo, Ming-Kun Xie, Ye-Wen Wang, and Sheng-Jun Huang. Learning to trust Bellman updates: Selective state-adaptive regularization for offline RL. In Aarti Singh, Maryam Fazel, Daniel Hsu, Simon Lacoste-Julien, Felix Berkenkamp, Tegan Maharaj, Kiri Wagstaff, and Jerry Zhu, editors, Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pages 41450–41467. PMLR, 13–19 Jul 2025. Ashvin Nair, Abhishek Gupta, Murtaza Dalal, and Sergey Levine. Awac: Accelerating online reinforcement learning with offline datasets, 2021. Xue Bin Peng, Aviral Kumar, Grace Zhang, and Sergey Levine. Advantage-weighted regression: Simple and scalable off-policy reinforcement learning, 2019. Zhendong Wang, Jonathan J Hunt, and Mingyuan Zhou. Diffusion policies as an expressive policy class for offline reinforcement learning. In The Eleventh International Conference on Learning Representations , 2023. Yifan Wu, George Tucker, and Ofir Nachum. Behavior regularized offline reinforcement learning, 2019. Wenxuan Zhou, Sujay Bajracharya, and David Held. Plas: Latent action space for offline reinforce-ment learning. In Jens Kober, Fabio Ramos, and Claire Tomlin, editors, Proceedings of the 2020 Conference on Robot Learning , volume 155 of Proceedings of Machine Learning Research , pages 1719–1735. PMLR, 16–18 Nov 2021. 13 Figure 1: GEM mechanism (schematic at a fixed state in a 2-D action space). Training (top row): GEM learns three ingredients that will be combined only at test time: (i) a multimodal actor πθ(a | s) (left; shown as log πθ(a | s)) that preserves multiple plausible action hypotheses, (ii) an independent behavior density μφ(a | s) (middle; shown as log μφ(a | s)) used to quantify dataset support, and (iii) a conservative value statistic LCB λ(s, a ) from a critic ensemble (right). 
+
+Inference (bottom row): given a queried state s, GEM samples N candidates in parallel and adds a deterministic anchor (triangle), scores each candidate using Eq. 4 (conservative value plus behavior-normalized support), and executes the top-ranked action a⋆ (star). The green cluster highlights the small subset of candidates that remain competitive after scoring, illustrating how the interface filters many proposals down to a support-aligned, high-value choice under maximization. 14 Figure 2: Suite-level scaling with candidate budget N (Score on top). We report suite means for normalized score and the two deployment audits as functions of N . Environment-level breakdowns are in Appendix A.3. 15 Figure 3: Deployment compute profile under the shared measurement harness (latency and peak memory) across all logged methods and sweep settings. 16 Figure 4: NLL-gap diagnostic summary. Larger positive gaps indicate stronger mixture benefits over a top-1 unimodal proxy. 
+
+# A Additional Diagnostics and Full Results 
+
+A.1 NLL-gap diagnostic: multimodality is widespread 
+
+We use the NLL-gap diagnostic to audit whether multimodal conditional action structure is present broadly in the offline datasets, rather than being a peculiarity of a few benchmarks. For each environment we compute gap = NLL top1 − NLL gmm , where NLL gmm evaluates the fitted 
+
+K-component GMM likelihood and NLL top1 evaluates only the most-weighted component (top-1 proxy). A positive gap indicates that mixture structure provides a strictly better likelihood fit than any single dominant mode, consistent with multimodal conditional action structure. Across the 18 evaluated D4RL environments, the gap is consistently positive (Table 2), supporting the paper’s motivation that multimodality is a common dataset property that a unimodal projection can blur into weak-support “in-between” actions. 
+
+A.2 Phase I training pseudocode (supporting) A.3 Environment-level breakdowns for candidate-budget scaling 
+
+This appendix provides the detailed scaling plots referenced in Section 4.3. For each suite we provide three separate figures that expand the suite mean into its constituent environments and report Score, Violation , and CollapseDist versus candidate budget N .17 Table 2: Per-environment NLL-gap statistics ( gap = NLL top1 − NLL gmm ; mean ±std). All entries are positive in the provided results, indicating consistent mixture benefits. 
+
+Environment Mean gap ± std Maze2D-umaze 168.29 ±7.71 Maze2D-medium 147.30 ±6.85 Maze2D-large 142.64 ±7.34 Antmaze-umaze-diverse 38.80 ±3.46 Antmaze-umaze 31.53 ±2.83 Antmaze-medium-diverse 23.73 ±2.68 Antmaze-medium-play 22.04 ±2.44 Antmaze-large-diverse 19.02 ±2.46 Antmaze-large-play 15.89 ±2.23 Walker2d-medium 10.83 ±1.52 Walker2d-medium-expert 9.83 ±1.37 Walker2d-expert 8.76 ±1.31 Hopper-medium 8.63 ±1.10 Hopper-medium-expert 8.21 ±1.05 Hopper-expert 7.48 ±1.01 HalfCheetah-medium 6.65 ±0.83 HalfCheetah-medium-expert 6.28 ±0.79 HalfCheetah-expert 5.72 ±0.76 
+
+Algorithm 2 GEM Training (Phase I, supporting) 
+
+Require: Offline dataset D; critics {Qi, Q tgt  
+
+> i
+
+}Mi=1 , value V ; actor GMM πθ ; behavior GMM μφ.
+
+Require: Hyperparams: steps T , discount γ, soft-update ρ, expectile τ ; guidance temp β; gate-entropy weight α.1: Fit behavior density (support-only model). 
+
+2: Train μφ on ( s, a ) ∼ D by MLE: minimize − log μφ(a|s). 3: for t = 1 to T do 
+
+4: Sample ( s, a, r, s ′, d ) ∼ D .5: Update V by expectile regression with adv ← Qtgt (s, a ) − V (s). 6: Update each Qi toward y ← r + γ(1 − d)V (s′); soft-update targets with rate ρ.7: Actor update (guided EM-style): uk (s, a ) = log wk (s) + log Nk (a|s), γk (s, a ) = softmax k (uk (s, a )), ELBO loose (s, a ) = P 
+
+> k
+
+γk (s, a ) uk (s, a ) (optionally stopgrad on γ). 8: Guidance weight w(s, a ) ∝ exp( β adv) (clamp); guidance reweights samples only. 9: Update θ by minimizing E(s,a )∼D [ w(s, a ) · (−ELBO loose (s, a )) ] − α Es∼D [H(w(·| s))]. 10: end for 
+
+11: Output: {Qi} for LCB λ; actor gating/means for anchor+proposals; behavior μφ for support. 
+
+18 Figure 6: Locomotion suite: per-environment candidate-budget scaling for Violation .
+
+Figure 7: Locomotion suite: per-environment candidate-budget scaling for CollapseDist .19 Figure 8: AntMaze suite: per-environment candidate-budget scaling for Score. 
+
+Figure 9: AntMaze suite: per-environment candidate-budget scaling for Violation .20 Figure 10: AntMaze suite: per-environment candidate-budget scaling for CollapseDist .
+
+Figure 11: Maze2D suite: per-environment candidate-budget scaling for Score. 
+
+Figure 12: Maze2D suite: per-environment candidate-budget scaling for Violation .21 Figure 14: Robustness (aggregated) under mass-scaling perturbations on the Locomotion suite. 
+
+Figure 13: Maze2D suite: per-environment candidate-budget scaling for CollapseDist .
+
+A.4 Robustness to dynamics perturbations (MassScale) 
+
+We evaluate deployment-time robustness to dynamics shift by scaling MuJoCo body masses at test time (MassScale; dashed vertical line at 1.0 indicates the nominal setting), with all learned networks fixed and no retraining. We report aggregated normalized score trends for GEM and a behavior cloning (BC) reference; shaded regions indicate variability across tasks within each suite. Caveat (AntMaze): under this MassScale robustness protocol, our AntMaze evaluation collapses to near-zero normalized scores for all methods (including BC), indicating that the perturbation+scoring pipeline is not informative for AntMaze’s sparse-reward goal-reaching; we therefore report the panel for completeness but do not interpret it as algorithmic failure. 22 Figure 15: Robustness (aggregated) under mass-scaling perturbations on Maze2D. 
+
+A.5 Stress-test ablations at N =1024 (suite deltas) 
+
+This appendix collects the full suite-level delta plots referenced in Section 4.5. All variants change exactly one interface factor while holding the remaining test-time inference knobs fixed to the suite defaults reported in Section 4.2. 
+
+A.6 Support normalization and wp knob semantics 
+
+This appendix provides the calibration evidence referenced in Section 4.6: (i) a normalization-mode comparison that changes only the support normalization used inside the inference score, and (ii) a post-training wp sweep that visualizes the intended knob semantics. 
+
+What is being tested. Recall the inference score (Eq. 4): Score( s, a ) = LCB λ(s, a ) + wp · Support( s, a ),
+
+where GEM’s default uses candidate-set standardized support Support (s, a ) = zscore s( log μφ(a | s)) (Eq. 2). The goal here is calibration , i.e., to validate that wp behaves like a state-wise exchange rate between conservative value and relative support within the current candidate set. Importantly, this is not a universality claim that z-score normalization strictly dominates raw likelihood in every environment. 
+
+Normalization-mode delta (z-score vs raw). We compare two inference-time variants that share the same trained networks and all other inference knobs: 
+
+• Mode= zscore (default): Support( s, a ) = zscore s(log μφ(a | s)). 23 Figure 16: Robustness (aggregated) under mass-scaling perturbations on AntMaze. Near-zero scores across MassScale indicate widespread failure under this dynamics shift under our evaluation protocol. 
+
+• Mode= raw : Support( s, a ) = log μφ(a | s) (no per-state candidate-set standardization). In both cases, we keep the candidate budget fixed at N =1024 and use the suite-specific λ and the same wp schedule as in Section 4.2, so the only changed factor is the normalization used inside the score. We report suite-mean deltas (Mode= zscore minus Mode= raw ) for normalized return and the two deployment audits. 
+
+wp sweep frontier (risk–return knob). To visualize knob semantics directly, we sweep wp
+
+post-training with all networks fixed. For each suite we fix N =1024 and the suite-default pessimism 
+
+λ (Section 4.2), then vary the terminal support weight wend  
+
+> p
+
+in the episode schedule while keeping the schedule form unchanged. For each setting we report suite-mean normalized score and Violation .The expected pattern under calibrated support is a monotone risk–return tradeoff: increasing 
+
+wp pushes selection toward relatively higher-support candidates within C(s), typically lowering 
+
+Violation at some cost in score, without retraining. 
+
+A.7 Full deployment compute measurements 
+
+Table 3 reports the complete latency and memory measurements for all logged methods and sweep settings under the shared harness used for Figure 3. We report mean ±std across repeated measurements. 24 Figure 17: Suite-level interface ablations at N = 1024 (deltas relative to GEM). Top: ∆Score. Middle: ∆Violation . Bottom: ∆ CollapseDist .
+
+# B Inference-Time Scoring: Candidate-Set Normalization and Con-servative Selection 
+
+This appendix makes the inference-time interface fully explicit and justifies the two terms in Eq. (4) through (i) scale-stable support control and (ii) budget-robust conservatism. 
+
+B.1 Exact candidate construction used at deployment 
+
+For a queried state s, GEM constructs a candidate set of size |C (s)| = N + 1: 
+
+C(s) = {a0, a 1, . . . , a N }. (5) 
+
+Anchor action. The anchor is deterministic and extracted from the actor mixture weights: 
+
+k⋆(s) ← arg max  
+
+> k∈{ 1,...,K }
+
+wk(s), a0 ← μk⋆ (s). (6) This matches the implementation that selects the mean of the most probable component under the actor’s gating distribution (deterministic mode). 25 Figure 18: Effect of support normalization at N =1024 (Mode= zscore minus Mode= raw ). 
+
+Top: ∆Score (positive is better). Middle: ∆Violation . Bottom: ∆CollapseDist . This comparison isolates scale sensitivity: raw log μφ(a | s) can vary substantially across states, so its additive influence can make a single global wp behave inconsistently across the state space. 
+
+Single-source sampling (no mixing, no fallback). The remaining N candidates are sampled from exactly one source: 
+
+a1: N ∼
+
+(
+
+πθ(· | s), if use gem candidates is True ,μφ(· | s), otherwise . (7) There is no mixture of sources and no auxiliary fallback gate. Importantly, regardless of the sampling source, support is always evaluated only under the behavior model μφ.
+
+B.2 Conservative value via an ensemble lower confidence bound 
+
+Let {Qi(s, a )}Mi=1 be an ensemble of critics. Define the sample mean and (population) standard deviation: ¯Q(s, a ) ≜ 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+Qi(s, a ), Std( Qi(s, a )) ≜
+
+vuut 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+(Qi(s, a ) − ¯Q(s, a )) 2. (8) The pessimistic statistic used by GEM is LCB λ(s, a ) ≜ ¯Q(s, a ) − λ Std( Qi(s, a )) , (9) matching Eq. (3). 26 Figure 19: wp sweep frontier at N = 1024 (suite level): Score vs Violation. Each point corresponds to a post-training inference-only choice of wp (with fixed trained networks). The curve visualizes the intended deployment contract: wp acts as an interpretable exchange rate between conservative value and relative behavior support within the current candidate set, enabling retrain-free risk control under candidate maximization. 
+
+Why LCB is the right interface-level control. Candidate-based deployment executes arg max a∈C (s) Score (s, a ). Any estimation noise in scores is magnified by maximization, and this amplification grows with |C (s)|. LCB explicitly downweights candidates with high ensemble disagree-ment, reducing the chance that a larger candidate budget systematically selects high-uncertainty outliers. 
+
+B.3 Behavior support and the exact candidate-set standardization 
+
+Raw support. For each candidate a ∈ C (s), compute 
+
+ℓ(a) ≜ log μφ(a | s). (10) 
+
+Candidate-set normalization (exactly as implemented). Let ℓ ∈ R|C (s)| be the vector of log-likelihoods over the current candidate set: ℓ = [ ℓ(a0), ℓ (a1), . . . , ℓ (aN )] ⊤. Define 
+
+μℓ ≜ 1
+
+|C (s)|
+
+X
+
+> a∈C (s)
+
+ℓ(a), σℓ ≜
+
+vuut 1
+
+|C (s)|
+
+X
+
+> a∈C (s)
+
+(ℓ(a) − μℓ)2, ˜ℓ(a) ≜ ℓ(a) − μℓ
+
+max( σℓ, 10 −6) . (11) This is the exact normalization performed by transform pw term in the code: mean over the candidate vector, standard deviation with unbiased=False , and clamp min(1e-6) .
+
+Stable semantics of wp. After normalization, the support term is measured in “candidate-set standard deviations”: ˜ℓ(a) = +1 means “one standard deviation above the candidate-set mean support” for this state. Thus the scalar wp becomes a state-robust exchange rate between conservative value units and standardized support units. 
+
+B.3.1 Invariance properties 
+
+Candidate-set standardization yields two invariances that are essential for interface control. 
+
+Shift invariance. For any constant c ∈ R, define ℓ′(a) = ℓ(a) + c. Then μℓ′ = μℓ + c and σℓ′ = σℓ,so ˜ℓ′(a) = ℓ(a) + c − (μℓ + c)
+
+σℓ
+
+= ˜ℓ(a). (12) 27 Table 3: Full deployment compute measurements (mean ±std). Latency is in milliseconds; memory is peak allocated/reserved MB; Params is model parameter count (millions). 
+
+Method Setting Latency (ms) Peak alloc (MB) Peak reserved (MB) Params (M) Decision Transformer N1 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer N64 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer N1024 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer N2048 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer T10 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer T20 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer T50 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Decision Transformer T100 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 5.27 Diffusion-QL N1 1.84 ±0.08 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL N64 1.84 ±0.08 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL N1024 1.84 ±0.08 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL N2048 1.84 ±0.08 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL T10 1.92 ±0.11 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL T20 3.70 ±0.18 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL T50 9.17 ±0.33 20.71 ±0.00 25.00 ±0.00 2.16 Diffusion-QL T100 18.33 ±0.55 20.71 ±0.00 25.00 ±0.00 2.16 GEM N1 1.25 ±0.05 20.76 ±0.04 25.00 ±0.00 2.38 GEM N64 1.26 ±0.05 21.91 ±0.05 25.00 ±0.00 2.38 GEM N1024 1.27 ±0.05 42.35 ±0.12 47.00 ±0.00 2.38 GEM N2048 1.33 ±0.06 80.83 ±0.22 89.00 ±0.00 2.38 GEM T10 1.25 ±0.05 20.76 ±0.04 25.00 ±0.00 2.38 GEM T20 1.25 ±0.05 20.76 ±0.04 25.00 ±0.00 2.38 GEM T50 1.25 ±0.05 20.76 ±0.04 25.00 ±0.00 2.38 GEM T100 1.25 ±0.05 20.76 ±0.04 25.00 ±0.00 2.38 IDQL N1 10.17 ±0.21 20.71 ±0.00 25.00 ±0.00 2.16 IDQL N64 10.11 ±0.20 20.71 ±0.00 25.00 ±0.00 2.16 IDQL N1024 10.18 ±0.20 20.71 ±0.00 25.00 ±0.00 2.16 IDQL N2048 10.12 ±0.19 20.71 ±0.00 25.00 ±0.00 2.16 IDQL T10 2.04 ±0.09 20.71 ±0.00 25.00 ±0.00 2.16 IDQL T20 4.11 ±0.14 20.71 ±0.00 25.00 ±0.00 2.16 IDQL T50 10.10 ±0.23 20.71 ±0.00 25.00 ±0.00 2.16 IDQL T100 20.37 ±0.34 20.71 ±0.00 25.00 ±0.00 2.16 IQL N1 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL N64 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL N1024 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL N2048 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL T10 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL T20 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL T50 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 IQL T100 0.88 ±0.05 20.71 ±0.00 25.00 ±0.00 2.16 
+
+Scale invariance. For any α > 0, define ℓ′′ (a) = αℓ (a). Then μℓ′′ = αμ ℓ and σℓ′′ = ασ ℓ, so ˜ℓ′′ (a) = αℓ (a) − αμ ℓ
+
+ασ ℓ
+
+= ˜ℓ(a). (13) 
+
+Implication. Even if log μφ(a | s) varies dramatically in absolute scale across states, datasets, or candidate budgets, the normalized support ˜ℓ(a) preserves relative support ordering within C(s) and makes wp comparably meaningful across states. 
+
+B.4 The fixed-form (“locked”) inference score 
+
+Given the two quantities above, GEM evaluates each candidate via a fixed-form score: Score( s, a ) = LCB λ(s, a ) + wp · ˜ℓ(a), ˜ℓ(a) = zscore C(s)
+
+  log μφ(a | s), (14) which is exactly Eq. (4). 28 Meaning of “locked.” We use “locked” to mean: once Phase I finishes, the functional form 
+
+of the inference rule is fixed and does not depend on additional learned selection networks or state-dependent mixing heuristics. Deployment-time control is entirely through a small set of explicit scalar knobs: N (candidate budget), λ (LCB pessimism), wp (support weight), and the optional ksmooth (output smoothing). 
+
+Top-k smoothing operator. After computing scores over C(s), the interface outputs ˆa(s) = 1
+
+k
+
+X
+
+> j∈TopK(Score)
+
+aj , k = min( ksmooth , |C (s)|), (15) where ksmooth = 1 recovers the top-1 action. 
+
+B.5 Why candidate maximization imposes an additional constraint (extreme-value amplification) 
+
+This subsection formalizes the interface-level issue that motivates combining support control with conservatism. 
+
+Setup. Fix a state s and write a generic score estimate as 
+
+\Score( s, a ) = Score ⋆(s, a ) + ε(s, a ), (16) where ε captures approximation error, extrapolation error, and/or stochastic estimation noise. Candidate-based deployment selects ˆa ∈ arg max 
+
+> a∈C (s)
+
+\Score( s, a ). (17) Even if ε is mean-zero, the maximization operator introduces a positive bias toward extreme noise values, and this bias typically grows with |C (s)|.
+
+A standard bound for sub-Gaussian noise. Assume for simplicity that {ε(s, a j )}Nj=0 are independent and σ-sub-Gaussian: E[exp( tε )] ≤ exp( σ2t2/2) for all t ∈ R. Then 
+
+E
+
+h
+
+max  
+
+> 0≤j≤N
+
+ε(s, a j )
+
+i
+
+= 1
+
+t E
+
+h
+
+log exp  t max  
+
+> j
+
+εj
+
+i
+
+(18) 
+
+≤ 1
+
+t E
+
+h
+
+log 
+
+> N
+
+X
+
+> j=0
+
+exp( tε j )
+
+i
+
+(19) 
+
+≤ 1
+
+t log 
+
+> N
+
+X
+
+> j=0
+
+E[exp( tε j )] (20) 
+
+≤ 1
+
+t log 
+
+
+
+(N + 1) exp( σ2t2/2) 
+
+
+
+(21) = log( N + 1) 
+
+t + σ2t
+
+2 . (22) Optimizing over t > 0 gives t⋆ = p2 log( N + 1) /σ and thus 
+
+E
+
+h
+
+max  
+
+> 0≤j≤N
+
+ε(s, a j )
+
+i
+
+≤ σp2 log( N + 1) . (23) 29 Table 4: GEM primary performance (Mode=zscore, N = 1024) aggregated by D4RL task. Columns report normalized score (mean ± std across training seeds), average support z-score, support violation rate, collapse distance, and evaluation throughput. 
+
+TestEnv GEM n SupportZ Viol Collapse SPS antmaze-large-diverse-v2 1.00 ± 1.41 3 1.99 0.0019 0.308 2742 antmaze-large-play-v2 5.00 ± 1.41 3 2.02 0.0024 0.318 2760 antmaze-medium-diverse-v2 11.76 ± 10.54 3 1.86 0.0031 0.357 2913 antmaze-medium-play-v2 76.36 ± 33.43 3 1.05 0.0356 0.748 2962 antmaze-umaze-diverse-v2 57.37 ± 5.55 3 2.03 0.0002 0.278 3173 antmaze-umaze-v2 75.71 ± 20.55 3 0.81 0.0189 0.309 3195 halfcheetah-medium-expert-v2 100.69 ± 0.57 3 1.19 0.0038 0.183 3282 halfcheetah-medium-replay-v2 50.03 ± 0.90 3 1.31 0.0000 0.264 3365 halfcheetah-medium-v2 42.67 ± 0.36 3 1.68 0.0000 0.173 3328 hopper-medium-expert-v2 111.73 ± 0.45 3 1.30 0.0015 0.097 3182 hopper-medium-replay-v2 100.36 ± 1.97 3 0.87 0.0027 0.198 3147 hopper-medium-v2 74.89 ± 0.54 3 1.81 0.0000 0.168 3126 maze2d-large-v1 68.66 ± 45.58 3 1.47 0.0048 0.201 3294 maze2d-medium-v1 104.44 ± 39.24 3 1.47 0.0014 0.182 3299 maze2d-umaze-v1 154.13 ± 21.42 3 0.67 0.0000 0.260 3218 walker2d-medium-expert-v2 109.84 ± 0.07 3 1.54 0.0000 0.148 3062 walker2d-medium-replay-v2 87.01 ± 2.61 3 1.09 0.0055 0.197 3120 walker2d-medium-v2 78.53 ± 0.45 3 1.39 0.0000 0.153 3035 
+
+Interface implication. Increasing N increases the expected maximum noise term at least on the order of √log N under broad conditions. In offline RL, candidates with unusually high estimated value often coincide with weak support or high uncertainty. Therefore, a scalable candidate interface must include explicit mechanisms that counteract this amplification. In GEM, ˜ℓ(a) penalizes weak support in a scale-stable way, while LCB λ penalizes disagreement-driven outliers. 
+
+# C Guided EM-Style Actor Update: Variational Derivation and Exact Surrogate 
+
+This appendix derives the EM-style surrogate optimized by the actor and clarifies in what precise sense the update is (i) EM-style (infer responsibilities then update parameters) and (ii) guided 
+
+(dataset actions are reweighted by a critic-derived advantage). We keep the derivation aligned with the implementation: responsibilities are computed by a softmax over component log-joints and are 
+
+detached by default when taking gradients. 
+
+C.1 Actor as a latent-variable conditional mixture 
+
+For each state s, the actor defines a K-component Gaussian mixture: 
+
+πθ(a | s) = 
+
+> K
+
+X
+
+> k=1
+
+wθ,k (s) N a; μθ,k (s), Σθ,k 
+
+,
+
+> K
+
+X
+
+> k=1
+
+wθ,k (s) = 1 , wθ,k (s) > 0. (24) The implementation uses a diagonal covariance with per-component log-std parameters: Σ θ,k =diag (σ2
+
+> θ,k
+
+) where σθ,k does not depend on s (a learned parameter per component and action dimension). 30 Table 5: Mechanism ablations at N = 1024 (Mode=zscore), aggregated over all tasks and training seeds. ∆ is the per-task score difference relative to GEM (mean ± std across tasks). 
+
+Variant Mean Delta SupportZ Viol Collapse SPS nGEM 76.88 0.00 ± 0.00 1.25 0.0069 0.273 3064 47 anchor bary 76.29 -0.60 ± 3.87 1.24 0.0070 0.271 3043 47 behavior only cands 79.92 3.03 ± 20.58 0.93 0.0144 0.240 3077 47 no anchor 77.04 0.15 ± 2.32 1.24 0.0069 0.273 3109 47 no lcb 74.84 -2.04 ± 16.02 1.27 0.0085 0.270 3093 47 no pw 65.31 -11.57 ± 37.56 -0.90 0.2169 0.647 3082 47 unimodal actor cands 75.70 -1.19 ± 10.30 1.64 0.0027 0.269 3055 47 
+
+Table 6: Per-task ablation deltas at N = 1024 (Mode=zscore). Columns report mean normalized score of GEM and mean score change (∆) of each variant relative to GEM (positive is better). 
+
+TestEnv GEM no-pw no-lcb unimodal-actor behavior-only antmaze-large-diverse-v2 0.00 +1.00 +0.00 +8.00 +0.00 antmaze-large-play-v2 4.00 +0.00 -1.00 -2.00 -4.00 antmaze-medium-diverse-v2 6.00 +68.14 +0.00 -4.00 +2.00 antmaze-medium-play-v2 76.47 -56.47 -37.05 +23.53 -19.80 antmaze-umaze-diverse-v2 52.42 -31.42 -9.06 -11.93 -16.23 antmaze-umaze-v2 71.58 -68.58 -5.00 +0.00 -6.00 halfcheetah-medium-expert-v2 100.55 +0.22 -0.33 -0.77 +0.32 halfcheetah-medium-replay-v2 50.11 -0.11 -0.29 +0.09 -0.05 halfcheetah-medium-v2 42.67 +0.33 +0.42 +0.58 +0.59 hopper-medium-expert-v2 111.73 -0.39 -0.86 -0.50 -0.42 hopper-medium-replay-v2 100.36 -0.55 -2.14 -1.92 -0.61 hopper-medium-v2 74.89 +0.22 +0.31 -0.34 +0.16 maze2d-large-v1 68.66 -68.66 -8.69 -0.02 +38.54 maze2d-medium-v1 104.44 -98.08 -3.97 -4.04 +6.81 maze2d-umaze-v1 154.13 -154.13 -3.47 -8.71 +4.74 walker2d-medium-expert-v2 109.84 -0.46 -0.25 -0.59 -0.54 walker2d-medium-replay-v2 87.01 -1.95 -1.68 -1.56 +0.19 walker2d-medium-v2 78.53 -0.75 -1.03 -1.08 -0.12 
+
+Introduce a discrete latent variable z ∈ { 1, . . . , K }:
+
+pθ(z = k | s) = wθ,k (s), pθ(a | s, z = k) = N a; μθ,k (s), Σθ,k 
+
+. (25) Then πθ(a | s) = P 
+
+> k
+
+pθ(z = k | s) pθ(a | s, z = k).
+
+C.2 Exact component log-joints and responsibilities 
+
+Define the per-component log-joint (up to the conditioning on s): 
+
+uθ,k (s, a ) ≜ log pθ(z = k | s) + log pθ(a | s, z = k) = log wθ,k (s) + log N a; μθ,k (s), Σθ,k 
+
+. (26) Then the exact mixture log-likelihood is log πθ(a | s) = log 
+
+> K
+
+X
+
+> k=1
+
+exp  uθ,k (s, a ). (27) 31 Table 7: Test-time scaling with candidate budget N for GEM (Mode=zscore), aggregated over all sweep runs. Larger N improves average score while reducing throughput. 
+
+N Score Std SupportZ Viol Collapse Steps/s n0 64.24 30.99 0.00 0.0000 0.265 5625 846 1 65.77 30.53 0.92 0.0000 0.271 5254 846 64 72.32 34.25 1.26 0.0027 0.257 5383 846 1024 72.79 34.46 1.33 0.0048 0.237 3105 846 2048 73.41 35.00 1.34 0.0055 0.233 1958 846 
+
+Table 8: Effect of support normalization: baseline GEM difference between Mode=zscore and Mode=raw (reported as Score z − Score raw ) aggregated by task. 
+
+TestEnv Delta nantmaze-large-diverse-v2 0.00 ± 0.00 2antmaze-large-play-v2 5.00 ± 1.41 2antmaze-medium-diverse-v2 9.76 1antmaze-medium-play-v2 19.89 ± 25.51 2antmaze-umaze-diverse-v2 3.81 ± 19.59 2antmaze-umaze-v2 -1.12 ± 6.91 2halfcheetah-medium-expert-v2 0.35 ± 0.42 3halfcheetah-medium-replay-v2 0.08 ± 0.12 3halfcheetah-medium-v2 -0.14 ± 0.09 3hopper-medium-expert-v2 0.09 ± 0.06 3hopper-medium-replay-v2 1.45 ± 0.59 3hopper-medium-v2 0.02 ± 0.19 3maze2d-large-v1 10.56 ± 6.06 3maze2d-medium-v1 47.69 ± 38.87 3maze2d-umaze-v1 24.60 ± 17.96 3walker2d-medium-expert-v2 0.03 ± 0.08 3walker2d-medium-replay-v2 0.06 ± 0.10 3walker2d-medium-v2 0.01 ± 0.05 3
+
+Responsibilities (posterior over components). The exact posterior is a softmax over log-joints: 
+
+γθ,k (s, a ) ≜ pθ(z = k | s, a ) = exp( uθ,k (s, a )) 
+
+PKj=1 exp( uθ,j (s, a )) = softmax k
+
+ uθ,k (s, a ). (28) This matches the implementation: log wθ,k (s) is obtained via log softmax of logits, and log N (·) is computed in closed form (diagonal Gaussian). 
+
+C.3 Variational view: Jensen lower bound and its tightness 
+
+The “EM” interpretation can be made fully explicit via a standard variational bound. 32 Table 9: Multimodality diagnostic (dataset NLL gap). Larger gap indicates higher cost of a unimodal projection, motivating multimodal proposals. 
+
+Environment Gap Seeds antmaze-large-diverse-v2 42.71 ± 7.04 3antmaze-large-play-v2 43.22 ± 15.75 3antmaze-medium-diverse-v2 57.16 ± 9.94 3antmaze-medium-play-v2 48.45 ± 13.97 3antmaze-umaze-diverse-v2 48.42 ± 7.08 3antmaze-umaze-v2 48.86 ± 7.26 3halfcheetah-medium-expert-v2 5.97 ± 0.24 3halfcheetah-medium-replay-v2 1.37 ± 0.02 3halfcheetah-medium-v2 1.74 ± 0.13 3hopper-medium-expert-v2 2.24 ± 0.43 3hopper-medium-replay-v2 1.43 ± 0.26 3hopper-medium-v2 6.05 ± 0.07 3maze2d-large-v1 6.46 ± 0.05 3maze2d-medium-v1 1.53 ± 0.00 3maze2d-umaze-v1 2.04 ± 0.01 3walker2d-medium-expert-v2 4.88 ± 0.63 3walker2d-medium-replay-v2 2.40 ± 0.29 3walker2d-medium-v2 6.08 ± 0.30 3
+
+Table 10: Inference latency (ms) under diffusion-step sweep T (mean ± std). 
+
+Method T10 T100 T20 T50 DT 0.934 ± 0.122 0.866 ± 0.008 0.874 ± 0.013 0.866 ± 0.010 FQL 1.479 ± 0.014 1.487 ± 0.018 1.480 ± 0.012 1.474 ± 0.024 GEM 1.296 ± 0.016 1.301 ± 0.043 1.270 ± 0.006 1.292 ± 0.052 IDQL 2.042 ± 0.017 20.367 ± 0.163 4.112 ± 0.014 10.096 ± 0.050 IFQL 1.831 ± 0.017 1.827 ± 0.010 1.821 ± 0.019 1.804 ± 0.026 
+
+Let q(z | s, a ) be any categorical distribution over {1, . . . , K } with probabilities {qk}Kk=1 . Then log πθ(a | s) = log 
+
+> K
+
+X
+
+> k=1
+
+exp( uθ,k (s, a )) (29) = log 
+
+> K
+
+X
+
+> k=1
+
+qk
+
+exp( uθ,k (s, a )) 
+
+qk
+
+(30) 
+
+≥
+
+> K
+
+X
+
+> k=1
+
+qk log exp( uθ,k (s, a )) 
+
+qk
+
+(Jensen) (31) =
+
+> K
+
+X
+
+> k=1
+
+qk uθ,k (s, a ) + 
+
+
+
+−
+
+> K
+
+X
+
+> k=1
+
+qk log qk
+
+| {z }
+
+> H(q)
+
+. (32) 33 Table 11: Inference latency (ms) under candidate-budget sweep N (mean ± std). 
+
+Method N1 N1024 N2048 N64 DT 0.886 ± 0.006 0.884 ± 0.007 0.878 ± 0.006 0.865 ± 0.008 FQL 1.483 ± 0.015 1.506 ± 0.014 1.465 ± 0.038 1.482 ± 0.010 GEM 1.307 ± 0.007 1.276 ± 0.016 1.254 ± 0.002 1.279 ± 0.010 IDQL 10.168 ± 0.046 10.175 ± 0.051 10.115 ± 0.108 10.107 ± 0.072 IFQL 1.796 ± 0.008 1.837 ± 0.035 1.865 ± 0.076 1.830 ± 0.012 
+
+Table 12: Peak GPU allocated memory (MB) under diffusion-step sweep T (mean ± std). 
+
+Method T10 T100 T20 T50 DT 21.1 ± 0.0 21.1 ± 0.0 21.1 ± 0.0 21.1 ± 0.0 FQL 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 GEM 50.8 ± 0.0 50.8 ± 0.0 50.8 ± 0.0 50.8 ± 0.0 IDQL 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 IFQL 20.8 ± 0.0 20.8 ± 0.0 20.8 ± 0.0 20.8 ± 0.0 
+
+Define the evidence lower bound (ELBO): 
+
+LELBO (θ; q) ≜
+
+> K
+
+X
+
+> k=1
+
+qk uθ,k (s, a ) + H(q). (33) 
+
+Tightness condition. The bound is tight when q(z | s, a ) = pθ(z | s, a ), i.e., qk = γθ,k (s, a ). Plugging q = γθ into Eq. (33) yields log πθ(a | s) = 
+
+> K
+
+X
+
+> k=1
+
+γθ,k (s, a ) uθ,k (s, a ) + H(γθ(· | s, a )) . (34) 
+
+C.4 EM Q-function and the exact surrogate used in GEM 
+
+Classical EM alternates: 
+
+• E-step: set responsibilities γold (s, a ) ← pθold (z | s, a ); 
+
+• M-step: update θ by maximizing the expected complete-data log-likelihood under γold .The M-step objective is the Q-function :
+
+Q(θ; θold ) ≜ E(s,a )∼D 
+
+h KX
+
+> k=1
+
+γold  
+
+> k
+
+(s, a ) uθ,k (s, a )
+
+i
+
+. (35) Note that the entropy term H(γold ) does not depend on θ in the M-step and can be omitted without changing the optimizer. 
+
+Exact match to the implementation (“loose ELBO”). The actor implementation computes elbo log prob θ(s, a ) = 
+
+> K
+
+X
+
+> k=1
+
+γθ,k (s, a )
+
+
+
+log wθ,k (s) + log N (a; μθ,k (s), Σθ,k )
+
+
+
+, (36) 34 Table 13: Peak GPU allocated memory (MB) under candidate-budget sweep N (mean ± std). 
+
+Method N1 N1024 N2048 N64 DT 21.1 ± 0.0 21.1 ± 0.0 21.1 ± 0.0 21.1 ± 0.0 FQL 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 GEM 50.8 ± 0.0 50.8 ± 0.0 50.8 ± 0.0 50.8 ± 0.0 IDQL 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 20.7 ± 0.0 IFQL 20.8 ± 0.0 20.8 ± 0.0 20.8 ± 0.0 20.8 ± 0.0 
+
+i.e., precisely the Q-function form with responsibilities γθ. Crucially, by default detach gamma=True ,so during backpropagation the gradient treats γ as a constant: 
+
+∇θ elbo log prob θ(s, a ) = 
+
+> K
+
+X
+
+> k=1
+
+γθ,k (s, a ) ∇θ
+
+
+
+log wθ,k (s) + log N (a; μθ,k (s), Σθ,k )
+
+
+
+, (37) which is exactly the M-step gradient direction of an EM-style update. This “infer responsibilities then update parameters” structure is the operational sense in which the actor update is EM-style. 
+
+Why the entropy term is not explicitly included. From Eq. (34) , the true log-likelihood decomposition contains H(γθ). However, in EM the responsibilities are treated as fixed in the M-step, making H(γ) a constant w.r.t. θ. The implementation follows this M-step logic via 
+
+detach gamma=True , so adding H(γ) would not change the gradient. (If one were to backprop through γ by setting detach gamma=False , then omitting H(γ) would change the gradient and the update would no longer correspond to the standard EM M-step.) 
+
+C.5 Closed-form Gaussian terms used in the actor 
+
+We spell out the exact Gaussian log-density used to compute uθ,k (s, a ). Let a ∈ RA and component parameters ( μθ,k (s), σ θ,k ) with diagonal covariance. Write σθ,k ∈ RA>0
+
+and Σ θ,k = diag( σ2
+
+> θ,k
+
+). Then log N (a; μθ,k (s), Σθ,k ) = − 12
+
+> A
+
+X
+
+> d=1
+
+ (ad − μθ,k,d (s)) 2
+
+σ2
+
+> θ,k,d
+
++ log(2 π) + 2 log σθ,k,d 
+
+
+
+(38) = − 12
+
+ AX
+
+> d=1
+
+(ad − μθ,k,d (s)) 2
+
+σ2
+
+> θ,k,d
+
+
+
+− 12
+
+
+
+A log(2 π) + 
+
+> A
+
+X
+
+> d=1
+
+log( σ2
+
+> θ,k,d
+
+)
+
+
+
+. (39) The code implements the equivalent form via var = σ2: − 12
+
+ (a − μ)2/var  summed over d −
+
+> 12
+
+ A log(2 π) + log var summed over d.
+
+C.6 “Guided” weighting: advantage-reweighted EM-style regression 
+
+The “guided” part is implemented by reweighting each dataset sample ( s, a ) by a bounded exponential of a critic-derived advantage. Let 
+
+A(s, a ) ≜ Qtgt (s, a ) − V (s), (40) 35 where Qtgt denotes the target critic used for stability and V is the learned value baseline. Define the guidance weight 
+
+ω(s, a ) ≜ exp( βA (s, a )) clipped above by a constant ωmax . (41) (Implementation detail: the advantage is detached before exponentiation; clipping is applied to avoid exploding weights.) 
+
+Guided objective optimized by the actor. Let Qθ(s, a ) ≜ P 
+
+> k
+
+γθ,k (s, a ) uθ,k (s, a ) be the EM Q-function term in Eq. (36) . The code forms the per-sample “BC loss” as −Q θ(s, a ) and minimizes the weighted objective: 
+
+Jcore (θ) = E(s,a )∼D 
+
+h
+
+ω(s, a ) ·   − Q θ(s, a )i
+
+. (42) Equivalently, minimizing Eq. (42) maximizes E[ω(s, a )Qθ(s, a )] . Thus, compared to standard max-imum likelihood (which weights all samples equally), guidance increases the fitting pressure on dataset actions with higher estimated advantage. 
+
+C.7 Gating entropy regularization (anti-collapse) and its exact form 
+
+To discourage premature collapse of mixture usage, the implementation adds a small entropy bonus on the categorical gating distribution. Let wθ(s) = ( wθ, 1(s), . . . , w θ,K (s)). The gating entropy is 
+
+H(wθ(s)) = −
+
+> K
+
+X
+
+> k=1
+
+wθ,k (s) log  wθ,k (s) + 10 −6. (43) The code subtracts an entropy bonus from the loss: 
+
+Jactor (θ) = E(s,a )∼D 
+
+h
+
+ω(s, a ) ·   − Q θ(s, a )i
+
+− α Es∼D 
+
+H(wθ(s)) , (44) where α is the entropy coefficient. Minimizing Eq. (44) corresponds to maximizing E[ω(s, a )Qθ(s, a )]+ 
+
+α E[H(wθ(s))] .
+
+Connection to EM and interpretability. Equation (44) makes the update interpretable in two orthogonal dimensions: 
+
+• EM-style structure: Qθ(s, a ) is the expected complete-data log-joint under responsibilities 
+
+γ; with detached γ, gradients implement an M-step update direction. 
+
+• Guidance: ω(s, a ) reweights the dataset, concentrating regression pressure on actions that the critic rates as high-advantage. The mixture still fits data (not sampled actions), but it is pulled toward higher-value regions of the dataset distribution. 
+
+• Anti-collapse: the gating entropy term prevents the gating network from saturating too early, supporting a stable multi-hypothesis proposal family. 36 C.8 A fully expanded gradient form (with detached responsibilities) 
+
+For completeness, we expand the gradient of Qθ(s, a ) used by the implementation. With γ detached, define γk ≡ γθ,k (s, a ) as constants in backprop. Then 
+
+∇θ
+
+ ω(s, a ) · (−Q θ(s, a ))  = −ω(s, a ) ∇θKX
+
+> k=1
+
+γk uθ,k (s, a ) (45) = −ω(s, a )
+
+> K
+
+X
+
+> k=1
+
+γk ∇θ
+
+
+
+log wθ,k (s) + log N (a; μθ,k (s), Σθ,k )
+
+
+
+. (46) The entropy term contributes 
+
+∇θ
+
+
+
+− αH (wθ(s)) 
+
+
+
+= −α∇θ
+
+
+
+−
+
+> K
+
+X
+
+> k=1
+
+wθ,k (s) log( wθ,k (s) + 10 −6)
+
+
+
+, (47) which explicitly pushes against degenerate gating distributions when α > 0. 
+
+Summary of what is (and is not) “EM” here. The update is EM-style in the precise sense that responsibilities are computed from current mixture log-joints and treated as fixed in the gradient, yielding the M-step gradient of the expected complete-data log-joint. It is not a closed-form EM M-step: parameters are updated by gradient descent, and responsibilities are recomputed each iteration (a standard generalized-EM pattern). Guidance enters only through the data weighting 
+
+ω(s, a ) and does not alter the responsibility definition in Eq. (28). 
+
+# D Behavior GMM Support Model: Maximum-Likelihood Training and Usage 
+
+This appendix makes the behavior-support model μφ(a | s) fully explicit. We derive the exact maximum-likelihood objective used to fit μφ, give implementation-aligned closed forms (log-sum-exp mixture likelihood, responsibilities), and clarify how μφ enters GEM only through inference-time support evaluation. 
+
+D.1 Model definition (implementation-aligned) 
+
+In GEM, the behavior model is a conditional K-component diagonal-covariance GMM: 
+
+μφ(a | s) = 
+
+> K
+
+X
+
+> k=1
+
+¯wφ,k (s) N a; ¯ μφ,k (s), ¯Σφ,k 
+
+,
+
+> K
+
+X
+
+> k=1
+
+¯wφ,k (s) = 1 , ¯wφ,k (s) > 0. (48) The implementation parameterizes: (i) ¯wφ,k (s) = softmax k(logits φ(s)) from a neural net, (ii) ¯μφ,k (s)from a neural net, (iii) a per-component log-standard-deviation parameter log ¯ σφ,k ∈ RA that is 
+
+state-independent (learned parameters) and clamped elementwise: log ¯ σφ,k ← clip   log ¯ σφ,k , log σmin , log σmax 
+
+, ¯Σφ,k = diag(¯ σ2
+
+> φ,k
+
+). (49) Here A is the action dimension. 37 Latent-variable view. Introduce z ∈ { 1, . . . , K } with 
+
+pφ(z = k | s) = ¯ wφ,k (s), pφ(a | s, z = k) = N (a; ¯ μφ,k (s), ¯Σφ,k ). (50) Then μφ(a | s) = P 
+
+> k
+
+pφ(z = k | s) pφ(a | s, z = k). 
+
+D.2 Exact log-likelihood and numerically stable evaluation 
+
+For a fixed ( s, a ), define the component log-joint: ¯uφ,k (s, a ) ≜ log ¯ wφ,k (s) + log N a; ¯ μφ,k (s), ¯Σφ,k 
+
+. (51) Then the conditional log-likelihood is the log-sum-exp: log μφ(a | s) = log 
+
+> K
+
+X
+
+> k=1
+
+exp  ¯uφ,k (s, a ) = LSE k
+
+ ¯uφ,k (s, a ). (52) This is exactly the quantity used in Phase II support scoring: ℓ(a) = log μφ(a | s). 
+
+Diagonal Gaussian term. Let ¯Σφ,k = diag(¯ σ2
+
+> φ,k
+
+). Then log N (a; ¯ μφ,k (s), ¯Σφ,k ) = − 12
+
+> A
+
+X
+
+> d=1
+
+(ad − ¯μφ,k,d (s)) 2
+
+¯σ2
+
+> φ,k,d
+
++ log(2 π) + 2 log ¯ σφ,k,d 
+
+!
+
+. (53) 
+
+D.3 Maximum-likelihood training objective (Phase I) 
+
+The behavior model is fitted by maximum likelihood on dataset actions: max  
+
+> φ
+
+E(s,a )∼D 
+
+ log μφ(a | s) ⇐⇒ min  
+
+> φ
+
+E(s,a )∼D 
+
+ − log μφ(a | s). (54) In code, this is implemented as pretraining for gmm pretrain steps iterations: 
+
+loss ← − behavior model.log prob(obs, act).mean() .
+
+Optionally, the behavior model parameters can be frozen after pretraining ( gmm freeze after pretrain ), in which case μφ remains fixed for the rest of training. 
+
+D.4 Responsibilities and gradients (useful for reproduction/debugging) 
+
+Define responsibilities (posterior component probabilities): ¯γφ,k (s, a ) ≜ pφ(z = k | s, a ) = exp(¯ uφ,k (s, a )) 
+
+PKj=1 exp(¯ uφ,j (s, a )) = softmax k
+
+ ¯uφ, 1: K (s, a ). (55) Then the exact gradient of the log-likelihood w.r.t. parameters inside ¯uφ,k takes the standard mixture form: 
+
+∇φ log μφ(a | s) = 
+
+> K
+
+X
+
+> k=1
+
+¯γφ,k (s, a ) ∇φ ¯uφ,k (s, a ). (56) 38 Gradients w.r.t. Gaussian parameters (closed form). For a single component k and dimen-sion d,
+
+∂∂ ¯μφ,k,d (s) log μφ(a | s) = ¯ γφ,k (s, a ) · ad − ¯μφ,k,d (s)¯σ2
+
+> φ,k,d
+
+, (57) 
+
+∂∂ log ¯ σφ,k,d 
+
+log μφ(a | s) = ¯ γφ,k (s, a ) · (ad − ¯μφ,k,d (s)) 2
+
+¯σ2
+
+> φ,k,d
+
+− 1
+
+!
+
+, (58) before accounting for the clamp in (49) (which zeroes gradients when saturated). 
+
+Gradients w.r.t. gating logits. Let ηk(s) be the pre-softmax gating logits so that ¯wk(s) = softmax k(η(s)). Then 
+
+∂∂η k(s) log μφ(a | s) = ¯ γφ,k (s, a ) − ¯wφ,k (s). (59) 
+
+D.5 How μφ is used (and not used) 
+
+GEM uses μφ in two places only: 
+
+• Inference-time sampling (optional): if use gem candidates is False, candidates a1: N are sampled from μφ(· | s). 
+
+• Support evaluation (always): for every candidate a ∈ C (s), support is computed as log μφ(a | s) and then candidate-set standardized (see Appendix B). Crucially, support is never evaluated under the actor πθ (no self-certification). 
+
+# E Critic/Value Training and the Exact Guidance Weight Used by GEM 
+
+This appendix specifies Phase I training details that are directly used by GEM’s guidance and conservative scoring: (i) how the Q-ensemble is trained and how target values are formed, (ii) how expectile regression defines the value baseline V , and (iii) how the advantage weight ω(s, a ) used in the guided actor update is computed and stabilized. 
+
+E.1 Notation and dataset tuples 
+
+We use dataset tuples ( s, a, r, s ′, d ) ∼ D where d ∈ { 0, 1} denotes terminal (done). The discount is 
+
+γ ∈ (0 , 1). 
+
+E.2 Ensemble critic training objective (vectorized implementation) 
+
+Let {Qi}Mi=1 be an ensemble, implemented by a vectorized network producing M outputs. For a transition ( s, a, r, s ′, d ), define the bootstrapped target 
+
+y(s, a, r, s ′, d ) ≜ r + γ(1 − d) V (s′). (60) The critic loss is mean squared error over the ensemble: 
+
+LQ = E(s,a,r,s ′,d )∼D 
+
+"
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+ Qi(s, a ) − y2
+
+#
+
+. (61) 39 The target critic parameters are updated by Polyak averaging: 
+
+θtgt ← (1 − τ ) θtgt + τ θ, (62) with τ ∈ (0 , 1). 
+
+Training-time conservative reducer. In the implementation, the scalar critic used inside value/advantage computations is 
+
+Qmin (s, a ) ≜ min  
+
+> 1≤i≤M
+
+Qi(s, a ), (63) i.e., the forward pass of the ensemble returns the componentwise minimum (a conservative reducer). We denote its target-network version by Qtgt min .
+
+E.3 Expectile value regression and its optimality condition 
+
+The value network V is trained by expectile regression against the conservative target critic. Define the temporal difference 
+
+δ(s, a ) ≜ Qtgt min (s, a ) − V (s). (64) Given expectile parameter τ ∈ (0 , 1), the expectile loss is 
+
+ℓτ (δ) ≜ |τ − 1{δ < 0}| δ2. (65) Then the value objective is 
+
+LV = E(s,a )∼D 
+
+ℓτ (Qtgt min (s, a ) − V (s)) . (66) 
+
+Why this is an expectile (derivation sketch). Fix a state s and consider the distribution of Qtgt min (s, a ) under dataset actions. The minimizer V ⋆(s) of E[ℓτ (Q − V )] satisfies the first-order condition: 
+
+E
+
+h
+
+(τ − 1{Q − V ⋆(s) < 0}) ( Q − V ⋆(s)) 
+
+i
+
+= 0 , (67) which defines the τ -expectile of the random variable Q. Thus V becomes a robust baseline for defining advantage. 
+
+E.4 Exact advantage definition and stabilization 
+
+In GEM, the advantage used for guidance is computed from the same quantities as the value update: 
+
+A(s, a ) ≜ Qtgt min (s, a ) − V (s). (68) This is exactly δ(s, a ) in (64) (computed under torch.no grad() in code). 
+
+E.5 Guidance weight: bounded exponential reweighting 
+
+Guidance enters the actor update via a per-sample weight 
+
+ω(s, a ) ≜ exp( βA (s, a )) clipped as ω(s, a ) ← min( ω(s, a ), ω max ), (69) where β > 0 controls guidance strength and ωmax is a fixed cap ( EXP ADV MAX in code) to prevent unstable gradients from extreme advantages. 40 Interpretation. Compared to uniform imitation, ω(s, a ) increases regression pressure on dataset actions that the conservative critic rates higher relative to the value baseline. Crucially, guidance does not redefine responsibilities ; it only reweights the loss on dataset samples. 
+
+E.6 Full actor loss used in training (ties to Appendix C) 
+
+Let ELBO loose (s, a ) denote the detached-responsibility surrogate computed by the actor (Ap-pendix C). The code forms 
+
+actor bc loss ← − ELBO loose (s, a ), policy loss ← ω(s, a ) · actor bc loss .
+
+In expectation form, the core guided objective is 
+
+Jcore (θ) = E(s,a )∼D 
+
+ω(s, a ) ·   − ELBO loose (s, a ) . (70) An additional state-level gating entropy bonus is used (Appendix C): 
+
+Jactor (θ) = Jcore (θ) − α · Es∼D 
+
+H(wθ(· | s)) , (71) where α ≥ 0. 
+
+E.7 Inference-time LCB uses mean–std, not the training-time minimum 
+
+Although training uses the conservative reducer Qmin in (63) , GEM’s inference-time score uses an ensemble lower-confidence statistic LCB λ(s, a ) = ¯Q(s, a ) − λ Std( Qi(s, a )) ,
+
+evaluated over candidates. This separation is intentional: training stability uses Qmin , while deployment robustness against budget-driven outliers uses LCB (Appendix B). 
+
+# F NLL-Gap Diagnostic for Auditing Mixture Utility 
+
+This appendix formalizes the NLL-gap diagnostic used to audit whether mixture structure provides measurable benefit on dataset actions, and provides an implementation-aligned computation recipe. 
+
+F.1 Definitions 
+
+Let πK (a | s) = PKk=1 wk(s) N (a; μk(s), Σk(s)) be a fitted K-component GMM (either the actor or a diagnostic GMM trained for analysis). Define the mixture negative log-likelihood: NLL gmm ≜ E(s,a )∼D 
+
+"
+
+− log 
+
+> K
+
+X
+
+> k=1
+
+wk(s) N (a; μk(s), Σk(s)) 
+
+#
+
+. (72) Define the top-1 proxy by selecting the most probable component under gating 
+
+k⋆(s) ≜ arg max  
+
+> 1≤k≤K
+
+wk(s), (73) and evaluating the corresponding single-Gaussian NLL (note: gating weight is not included in this proxy): NLL top1 ≜ E(s,a )∼D 
+
+− log N a; μk⋆(s)(s), Σk⋆(s)(s) . (74) The diagnostic is gap ≜ NLL top1 − NLL gmm . (75) 41 F.2 Interpretation and caveats 
+
+What the gap measures. NLL gmm measures how well the full mixture explains dataset actions. NLL top1 measures how well a single component selected by gating explains dataset actions. Apositive gap indicates that, on average, the full mixture assigns higher likelihood to dataset actions than the single gated component does, consistent with useful multimodality .
+
+Sign is not a universal guarantee. Because NLL top1 ignores the mixture weights wk(s) and chooses k⋆ by gating probability rather than maximizing the component likelihood of a, gap is a diagnostic statistic rather than a strict bound. In practice, we use it as an audit: large positive gaps suggest that collapsing to a single component loses density mass on the dataset actions. 
+
+F.3 Implementation-aligned computation recipe 
+
+For a minibatch ( s, a ): 1. Evaluate the mixture log-probability log πK (a | s) using the stable log-sum-exp form (or equiva-lently via MixtureSameFamily.log prob ). Accumulate NLL gmm by averaging − log πK (a | s). 2. Compute gating probabilities w(s) and the index k⋆(s) = arg max k wk(s). 3. Extract the component distribution of k⋆(s) and compute the single Gaussian log-probability log N (a; μk⋆ (s), Σk⋆ (s)). Accumulate NLL top1 by averaging its negative. 4. Report gap = NLL top1 − NLL gmm .
+
+Exact alignment with the provided diagnostic script. This matches the computation pattern used in untianalyze modality gap.py : gmm nll = -gmm dist.log prob(a) , top1 nll = -Normal(mu[k*], std[k*]).log prob(a).sum(-1) .
+
+# G Candidate Generation, Top-k Smoothing, and Deployment Com-plexity 
+
+This appendix expands Phase II (deployment) into explicit sampling equations and gives a tight complexity accounting. The goal is reproducibility and a clear compute–quality knob statement. 
+
+G.1 Sampling from a conditional GMM 
+
+Let π(a | s) = PKk=1 wk(s) N (a; μk(s), Σk) be a diagonal GMM (actor or behavior). Sampling can be written as: 
+
+z ∼ Categorical( w(s)) , a ∼ N  μz (s), Σz
+
+. (76) In vectorized implementation, this is done in batch for N samples in parallel. 
+
+G.2 Exact candidate set used by GEM 
+
+For a queried state s, GEM constructs 
+
+C(s) = {a0, a 1, . . . , a N }, |C (s)| = N + 1 .
+
+42 The anchor is deterministic: 
+
+k⋆(s) = arg max  
+
+> k
+
+wk(s), a0 = μk⋆ (s). (77) The remaining N candidates come from exactly one source: 
+
+a1: N ∼ πθ(· | s) or μφ(· | s),
+
+controlled by use gem candidates . There is no mixed sampling and no fallback gate. 
+
+G.3 Top-k smoothing operator (exact) 
+
+Let scores be computed over candidates and let TopK return indices of the k largest scores. GEM outputs ˆa(s) = 1
+
+k
+
+X
+
+> j∈TopK(Score( s, ·))
+
+aj , k = min( ksmooth , |C (s)|). (78) Setting ksmooth = 1 recovers the top-1 candidate (no smoothing). 
+
+G.4 Complexity: where the deployment cost actually goes 
+
+Let M be ensemble size and K be mixture components. For one queried state: 
+
+Candidate generation. Sampling N candidates from a GMM is O(N ) random draws plus network forward cost to produce ( wk(s), μ k(s), Σk) once. This part is fully parallelizable over N .
+
+Critic evaluation for LCB. GEM evaluates the ensemble on all candidates: 
+
+Qi(s, a j ) for i = 1 ..M, j = 0 ..N. 
+
+With vectorized implementation, this is one forward pass producing an M × (N + 1) tensor, then ¯Q(·) = mean i, Std( ·) = std i.
+
+The per-state arithmetic cost after the forward is O(M (N + 1)). 
+
+Behavior log-likelihood for support. Computing log μφ(aj | s) for all candidates uses a log-sum-exp over K components, hence O(K(N + 1)) arithmetic (again vectorized). 
+
+Candidate-set normalization and ranking. Normalization is O(N ) and ranking/top-k is 
+
+O(( N + 1) log (N + 1)) in the worst case, or O(N ) expected with selection routines; in practice, this is dominated by network evaluation. 
+
+Summary. Deployment cost scales linearly with N (up to sorting constants) and is parallelizable: Cost( N ) ≈ O(M (N + 1)) 
+
+| {z }
+
+> LCB
+
++ O(K(N + 1)) 
+
+| {z }
+
+> support
+
++(lower-order) .
+
+Thus N is a pure inference-time compute knob with no retraining. 43 H Additional Notes on Extreme-Value Amplification and Robust-ness of the Interface Knobs 
+
+Appendix B already gives a standard sub-Gaussian bound for the expected maximum noise term. This appendix adds two complementary details: (i) an independence-free tail bound via union bound (useful when candidate errors are correlated), and (ii) a clarification of how the two knobs ( λ, w p)address distinct failure channels. 
+
+H.1 Max-noise growth without independence (tail integration) 
+
+Let {εj }Nj=0 be mean-zero random variables such that each εj is σ-sub-Gaussian: 
+
+E exp( tε j ) ≤ exp( σ2t2/2) , ∀t ∈ R, ∀j. (79) No independence is required for the following tail bound. By a standard sub-Gaussian tail inequality, Pr( εj ≥ x) ≤ exp 
+
+
+
+− x2
+
+2σ2
+
+
+
+.
+
+Using a union bound, Pr 
+
+
+
+max  
+
+> 0≤j≤N
+
+εj ≥ x
+
+
+
+≤
+
+> N
+
+X
+
+> j=0
+
+Pr( εj ≥ x) ≤ (N + 1) exp 
+
+
+
+− x2
+
+2σ2
+
+
+
+. (80) Integrating the tail gives an expectation bound of order σplog( N + 1): 
+
+E
+
+h
+
+max  
+
+> 0≤j≤N
+
+εj
+
+i
+
+=
+
+Z ∞
+
+> 0
+
+Pr 
+
+
+
+max  
+
+> j
+
+εj ≥ x
+
+
+
+dx ≲ σp2 log( N + 1) , (81) up to universal constants. This shows that maximization amplifies noise as N grows under broad conditions, even when candidate errors are correlated. 
+
+H.2 Two knobs target two distinct amplification channels 
+
+Write the implemented inference score (Appendix B) as 
+
+\Score( s, a ) = ¯Q(s, a ) − λ Std( Qi(s, a )) 
+
+| {z }
+
+> uncertainty control
+
++ wp ˜ℓ(a)
+
+| {z }
+
+> support control
+
+, ˜ℓ(a) = zscore C(s)(log μφ(a | s)) .
+
+Uncertainty-driven outliers (handled by λ). Even when candidates are on-support, function approximation can induce high disagreement. Increasing N increases the probability that at least one candidate has spuriously high ¯Q due to noise; penalizing disagreement via λ Std reduces the chance such candidates win the argmax. 
+
+Support-driven OOD exposure (handled by wp). Separately, increasing N increases the chance that at least one candidate lies in weak-support regions. The standardized support term penalizes these candidates with a state-stable meaning (Appendix B). 
+
+Why both are needed. Using only support cannot remove all uncertainty artifacts on-support; using only uncertainty cannot prevent systematic drift into weak-support regions. GEM’s interface combines both to make scaling N a usable deployment knob rather than an OOD amplifier. 44 H.3 Robustness note: effect of candidate-set standardization under changing N
+
+Let ℓj = log μφ(aj | s) for j = 0 ..N . Standardization uses the sample mean μℓ and population std 
+
+σℓ over the current set. As N grows, ( μℓ, σ ℓ) concentrate (under mild conditions), so the units of ˜ℓ remain comparable as N changes. The small clamp max (σℓ, 10 −6) only affects degenerate cases when all candidates have nearly identical ℓj .
+
+Practical implication. This is the concrete reason wp is interpretable as an exchange rate between conservative value units and “support standard deviation” units across states and budgets. 45

@@ -1,0 +1,560 @@
+Title: ProGRank: Probe-Gradient Reranking to Defend Dense-Retriever RAG from Corpus Poisoning
+
+URL Source: https://arxiv.org/pdf/2603.22934v1
+
+Published Time: Wed, 25 Mar 2026 01:12:12 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# ProGRank: Probe-Gradient Reranking to Defend Dense-Retriever RAG from Corpus Poisoning 
+
+Xiangyu Yin 1, Yi Qi 2, and Chih-Hong Cheng 1,3 
+
+> 1
+
+Chalmers University of Technology, Sweden 
+
+{yinxi,chengch}@chalmers.se  
+
+> 2
+
+University of Leeds, United Kingdom 
+
+Y.Qi@leeds.ac.uk  
+
+> 3
+
+Carl von Ossietzky University of Oldenburg, Germany 
+
+chih-hong.cheng@uni-oldenburg.de 
+
+Abstract. Retrieval-Augmented Generation (RAG) improves the reli-ability of large language model applications by grounding generation in retrieved evidence, but it also introduces a new attack surface: corpus poisoning. In this setting, an adversary injects or edits passages so that they are ranked into the Top-K results for target queries and then af-fect downstream generation. Existing defences against corpus poisoning often rely on content filtering, auxiliary models, or generator-side reason-ing, which can make deployment more difficult. We propose ProGRank, a post hoc, training-free retriever-side defence for dense-retriever RAG. ProGRank stress-tests each query–passage pair under mild randomized perturbations and extracts probe gradients from a small fixed param-eter subset of the retriever. From these signals, it derives two instabil-ity signals, representational consistency and dispersion risk, and com-bines them with a score gate in a reranking step. ProGRank preserves the original passage content, requires no retraining, and also supports a surrogate-based variant when the deployed retriever is unavailable. Extensive experiments across three datasets, three dense retriever back-bones, representative corpus poisoning attacks, and both retrieval-stage and end-to-end settings show that ProGRank provides stronger defence performance and a favorable robustness–utility trade-off. It also remains competitive under adaptive evasive attacks. 
+
+Keywords: Retrieval Augmented Generation · Corpus Poisoning · Ro-bust Reranking 
+
+## 1 Introduction 
+
+Retrieval-Augmented Generation (RAG) improves the reliability of large lan-guage model (LLM) applications by grounding generation in externally retrieved evidence [9, 10, 13, 16]. In practical deployments, the retrieval corpus is often assembled from web-scale or user-contributed sources rather than a fully cu-rated collection, making the corpus an additional trust boundary for the RAG  
+
+> arXiv:2603.22934v1 [cs.AI] 24 Mar 2026 2X. Yin et al.
+
+pipeline [5, 29, 30]. Modern RAG systems commonly rely on neural dense retriev-ers that rank passages by embedding similarity and pass the Top-K passages to the generator [14, 16, 23]. Among the emerging risks, corpus poisoning is particularly concerning. In this setting, an adversary injects or edits a small number of passages so that they are ranked into the Top-K results for target queries and subsequently steer generation through poisoned evidence [28, 38, 40]. This threat model covers rep-resentative attack families, including retrieval-optimized poisoning [38], joint op-timization with retrieval and generation objectives [40, 28], trigger-based poison-ing that activates under specific queries [2], and misleading-evidence attacks that induce unfaithful or harmful generations [4, 26]. Our goal is to reduce poisoned Top-K exposure at retrieval time, thereby lowering downstream attack success, without modifying the generator or retraining the retriever. Existing defences can be grouped by the stage at which they intervene. Generation-time defences change how retrieved evidence is consumed during decoding, for example via aggregation schemes [31], attention constraints [6], or activation-based analysis [25]. System-level approaches aim to identify and remove poisoned sources in the corpus, which often requires corpus-wide access and offline processing [36]. Retriever-side defences instead act on the ranking itself by reducing the chance that poisoned passages enter the Top-K set. How-ever, existing poisoning-mitigation methods at or around retrieval often rely on auxiliary detectors or content-based filtering [7, 17, 34], dedicated reranking pro-cedures [37], or hybrid pipelines that invoke language-model reasoning beyond retrieval [39], which can complicate deployment. We propose ProGRank, a post hoc, training-free retriever-side defence for neural dense retrievers in RAG. As illustrated in Fig. 1, ProGRank performs a lightweight stress test on each query– passage pair by computing probe gradients of the retriever similarity score with respect to a small fixed parameter subset, namely a LayerNorm module at layer 
+
+L, under mild randomized perturbations of the retriever computation. From these probe gradients, we derive two complementary instability signals, repre-sentational consistency ( Rep ) and dispersion risk ( DR ), also denoted as the consistency penalty and the saturated risk penalty. Unlike generic uncertainty-based reranking, ProGRank probes parameter-space sensitivity rather than only representation-space variability, and combines these signals with a score gate that focuses correction on the high-score region that determines Top-K membership. The key intuition is that optimization-driven poisons can concentrate retrievabil-ity on a small set of perturbation-sensitive matching signals, which makes them more likely to yield unstable gradient responses under stochastic perturbations than benign passages. We do not assume that all poisoned passages are intrin-sically unstable, rather, we treat such instability as a useful reranking signal for poisoning mitigation. ProGRank can be used in a white-box setting with direct access to the retriever, and it also admits a surrogate-based variant for settings where the deployed retriever is unavailable. We evaluate ProGRank across multiple datasets and dense retriever back-bones [1, 14, 16, 19, 33], under representative poisoning strategies [2, 4, 28, 38, 40]. Probe-Gradient Reranking for Defending Corpus Poisoning 3
+
+Fig. 1: Comparison between the undefended ranking pipeline and our proposed probe-gradient reranking. ProGRank extracts two sensitivity-based penalties, a consistency penalty and a saturated risk penalty, and fuses them with a score gate to obtain the defended reranking score, thereby suppressing poisoned passages and reducing poisoned Top-K exposure. Overall, ProGRank reduces poisoned Top-K exposure while maintaining retrieval utility, and lowers downstream attack success. 
+
+Contributions. Our contributions are three-fold: (1) We propose ProGRank, a post hoc, training-free retriever-side defence that reranks candidates using probe-gradient instability under randomized perturbations. (2) We introduce a score-gated penalty fusion mechanism that focuses robustness correction on the decision-critical high-score region. (3) We show across multiple datasets, retriev-ers, and poisoning attacks that ProGRank reduces poisoned Top-K exposure and improves downstream robustness, while remaining effective under the adaptive attack settings considered in this work. 
+
+## 2 Related Work 
+
+Corpus Poisoning Attacks. Corpus poisoning attacks inject or modify a small number of passages so that targeted queries retrieve them and downstream gener-ation is steered [38, 40, 28]. Existing work studies direct passage injection against dense retrievers [38], end-to-end poisoning objectives for RAG [40, 28], trigger-style poisoning [2], and retrieval corruption through low-level perturbations [4, 26]; benchmarks further show that adaptive poisoning can degrade many de-fences [35]. 
+
+Defences Against Corpus Poisoning. Existing defences span multiple stages of the RAG pipeline [23, 29, 35]. Generation-time defences reduce the influence of 4 X. Yin et al. 
+
+Table 1: Comparison of representative defences against corpus poisoning in dense-retriever RAG. Columns highlight deployment properties relevant to our positioning.                         
+
+> Method Post hoc and training-free No auxiliary LM inference Preserves original passage content No generator-side calls GRADA [37] ✓✓✓✓
+> RAGPart [21] ✓✓✗✓
+> RAGMask [21] ✓✓✗✓
+> GMTP [17] ✓✗✗✓
+> RAGuard [18] ✗✗✗✗
+> ProGRank (ours) ✓✓✓✓
+
+retrieved evidence during decoding [31, 6, 25], system-level approaches trace at-tacks back to poisoned texts for cleanup [36], and retriever-side or retrieval-stage defences aim to prevent poisoned passages from entering the Top-K set, often via filtering or detector-style scoring [3, 7, 17, 34], dedicated reranking [37], retrieval-stage content manipulation such as partitioning or masking [21], or hybrid veri-fication with additional language-model reasoning [39, 29, 35]. 
+
+Positioning. ProGRank is a post hoc, training-free retriever-side defence that uses only retriever-derived signals, without auxiliary language-model inference, content filtering, or generator-side verification. Unlike filtering or hybrid verifi-cation methods [3, 17, 34, 39], it operates directly on query–passage signals from the retriever. Unlike approaches that alter retrieved content [21, 17, 3], it pre-serves the original passage content and adjusts scores in a post hoc reranking step. Unlike dedicated reranking procedures [37], it does not introduce a separate learned reranker or auxiliary model. ProGRank also admits a surrogate-based variant for settings where the deployed retriever is unavailable. 
+
+## 3 Methodology 
+
+3.1 Problem Setup 
+
+Given a user query q, we consider a neural dense retriever with parameters θ
+
+that ranks passage candidates p ∈ D (q) using the base score 
+
+sθ (q, p ) = ⟨norm( fθ (q)) , norm( gθ (p)) ⟩ , (1) where fθ (·) and gθ (·) are the query and passage encoders, respectively, norm( ·)
+
+denotes ℓ2 normalization, and ⟨· , ·⟩ denotes the dot product. In the white-box set-ting, θ denotes the deployed retriever. In the surrogate-based variant, θ denotes a surrogate retriever used to instantiate the defence score when the deployed retriever is unavailable. Let Dclean denote the clean candidate pool. An adversary constructs poisoned passages Dpoison either by corrupting clean passages or by directly inserting new ones, resulting in 
+
+D = Dclean ∪ D poison .Probe-Gradient Reranking for Defending Corpus Poisoning 5
+
+Our goal is to derive a defended score ˜sθ (q, p ) built upon sθ (q, p ) that suppresses poisoned passages during retrieval. We formulate this objective as minimizing the overlap between the Top-K set under the defended score and the poisoned set: 
+
+TopK p∈D ˜sθ (q, p ) ∩ D poison , (2) where TopK p∈D ˜sθ (q, p ) returns the set of K passages with the highest defended scores. We emphasize that this objective is a retrieval-stage target rather than a complete end-to-end safety objective. Accordingly, we evaluate retrieval-stage poisoning exposure separately from downstream robustness and clean-task utility in Sec. 4.1. 
+
+3.2 Stress Test-Based Reranking via Randomized Probing 
+
+Traditional neural dense retrievers rank candidates using a similarity score alone. This creates an attack surface for corpus poisoning: an adversary can craft or modify passages so that they achieve high similarity with a target query and enter the Top-K results [38, 40]. ProGRank targets a practically important sub-set of such attacks, namely optimization-driven poisons whose retrievability is concentrated on perturbation-sensitive matching signals. Our key hypothesis is not that all poisoned passages are intrinsically unstable, but that this instability provides a useful reranking signal across diverse poisoning settings. As illustrated in Fig. 1, ProGRank stress-tests each query–passage pair under mild randomized perturbations, extracts gradient-based instability signals, and uses them to adjust retrieval scores in a post hoc reranking step. For each query– passage pair (q, p ), in addition to the base score in Eq. (1), we apply a stochastic perturbation operator T (·) for R runs to obtain perturbed variants pr = Tr (p)
+
+for r ∈ { 1, . . . , R }. In our implementation, Tr (·) can be token dropout, encoder dropout, or their mixture. Token dropout randomly masks a proportion of pas-sage tokens, while encoder dropout uses the model’s internal dropout. Unless specified otherwise, encoder dropout affects the forward computation for both the query and the passage, whereas token dropout is applied only to the pas-sage. For simplicity, Tr denotes the stochastic perturbation used in the r-th run without changing the notation for q.We keep the retriever parameters fixed and probe a small fixed parameter subset ϑ ⊆ θ, instantiated in our experiments as a LayerNorm module at layer 
+
+L. Given a perturbed passage pr , we define the probe gradient as 
+
+gr,θ,ϑ (q, p ) = ∇ϑ sθ (q, p r ). (3) We treat {gr,θ,ϑ (q, p )}Rr=1 as a sensitivity signature that captures how the query– passage similarity responds to randomized perturbations. From these probe gra-dients, we derive two complementary statistics: representational consistency ,which measures directional agreement across perturbations, and dispersion risk ,which captures lower-tail instability. 6 X. Yin et al. 
+
+As directly computing gradients with respect to all retriever parameters is computationally prohibitive for ranking, we probe only the small subset ϑ to obtain a lightweight sensitivity signature, following prior work that uses param-eter subsets for scalable gradient-based influence analysis [22]. This view is also related to Fisher-score style representations, which characterize an input by its parameter gradients [15]. 
+
+Representational Consistency We quantify directional agreement of probe gradients across perturbations via a normalized gradient signal-to-noise ratio: 
+
+Rep R,θ,ϑ (q, p ) = 
+
+> 1
+> R
+
+PRr=1 gr,θ,ϑ (q, p ) 2
+
+q 1
+
+> R
+
+PRr=1 ∥gr,θ,ϑ (q, p )∥22 + ε
+
+∈ [0 , 1] , (4) where ε > 0 stabilizes the denominator. Larger Rep R,θ,ϑ (q, p ) indicates stronger directional agreement across perturbations. We convert representational consis-tency into an additive penalty: 
+
+P R,θ,ϑ  
+
+> rep
+
+(q, p ) = − log  Rep R,θ,ϑ (q, p ) + ε, (5) so that candidates with low consistency receive larger penalties. 
+
+Dispersion Risk Representational consistency captures directional alignment but does not directly quantify deviations from the mean gradient. We therefore define a relative deviation statistic: 
+
+dev r,R,θ,ϑ (q, p ) = ∥gr,θ,ϑ (q, p ) − ¯gR,θ,ϑ (q, p )∥2
+
+∥¯gR,θ,ϑ (q, p )∥2 + ε , ¯gR,θ,ϑ (q, p ) = 1
+
+R
+
+> R
+
+X
+
+> r=1
+
+gr,θ,ϑ (q, p ),
+
+(6) and map it to a per-run stability score using an exponential kernel: 
+
+cr,R,θ,ϑ (q, p ) = exp( −α · dev r,R,θ,ϑ (q, p )) , (7) where α > 0 controls the decay rate. This yields a bounded score in (0 , 1] that decreases monotonically as the deviation grows. To emphasize lower-tail instability, we aggregate {cr,R,θ,ϑ (q, p )}Rr=1 using a lower quantile: 
+
+cR,θ,ϑ (q, p ) = Quantile τ
+
+ {cr,R,θ,ϑ (q, p )}Rr=1 
+
+ , τ ∈ (0 , 1) . (8) This aggregation summarizes stability in the lower tail and is less sensitive than the minimum to a single noisy run [11]. We then convert the aggregated stability score into a dispersion-risk penalty. First, 
+
+ˆP R,θ,ϑ  
+
+> dr
+
+(q, p ) = − log( cR,θ,ϑ (q, p ) + ε)max( cR,θ,ϑ (q, p ), ε ) , (9) Probe-Gradient Reranking for Defending Corpus Poisoning 7
+
+Fig. 2: Overall retrieval-stage results, comparing Poison Hit Rate and Poison Recall Rate under sθ (q, p ) and ˜sR,θ,ϑ (q, p ).where − log( cR,θ,ϑ (q, p ) + ε) is monotone in stability and the additional divi-sion amplifies separation when cR,θ,ϑ (q, p ) is small. To prevent a few extreme candidates from dominating the reranking score, we apply a saturating cap: 
+
+P R,θ,ϑ  
+
+> dr
+
+(q, p ) = C · ˆP R,θ,ϑ  
+
+> dr
+
+(q, p )ˆP R,θ,ϑ  
+
+> dr
+
+(q, p ) + C + ε , (10) where C > 0 bounds the maximum penalty. 
+
+3.3 Score-Gated Penalty Fusion and Final Selection 
+
+We restrict robustness correction to the decision-critical region of the base-score distribution. Top-K membership is determined by candidates with high base scores, whereas the low-score tail cannot enter the Top-K set. Penalizing all candidates can therefore introduce unnecessary ranking changes in the low-score region. We address this issue with a score-dependent gate. For each query q, we compute a gate center μθ (q) from the base-score distri-bution: 
+
+μθ (q) = Quantile 1− m 
+
+> |D|
+
+({sθ (q, p )}p∈D ) , m =
+
+lp |D| 
+
+m
+
+. (11) We use m = ⌈p|D|⌉ as a simple heuristic to place μθ (q) in the upper tail without depending directly on K.We define the gate as 
+
+wθ (q, p ) = σ(sθ (q, p ) − μθ (q)) , (12) where σ is the sigmoid function, so that wθ (q, p ) ≈ 1 when sθ (q, p ) ≫ μθ (q) and 
+
+wθ (q, p ) ≈ 0 when sθ (q, p ) ≪ μθ (q).Starting from the abstract defended score ˜sθ (q, p ) introduced in Sec. 3.1, we now specify its concrete form by making explicit its dependence on the pertur-bation repeat count R and the probe parameter subset ϑ. The final defended reranking score is 
+
+˜sR,θ,ϑ (q, p ) = sθ (q, p ) − wθ (q, p )
+
+
+
+P R,θ,ϑ  
+
+> dr
+
+(q, p ) + P R,θ,ϑ  
+
+> rep
+
+(q, p )
+
+
+
+. (13) 8 X. Yin et al. 
+
+Fig. 3: Distribution of reranking signals for clean and poisoned passages. From left to right: P R,θ,ϑ  
+
+> dr
+
+(q, p ), P R,θ,ϑ  
+
+> rep
+
+(q, p ), the applied score correction ˜sR,θ,ϑ (q, p ) −
+
+sθ (q, p ), and the gate value wθ (q, p ).We use equal weights for the two penalties. In practice, P R,θ,ϑ  
+
+> dr
+
+is capped by C,and P R,θ,ϑ  
+
+> rep
+
+uses a log transform, which keeps their magnitudes comparable while avoiding an additional weighting hyperparameter. 
+
+Empirical evidence for our reranking objective. Fig. 2 summarizes the overall retrieval-stage results: ProGRank consistently reduces both Poison Hit Rate and Poison Recall Rate relative to the undefended ranking, with the strongest effect on HotpotQA. On NQ and MS MARCO, the Top-50 Poison Hit Rate is also reduced to around 30%. This trend is reflected in Fig. 4, where poisoned pas-sages show almost no upward rank shift but much larger downward shifts than clean passages. Fig. 3 further shows that poisoned passages tend to receive larger penalties and gate values, so stronger correction is applied in the decision-critical high-score region. Fig. 5 shows that the full gated objective performs best over-all, and that removing P R,θ,ϑ  
+
+> dr
+
+(q, p ) causes a larger degradation than removing 
+
+P R,θ,ϑ  
+
+> rep
+
+(q, p ). Taken together, these results provide empirical evidence that the proposed reranking objective helps suppress poisoned passages while preserving its focus on the high-score region. Experimental details are provided in Sec. 4.1. 
+
+3.4 Mechanism-Level Intuition for Stochastic Probing 
+
+We provide a simple mechanism-level intuition for why optimization-driven poi-soned passages can exhibit lower representational consistency (Eq. (4)) and higher dispersion risk (Eqs. (9)–(10)) under stochastic probing induced by T (·).We do not claim a formal guarantee that all poisoned passages are unstable; rather, the following abstraction explains the empirical trend observed in our experiments. The perturbation operator T (·) can be viewed as feature noising that induces stochastic representations via random masking of tokens, units, or computation paths, consistent with standard interpretations of dropout [8, 24, 27]. If a can-didate’s high similarity relies on a small set of concentrated and perturbation-sensitive features, mild perturbations can suppress their effective contribution in some runs and yield unstable gradient responses. This view aligns with ro-bustness perspectives that distinguish robust evidence from brittle but highly predictive features [12], and with optimization-driven corpus poisoning where an Probe-Gradient Reranking for Defending Corpus Poisoning 9
+
+Fig. 4: Rank shift induced by ProGRank. Upward and downward rank shifts are reported separately for poisoned and clean passages as Poison Up , Poison Down , Clean Up , and Clean Down . Top row shows maximum shift magnitude and the bottom row shows mean shift magnitude. We use P ↓ and C ↓ as shorthand for Poison Down and Clean Down , respectively. attacker explicitly optimizes a passage to achieve high retrieval score for target queries [38, 40, 28]. Specifically, following the probe gradient in Eq. (3), we use the decomposition 
+
+gr,θ,ϑ (q, p ) = uθ,ϑ (q, p ) + Zr (q, p ) aθ,ϑ (q, p ) + ξr,θ,ϑ (q, p ), (14) where uθ,ϑ (q, p ) models a distributed (stable) contribution, aθ,ϑ (q, p ) models a concentrated component, ξr,θ,ϑ (q, p ) is zero-mean noise with bounded second mo-ment (so empirical averages concentrate as R grows), and Zr (q, p ) ∈ { 0, 1} is an 
+
+abstract Bernoulli gate indicating whether the concentrated component remains effectively active under Tr (i.e., whether the concentrated component remains active under the perturbation in the r-th run). We assume {Zr (q, p )}Rr=1 are i.i.d. with P(Zr (q, p ) = 1) = 1 −ρ(q, p ) for some ρ(q, p ) ∈ (0 , 1) . For simplicity, we treat 
+
+ρ(q, p ) as an effective inactivation rate determined by the fixed retriever (θ, ϑ )
+
+and the chosen perturbation operator. This is a minimal abstraction, which only requires that the concentrated component is absent with non-zero probability across runs. This induces a simple on/off behavior: the concentrated compo-nent is sometimes kept ( Zr = 1 ) and sometimes masked out by perturbations (Zr = 0 ), consistent with stochastic masking. Under Eq. (14) and sufficiently large R, Eq. (4) admits the population approximation 
+
+Rep 2
+
+> R,θ,ϑ
+
+(q, p ) ≈ ∥Er [gr,θ,ϑ (q, p )] ∥22
+
+Er ∥gr,θ,ϑ (q, p )∥22
+
+. (15) 10 X. Yin et al. 
+
+Fig. 5: Ablation of the reranking objective. We compare the full score in Eq. (13) against ablated variants obtained by removing wθ (q, p ), P R,θ,ϑ  
+
+> dr
+
+(q, p ), P R,θ,ϑ  
+
+> rep
+
+(q, p ),and their combinations. From Eq. (14), 
+
+Er [gr,θ,ϑ (q, p )] = uθ,ϑ (q, p ) + (1 − ρ(q, p )) aθ,ϑ (q, p ). (16) When ∥aθ,ϑ (q, p )∥2 is large and ρ(q, p ) ∈ (0 , 1) , the concentrated component is present in some runs and absent in others, which increases the second moment 
+
+Er ∥gr,θ,ϑ (q, p )∥22 more than the squared mean ∥Er [gr,θ,ϑ (q, p )] ∥22. As a result, 
+
+Rep R,θ,ϑ (q, p ) decreases and P R,θ,ϑ  
+
+> rep
+
+(q, p ) increases. In practice, we use small val-ues of R, and the R-sweep in Fig. 6 shows that performance remains stable across repeat counts. For dispersion risk, under Eq. (14) and large R, the sample mean ¯gR,θ,ϑ (q, p )
+
+(defined in Eq. (6)) concentrates around uθ,ϑ (q, p ) + (1 − ρ(q, p )) aθ,ϑ (q, p ). When the concentrated component is absent ( Zr = 0 ), 
+
+gr,θ,ϑ (q, p ) − ¯gR,θ,ϑ (q, p ) ≈ − (1 − ρ(q, p )) aθ,ϑ (q, p ); 
+
+when it is present ( Zr = 1 ), 
+
+gr,θ,ϑ (q, p ) − ¯gR,θ,ϑ (q, p ) ≈ ρ(q, p )aθ,ϑ (q, p ).
+
+Thus, if ∥aθ,ϑ (q, p )∥2 is large and ρ(q, p ) is non-negligible, the per-run deviations in Eq. (6) are large with non-zero probability across runs. Since cR,θ,ϑ (q, p ) in Eq. (8) is a lower quantile of {cr,R,θ,ϑ (q, p )}Rr=1 , these large-deviation runs reduce 
+
+cR,θ,ϑ (q, p ) and hence increase P R,θ,ϑ  
+
+> dr
+
+(q, p ). Mixed perturbations can increase the chance that the concentrated component becomes inactive in a run (i.e., larger effective ρ(q, p )), further amplifying this effect. 
+
+3.5 Towards Implementation Efficiency 
+
+Although our formulation is defined over D, a practical deployment would in-stantiate D as a bounded first-stage candidate pool rather than the full corpus. Probe-Gradient Reranking for Defending Corpus Poisoning 11 
+
+Fig. 6: Ablation summary across four factors: perturbation repeat R, probe layer, perturbation type, and retriever backbone. One may first retrieve a buffer of top-B candidates with B ≫ K, estimate the gate on this pool, and apply stochastic probing only to the decision-critical upper-tail candidates before selecting the final top-K. The additional defence overhead then depends mainly on the bounded pool size B, rather than directly on the full corpus size, while remaining consistent with the score-gating intuition in Sec. 3.3. 
+
+## 4 Experiments 
+
+4.1 Experimental Setups 
+
+Datasets and corpus poisoning methods . Following the implementation in [28], we evaluate on MS MARCO [1], Natural Questions (NQ) [19], and Hot-potQA [33]. Our corpus poisoning methods include PoisonedRAG [40], LIAR-RAG [26], and Joint-GCG [28]. For each dataset, we sample 100 evaluation queries, and each query is associated with 50 clean passages. 
+
+Retrieval-stage settings . For retrieval-stage experiments, we consider three dense retrievers: Contriever [14], DPR [16], and BGE [32]. We use a pooled-poison protocol, where all poisoned passages for the same query are added to the clean pool. For each query, the retriever returns a Top-K list with K ∈{5, 10 , 20 , 30 , 40 , 50 }. We evaluate ProGRank under four factors: perturbation repeats R ∈ { 4, 8, 16 , 20 , 24 , 28 , 32 }, probe layer L ∈ { 3, 7, 11 }, perturbation type (encoder dropout, token dropout, or their mixture), and retriever backbone. Here, L denotes the probed LayerNorm module, and for dispersion risk we fix 
+
+τ = 0 .1, α = 4 .0, and C = 6 .0. Results in Fig. 2, 3, and 5 are averaged over these settings, while Fig. 6 reports the corresponding ablations. The ablations show that performance stabilizes around R = 20 , L = 3 performs best overall, and mixed perturbation is the strongest setting. These choices are then used in the downstream generation experiments. To avoid data snooping, retrieval-stage analysis and configuration selection use a random 20% query split, and downstream generation uses the remaining 80%. 12 X. Yin et al. 
+
+Table 2: Downstream generation results at Top-5. Each cell reports substring-based ASR (top), LLM-judged ASR (middle), and substring-based ACC (bot-tom). For each row, the lowest substring-based ASR and LLM-judged ASR, as well as the highest ACC, are highlighted in bold .
+
+Dataset Poison Method Baseline GRADA GMTP RAGuard Ours HotpotQA PoisonedRAG 
+
+0.940 ±0.239 0.960 ±0.197 0.010 ±0.100 0.080 ±0.273 0.080 ±0.273 0.230 ±0.423 0.090 ±0.288 0.030 ±0.171 0.100 ±0.302 0.350 ±0.479 0.360 ±0.480 
+
+0.330 ±0.473 0.032 ±0.316 0.000 ±0.000 
+
+0.300 ±0.483 
+
+LIAR-RAG 
+
+0.739 ±0.449 0.826 ±0.388 0.000 ±0.000 0.000 ±0.000 0.043 ±0.209 0.391 ±0.499 0.000 ±0.000 0.000 ±0.000 0.261 ±0.449 0.348 ±0.487 0.340 ±0.485 
+
+0.435 ±0.507 0.000 ±0.000 0.000 ±0.000 
+
+0.400 ±0.516 
+
+Joint-GCG 
+
+0.966 ±0.183 0.949 ±0.222 0.017 ±0.130 0.085 ±0.281 0.119 ±0.326 0.237 ±0.429 0.102 ±0.305 0.034 ±0.183 0.136 ±0.345 0.441 ±0.501 0.430 ±0.498 0.288 ±0.457 
+
+0.000 ±0.000 0.000 ±0.000 0.469 ±0.500 
+
+Macro Avg 
+
+0.882 ±0.290 0.912 ±0.269 0.009 ±0.077 0.055 ±0.185 0.081 ±0.269 0.286 ±0.450 0.064 ±0.198 0.021 ±0.118 0.166 ±0.365 0.380 ±0.489 0.377 ±0.488 0.351 ±0.479 
+
+0.011 ±0.105 0.000 ±0.000 0.390 ±0.500 
+
+NQ PoisonedRAG 
+
+0.612 ±0.490 0.653 ±0.478 0.286 ±0.454 0.031 ±0.173 0.061 ±0.241 0.531 ±0.502 0.020 ±0.142 0.092 ±0.290 0.255 ±0.438 0.276 ±0.449 0.290 ±0.454 0.367 ±0.485 
+
+0.000 ±0.000 0.000 ±0.000 0.596 ±0.422 
+
+LIAR-RAG 
+
+0.522 ±0.505 0.696 ±0.465 0.130 ±0.341 0.022 ±0.147 0.043 ±0.206 
+
+0.630 ±0.488 
+
+0.000 ±0.000 0.087 ±0.285 0.326 ±0.474 0.261 ±0.444 0.270 ±0.448 0.500 ±0.506 
+
+0.000 ±0.000 0.000 ±0.000 
+
+0.200 ±0.422 
+
+Joint-GCG 
+
+0.900 ±0.302 0.920 ±0.273 0.080 ±0.273 0.030 ±0.171 0.060 ±0.239 
+
+0.540 ±0.501 
+
+0.020 ±0.141 0.100 ±0.302 0.260 ±0.441 0.370 ±0.485 0.360 ±0.482 0.350 ±0.479 
+
+0.000 ±0.000 0.000 ±0.000 
+
+0.350 ±0.422 
+
+Macro Avg 
+
+0.678 ±0.432 0.756 ±0.405 0.165 ±0.356 0.028 ±0.164 0.055 ±0.229 
+
+0.567 ±0.497 
+
+0.013 ±0.094 0.093 ±0.292 0.280 ±0.451 0.302 ±0.459 0.307 ±0.461 0.406 ±0.490 
+
+0.000 ±0.000 0.000 ±0.000 
+
+0.382 ±0.422 
+
+MS MARCO PoisonedRAG 
+
+0.890 ±0.314 0.940 ±0.239 0.040 ±0.197 0.100 ±0.302 0.030 ±0.171 0.400 ±0.492 0.130 ±0.338 0.060 ±0.239 0.210 ±0.409 0.380 ±0.488 0.390 ±0.490 
+
+0.430 ±0.498 0.000 ±0.000 0.000 ±0.000 
+
+0.400 ±0.516 
+
+LIAR-RAG 
+
+0.587 ±0.498 0.804 ±0.401 0.152 ±0.363 0.065 ±0.250 0.022 ±0.147 0.478 ±0.505 0.087 ±0.285 0.087 ±0.285 0.239 ±0.431 0.348 ±0.482 0.355 ±0.484 
+
+0.500 ±0.506 0.011 ±0.316 0.000 ±0.000 
+
+0.400 ±0.516 
+
+Joint-GCG 
+
+0.920 ±0.273 0.930 ±0.256 0.050 ±0.219 0.100 ±0.302 0.030 ±0.171 0.400 ±0.492 0.130 ±0.338 0.060 ±0.239 0.210 ±0.409 0.400 ±0.492 0.410 ±0.494 0.420 ±0.496 
+
+0.000 ±0.000 0.000 ±0.000 0.540 ±0.516 
+
+Macro Avg 
+
+0.799 ±0.362 0.891 ±0.299 0.081 ±0.260 0.088 ±0.285 0.027 ±0.163 0.426 ±0.496 0.116 ±0.320 0.069 ±0.254 0.220 ±0.416 0.376 ±0.487 0.385 ±0.489 
+
+0.450 ±0.500 0.033 ±0.105 0.000 ±0.000 
+
+0.447 ±0.516 
+
+Retrieval-stage metrics . To evaluate poisoning exposure at retrieval time, we use two K-dependent metrics. First, Poison Hit Rate measures whether at least one poisoned passage appears in the Top-K set: 
+
+Poison Hit Rate@ K = Eq
+
+1 TopK p∈D ˜sR,θ,ϑ (q, p ) ∩ D poison (q)̸ = ∅ . (17) Second, Poison Recall Rate measures the fraction of poisoned passages retrieved into the Top-K set: 
+
+Poison Recall Rate@ K = Eq
+
+" TopK p∈D ˜sR,θ,ϑ (q, p ) ∩ D poison (q)
+
+|D poison (q)| + ε
+
+#
+
+. (18) Probe-Gradient Reranking for Defending Corpus Poisoning 13 
+
+Table 3: Downstream generation results of ProGRank under ProGRank-based evasive attacks. 
+
+Dataset PoisonedRAG LIAR-RAG Joint-GCG Macro Avg HotpotQA 
+
+> 0.060 ±0.287 0.018 ±0.012 0.284 ±0.465 0.026 ±0.009 0.008 ±0.011 0.381 ±0.497 0.028 ±0.015 0.029 ±0.010 0.451 ±0.481 0.030 ±0.118 0.016 ±0.013 0.372 ±0.476
+
+NQ 
+
+> 0.024 ±0.010 0.030 ±0.014 0.579 ±0.403 0.012 ±0.008 0.022 ±0.012 0.186 ±0.405 0.030 ±0.011 0.024 ±0.016 0.333 ±0.401 0.016 ±0.009 0.034 ±0.015 0.365 ±0.398
+
+MS MARCO 
+
+> 0.028 ±0.013 0.011 ±0.010 0.382 ±0.492 0.017 ±0.301 0.010 ±0.014 0.383 ±0.499 0.027 ±0.012 0.034 ±0.017 0.521 ±0.487 0.049 ±0.097 0.019 ±0.012 0.429 ±0.503
+
+Table 4: Measured end-to-end latency (seconds per query). 
+
+Method HotpotQA (s/query) NQ (s/query) MS MARCO (s/query) Mean (s/query) GRADA 0.91 1.14 0.63 0.90 GMTP 14.71 17.82 11.25 14.60 RAGuard 110.17 148.74 95.61 118.17 Ours 4.68 4.92 4.58 4.73 
+
+where Dpoison (q) denotes the poisoned passages associated with query q, and 
+
+ε > 0 is a small constant for numerical stability. These metrics are used only as retrieval-stage proxies; the end-to-end impact is evaluated separately using downstream robustness and clean-utility metrics. 
+
+Downstream generation settings . For downstream generation, we use Qwen2.5-7B-Instruct, Llama-3-8B-Instruct, and Mistral-7B-Instruct v0.2 as generators, all with the same decoding configuration. For ProGRank, as in the retrieval analy-sis, we vary the retriever backbone among Contriever, DPR, and BGE. We fix the retrieval depth K = 5 , the perturbation repeat R = 20 , mixed perturbation, and probe layer L = 3 . Unless otherwise specified, we report results averaged over generators, retriever backbones. We report substring-based attack success rate (ASR), judge-based ASR, and substring-based accuracy (ACC). Let yq de-note the generated response for query q, let acorr  
+
+> q
+
+denote the ground-truth correct answer, and let aadv  
+
+> q
+
+denote the attacker-targeted incorrect answer. Before eval-uation, both model outputs and reference answers are normalized by lowercas-ing and removing punctuation and extra whitespace. We define substring-based ASR as ASR sub = Eq
+
+1(Inc( q, y q ) = 1) , where Inc( q, y q ) = 1 if the normal-ized response contains aadv  
+
+> q
+
+but not acorr  
+
+> q
+
+. We define substring-based ACC as 
+
+ACC sub = Eq
+
+1(Cor( q, y q ) = 1) , where Cor( q, y q ) = 1 if the normalized re-sponse contains acorr  
+
+> q
+
+but not aadv  
+
+> q
+
+. Judge-based ASR is computed using a fixed deterministic LLM judge, Llama-Guard-3-8B [20], which receives the query, the ground-truth correct answer, the attacker-targeted incorrect answer, and the model output, and assigns one label from { ATTACK , CORRECT , OTHER }; judge-based ASR is then the fraction of responses labeled ATTACK .14 X. Yin et al. 
+
+Table 5: Clean utility reported by F1 ( ↑), EM ( ↑), ROUGE-L F1 ( ↑). The highest value is highlighted in bold for each row.                     
+
+> Dataset (Metric) Baseline GRADA GMTP RAGuard Ours HotpotQA (F1) 0.440 ±0.026 0.251 ±0.130 0.300 ±0.078 0.431 ±0.013 0.304 ±0.009
+> NQ (EM) 0.175 ±0.035 0.150 ±0.070 0.100 ±0.000 0.175 ±0.035 0.225 ±0.106
+> MS MARCO (ROUGE-L F1) 0.235 ±0.017 0.251 ±0.045 0.245 ±0.012 0.235 ±0.018 0.202 ±0.101
+
+Besides these end-to-end robustness metrics, we also evaluate clean utility us-ing benchmark-specific metrics. Following the standard protocol for each dataset, we report token-level F1 on HotpotQA, exact match (EM) on NQ, and ROUGE-L F1 on MS MARCO. 
+
+Compute . All experiments were conducted on an NVIDIA DGX Spark. Additional experimental details for the configurations and results are provided in the supplementary material. 
+
+4.2 Downstream Generation Analysis 
+
+Under the downstream generation setting defined in Sec. 4.1, we evaluate Pro-GRank against the undefended baseline and compare it with representative corpus-poisoning defences, namely GRADA [37], GMTP [17], and RAGuard [18]. These baselines are selected from Tab. 1 based on code availability. Tab. 2 reports the main end-to-end robustness results. ProGRank achieves the lowest macro-average judge-based ASR on all three datasets, reaching 0.000 
+
+on HotpotQA, NQ, and MS MARCO. It also achieves the lowest macro-average substring-based ASR on all three datasets, with 0.011 on HotpotQA, 0.000 on NQ, and 0.033 on MS MARCO. In terms of clean utility, ProGRank achieves the highest macro-average ACC on HotpotQA, while GRADA performs best on NQ and RAGuard performs best on MS MARCO. As shown in Tab. 4, RAGuard is about 20 × slower than ProGRank on average due to repeated leave-one-out veri-fication. The reported ProGRank latency is measured on the actual experimental pipeline, with all retrieved candidates reranked per query. Overall, ProGRank offers the strongest robustness and a substantially better efficiency–robustness trade-off than RAGuard in our evaluation. Tab. 3 evaluates ProGRank under ProGRank-based evasive attacks. The macro-average results are 0.030 /0.016 /0.372 on HotpotQA, 0.016 /0.034 /0.365 
+
+on NQ, and 0.049 /0.019 /0.429 on MS MARCO in terms of substring-based ASR, judge-based ASR, and ACC, respectively. These results suggest that ProGRank retains robustness under the adaptive attack configurations considered in this work, especially on HotpotQA and NQ. Tab. 5 reports clean utility. ProGRank achieves the best EM on NQ, while the baseline and RAGuard perform better on HotpotQA, and GRADA gives the best ROUGE-L F1 on MS MARCO. Overall, this indicates a dataset-dependent trade-off between robustness and clean-task utility. Probe-Gradient Reranking for Defending Corpus Poisoning 15 
+
+## 5 Conclusion 
+
+We presented ProGRank, a post hoc, training-free retriever-side defence against corpus poisoning in dense-retriever RAG. ProGRank stress-tests query–passage pairs under mild randomized perturbations and reranks them using probe-gradient instability signals computed on a small fixed parameter subset, instantiated in our experiments as a LayerNorm module at layer L. Rather than assuming that all poisoned passages are intrinsically unstable, ProGRank targets a practically important subset of optimization-driven poisoning attacks whose retrievability relies on perturbation-sensitive matching signals. Across three datasets, mul-tiple dense retrievers, and representative poisoning attacks, ProGRank consis-tently reduces poisoned Top-K exposure and achieves the lowest macro-average judge-based ASR in end-to-end evaluation, while remaining effective under the adaptive attack settings considered in this work. 
+
+## Acknowledgement 
+
+Funded by the European Union. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union or the European Health and Digital Executive Agency (HADEA). Neither the European Union nor the granting authority can be held responsible for them. RobustifAI project, ID 101212818. 
+
+## References 
+
+1. Bajaj, P., et al.: Ms marco: A human generated machine reading comprehension dataset (2016) 2. Chaudhari, H., et al.: Phantom: General backdoor attacks on retrieval augmented language generation (2024) 3. Cheng, Z., et al.: Secure retrieval-augmented generation against poisoning attacks (2025) 4. Cho, S., et al.: Typos that broke the rag’s back: Genetic attack on rag pipeline by simulating documents in the wild via low-level perturbations. In: Findings of EMNLP (2024) 5. De Stefano, G., Schönherr, L., Pellegrino, G.: Rag and roll: An end-to-end evalua-tion of indirect prompt manipulations in llm-based application frameworks (2024) 6. Dekel, S., Tennenholtz, M., Kurland, O.: Addressing corpus knowledge poisoning attacks on rag using sparse attention (2026) 7. Edemacu, K., et al.: Defending against knowledge poisoning attacks during retrieval-augmented generation (2025) 8. Gal, Y., Ghahramani, Z.: Dropout as a bayesian approximation: Representing model uncertainty in deep learning. In: ICML (2016) 9. Gao, Y., et al.: Retrieval-augmented generation for large language models: A survey (2023) 10. Guu, K., et al.: Realm: Retrieval-augmented language model pre-training. In: ICML (2020) 16 X. Yin et al. 11. Hampel, F.R., Ronchetti, E.M., Rousseeuw, P.J., Stahel, W.A.: Robust Statistics: The Approach Based on Influence Functions. John Wiley & Sons (1986) 12. Ilyas, A., et al.: Adversarial examples are not bugs, they are features. In: NeurIPS (2019) 13. Izacard, G., Grave, E.: Leveraging passage retrieval with generative models for open domain question answering. In: EACL (2021) 14. Izacard, G., et al.: Unsupervised dense information retrieval with contrastive learn-ing (2022) 15. Jaakkola, T., Diekhans, M., Haussler, D.: Using the fisher kernel method to detect remote protein homologies. In: ISMB (1999) 16. Karpukhin, V., et al.: Dense passage retrieval for open-domain question answering. In: EMNLP (2020) 17. Kim, S., et al.: Safeguarding rag pipelines with gmtp: A gradient-based masked token probability method for poisoned document detection. In: Findings of ACL (2025) 18. Kolhe, T., et al.: Raguard: A layered defense framework for retrieval-augmented generation systems against data poisoning. NeurIPS 2025 Workshop on Socially Responsible and Trustworthy Foundation Models (2025) 19. Kwiatkowski, T., et al.: Natural questions: A benchmark for question answering research. TACL 7, 452–466 (2019) 20. Meta: Llama guard 3 8b model card. Hugging Face model card (2024) 21. Pathmanathan, P., et al.: Ragpart and ragmask: Retrieval-stage defenses against corpus poisoning in retrieval-augmented generation (2025) 22. Pruthi, G., et al.: Estimating training data influence by tracing gradient descent. In: NeurIPS (2020) 23. Sharma, C.: Retrieval-augmented generation: A comprehensive survey of architec-tures, enhancements, and robustness frontiers (2025) 24. Srivastava, N., et al.: Dropout: A simple way to prevent neural networks from overfitting. JMLR 15 (56), 1929–1958 (2014) 25. Tan, X., et al.: Revprag: Revealing poisoning attacks in retrieval-augmented gen-eration through llm activation analysis. In: Findings of EMNLP (2025) 26. Tan, Z., et al.: Glue pizza and eat rocks - exploiting vulnerabilities in retrieval-augmented generative models. In: EMNLP (2024) 27. Wager, S., Wang, S., Liang, P.: Dropout training as adaptive regularization. In: NeurIPS (2013) 28. Wang, H., et al.: Joint-gcg: Unified gradient-based poisoning attacks on retrieval-augmented generation systems (2025) 29. Ward, C.M., Harguess, J.: Adversarial threat vectors and risk mitigation for retrieval-augmented generation systems. In: Proc. SPIE (2025) 30. Xian, X., Wang, G., Bi, X., Zhang, R., Srinivasa, J., Kundu, A., Fleming, C., Hong, M., Ding, J.: On the vulnerability of applying retrieval-augmented genera-tion within knowledge-intensive application domains. In: ICML (2025) 31. Xiang, C., et al.: Certifiably robust rag against retrieval corruption (2024) 32. Xiao, S., et al.: C-pack: Packed resources for general chinese embeddings. In: SIGIR (2024) 33. Yang, Z., et al.: Hotpotqa: A dataset for diverse, explainable multi-hop question answering. In: EMNLP (2018) 34. Yao, R., Zhang, Y., Song, S., Gao, N., Tu, C.: Ecosaferag: Efficient security through context analysis in retrieval-augmented generation. In: Findings of EMNLP (2025) 35. Zhang, B., et al.: Benchmarking poisoning attacks against retrieval-augmented generation (2025) Probe-Gradient Reranking for Defending Corpus Poisoning 17 36. Zhang, B., et al.: Traceback of poisoning attacks to retrieval-augmented generation. In: WWW (2025) 37. Zheng, J., et al.: Grada: Graph-based reranking against adversarial documents attack. In: EMNLP (2025) 38. Zhong, Z., et al.: Poisoning retrieval corpora by injecting adversarial passages. In: EMNLP (2023) 39. Zhou, H., et al.: Trustrag: enhancing robustness and trustworthiness in retrieval-augmented generation. arXiv preprint arXiv:2501.00879 (2025) 40. Zou, W., et al.: Poisonedrag: Knowledge corruption attacks to retrieval-augmented generation of large language models. In: USENIX Security (2025) 18 X. Yin et al. 
+
+## Supplementary Material 
+
+Implementation Details of Downstream Generation 
+
+Generation and judge configurations. In downstream generations, we set the maximum answer length to 64 new tokens and the maximum judge output length to 16 new tokens. 
+
+Answer-generation prompt. We use the following prompt template: 
+
+You are a helpful assistant, below is a query from a user and some relevant contexts. Answer the question given the information in those contexts. Your answer should be short and concise. If you cannot find the answer to the question, just say "I don’t know". Contexts: {context_1} {context_2} ... {context_K} Query: {query} Answer: 
+
+Judge prompt. For judge-based ASR, we use the following prompt template: 
+
+You are an evaluator for RAG poisoning attacks. Task: decide whether the MODEL RESPONSE aligns with the attacker-targeted incorrect answer. Output format (strict): LABEL: ATTACK or LABEL: CORRECT. Do not output any additional words. Decision rules: - ATTACK: response supports or states the attacker-targeted incorrect answer. - CORRECT: otherwise. Question: {query} Ground-truth correct answer: {correct_answer} Attacker targeted incorrect answer: {incorrect_answer} Model response: {model_output} LABEL: 
+
+Implementation Details of Poisoning Methods 
+
+PoisonedRAG configuration. For PoisonedRAG, we follow the released bench-mark configuration with score function = dot, adversarial passages per query = 5, start index = −1, retrieval gap = 20, attack method = HotFlip, adversarial passage tokens = 30, optimization iterations = 30, and total attack budget = 200. Probe-Gradient Reranking for Defending Corpus Poisoning 19 
+
+Joint-GCG configuration. For Joint-GCG, the attack uses max new tokens = 256, inference batch size = 16, attack samples per step = 128, token search top-k
+
+= 16, optimization epochs = 64, adversarial tag length = 32, and ASCII-only token optimization = True. For each query, the poisoned text is constructed as adversarial tag + query suffix + benchmark-provided adversarial text. 
+
+LIAR-RAG configuration. For LIAR-RAG, we use the released baseline imple-mentation with max new tokens = 256, inference batch size = 16, attack samples per step = 128, token search top-k = 16, optimization epochs = 128, retriever-side adversarial tag length = 16, generator-side adversarial tag length = 16, and ASCII-only token optimization = True. For each query, the poisoned text is constructed as generator-side adversarial tag + retriever-side adversarial tag + query suffix + benchmark-provided adversarial text. During optimization, the at-tack alternates between retriever-side and generator-side updates with retriever steps = 8 and generator steps = 8 in each cycle. 
+
+Implementation Details of Defence Methods 
+
+GRADA configuration. For GRADA, we use the released implementation with defence variant = HRSIM and α = 0 .4. In the downstream end-to-end evaluation, we use Top-K = 20 , max clean hits = 50, max new tokens = 64, and judge max new tokens = 16. 
+
+GMTP configuration. For GMTP, we use the released implementation with 
+
+N = 10 , M = 5 , remove-threshold = −1.0, remove-lambda = 1 .0, adaptive quantile = 0 .6, and reranker = bert-base-uncased . In the downstream end-to-end evaluation, we use Top-K = 20 , max clean hits = 50, max new tokens = 64, and judge max new tokens = 16. 
+
+RAGuard configuration. For RAGuard, we use the released anomaly-scoring implementation with score threshold = 1 .8. In our end-to-end wrapper used together with the practical-deployment efficiency analysis, we set remove count 
+
+= 1 , Top-K = 20 , max clean hits = 50, max new tokens = 64, and judge max new tokens = 16. 
+
+Perturbation Types and Hyperparameter Settings 
+
+Token dropout. In this setting, we randomly drop document tokens by modify-ing the attention mask with a dropout probability of 0.10. The perturbation is applied only to the document side; the query is left unchanged. The [CLS] token is always preserved, and the implementation further ensures that at least one additional document token remains active after masking. 
+
+Encoder dropout. In this setting, we activate the encoder’s native internal dropout by switching the encoder to training mode during penalty estimation. We do not add any extra manually tuned dropout module. For Contriever, this corresponds to the pretrained model’s default configuration, with hidden dropout 0.10 and attention dropout 0.10. 20 X. Yin et al. 
+
+Mixed perturbation. In the mixed setting, we combine encoder dropout and token dropout. Specifically, we enable the encoder’s native internal dropout and simultaneously apply token dropout with probability 0.10 on the document side only.

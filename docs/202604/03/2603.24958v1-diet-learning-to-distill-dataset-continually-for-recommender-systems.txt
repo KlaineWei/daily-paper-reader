@@ -1,0 +1,755 @@
+Title: DIET: Learning to Distill Dataset Continually for Recommender Systems
+
+URL Source: https://arxiv.org/pdf/2603.24958v1
+
+Published Time: Fri, 27 Mar 2026 00:29:58 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# DIET: Learning to Distill Dataset Continually for Recommender Systems 
+
+# Jiaqing Zhang 1, Hao Wang 1∗, Mingjia Yin 1, Bo Chen 2, Qinglin Jia 2, Rui Zhou 1, Ruiming Tang 2,ChaoYi Ma 2, Enhong Chen 1
+
+1University of Science and Technology of China, Hefei, China 
+
+2Kuaishou Technology, Beijing, China 
+
+## Abstract 
+
+Modern deep recommender models are trained under a continual learning paradigm, relying on massive and continuously growing streaming behavioral logs. In large-scale platforms, retraining mod-els on full historical data for architecture comparison or iteration is prohibitively expensive, severely slowing down model develop-ment. This challenge calls for data-efficient approaches that can faithfully approximate full-data training behavior without repeat-edly processing the entire evolving data stream. We formulate this problem as streaming dataset distillation for recommender systems 
+
+and propose DIET , a unified framework that maintains a compact distilled dataset which evolves alongside streaming data while pre-serving training-critical signals. Unlike existing dataset distillation methods that construct a static distilled set, DIET models distilled data as an evolving training memory and updates it in a stage-wise manner to remain aligned with long-term training dynamics. DIET enables effective continual distillation through principled initial-ization from influential samples and selective updates guided by influence-aware memory addressing within a bi-level optimization framework. Experiments on large-scale recommendation bench-marks demonstrate that DIET compresses training data to as little as 1-2% of the original size while preserving performance trends consistent with full-data training, reducing model iteration cost by up to 60 ×. Moreover, the distilled datasets produced by DIET generalize well across different model architectures, highlighting streaming dataset distillation as a scalable and reusable data foun-dation for recommender system development. 
+
+## CCS Concepts 
+
+• Information systems → Recommender systems .
+
+## Keywords 
+
+Recommender Systems; Dataset Distillation 
+
+ACM Reference Format: 
+
+Jiaqing Zhang 1, Hao Wang 1∗, Mingjia Yin 1, Bo Chen 2, Qinglin Jia 2, Rui Zhou 1, Ruiming Tang 2, ChaoYi Ma 2, Enhong Chen 1. 2018. DIET: Learning to Distill Dataset Continually for Recommender Systems. In . ACM, New York, NY, USA, 12 pages. https://doi.org/XXXXXXX.XXXXXXX  
+
+> Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference’17, Washington, DC, USA
+> ©2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+Table 1: Training Cost Scaling in DLRMs. The upper block reports model statistics from the RankMixer paper [ 62 ]. The lower block estimates training cost in GPU hours. 
+
+Metric DLRM Wukong RankMixer 
+
+# Parameters ( 𝑁 ) 8.7M 122M 1B Inference Flops ( 𝐹 ) 52 G 442 G 2106 G MFU ( 𝜂 ) 4.51% 18.51% 44.57% 
+
+Estimated Training Cost for Scaling Exploration 
+
+Sample Scale ( 𝐷 ) 10 11 (1d) 3.0 × 10 12 (1m) 1.5 × 10 13 (6m) Total FLOPs ( 𝐶 ) 5.2 × 10 21 1.3 × 10 24 3.2 × 10 25 
+
+GPU Hours ≈ 9.7 × 10 4 ≈ 5.9 × 10 6 ≈ 6.0 × 10 7
+
+Note. Total FLOPs are computed as 𝐶 = 𝐷 × 𝐹 , where 𝐷 is the number of training samples and 𝐹 denotes inference FLOPs per sample. GPU hours are estimated as 𝑇 hour = 𝐶 /( 𝜂 · 𝑃 · 3600 ), where 𝜂 is the model FLOP utilization (MFU) and 𝑃 denotes the peak throughput of an RTX 4090 GPU. 
+
+## 1 INTRODUCTION 
+
+Deep learning recommender models (DLRMs) have achieved sub-stantial performance gains by scaling model capacity and archi-tectural complexity [ 16 , 36 , 53 , 58 , 62 ]. In modern platforms, rec-ommender models typically operate under a continual learning paradigm , where they are repeatedly updated using streaming behavioral logs generated at the scale of billions of events per day [ 20 ]. Under this paradigm, adjustments to the model architec-ture in practice often require retraining on large-scale historical data to obtain reliable performance verification, resulting in steadily increasing iteration costs and slowing down the pace of model de-sign. Table 1 summarizes the growth in training scale and computa-tional requirements of representative DLRMs in recent years. The statistics indicate that as recommender models continue to scale, the computational resources required for full-data training grow rapidly, making large-scale model exploration increasingly costly in practice. This trend exacerbates that scalable recommender system development requires not only advances in modeling techniques, but also a reconsideration of how data supports model design. A heuristic approach is to limit the amount of data used for model design, for example by sampling recent behavioral logs or applying coreset selection to construct a smaller training set. How-ever, such data reduction strategies often fail to faithfully reflect the training behavior induced by full historical data. Recommendation data is typically high-dimensional, sparse, and temporally evolving, and simple data reduction can alter the underlying training data distribution, leading to systematic deviations in the optimization trajectories experienced during training. As illustrated in Figure 1,       
+
+> arXiv:2603.24958v1 [cs.IR] 26 Mar 2026 Conference’17, July 2017, Washington, DC, USA Jiaqing Zhang et al. 0.0 0.2 0.4 0.6 0.8 1.0
+> Normalized Performance (Full Data)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Normalized Performance (Reduced)
+> Ideal Fidelity (Full Data)
+> Ours (DIET) ( r=0.912)
+> Random Selection ( r=0.319)
+> Window Sampling ( r=0.681)
+
+Figure 1: Model performance consistency under data reduc-tion. Correlation between model performance measured on reduced data and on full data. Each point corresponds to a model–dataset pair, with the dashed diagonal indicating ideal fidelity to full-data training. DIET exhibits substan-tially higher correlation with full-data performance than sampling-based baselines, demonstrating superior preserva-tion of comparative model behavior. 
+
+models trained under different sampling strategies exhibit substan-tial discrepancies compared to those trained on full data, where these inconsistencies reveal an observable consequence of shifted training behavior. These observations suggest that the key lies not merely in reducing data volume, but in constructing a compact rep-resentation that preserves the training effects of full data. Dataset distillation provides a natural paradigm for achieving this goal. Unlike subset selection, dataset distillation aims to construct a highly compact memory by learning synthetic samples through op-timization, such that training on the distilled dataset can reproduce the training behavior induced by full historical data. However, most existing methods are designed for static settings, where the entire training dataset is assumed to be fixed and available in advance, and the distilled dataset is constructed only once [ 42 , 54 , 56 ]. In contrast, recommender systems operate under a continual learning paradigm, where streaming behavioral logs are generated contin-uously and the training data distribution evolve over time. Under such conditions, a static distilled dataset is insufficient to capture the evolving training effects required for continual model training. Motivated by this gap, we formulate the problem of streaming dataset distillation for recommender systems , where distilled data must remain compact while being continuously updated along-side streaming data, so as to consistently approximate the training effects induced by full historical data over time. Under this setting, streaming dataset distillation introduces sev-eral fundamental challenges. First , distillation optimization must effectively approximate the training behavior induced by full his-torical data in recommender systems, where the data space is high-dimensional and informative signals are extremely sparse. In such settings, naive or random initialization often fails to provide a mean-ingful optimization starting point, leading to unstable or ineffective distillation outcomes [ 4 , 18 , 32 ]. Second , recommender systems operate in a continual learning environment where user interac-tion data arrive continuously and the underlying data distribution evolves over time. Consequently, distilled data must capture the evolving patterns of the original data; otherwise, the distilled sam-ples may gradually drift away from the historical training signals during multi-stage optimization. Finally , in dataset distillation, synthetic samples are typically treated as learnable parameters and optimized through gradient-based updates. Optimizing all distilled samples indiscriminately may introduce redundant or conflicting signals, leading to unstable distillation processes [10, 13, 41]. To address these challenges, we propose DIET , a unified frame-work for streaming dataset distillation in recommender systems. DIET treats distilled data as a compact training memory that is con-tinuously updated under a continual learning paradigm. It adopts a stage-wise distillation strategy that partitions streaming behavioral logs into temporally ordered blocks, enabling progressive distilla-tion while retaining relevant distilled data from previous stages. For each stage, DIET initializes new distilled samples from informative real interactions via influence-aware scoring, providing an effec-tive optimization starting point in high-dimensional and sparse settings. During optimization, DIET jointly updates newly initial-ized and retained distilled samples, allowing distilled data to evolve smoothly while preserving previously accumulated training effects. Furthermore, DIET incorporates an influence-guided memory ad-dressing mechanism within a bi-level optimization framework to selectively determine which distilled samples should be updated at each stage, ensuring stable and efficient continual updates. Our main contributions are summarized as follows: 
+
+• We are the first to formalize the data-efficiency challenge in recommender systems as streaming dataset distillation , where distilled data must evolve over time to consistently approximate the training behavior of full historical interactions. 
+
+• We propose DIET , a continual distillation framework that mod-els synthetic data as evolving training memory, enabling effec-tive initialization in high-dimensional sparse settings, preserving distributional continuity across stages, and supporting stable optimization during continual updates. 
+
+• Extensive experiments show that DIET maintains performance trends consistent with full-data training using only 1–2% of the data, reduces model iteration cost by up to 60 ×, and produces distilled data that generalize well across model architectures. 
+
+## 2 RELATED WORK 2.1 TRAINING PARADIGMS IN MODERN RECOMMENDER SYSTEMS 
+
+Modern recommender systems operate on continuously generated, large-scale behavioral logs, where effective modeling requires cap-turing high-order feature interactions and long-term behavioral dependencies from historical data [ 24 , 38 , 45 , 46 , 48 , 52 , 61 ]. Early studies primarily focused on modeling complex feature interac-tions through expressive architectural designs [ 9, 23 , 28 , 34 , 39 , 40 ]. Subsequent work shifted attention toward fine-grained interest modeling from behavior sequences [ 3, 6 , 59 , 60 ], while more re-cent approaches further extend this line of research to model long-term interest evolution under the full historical interaction distri-bution [ 22 , 26 , 44 ]. In practical systems, achieving such modeling capacity relies on training over continuously accumulated behav-ioral logs, where model parameters are inherited and updated over DIET: Learning to Distill Dataset Continually for Recommender Systems Conference’17, July 2017, Washington, DC, USA 
+
+time to preserve historical preference signals while adapting to newly observed data [ 14 , 20 , 49 , 58 ]. This continual training para-digm is further reinforced by scaling-law-like phenomena observed in modern recommender models: increasing model capacity, feature dimensionality, and data scale consistently leads to performance improvements [ 31 , 47 , 51 , 53 , 62 ]. However, under this regime, re-liably evaluating new model architectures or training strategies typically requires retraining models on large-scale historical behav-ioral logs in order to faithfully reflect their training behavior, which in turn results in rapidly escalating iteration costs [ 43 , 62 ]. These characteristics collectively expose a fundamental challenge in mod-ern recommender system development: how to support continual model iteration without repeatedly retraining on the large-scale historical interaction data. 
+
+## 2.2 CORESET SELECTION AND DATASET DISTILLATION 
+
+To reduce training cost, prior work explores dataset reduction through coreset selection [ 11 ] and dataset distillation [42 ]. Coreset methods aim to select representative subsets that pre-serve data diversity or approximate the overall distribution, and have been widely studied in active learning and continual learn-ing [ 1, 21 , 30 , 50 ]. However, empirical studies show that such meth-ods often provide limited gains over random sampling in deep learning settings [ 8, 19 , 29 ], as they preserve individual samples but fail to preserve the training dynamics induced by the full dataset. Dataset distillation instead synthesizes compact training sets so that models trained on them can approximate the training outcomes on the original dataset [ 42 ]. Representative approaches include bi-level optimization [ 7 , 15 , 42 , 54 ], gradient matching [ 35 , 55 , 56 ], and trajectory matching [ 2 , 5, 17 , 57 ]. These methods match training signals such as gradients or parameter states, and thus better pre-serve training dynamics than selection-based approaches. Existing methods typically assume non-streaming settings with fixed data distributions, and thus fail to capture the training dynamics over time in recommender systems trained on evolving interaction logs. 
+
+## 3 PRELIMINARY 
+
+Recommender Data and Continual Training Setup . We con-sider a standard recommender learning setting, where each in-teraction record is represented as a pair (x, y). Here, x denotes a multi-field feature vector extracted from streaming behavioral logs, and y ∈ { 0, 1}𝐾 corresponds to labels of 𝐾 prediction tasks. The input features x are discrete and high-dimensional, and are mapped into a continuous representation space through an embedding layer. We denote the resulting embedding representation as: 
+
+e = Embed (x). (1) Given a dataset D = {( x𝑖 , y𝑖 )} | D |  
+
+> 𝑖 =1
+
+, model parameters 𝜃 are learned by minimizing the empirical multi-task risk: 
+
+𝜃 ∗ = arg min 
+
+> 𝜃
+
+1
+
+|D| 
+
+> | D |
+
+∑︁ 
+
+> 𝑖 =1
+> 𝐾
+
+∑︁ 
+
+> 𝑘 =1
+
+ℓ  𝜎 (𝑓 𝜃 (e𝑖 )𝑘 ) , 𝑦 𝑖,𝑘 
+
+ , (2) where 𝑓 𝜃 (·) denotes the prediction model operating on embedding representations and outputs a 𝐾 -dimensional prediction vector, 
+
+ℓ (·) is the binary cross-entropy (BCE) loss, and 𝜎 (·) is the sigmoid function applied element-wise. This formulation provides a unified abstraction for modeling and analyzing the training process of recommender models in the subsequent sections. In a continual learning paradigm, data arrive sequentially over time. We partition the full interaction history into a sequence of non-overlapping data blocks D1: 𝑇 = {D 1, D2, . . . , D𝑇 }, each corre-sponding to a fixed time interval. Under this paradigm, we distin-guish two model roles: a reference model 𝜙 and a candidate model 
+
+𝜃 . The reference model is continuously evolving, with its parame-ters inherited across stages and incrementally updated using newly arrived data blocks, while intermediate checkpoints are preserved. Formally, at stage 𝑡 , the reference model is updated as: 
+
+𝜙 𝑡 = Update (𝜙 𝑡 −1, D𝑡 ), 𝜙 0 ∼ 𝑃 (𝜙 ), (3) where 𝜙 𝑡 denotes the model state after training on block D𝑡 . Through this incremental process, the reference model accumulates training signals from the entire interaction history. In contrast, the candi-date model 𝜃 typically corresponds to a candidate architecture or training strategy introduced at a specific stage. While the reference model has already been trained on historical blocks D1: 𝑡 , the candi-date model only participates in training on subsequent blocks. This mismatch poses a key challenge: enabling the cantidate model to match the fully evolved reference model without retraining on the full historical data. 
+
+Streaming Dataset Distillation for Recommender Systems .
+
+Under the continual learning setting defined above, the goal of streaming dataset distillation is to construct a sequence of compact distilled datasets D𝑠𝑦𝑛  
+
+> 1: 𝑇
+
+= {D 𝑠𝑦𝑛  
+
+> 1
+
+, . . . , D𝑠𝑦𝑛 𝑇 }, such that training on the distilled data substantially reduces computational cost while preserving the training behavior induced by the full historical data. The distilled dataset is optimized using the reference model and its intermediate checkpoints, while the downstream candidate model is assumed to be unknown at the time of distillation. Unlike static dataset distillation, streaming dataset distillation must explicitly account for the temporal nature of the data. At each stage 𝑡 , the distilled dataset D𝑠𝑦𝑛 𝑡 is required to reflect the training effects introduced by the current real data block D𝑡 , while remaining compatible with the training behavior accumulated from earlier stages. This requirement arises under the continual learning paradigm, where model updates are shaped jointly by historical and newly arriving interactions. Formally, streaming dataset distillation can be characterized as a temporally structured bi-level optimiza-tion problem. At stage 𝑡 , the inner optimization starts from the previous checkpoint 𝜙 𝑡 −1 and performs 𝐾 gradient-based updates on the distilled dataset: 
+
+𝜙 𝑡 (D 𝑠𝑦𝑛 𝑡 ) = Opt 𝐾  𝜙 𝑡 −1, D𝑠𝑦𝑛 𝑡 
+
+ , (4) where Opt 𝐾 (·) denotes running 𝐾 steps of the inner-loop optimizer (e.g., SGD) on the distilled dataset. The outer optimization then updates the distilled dataset to better approximate the training behavior induced by the real data block: 
+
+D𝑠𝑦𝑛 ∗ 
+
+> 𝑡
+
+= arg min 
+
+> D𝑠𝑦𝑛 𝑡
+
+L𝑟𝑒𝑎𝑙 
+
+ 𝜙 𝑡 (D 𝑠𝑦𝑛 𝑡 ); D𝑡 
+
+ , (5) where L𝑠𝑦𝑛 and L𝑟𝑒𝑎𝑙 denote the training losses on distilled and real data, respectively. Conference’17, July 2017, Washington, DC, USA Jiaqing Zhang et al. 
+
+## 4 METHODOLOGY 
+
+In this section, we present DIET , a framework for streaming dataset distillation under a continual learning paradigm. At its core, DIET constructs and continually refines an evolving boundary memory to approximate the training dynamics induced by full historical data. Figure 2 provides an overview of DIET and illustrates how the boundary memory is initialized and continually refined over time. 
+
+## 4.1 SYNTHETIC DATA INITIALIZATION AS BOUNDARY MEMORY 
+
+Prior studies have shown that training influence is highly concen-trated: while most samples contribute redundant gradients, a small subset disproportionately shapes the parameter update trajectory and decision boundary [ 12 , 25 , 33 ]. As a result, constructing distilled data based on global representativeness often fails to preserve the training-critical signals that govern model optimization. Motivated by this observation, we initialize synthetic data to explicitly capture these training-critical interactions, forming a boundary memory .Under a continual learning paradigm, this boundary memory must be preserved and updated over time to remain aligned with the evolving training dynamics induced by streaming data. The initial-ization procedure is summarized in Algorithm 1. 
+
+4.1.1 Decision-Boundary Sample Initialization. In multi-task rec-ommender systems, interaction data exhibit heterogeneous training influence across both samples and behavioral types. Different label combinations correspond to semantically distinct user behaviors and often appear with highly imbalanced frequencies. Directly se-lecting samples from the entire data block therefore tends to bias synthetic initialization toward dominant behavior modes, while overlooking rare but informative interactions that are critical for shaping the decision boundary. Therefore, to construct a boundary-aware initialization, we identify task-conditioned influential samples 
+
+within each data block using the reference model checkpoint 𝜙 𝑡 .Specifically, for each possible label configuration c ∈ { 0, 1}𝐾 , we consider the subset of samples whose label vector equals c:
+
+Dc 
+
+> 𝑡
+
+= {( x, y) ∈ D 𝑡 | y = c}.
+
+and rank samples according to their EL2N scores computed with respect to 𝜙 𝑡 :EL2N (x, y; 𝜙 𝑡 ) = 𝜎 (𝑓 𝜙 𝑡 (Embed (x))) − y 2 . (6) Following prior studies that EL2N correlates with gradient influ-ence and sample difficulty [ 25 ], we use it as a practical proxy for identifying training-influential samples. To avoid noisy samples associated with extreme scores, we select samples whose EL2N values fall within an upper-middle range for each label group. The selected samples from all label combinations are aggregated to form the boundary candidate set: 
+
+S𝑡 =
+
+Ø
+
+> c
+
+Sc 
+
+> 𝑡
+
+, (7) which ensures balanced coverage across diverse behavioral patterns while preventing dominant labels from overwhelming the initial-ization. Instead of storing raw samples, we construct synthetic data in an embedding–soft label form formulated as: 
+
+e = Embed 𝜙 𝑡 (x), ˜y = 𝑓 𝜙 𝑡 (e), (8) where e denotes the embedding representation and ˜y is the output logit vector. The initialized synthetic dataset for stage 𝑡 is: 
+
+D𝑠𝑦𝑛 𝑡 = {( e𝑖 , ˜y𝑖 )} (x𝑖 ,y𝑖 ) ∈ S 𝑡 . (9) This initialization strategy captures training-critical samples across heterogeneous behaviors and provides an optimization-aligned starting point for constructing the synthetic boundary memory. 
+
+4.1.2 Continual Synthetic Memory. Rather than being determined independently within each data block, the decision boundary of a recommender model evolves cumulatively as training proceeds over time. Initializing synthetic data solely from the current block would therefore capture only a local boundary snapshot and fail to reflect training-influential information accumulated from historical data. To address this issue, we model synthetic data as a contin-ually evolving boundary memory . At stage 𝑡 , we first obtain the task-conditioned training-influential samples S𝑡 from the current block as described in Sec. 4.1.1. Instead of discarding previously synthesized data, we retain historical synthetic samples that remain aligned with the current decision boundary. Concretely, for each his-torical synthetic sample (e𝑖 , ˜y𝑖 ) ∈ D 𝑠𝑦𝑛  
+
+> 1: 𝑡 −1
+
+, we estimate its influence weight with respect to the newly selected boundary samples: 
+
+𝛼 𝑖 = A (( e𝑖 , ˜y𝑖 ), S𝑡 ) , (10) where A (·) denotes a influence estimation function whose concrete form will be specified in Sec. 4.2. Historical samples with large 𝛼 𝑖 
+
+form an aligned memory subset eD1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+.The synthetic memory for stage 𝑡 is then constructed by fusing current boundary samples with the aligned historical memory: 
+
+D𝑠𝑦𝑛 𝑡 = S𝑡 ∪ eD1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+. (11) This design enables the boundary memory to evolve smoothly over time by selectively retaining training-influential decision in-formation while incorporating new updates. 
+
+## 4.2 SYNTHETIC DATA OPTIMIZATION VIA MEMORY ADDRESSING 
+
+While boundary-aware initialization and continual retention pre-serve training-influential information over time, effective distilla-tion further requires selectively updating the boundary memory to remain aligned with evolving training dynamics. In a continual setting, indiscriminately updating all synthetic samples using all available training samples can introduce redundant or conflicting optimization signals, reducing both efficiency and stability. The key challenge is therefore to determine which training samples should drive updates and which synthetic memory units should absorb these signals at each stage. To address this challenge, we introduce an influence-guided memory addressing mechanism that selectively updates the boundary memory using training samples from the current data block, as described next. The optimization procedure is summarized in Algorithm 2. 
+
+4.2.1 Self-Adaptive Optimization Path Discovery. 
+
+Utility and influence estimation. For optimization step 𝑡 with model parameters 𝑤 𝑡 , we define the utility of updating a validation sample 𝑧 using a subset 𝑆 ⊂ D as: 
+
+𝑈 (𝑡 ) (𝑆 ; 𝑧 ) := ℓ ( ˜𝑤 𝑡 +1 (𝑆 ), 𝑧 ) − ℓ (𝑤 𝑡 , 𝑧 ), (12) DIET: Learning to Distill Dataset Continually for Recommender Systems Conference’17, July 2017, Washington, DC, USA Phase 1: Synthetic Data Initialization as 
+
+Boundary Memory & Maintenance               
+
+> Real Data
+> Stream
+> (Block 𝑫 𝒕 )
+> Teacher Model ∅𝐭 &
+> Label Conditioned EL2N Selection
+> Task Groups
+> 𝒄
+> EL2N
+> Score
+> Boundary
+> Samples
+> 𝑺 𝒕
+> Historical
+> Memory
+> 𝑫 𝟏 :𝒕 %𝟏
+> 𝒔𝒚𝒏
+> Alignment
+> Estimation
+> (𝑨 )
+> Memory
+> Fusion
+> Embedding &
+> Soft label
+> Conversion
+> Updated
+> Synthetic
+> Memory
+> 𝑫 𝒕
+> 𝒔𝒚𝒏
+> Inner Loop: Update Model
+> Active Memory 𝑴 𝒕
+> 𝒂𝒄𝒕𝒊𝒗𝒆
+> ∅𝒕 %𝟏
+> 𝟏 ∅𝒕 %𝟏
+> 𝟐 ∅𝒕 %𝟏
+> 𝒌 . . . Teacher
+> Model
+> ∅𝒕 %𝟏
+> Initialize
+> ∅𝒕 %𝟏
+> 𝑴 . . .
+> Truncated,
+> random selected
+> window
+> Synthetic
+> Mem 𝑫 𝒔𝒚𝒏
+> 𝒕
+> Real Data
+> Batch 𝑩 𝒕
+> 𝑳 𝒎𝒆𝒕𝒂 (∅𝑻 ;𝑩 𝒕
+> 𝒉𝒂𝒓𝒅 )
+> Outer Loop:
+> Update Memory via Meta -Loss
+> Memory Addressing Mechanism
+> Influence Estimation 𝐴 !(𝑠 ,𝑟 )
+> Select Hard
+> Target 𝑩 𝒕
+> 𝒉𝒂𝒓𝒅
+> Select Active
+> Memory 𝑴 𝒕
+> 𝒂𝒄𝒕𝒊𝒗𝒆
+
+Phase 2: Synthetic Data Optimization via 
+
+Memory Addressing & RaT -BPTT 
+
+Figure 2: DIET operates in two phases under a continual learning paradigm. Phase 1 (left) constructs a boundary memory by selecting task-conditioned influential samples S𝑡 from each data block D𝑡 using reference model checkpoints 𝜙 𝑡 with label-conditioned EL2N scoring. The selected samples are converted into embedding–soft label pairs and fused with aligned historical synthetic memory D𝑠𝑦𝑛   
+
+> 1: 𝑡 −1
+
+via an alignment estimation module A, yielding the updated synthetic dataset D𝑠𝑦𝑛 𝑡 . Phase 2 
+
+(right) refines the synthetic memory through influence-guided addressing, which selects hard real targets Bℎ𝑎𝑟𝑑 𝑡 and active synthetic units M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 . The active memory drives inner-loop training of a proxy model initialized from the reference model, while the synthetic data are updated in the outer loop using a meta-objective on Bℎ𝑎𝑟𝑑 𝑡 , accelerated by RaT-BPTT. 
+
+where 
+
+˜𝑤 𝑡 +1 (𝑆 ) = 𝑤 𝑡 − 𝜂 𝑡 ∑︁  
+
+> 𝑥 ∈𝑆
+
+∇𝑤 ℓ (𝑤 𝑡 , 𝑥 ). (13) A smaller 𝑈 (𝑡 ) (𝑆 ; 𝑧 ) indicates a larger loss reduction on 𝑧 .Applying a first-order Taylor expansion of ℓ (𝑤, 𝑧 ) around 𝑤 𝑡 [27 ,37], we obtain: 
+
+𝑈 (𝑡 ) (𝑆 ; 𝑧 ) ≈ ∇ 𝑤 ℓ (𝑤 𝑡 , 𝑧 )⊤   ˜𝑤 𝑡 +1 (𝑆 ) − 𝑤 𝑡 
+
+
+
+= −𝜂 𝑡 ∑︁  
+
+> 𝑥 ∈𝑆
+
+⟨∇ 𝑤 ℓ (𝑤 𝑡 , 𝑧 ), ∇𝑤 ℓ (𝑤 𝑡 , 𝑥 )⟩ . (14) Under this first-order approximation, the utility is additive over 𝑆 ,and the Shapley value of each sample is proportional to its gradient alignment with 𝑧 . We thus define the influence score as: 
+
+A𝑡 (𝑥, 𝑧 ) := ⟨∇ 𝑤 ℓ (𝑤 𝑡 , 𝑧 ), ∇𝑤 ℓ (𝑤 𝑡 , 𝑥 )⟩ . (15) 
+
+Bidirectional memory addressing. Using A𝑡 , we perform bidirec-tional memory addressing to bridge the gap between real training data and synthetic memory. This mechanism identifies which real samples are most difficult for the current model and which syn-thetic units are most responsible for representing them. For each training sample 𝑧 ∈ D 𝑡 , we define its alignment deficiency as the total influence it receives from the current synthetic memory: Deficiency (𝑧 ) :=∑︁  
+
+> 𝑥 ∈ D 𝑠𝑦𝑛 𝑡
+
+A𝑡 (𝑥, 𝑧 ), (16) A smaller value of Deficiency (𝑧 ) indicates that the current synthetic memory fails to align with the gradient direction of 𝑧 , making it a hard sample that the model has not yet adequately learned from the distilled data. We select samples with the smallest deficiency values to form the hard target set Bℎ𝑎𝑟𝑑 𝑡 , which serves as the anchor for the outer-loop meta-optimization. Conversely, we must determine which synthetic units should be updated to minimize the loss on 
+
+Bℎ𝑎𝑟𝑑 𝑡 . For each synthetic sample 𝑥 ∈ D 𝑠𝑦𝑛 𝑡 , we compute its update responsibility with respect to the hard targets: Resp (𝑥 ) :=∑︁  
+
+> 𝑧 ∈ B ℎ𝑎𝑟𝑑 𝑡
+
+A𝑡 (𝑥, 𝑧 ). (17) A larger Resp (𝑥 ) indicates that the synthetic unit 𝑥 possesses the highest potential to reduce the meta-loss on the current hard real samples. We select units with the largest responsibility scores as the active synthetic memory M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 .
+
+4.2.2 Learning Framework. We optimize the synthetic dataset D𝑠𝑦𝑛 𝑡 
+
+through a temporal bi-level optimization framework. The inner loop trains a proxy model on synthetic samples to simulate training dy-namics captured by the boundary memory, while the outer loop updates the synthetic data to better align with training samples from the current data block. 
+
+Inner-loop Optimization. At stage 𝑡 , the proxy model parameters 
+
+𝜃 are initialized in a stage-aware manner. For 𝑡 = 1, 𝜃 is randomly initialized; for 𝑡 > 1, 𝜃 is initialized from the reference model 𝜙 𝑡 −1
+
+trained on previous stages. This initialization aligns inner-loop optimization with the training dynamics accumulated over time. The proxy model is then trained on the active synthetic memory 
+
+M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 for 𝑀 gradient steps: 
+
+𝜃 𝑚 = 𝜃 𝑚 −1 − 𝛼 ∇𝜃 L𝑠𝑦𝑛 
+
+ 𝜃 𝑚 −1; M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 
+
+, 𝑚 = 1, . . . , 𝑀, (18) yielding a simulated optimization trajectory {𝜃 0, . . . , 𝜃 𝑀 }.Conference’17, July 2017, Washington, DC, USA Jiaqing Zhang et al. 
+
+Table 2: Statistics of the Datasets. Overview of dataset scale, feature fields, and continual training setup. Each dataset is chronologically split into historical blocks for distillation and a subsequent block for simulating future interactions.                           
+
+> Features Scale Training
+> Fields Tasks Users Items Inters. Span Blocks
+> Tmall Dataset
+> 83379,603 675,597 19,573,214 125d 2+1
+> Taobao Dataset
+> 43987,991 4,161,138 100,095,231 9d 3+1
+> KuaiRand Dataset
+> 17 31,000 3,403,538 8,799,733 23d 3+1
+
+Outer-loop Optimization. Synthetic data quality is evaluated us-ing training samples from the current data block. Specifically, using the hard target set Bℎ𝑎𝑟𝑑 𝑡 (Sec. 4.2.1), we define the meta objective as: 
+
+L𝑚𝑒𝑡𝑎 = L𝑟𝑒𝑎𝑙 
+
+ 𝜃 𝑀 ; Bℎ𝑎𝑟𝑑 𝑡 
+
+. (19) The synthetic dataset D𝑠𝑦𝑛 𝑡 is updated by backpropagating through the inner loop, with optimization accelerated using a random trun-cated backpropagation strategy similar to RaT-BPTT [7]. 
+
+Training with Distilled Dataset. After completing distillation over historical stages D1: 𝑇 , the resulting distilled dataset D𝑠𝑦𝑛  
+
+> 1: 𝑇
+
+is used for downstream model training in a warmup-style manner. Specifi-cally, the dense network parameters of a candidate model are first trained using the distilled data, while sparse embedding parameters are inherited from the reference model at the end of stage 𝑇 . By combining dense parameters learned from distilled data with the reference model’s embedding representations, we obtain a complete model that preserves historical representation knowledge and en-ables efficient training without accessing full historical interaction logs. The resulting model can be directly fine-tuned on subsequent data blocks under the continual training paradigm. 
+
+## 5 EXPERIMENT 5.1 EXPERIMENTAL SETTINGS 
+
+5.1.1 Datasets. We evaluate DIET on three real-world recommen-dation datasets: KuaiRand 1, Tmall 2, and Taobao 3. These datasets involve multi-field sparse features and multi-task prediction set-tings. Their overall statistics are summarized in Table 2. For contin-ual distillation, each dataset is chronologically divided into several historical stages, followed by one subsequent stage and fixed vali-dation and test splits. The historical stages are used for continual dataset distillation and reference model evolution, while the sub-sequent stage simulates future interactions encountered during continual training. Detailed information refer to Appendix A.1. 
+
+5.1.2 Evaluation Protocols. We evaluate model performance using two standard metrics for binary prediction tasks: Area Under the ROC Curve (AUC) and LogLoss . AUC reflects the ranking quality of predicted probabilities, while LogLoss measures the quality of probability estimation. Under the multi-task setting, we report the 
+
+> 1https://zenodo.org/records/10439422
+> 2https://tianchi.aliyun.com/dataset/dataDetail?dataId=42
+> 3https://tianchi.aliyun.com/dataset/dataDetail?dataId=649
+
+average performance across all tasks. For each dataset, models are evaluated on the held-out test split following the continual learning protocol described in Section 5.1.1. 
+
+5.1.3 Baseline and Target Models. We compare DIET with a set of representative training and data selection strategies under the continual learning setting. Full Data serves as an upper-bound ref-erence, where models are trained on all historical stages together with the subsequent stage. In contrast, Cold Start trains models only on the subsequent stage, simulating the absence of histor-ical interactions. To isolate the benefit of transferring historical representations without accessing historical data, Warmup Start 
+
+initializes embedding parameters from the reference model trained on historical stages and continues training on the subsequent stage. We further consider several data selection baselines that compress historical interactions before training. Random Selection samples data from each historical stage according to the same compression ratio as DIET. EL2N Selection ranks samples in each historical stage using the EL2N metric and selects those around a chosen percentile (e.g., the 90th percentile) to match the target compression ratio. 
+
+Clustering applies K-Means to interaction representations within each historical stage and selects samples closest to cluster centroids to construct a compressed dataset. In all these cases, the selected historical data are combined with the subsequent stage for model training. To evaluate the generality of DIET across model architec-tures, we adopt a diverse set of representative recommender models, including WuKong [ 53 ], DCN [ 39 ], DCNv2 [ 40 ], FinalNet [ 63 ], and FinalMLP [ 23 ]. They cover different feature interaction mecha-nisms and network structures, providing a comprehensive testbed for assessing whether distilled data can consistently support model development across heterogeneous architectures. 
+
+5.1.4 Implementation Details. All models are implemented within a unified framework based on FuxiCTR [ 64 ]. For full-data train-ing, we use a one-epoch setting, which is widely adopted in in-dustrial recommender systems, as models trained on large-scale interaction logs often converge within a single epoch and further passes incur prohibitive cost. For DIET and all selection-based base-lines, models are trained for up to eight epochs on compressed datasets, with the best checkpoint selected based on validation performance. Since the distilled or selected datasets are orders of magnitude smaller, this setting allows sufficient optimization without increasing the overall computational cost. DIET and all selection-based baselines follow a warmup-style training proto-col, as described in Sec. 4.2.2, to ensure a fair comparison across methods. All models are optimized using Adam, with learning rates selected from {1e −4, 3e −4, 1e −3, 3e −3, 1e −2, 2e −2} based on valida-tion performance. For multi-task prediction, all target models use the same embedding dimensionality of 32 and MMoE configuration. More details about distillation process please refer to Appendix A.3. 
+
+## 5.2 OVERALL PERFORMANCE 
+
+5.2.1 How does DIET compare with selection-based data reduction methods? Table 3 compares DIET with representative selection-based baselines under the same embedding–soft label training protocol. Despite operating under identical downstream training conditions, DIET consistently outperforms selection-based DIET: Learning to Distill Dataset Continually for Recommender Systems Conference’17, July 2017, Washington, DC, USA 
+
+Table 3: Overall performance of DIET compared with heuristic and selection-based data reduction methods, and its generalization across target models with different architectures. Distilled datasets are generated using DCN as the teacher model and applied to train DCN, DCNv2, FinalNet, FinalMLP, and WuKong. The compression ratio of distilled data is reported next to each dataset name. Best AUC results are in bold, second-best underlined.                                                                                                                                                                                                                                              
+
+> DCN DCNv2 FinalNet FinalMLP WuKong
+> Method AUC ↑LogLoss ↓AUC ↑LogLoss ↓AUC ↑LogLoss ↓AUC ↑LogLoss ↓AUC ↑LogLoss ↓
+> KuaiRand Dataset (1.50%)
+> Full Data 0.7878 0.3837 0.7931 0.3834 0.7898 0.3815 0.7875 0.3819 0.7965 0.3804 Cold Start 0.7701 0.3915 0.7800 0.3857 0.7745 0.3851 0.7655 0.3878 0.7826 0.3868 Warmup Start 0.7822 0.3869 0.7888 0.3841 0.7878 0.3859 0.7847 0.3847 0.7925 0.3829 Random Selection 0.7848 0.3866 0.7897 0.3841 0.7882 0.3855 0.7856 0.3862 0.7929 0.3852 K-Means Clustering 0.7846 0.3870 0.7919 0.3827 0.7877 0.3859 0.7853 0.3837 0.7917 0.3817 EL2N Selection 0.7854 0.3853 0.7911 0.3814 0.7889 0.3820 0.7867 0.3846 0.7925 0.3817
+> Ours (DIET) 0.7878 0.3831 0.7933 0.3808 0.7892 0.3841 0.7874 0.3835 0.7959 0.3817
+> Tmall Dataset (1.39%)
+> Full Data 0.7571 0.2410 0.7591 0.2405 0.7584 0.2406 0.7588 0.2405 0.7629 0.2411 Cold Start 0.7502 0.2427 0.7502 0.2427 0.7492 0.2431 0.7508 0.2425 0.7566 0.2431 Warmup Start 0.7551 0.2415 0.7556 0.2413 0.7546 0.2417 0.7559 0.2412 0.7529 0.2435 Random Selection 0.7563 0.2410 0.7570 0.2411 0.7553 0.2413 0.7565 0.2410 0.7576 0.2408 K-Means Clustering 0.7553 0.2414 0.7558 0.2413 0.7555 0.2415 0.7564 0.2411 0.7550 0.2481 EL2N Selection 0.7559 0.2412 0.7574 0.2410 0.7569 0.2411 0.7576 0.2407 0.7600 0.2479
+> Ours (DIET) 0.7572 0.2409 0.7581 0.2410 0.7572 0.2410 0.7584 0.2406 0.7617 0.2436
+> Taobao Dataset (1.68%)
+> Full Data 0.7146 0.1750 0.7166 0.1747 0.7113 0.1755 0.7070 0.1766 0.7165 0.1766 Cold Start 0.6825 0.1786 0.6827 0.1786 0.6754 0.1791 0.6862 0.1787 0.6917 0.1787 Warmup Start 0.6939 0.1776 0.6941 0.1774 0.6972 0.1775 0.7021 0.1767 0.7113 0.1783 Random Selection 0.6985 0.1771 0.6995 0.1770 0.7060 0.1761 0.7064 0.1762 0.7060 0.1823 K-Means Clustering 0.6997 0.1772 0.7005 0.1769 0.6978 0.1778 0.7033 0.1766 0.7109 0.1816 EL2N Selection 0.6977 0.1771 0.7000 0.1769 0.7061 0.1762 0.7082 0.1760 0.7078 0.1805
+> Ours (DIET) 0.7119 0.1754 0.7126 0.1755 0.7100 0.1757 0.7101 0.1759 0.7142 0.1793
+
+methods, highlighting the advantage of dynamic synthesis over 
+
+static selection . First , DIET more faithfully approximates full-data training behavior than static subset selection. On both KuaiRand and Tmall, DIET achieves performance comparable to full-data training using only ∼1.5% of interactions; notably, on KuaiRand, DIET matches the full-data AUC of DCN (0.7878). In contrast, selection-based methods such as K-Means and EL2N, which rely on fixed subsets of historical samples, exhibit consistent perfor-mance gaps, suggesting limited coverage of training-critical sig-nals. Second , DIET alleviates the limitations of static snapshots in large-scale sparse settings through continual optimization. On the Taobao dataset, selection-based methods suffer substantial degrada-tion when trained on fixed subsets (e.g., Random Selection: 0.6985 vs. Full Data: 0.7146). By contrast, DIET continually refines syn-thetic data via influence-guided optimization, enabling it to retain most of the full-data performance despite extreme data sparsity. 
+
+5.2.2 How well does distilled data from DIET generalize across model architectures? Experimental results demonstrate that distilled data produced by DIET exhibits strong cross-architecture generalization , indicating that it captures training dynamics that are not tied to a specific model structure. First , DIET enables ef-fective weak-to-strong transfer across architectures. As shown in Table 3, although the distilled data is generated using a relatively lightweight DCN reference model, it achieves near-full-data per-formance when used to train substantially more complex models. For example, on Tmall, WuKong trained on DCN-distilled data reaches an AUC of 0.7617, closely approaching the full-data up-per bound (0.7629) and consistently outperforming selection-based baselines. This suggests that DIET captures training-relevant pat-terns that extend beyond the inductive bias of the reference model architecture. Second , the effectiveness of DIET is largely reference model-agnostic . Figure 3 shows that, on Tmall with a distillation ra-tio of 0.01, data distilled by different reference models (DCN: 0.7617; FinalNet: 0.7618) yields nearly identical performance when training WuKong, comparable to data distilled by the homologous refer-ence model. Even at very low ratios (e.g., 10 −4), the performance differences across reference model architectures remain minimal, indicating that DIET optimizes synthetic data toward architecture-invariant training dynamics rather than specific signals. 
+
+## 5.3 FURTHER ANALYSIS 
+
+5.3.1 How do reference model capacity and distillation ra-tio affect the distilled data? Figure 3 examines how distillation ratio and reference model capacity. First , the candidate model ex-hibits clear diminishing marginal returns as the distillation ratio in-creases. On the Tmall dataset, using only 0.3% distilled data already yields an AUC of 0.7628 , recovering over 99 .9% of the empirical Conference’17, July 2017, Washington, DC, USA Jiaqing Zhang et al. 0.0001 0.001 0.003 0.01 0.05       
+
+> Compression Ratio
+> 0.7935
+> 0.7940
+> 0.7945
+> 0.7950
+> 0.7955
+> 0.7960
+> 0.7965
+> 0.7970
+> AUC
+> Upper Bound: 0.7965
+> Dataset: KuaiRand, Student Model: WuKong
+> 0.0001 0.001 0.003 0.01 0.03
+> Compression Ratio
+> 0.759
+> 0.760
+> 0.761
+> 0.762
+> 0.763
+> Upper Bound: 0.7629
+> Dataset: Tmall, Student Model: WuKong
+> Teacher Model: DCN Teacher Model: FinalNet Teacher Model: WuKong
+
+Figure 3: Performance comparison across compression ratios with WuKong as the candidate model. Subplots (a) and (b) show results on the KuaiRand and Tmall datasets. The dotted lines represent the full-data upper bound. 
+
+full-data upper bound ( 0.7629 ). This indicates that DIET effectively removes redundancy from massive interaction logs and concen-trates training-critical signals into a compact synthetic memory. 
+
+Second , reference model capacity plays a more decisive role than architectural homogeneity in determining distilled data quality. Al-though WuKong and FinalNet differ substantially in architecture, data distilled by the higher-capacity FinalNet consistently outper-forms that distilled by DCN, and even exceeds data distilled by the homogeneous WuKong reference model at moderate ratios (e.g., 
+
+> 0.01 on KuaiRand). This suggests that a stronger reference model provides a more accurate approximation of the underlying train-ing dynamics, yielding distilled data with robust cross-architecture transferability . Finally , on the highly dense KuaiRand dataset (av-erage > 8,000 interactions per user), training with 3% data distilled by FinalNet slightly exceeds the full-data reference performance (AUC 0.7967 vs. 0.7965 ). We attribute this behavior to an implicit 
+
+denoising effect : the strong reference model suppresses spurious or noisy interactions during distillation, resulting in a synthetic dataset that better captures the dominant training signals than the full raw historical data stream. 
+
+Table 4: Ablation Study. Impact of Memory Fusion (MF), Tar-get Selection (TS), and Memory Selection (MS). 
+
+Variants KuaiRand Tmall Taobao 
+
+MF TS MS AUC ↑ LogLoss ↓ AUC ↑ LogLoss ↓ AUC ↑ LogLoss ↓
+
+✗ ✓ ✓ 0.7948 0.3825 0.7598 0.2470 0.7108 0.1808 
+
+✓ ✗ ✓ 0.7949 0.3816 0.7611 0.2421 0.7137 0.1797 
+
+✓ ✓ ✗ 0.7930 0.3823 0.7598 0.2409 0.7127 0.1807 
+
+✗ ✗ ✗ 0.7947 0.3818 0.7590 0.2414 0.7127 0.1793 
+
+✓ ✓ ✓ 0.7959 0.3817 0.7617 0.2436 0.7142 0.1793 
+
+5.3.2 How do different components of DIET contribute to its performance? The ablation results in Table 4 indicate that DIET’s performance gains arise from the complementary effects of contin-ual memory fusion and influence-guided addressing. First, Contin-ual Memory Fusion (MF) is essential for handling evolving long-tail distributions. Removing MF—i.e., initializing synthetic 
+
+Table 5: Empirical Time and Memory Overhead. Comparison of training time and peak GPU memory usage across three stages. Measurement were conducted on the same GPU. 
+
+Dataset Full Training DIET Distill. Distilled Train. 
+
+Time/ep Mem. Time/ep Mem. Time/ep Mem. KuaiRand 10.4m 4.5GB 0.4m 24.8GB 0.1m 4.5GB Tmall 7.0m 9.9GB 1.1m 32.2GB 0.1m 9.9GB Taobao 5.3m 16.1GB 10.0m 51.9GB 0.2m 16.1GB 
+
+> Note: Time/ep denotes minutes per epoch. Mem. denotes peak GPU memory (GB).
+
+data solely from the current block without retaining historical mem-ory—consistently degrades performance across all datasets. The effect is most pronounced on the large-scale Taobao dataset, where AUC drops from 0.7142 to 0.7108, suggesting that relying on local data snapshots alone fails to preserve training-influential structure accumulated over time. Second, Influence-guided Bidirectional Addressing (TS & MS) is crucial for precise and stable opti-mization. Ablating either Target Selection (TS) or Memory Selec-tion (MS) leads to inferior results. In particular, removing MS causes the largest drop on KuaiRand (0.7959 → 0.7930), indicating that indiscriminate updates to synthetic memory reduce optimization stability. These results highlight the importance of jointly selecting informative real samples and selectively updating the correspond-ing synthetic memory units in a continual distillation setting. 
+
+5.3.3 How efficient is DIET in terms of time and memory complexity? We elucidate the theoretical computational footprint of DIET in terms of a single outer-loop optimization step. Note that Phase 1 is a one-pass initialization with linear complexity relative to data size and is thus omitted. The empirical runtime is reported in Table 5. Notably, the distillation overhead is incurred only once and can be amortized over multiple downstream model training runs, resulting in a negligible marginal cost in practice. 
+
+Memory Complexity. The memory consumption C𝑚𝑒𝑚 is dom-inated by the model parameters, the synthetic memory, and the cache required for backpropagation: 
+
+C𝑚𝑒𝑚 ≈ |𝜃 |
+
+|{z} 
+
+> Model
+
++ 𝑁 𝑠𝑦𝑛 · ( 𝑑 + 𝐿 )
+
+| {z }
+
+> Synthetic Memory
+
++ 𝐵 𝑟𝑒𝑎𝑙 · 𝑑 
+
+| {z }
+
+> Real Data
+
++ 𝐾 𝑟𝑎𝑡 · | 𝜃 |
+
+| {z }
+
+> RaT-BPTT Cache
+
+(20) where 𝑑 denotes the feature dimension. By optimizing embeddings directly, the storage cost 𝑁 𝑠𝑦𝑛 · ( 𝑑 + 𝐿 ) remains independent of raw data sparsity. Furthermore, the use of RaT-BPTT limits the differentiation cache to 𝐾 𝑟𝑎𝑡 steps, where 𝐾 𝑟𝑎𝑡 ≪ 𝑀 .
+
+Time Complexity. The runtime per outer iteration C𝑡𝑖𝑚𝑒 com-prises influence-guided addressing, inner-loop simulation, and meta-gradient computation: 
+
+C𝑡𝑖𝑚𝑒 ≈ ( 𝐵 𝑟𝑒𝑎𝑙 + 𝑁 𝑠𝑦𝑛 ) · | 𝜃 |
+
+| {z }
+
+> Memory Addressing
+
++ 𝑀 · 𝐵 𝑎𝑐𝑡𝑖𝑣𝑒 · | 𝜃 |
+
+| {z }
+
+> Inner-Loop Training
+
++ 𝐾 𝑟𝑎𝑡 · 𝐵 𝑎𝑐𝑡𝑖𝑣𝑒 · | 𝜃 |
+
+| {z }
+
+> Meta-Gradient
+
+(21) A key efficiency design in DIET is the Memory Addressing mech-anism. By selecting only the most relevant synthetic units, the inner-loop cost scales with the small active subset size 𝐵 𝑎𝑐𝑡𝑖𝑣𝑒 rather DIET: Learning to Distill Dataset Continually for Recommender Systems Conference’17, July 2017, Washington, DC, USA 
+
+than the full memory size 𝑁 𝑠𝑦𝑛 (i.e., 𝑀 · 𝐵 𝑎𝑐𝑡𝑖𝑣𝑒 ≪ 𝑀 · 𝑁 𝑠𝑦𝑛 ), which significantly reduces the computational overhead per iteration. 
+
+## 6 CONCLUSION 
+
+In this paper, we formalize data-efficient model development in rec-ommender systems under continual training as a streaming dataset distillation problem, where a compact dataset is required to approx-imate the training behavior induced by full historical data streams. We propose DIET , a framework that constructs and continually re-fines a compact synthetic dataset as an evolving boundary memory through task-conditioned initialization, continual memory fusion, and influence-guided optimization. By explicitly modeling training-influential interactions and selectively updating synthetic memory over time, DIET preserves long-term training dynamics that are typically lost under static data reduction. Extensive experiments on differenct datasets demonstrate that DIET closely approximates full-data training using only a small fraction of historical interactions, while generalizing robustly across heterogeneous model architec-tures and distillation ratios. These results indicate that streaming dataset distillation can serve as a practical foundation for efficient and reliable model iteration in large-scale recommender systems. 
+
+## References 
+
+[1] Rahaf Aljundi, Min Lin, Baptiste Goujaud, and Yoshua Bengio. 2019. Gradi-ent based sample selection for online continual learning. Advances in neural information processing systems 32 (2019). [2] George Cazenavette, Tongzhou Wang, Antonio Torralba, Alexei A Efros, and Jun-Yan Zhu. 2022. Dataset distillation by matching training trajectories. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .4750–4759. [3] Qiwei Chen, Huan Zhao, Wei Li, Pipei Huang, and Wenwu Ou. 2019. Behavior sequence transformer for e-commerce recommendation in alibaba. In Proceedings of the 1st international workshop on deep learning practice for high-dimensional sparse data . 1–4. [4] Jiawei Du, Juncheng Hu, Wenxin Huang, Joey Tianyi Zhou, et al . 2024. Diversity-driven synthesis: Enhancing dataset distillation through directed weight ad-justment. Advances in neural information processing systems 37 (2024), 119443– 119465. [5] Jiawei Du, Yidi Jiang, Vincent YF Tan, Joey Tianyi Zhou, and Haizhou Li. 2023. Minimizing the accumulated trajectory error to improve dataset distillation. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .3749–3758. [6] Yufei Feng, Fuyu Lv, Weichen Shen, Menghan Wang, Fei Sun, Yu Zhu, and Keping Yang. 2019. Deep session interest network for click-through rate prediction. 
+
+arXiv preprint arXiv:1905.06482 (2019). [7] Yunzhen Feng, Ramakrishna Vedantam, and Julia Kempe. 2023. Embarassingly simple dataset distillation. arXiv preprint arXiv:2311.07025 (2023). [8] Jiahui Geng, Zongxiong Chen, Yuandou Wang, Herbert Woisetschlaeger, Sonja Schimmler, Ruben Mayer, Zhiming Zhao, and Chunming Rong. 2023. A survey on dataset distillation: Approaches, applications and future directions. arXiv preprint arXiv:2305.01975 (2023). [9] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017. DeepFM: a factorization-machine based neural network for CTR prediction. arXiv preprint arXiv:1703.04247 (2017). [10] Ziyao Guo, Kai Wang, George Cazenavette, Hui Li, Kaipeng Zhang, and Yang You. 2023. Towards lossless dataset distillation via difficulty-aligned trajectory matching. arXiv preprint arXiv:2310.05773 (2023). [11] Sariel Har-Peled and Soham Mazumdar. 2004. On coresets for k-means and k-median clustering. In Proceedings of the thirty-sixth annual ACM symposium on Theory of computing . 291–300. [12] Johannes Kaiser, Kristian Schwethelm, Daniel Rueckert, and Georgios Kaissis. 2025. Laplace Sample Information: Data Informativeness Through a Bayesian Lens. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net. https://openreview.net/ forum?id=qO6dk9KfIp [13] Yongmin Lee and Hye Won Chung. 2024. Selmatch: Effectively scaling up dataset distillation via selection-based initialization and partial updates by trajectory matching. arXiv preprint arXiv:2406.18561 (2024). [14] Dai Li, Kevin Course, Wei Li, Hongwei Li, Jie Hua, Yiqi Chen, Zhao Zhu, Rui Jian, Xuan Cao, Bi Xue, et al . 2025. Realizing Scaling Laws in Recommender Systems: A Foundation-Expert Paradigm for Hyperscale Model Deployment. arXiv preprint arXiv:2508.02929 (2025). [15] Muquan Li, Hang Gou, Dongyang Zhang, Shuang Liang, Xiurui Xie, Deqiang Ouyang, and Ke Qin. 2025. Beyond Random: Automatic Inner-loop Optimization in Dataset Distillation. arXiv preprint arXiv:2510.04838 (2025). [16] Xiaopeng Li, Bo Chen, Junda She, Shiteng Cao, You Wang, Qinlin Jia, Haiying He, Zheli Zhou, Zhao Liu, Ji Liu, Zhiyang Zhang, Yu Zhou, Guoping Tang, Yiqing Yang, Chengcheng Guo, Si Dong, Kuo Cai, Pengyue Jia, Maolin Wang, Wanyu Wang, Shiyao Wang, Xinchen Luo, Qigen Hu, Qiang Luo, Xiao Lv, Chaoyi Ma, Ruiming Tang, Kun Gai, Guorui Zhou, and Xiangyu Zhao. 2025. A Survey of Generative Recommendation from a Tri-Decoupled Perspective: Tokenization, Architecture, and Optimization. Preprints (December 2025). doi:10.20944/preprints202512.0203. v1 [17] Dai Liu, Jindong Gu, Hu Cao, Carsten Trinitis, and Martin Schulz. 2024. Dataset distillation by automatic training trajectories. In European Conference on Computer Vision . Springer, 334–351. [18] Ping Liu and Jiawei Du. 2025. The evolution of dataset distillation: Toward scalable and generalizable solutions. arXiv preprint arXiv:2502.05673 (2025). [19] Ping Liu and Jiawei Du. 2025. The evolution of dataset distillation: Toward scalable and generalizable solutions. arXiv preprint arXiv:2502.05673 (2025). [20] Zhuoran Liu, Leqi Zou, Xuan Zou, Caihua Wang, Biao Zhang, Da Tang, Bolin Zhu, Yijie Zhu, Peng Wu, Ke Wang, et al . 2022. Monolith: real time recommendation system with collisionless embedding table. arXiv preprint arXiv:2209.07663 (2022). [21] David Lopez-Paz and Marc’Aurelio Ranzato. 2017. Gradient episodic memory for continual learning. Advances in neural information processing systems 30 (2017). [22] Wenhan Lyu, Devashish Tyagi, Yihang Yang, Ziwei Li, Ajay Somani, Karthikeyan Shanmugasundaram, Nikola Andrejevic, Ferdi Adeputra, Curtis Zeng, Arun K Singh, et al . 2025. DV365: Extremely Long User History Modeling at Instagram. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 2 . 4717–4727. [23] Kelong Mao, Jieming Zhu, Liangcai Su, Guohao Cai, Yuru Li, and Zhenhua Dong. 2023. FinalMLP: an enhanced two-stream MLP model for CTR prediction. In 
+
+Proceedings of the AAAI conference on artificial intelligence , Vol. 37. 4552–4560. [24] Ziheng Ni, Congcong Liu, Cai Shang, Yiming Sun, Junjie Li, Zhiwei Fang, Guang-peng Chen, Jian Li, Zehua Zhang, Changping Peng, et al . 2025. GCRank: A Generative Contextual Comprehension Paradigm for Takeout Ranking Model. 
+
+arXiv preprint arXiv:2601.02361 (2025). [25] Mansheej Paul, Surya Ganguli, and Gintare Karolina Dziugaite. 2021. Deep Learning on a Data Diet: Finding Important Examples Early in Training. In 
+
+Advances in Neural Information Processing Systems 34: Annual Conference on Neural Information Processing Systems 2021, NeurIPS 2021, December 6-14, 2021, virtual , Marc’Aurelio Ranzato, Alina Beygelzimer, Yann N. Dauphin, Percy Liang, and Jennifer Wortman Vaughan (Eds.). 20596–20607. https://proceedings.neurips. cc/paper/2021/hash/ac56f8fe9eea3e4a365f29f0f1957c55-Abstract.html [26] Qi Pi, Guorui Zhou, Yujing Zhang, Zhe Wang, Lejian Ren, Ying Fan, Xiaoqiang Zhu, and Kun Gai. 2020. Search-based user interest modeling with lifelong sequential behavior data for click-through rate prediction. In Proceedings of the 29th ACM International Conference on Information & Knowledge Management .2685–2692. [27] Garima Pruthi, Frederick Liu, Satyen Kale, and Mukund Sundararajan. 2020. Estimating Training Data Influence by Tracing Gradient Descent. In Advances in Neural Information Processing Systems 33: Annual Conference on Neural In-formation Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual ,Hugo Larochelle, Marc’Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin (Eds.). https://proceedings.neurips.cc/paper/2020/hash/ e6385d39ec9394f2f3a354d9d2b88eec-Abstract.html [28] Steffen Rendle. 2010. Factorization machines. In 2010 IEEE International conference on data mining . IEEE, 995–1000. [29] Noveen Sachdeva and Julian McAuley. 2023. Data distillation: A survey. arXiv preprint arXiv:2301.04272 (2023). [30] Burr Settles. 2009. Active learning literature survey. (2009). [31] Tingjia Shen, Hao Wang, Chuhan Wu, Jin Yao Chin, Wei Guo, Yong Liu, Huifeng Guo, Defu Lian, Ruiming Tang, and Enhong Chen. [n. d.]. P-Law: Predicting Quantitative Scaling Law with Entropy Guidance in Large Recommendation Models. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .[32] Zhiqiang Shen, Ammar Sherif, Zeyuan Yin, and Shitong Shao. 2025. Delt: A simple diversity-driven earlylate training for dataset distillation. In Proceedings of the Computer Vision and Pattern Recognition Conference . 4797–4806. [33] Zhiqiang Shen, Ammar Sherif, Zeyuan Yin, and Shitong Shao. 2025. DELT: A Simple Diversity-driven EarlyLate Training for Dataset Distillation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2025, Nashville, TN, USA, June 11-15, 2025 . Computer Vision Foundation / IEEE, 4797–4806. doi:10. 1109/CVPR52734.2025.00452 Conference’17, July 2017, Washington, DC, USA Jiaqing Zhang et al. 
+
+[34] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang, and Jian Tang. 2019. Autoint: Automatic feature interaction learning via self-attentive neural networks. In Proceedings of the 28th ACM international conference on information and knowledge management . 1161–1170. [35] Cheng Wang, Jiacheng Sun, Zhenhua Dong, Ruixuan Li, and Rui Zhang. 2023. Gradient matching for categorical data distillation in ctr prediction. In Proceedings of the 17th ACM Conference on Recommender Systems . 161–170. [36] Hao Wang, Wei Guo, Luankang Zhang, Jin Yao Chin, Yufei Ye, Huifeng Guo, Yong Liu, Defu Lian, Ruiming Tang, and Enhong Chen. 2025. Generative Large Recommendation Models: Emerging Trends in LLMs for Recommendation. In 
+
+Companion Proceedings of the ACM on Web Conference 2025 (Sydney NSW, Aus-tralia) (WWW ’25) . Association for Computing Machinery, New York, NY, USA, 49–52. doi:10.1145/3701716.3715865 [37] Jiachen T. Wang, Prateek Mittal, Dawn Song, and Ruoxi Jia. 2025. Data Shapley in One Training Run. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net. https: //openreview.net/forum?id=HD6bWcj87Y [38] Kefan Wang, Hao Wang, Kenan Song, Wei Guo, Kai Cheng, Zhi Li, Yong Liu, Defu Lian, and Enhong Chen. 2025. A universal framework for compressing embeddings in ctr prediction. In International Conference on Database Systems for Advanced Applications . Springer, 84–100. [39] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & cross network for ad click predictions. In Proceedings of the ADKDD’17 . 1–7. [40] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong, and Ed Chi. 2021. Dcn v2: Improved deep & cross network and practical lessons for web-scale learning to rank systems. In Proceedings of the web conference 2021 .1785–1797. [41] Shaobo Wang, Yantai Yang, Qilong Wang, Kaixin Li, Linfeng Zhang, and Junchi Yan. 2024. Not all samples should be utilized equally: Towards understanding and improving dataset distillation. arXiv preprint arXiv:2408.12483 (2024). [42] Tongzhou Wang, Jun-Yan Zhu, Antonio Torralba, and Alexei A Efros. 2018. Dataset distillation. arXiv preprint arXiv:1811.10959 (2018). [43] Zehuan Wang, Yingcan Wei, Minseok Lee, Matthias Langer, Fan Yu, Jie Liu, Shijie Liu, Daniel G Abel, Xu Guo, Jianbing Dong, et al . 2022. Merlin hugectr: Gpu-accelerated recommender system training and inference. In Proceedings of the 16th ACM Conference on Recommender Systems . 534–537. [44] Xue Xia, Saurabh Joshi, Kousik Rajesh, Kangnan Li, Yangyi Lu, Nikil Pancha, Dhruvil Badani, Jiajing Xu, and Pong Eksombatchai. 2025. TransAct V2: Lifelong User Action Sequence Modeling on Pinterest Recommendation. In Proceedings of the 34th ACM International Conference on Information and Knowledge Management .6881–6882. [45] Wenjia Xie, Hao Wang, Minghao Fang, Ruize Yu, Wei Guo, Yong Liu, Defu Lian, and Enhong Chen. 2025. Breaking the Bottleneck: User-Specific Optimization and Real-Time Inference Integration for Sequential Recommendation. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 2. 3333–3343. [46] Wenjia Xie, Hao Wang, Luankang Zhang, Rui Zhou, Defu Lian, and Enhong Chen. 2024. Breaking Determinism: Fuzzy Modeling of Sequential Recommendation Using Discrete State Space Diffusion Model. arXiv preprint arXiv:2410.23994 
+
+(2024). [47] Lee Xiong, Zhirong Chen, Rahul Mayuranath, Shangran Qiu, Arda Ozdemir, Lu Li, Yang Hu, Dave Li, Jingtao Ren, Howard Cheng, et al . 2026. LLaTTE: Scaling Laws for Multi-Stage Sequence Modeling in Large-Scale Ads Recommendation. 
+
+arXiv preprint arXiv:2601.20083 (2026). [48] Xiang Xu, Hao Wang, Wei Guo, Luankang Zhang, Wanshan Yang, Runlong Yu, Yong Liu, Defu Lian, and Enhong Chen. 2025. Multi-granularity interest retrieval and refinement network for long-term user behavior modeling in ctr prediction. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 1 . 2745–2755. [49] Bencheng Yan, Shilei Liu, Zhiyuan Zeng, Zihao Wang, Yizhen Zhang, Yujin Yuan, Langming Liu, Jiaqi Liu, Di Wang, Wenbo Su, et al . 2025. Unlocking Scaling Law in Industrial Recommendation Systems with a Three-step Paradigm based Large User Model. arXiv preprint arXiv:2502.08309 (2025). [50] Shuo Yang, Zeke Xie, Hanyu Peng, Min Xu, Mingming Sun, and Ping Li. 2022. Dataset pruning: Reducing training data by examining generalization influence. 
+
+arXiv preprint arXiv:2205.09329 (2022). [51] Yufei Ye, Wei Guo, Jin Yao Chin, Hao Wang, Hong Zhu, Xi Lin, Yuyang Ye, Yong Liu, Ruiming Tang, Defu Lian, et al . 2025. FuXi-𝛼 : Scaling Recommendation Model with Feature Interaction Enhanced Transformer. In Companion Proceedings of the ACM on Web Conference 2025 . 557–566. [52] Mingjia Yin, Junwei Pan, Hao Wang, Ximei Wang, Shangyu Zhang, Jie Jiang, Defu Lian, and Enhong Chen. 2025. From Feature Interaction to Feature Generation: A Generative Paradigm of CTR Prediction Models. arXiv preprint arXiv:2512.14041 
+
+(2025). [53] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Daifeng Guo, Yanli Zhao, Shen Li, Yuchen Hao, Yantao Yao, et al . 2024. Wukong: Towards a scaling law for large-scale recommendation. arXiv preprint arXiv:2403.02545 (2024). [54] Jiaqing Zhang, Mingjia Yin, Hao Wang, Yawen Li, Yuyang Ye, Xingyu Lou, Jun-ping Du, and Enhong Chen. 2025. Td3: Tucker decomposition based dataset distillation method for sequential recommendation. In Proceedings of the ACM on Web Conference 2025 . 3994–4003. [55] Bo Zhao and Hakan Bilen. 2021. Dataset condensation with differentiable siamese augmentation. In International Conference on Machine Learning . PMLR, 12674– 12685. [56] Bo Zhao, Konda Reddy Mopuri, and Hakan Bilen. 2020. Dataset condensation with gradient matching. arXiv preprint arXiv:2006.05929 (2020). [57] Wenliang Zhong, Haoyu Tang, Qinghai Zheng, Mingzhu Xu, Yupeng Hu, and Weili Guan. 2025. Towards stable and storage-efficient dataset distillation: Match-ing convexified trajectory. In Proceedings of the Computer Vision and Pattern Recognition Conference . 25581–25589. [58] Guorui Zhou, Jiaxin Deng, Jinghao Zhang, Kuo Cai, Lejian Ren, Qiang Luo, Qian-qian Wang, Qigen Hu, Rui Huang, Shiyao Wang, et al . 2025. OneRec Technical Report. arXiv preprint arXiv:2506.13695 (2025). [59] Guorui Zhou, Na Mou, Ying Fan, Qi Pi, Weijie Bian, Chang Zhou, Xiaoqiang Zhu, and Kun Gai. 2019. Deep interest evolution network for click-through rate prediction. In Proceedings of the AAAI conference on artificial intelligence , Vol. 33. 5941–5948. [60] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep interest network for click-through rate prediction. In Proceedings of the 24th ACM SIGKDD international conference on knowledge discovery & data mining . 1059–1068. [61] Rui Zhou, Hao Wang, Wei Guo, Qinglin Jia, Wenjia Xie, Xiang Xu, Yong Liu, Defu Lian, and Enhong Chen. 2025. MIT: A Multi-Tower Information Transfer Framework Based on Hierarchical Task Relationship Modeling. In Companion Proceedings of the ACM on Web Conference 2025 . 651–660. [62] Jie Zhu, Zhifang Fan, Xiaoxie Zhu, Yuchen Jiang, Hangyu Wang, Xintian Han, Haoran Ding, Xinmin Wang, Wenlin Zhao, Zhen Gong, Huizhi Yang, Zheng Chai, Zhe Chen, Yuchao Zheng, Qiwei Chen, Feng Zhang, Xun Zhou, Peng Xu, Xiao Yang, Di Wu, and Zuotao Liu. 2025. RankMixer: Scaling Up Ranking Models in Industrial Recommenders. In Proceedings of the 34th ACM International Conference on Information and Knowledge Management (Seoul, Republic of Korea) (CIKM ’25) . Association for Computing Machinery, New York, NY, USA, 6309–6316. doi:10.1145/3746252.3761507 [63] Jieming Zhu, Qinglin Jia, Guohao Cai, Quanyu Dai, Jingjie Li, Zhenhua Dong, Ruiming Tang, and Rui Zhang. 2023. FINAL: Factorized Interaction Layer for CTR Prediction. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval, SIGIR 2023, Taipei, Taiwan, July 23-27, 2023 , Hsin-Hsi Chen, Wei-Jou (Edward) Duh, Hen-Hsen Huang, Makoto P. Kato, Josiane Mothe, and Barbara Poblete (Eds.). ACM, 2006–2010. doi:10.1145/ 3539618.3591988 [64] Jieming Zhu, Jinyang Liu, Shuai Yang, Qi Zhang, and Xiuqiang He. 2021. Open benchmarking for click-through rate prediction. In Proceedings of the 30th ACM international conference on information & knowledge management . 2759–2769. DIET: Learning to Distill Dataset Continually for Recommender Systems Conference’17, July 2017, Washington, DC, USA 
+
+## A APPENDIX A.1 DATASET TEMPORAL PARTITIONS 
+
+This appendix provides the detailed chronological partitions used in our continual learning protocol. 
+
+Tmall. The Tmall dataset spans a total of 125 days of user inter-actions. We divide it into three historical stages covering 5/01–5/31, 6/01–6/30, and 7/01–7/31, respectively. These are followed by a subsequent stage spanning 8/01–8/31, which represents future in-teractions in the continual learning setting. The remaining two days, 9/01 and 9/02, are used as the validation and test splits, respectively. 
+
+Taobao. The Taobao dataset covers nine consecutive days of interactions. We partition the data into three historical stages, each spanning two days (11/25–11/26, 11/27–11/28, and 11/29–11/30). The next day (12/01) serves as the subsequent stage for continual evaluation. The final two days, 12/02 and 12/03, are reserved as the validation and test splits. 
+
+KuaiRand-1k. The KuaiRand-1k dataset spans 23 days of user activity. We divide the timeline into two historical stages cov-ering 04/16–04/22 and 04/23–04/29. The subsequent stage spans 04/30–05/06 and represents future interactions encountered during continual training. The last two days, 05/07 and 05/08, are used as the validation and test splits, respectively. 
+
+## A.2 Algorithmic Details of DIET 
+
+This appendix provides pseudocode descriptions of DIET for repro-ducibility. The algorithms correspond to the two main components introduced in Section 4: (i) boundary memory initialization, and (ii) influence-guided optimization via memory addressing. All symbols follow the definitions in the main text. 
+
+A.2.1 Boundary Memory Initialization. Algorithm 1 summarizes the initialization of the synthetic boundary memory at stage 𝑡 .Given the current data block D𝑡 and teacher checkpoint 𝜙 𝑡 , DIET selects task-conditioned training-influential samples using label-conditioned EL2N scoring. Selected samples are converted into embedding–soft label pairs using the teacher model. When 𝑡 > 1, a subset of historical synthetic data aligned with the current boundary is retained based on influence estimation. The union forms the initialized synthetic dataset D𝑡 𝑠𝑦𝑛 .
+
+A.2.2 Influence-Guided Optimization. Algorithm 2 describes the optimization of the synthetic dataset. At each iteration, DIET per-forms bidirectional memory addressing to identify hard training targets from the current data block and active synthetic samples. A proxy model is trained on the active synthetic memory in the inner loop, and the synthetic data are updated in the outer loop using meta-gradients computed on hard targets. Truncated backpropaga-tion are used for efficient influence estimation. 
+
+## A.3 ADDITIONAL IMPLEMENTATION DETAILS 
+
+This appendix provides additional implementation details for the distillation procedure and memory addressing mechanisms used in DIET, which are omitted from the main text for clarity. 
+
+Algorithm 1: Boundary Memory Initialization at Stage 𝑡 
+
+(Phase 1) 
+
+Input: Current data block D𝑡 ; teacher checkpoint 𝜙 𝑡 ; historical distilled data D1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+(if 𝑡 > 1); label combinations set C; selection rule SelectUpperMiddle (·) ;influence estimation function A (·) .
+
+Output: Initialized distilled dataset D𝑡 𝑠𝑦𝑛 .
+
+Task-conditioned influential sample selection. ;
+
+S𝑡 ← ∅ ;
+
+foreach c ∈ C do 
+
+Dc 
+
+> 𝑡
+
+← { ( x, y) ∈ D 𝑡 | y = c};
+
+foreach (x, y) ∈ D c 
+
+> 𝑡
+
+do 
+
+𝑠 (x, y) ← 𝜎 (𝑓 𝜙 𝑡 (Embed (x) ) ) − y 2; // EL2N 
+
+Sc 
+
+> 𝑡
+
+← SelectUpperMiddle ( D c 
+
+> 𝑡
+
+, 𝑠 ); // avoid extreme scores 
+
+S𝑡 ← S 𝑡 ∪ S c 
+
+> 𝑡
+
+;
+
+Convert to embedding–soft label pairs. ;
+
+D𝑐𝑢𝑟 ← ∅ ;
+
+foreach (x, y) ∈ S 𝑡 do 
+
+e ← Embed 𝜙 𝑡 (x);
+
+˜y ← 𝑓 𝜙 𝑡 (Embed 𝜙 𝑡 (x) ) ; // logits 
+
+D𝑐𝑢𝑟 ← D 𝑐𝑢𝑟 ∪ { ( e, ˜y) } ;
+
+Align and retain historical memory (if applicable). ;
+
+if 𝑡 = 1 then 
+
+D𝑡 𝑠𝑦𝑛 ← D 𝑐𝑢𝑟 ;
+
+else foreach (e𝑖 , ˜y𝑖 ) ∈ D 1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+do 
+
+𝛼 𝑖 ← A  (e𝑖 , ˜y𝑖 ), S𝑡 
+
+; // influence score 
+
+eD1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+← Top ( D 1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+, 𝛼 ); // retain aligned memory 
+
+D𝑡 𝑠𝑦𝑛 ← D 𝑐𝑢𝑟 ∪ eD1: 𝑡 −1 
+
+> 𝑠𝑦𝑛
+
+;
+
+return D𝑡 𝑠𝑦𝑛 ;
+
+EL2N-based Sample Selection. For EL2N-based data selection, samples within each historical data block are ranked according to their EL2N scores computed with respect to the corresponding teacher model checkpoint. To construct a compressed but infor-mative subset, we select samples around the 90th percentile of the EL2N score distribution, which balances training-influential interactions while avoiding extreme outliers. 
+
+Continual Synthetic Memory Construction. At each stage 𝑡 , DIET distills a fixed number of new synthetic samples, denoted by 𝑛 𝑡 ,from the current data block. To preserve temporal continuity, we additionally select 𝑛 𝑡 samples from previously distilled data D1: 𝑡 −1
+
+> 𝑠𝑦𝑛
+
+based on influence estimation. The newly distilled samples and the selected historical samples are then merged to form the distilled dataset D𝑡 𝑠𝑦𝑛 for stage 𝑡 . This design maintains a balanced contri-bution from historical and current data while keeping the distilled dataset size controlled. 
+
+Bidirectional Memory Addressing. During influence-guided mem-ory addressing, the hard target set is selected from the current data block using a fixed ratio of 0.1. The size of the active synthetic memory is determined as the product of the truncated window size in RaT-BPTT and the number of inner-loop optimization steps. This setting aligns the scope of synthetic memory updates with the Conference’17, July 2017, Washington, DC, USA Jiaqing Zhang et al. 
+
+Algorithm 2: Influence-Guided Optimization at Stage 𝑡 
+
+(Phase 2) 
+
+Input: Initialized distilled dataset D𝑡 𝑠𝑦𝑛 ; current data block D𝑡 ;teacher checkpoints {𝜙 𝑡 −1, 𝜙 𝑡 };outer iterations 𝐾 ; inner steps 𝑀 ; inner LR 𝛼 ; meta LR 𝛽 ;influence score A𝑡 (· , ·) ; ghost-clipping operator GhostDot (· , ·) ;RaT-BPTT truncation policy. 
+
+Output: Refined distilled dataset D𝑡 𝑠𝑦𝑛 .
+
+for 𝑘 = 1 to 𝐾 do 
+
+// (1) Bidirectional memory addressing 
+
+Sample a minibatch B𝑡 ⊂ D 𝑡 ;Let M𝑡 ← D 𝑡 𝑠𝑦𝑛 ; // current synthetic memory // Hard target selection: Bℎ𝑎𝑟𝑑 𝑡 
+
+foreach 𝑧 ∈ B 𝑡 do 
+
+Deficiency (𝑧 ) ← Í 
+
+> 𝑥 ∈M 𝑡
+
+A𝑡 (𝑥, 𝑧 );
+
+Bℎ𝑎𝑟𝑑 𝑡 ← Bottom ( B 𝑡 , Deficiency ); // smallest Deficiency // Active memory selection: M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 
+
+foreach 𝑥 ∈ M 𝑡 do 
+
+Resp (𝑥 ) ← Í 
+
+> 𝑧 ∈B ℎ𝑎𝑟𝑑 𝑡
+
+A𝑡 (𝑥, 𝑧 );
+
+M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 ← Top ( M 𝑡 , Resp ); // largest Resp // (2) Bi-level update with RaT-BPTT 
+
+if 𝑡 = 1 then 
+
+Initialize proxy parameters 𝜃 0 randomly; 
+
+else 
+
+Initialize proxy parameters 𝜃 0 ← 𝜙 𝑡 −1; // stage-aware init // Inner loop: train proxy on active memory 
+
+for 𝑚 = 1 to 𝑀 do 
+
+𝜃 𝑚 ← 𝜃 𝑚 −1 − 𝛼 ∇𝜃 L𝑠𝑦𝑛 (𝜃 𝑚 −1; M𝑎𝑐𝑡𝑖𝑣𝑒 𝑡 );
+
+// Outer loop: update distilled data 
+
+L𝑚𝑒𝑡𝑎 ← L 𝑟𝑒𝑎𝑙 (𝜃 𝑀 ; Bℎ𝑎𝑟𝑑 𝑡 );Update D𝑡 𝑠𝑦𝑛 ← D 𝑡 𝑠𝑦𝑛 − 𝛽 · RaT-BPTTGrad ( L 𝑚𝑒𝑡𝑎 , D𝑡 𝑠𝑦𝑛 );
+
+// random truncated backpropagation through time 
+
+return D𝑡 𝑠𝑦𝑛 ;
+
+temporal horizon of meta-gradient computation, enabling stable and efficient optimization. 
+
+Training Hyperparameters. To accommodate the different scales of the datasets while ensuring stable gradient updates, we employ dataset-specific batch sizes. Specifically, the batch sizes are set to 512, 1024, and 4096 for KuaiRand, Tmall, and Taobao, respectively. These configurations are consistently applied to both training on the full datasets and the distilled dataset.

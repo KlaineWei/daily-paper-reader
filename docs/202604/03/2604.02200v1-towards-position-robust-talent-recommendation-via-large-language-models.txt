@@ -1,0 +1,2096 @@
+Title: Towards Position-Robust Talent Recommendation via Large Language Models
+
+URL Source: https://arxiv.org/pdf/2604.02200v1
+
+Published Time: Fri, 03 Apr 2026 01:09:00 GMT
+
+Number of Pages: 40
+
+Markdown Content:
+# Towards Position-Robust Talent Recommendation via Large Language Models 
+
+## SILIN DU and HONGYAN LIU, Department of Management Science and Engineering, Tsinghua University, China 
+
+Talent recruitment is a critical, yet costly process for many industries, with high recruitment costs and long hiring cycles. Existing talent recommendation systems increasingly adopt large language models (LLMs) due to their remarkable language understanding capabilities. However, most prior approaches follow a pointwise paradigm, which requires LLMs to repeatedly process some text and fails to capture the relationships among candidates in the list, resulting in higher token consumption and suboptimal recommendations. Besides, LLMs exhibit position bias and the lost-in-the-middle issue when answering multiple-choice questions and processing multiple long documents. To address these issues, we introduce an implicit strategy to utilize LLM’s potential output for the recommendation task and propose L3TR, a novel framework for listwise talent recommendation with LLMs. In this framework, we propose a block attention mechanism and a local positional encoding method to enhance inter-document processing and mitigate the position bias and concurrent token bias issue. We also introduce an ID sampling method for resolving the inconsistency between candidate set sizes in the training phase and the inference phase. We design evaluation methods to detect position bias and token bias and training-free debiasing methods. Extensive experiments on two real-world datasets validated the effectiveness of L3TR, showing consistent improvements over existing baselines. Additional Key Words and Phrases: Talent Recommendation, Large Language Models, Listwise Recommendation, Fine-tuning, Positional Encoding, Position Bias 
+
+1 Introduction 
+
+Many industries are facing several workforce challenges. For example, recruitment imposes substantial costs on organizations, with the average cost per hire exceeding $4,700 1. Meanwhile, the survey 2 in the U.S. shows the continuous rise in the separation rate, which has led to the growing demand for talent recruitment. However, employers often encounter issues such as high recruitment costs and long hiring cycles [ 62 ]. Therefore, improving the efficiency of talent recruitment has become a major research focus. Talent recruitment mostly includes activities of sourcing, screening, interviewing, selecting, and hiring [ 42 , 54 ]. Typically, when a company has vacant positions for talent, it may seek the assistance of external agencies, e.g., headhunters or online talent service platforms. To hire a satisfied employee, the following four steps are necessary. Initially, the company provides job descriptions and other specific requirements to the agency. The agency then selects suitable talents from the talent pool and sends their resumes to the employer. Subsequently, the employer screens satisfied candidates and contacts them for interviews. After that, the candidate and the employer will have in-depth communication and two-way selection. The last three steps may repeat many times due to inaccurate recommendations [ 54 ]. Due to the limited capacity of each company to thoroughly assess and interview candidates, the agency should accurately recommend a limited number of talents from a candidate pool each time, which is a quite challenging task. Therefore, a recommender system is necessary to recommend a small number of suitable candidates to the company’s human resources (HR) staff for efficient screening. Currently, researchers are devoted to establishing automatic talent recommendation systems. Many deep learning based models are developed for person-job matching tasks [ 31 , 37 , 47 , 87 ]. Recent advancements in large language models (LLMs) bring new opportunities for talent recommendation, as LLMs demonstrate excellent language understanding capabilities and the talent-related data contains a large amount of text. Bao et al . [3] is the pioneering work to fine-tune LLMs for recommendations. Subsequently, Zheng et al . [85] and Du et al . [15] use LLMs to generate resumes or job postings for data augmentation. Wu et al . [72] carefully design prompt templates for LLM-based job recommenders. However, most of these LLM-based models are pointwise methods, which predict the matching degree between a talent and a job. To select suitable talents for a job, they repeatedly call LLMs to process the same job posting, which obviously consume more tokens and resource-intensive. Besides, the pointwise setting makes LLM unable to capture the relationship among talents in the candidate list, potentially resulting in ineffective performance [66]. 
+
+> 1https://www.shrm.org/topics-tools/news/talent-acquisition/real-costs-recruitment
+> 2https://www.bls.gov/jlt/ Authors’ Contact Information: Silin Du, dsl21@mails.tsinghua.edu.cn; Hongyan Liu, hyliu@tsinghua.edu.cn, Department of Management Science and Engineering, Tsinghua University, Beijing, China.
+
+1
+
+> arXiv:2604.02200v1 [cs.CL] 2 Apr 2026
+
+2 Silin Du and Hongyan Liu Fortunately, the context limit for LLMs has been extended to over 100k [ 10 ], offering basic conditions for handling a set of resumes in talent recommendation. Due to the significant gap between the language modeling task and the recommendation task, it is quite necessary to introduce a fine-tuning step [ 3]. For pointwise methods, the recommendation task can be reformulated to prompt the LLM to output a specific token (e.g., “yes” or “no”), allowing direct training with a text generation loss. In contrast, listwise recommendation tasks expect a ranked list as output, which makes it difficult to apply text generation loss directly. Furthermore, LLMs suffer from position bias and token bias issue. This issue manifests across various scenarios. In retrieval-augmented generation (RAG) tasks, LLMs are required to understand multiple long documents, but they may get lost in the middle, neglecting documents located in the middle positions [ 35 ]. When answering multiple-choice questions (MCQs), LLMs may exhibit a bias toward selecting content at certain positions and show preference for certain label (ID of each choice) tokens [ 67 , 85 ]. Besides, Shi et al . [53] reveals that LLM-as-a-judge suffers from non-random position bias, where judgments are influenced by candidate ordering. In recommendation tasks, LLMs exhibit inconsistent performance when the order of candidates in a list is changed [ 24 ], i.e., position bias. In the context of listwise recommendation, each candidate is represented by an ID and a descriptive long text. Thus, the input format for the listwise talent recommendation is similar to that of RAG, which comprises multiple long documents (job posting and resumes), while the task format resembles MCQs, which require the model to compare candidates labeled with ID and make a selection. Thus, this type of recommendation scenario may give rise to the occurrence of both position bias and token bias. For brevity, this paper sometimes collectively refers to them as position-related bias. Hence, there is a strong need to explore the existence of these biases as well as strategies to mitigate them. To this end, we propose a novel framework to align LLMs with the listwise talent recommendation task and mitigate position-related issues, namely L3TR . Specifically, the contributions of this paper are threefold. (1) We propose an implicit recommendation strategy to enable LLM finetuning for listwise recommendation. We design a block attention mechanism and a local positional encoding method to enhance modeling of job-resume relationships and inter-resume relationships and mitigate the negative impact of the long-term decay property [ 55 ]. We conducted a theoretical analysis to validate the rationality of the proposed local positional encoding method. We also introduce an ID sampling method to resolve the inconsistency between candidate set sizes in the training phase and the inference phase. (2) We propose a method to evaluate both position bias and token bias in listwise recommendation tasks. We also design training-free debiasing methods to further improve recommendation performance. (3) We conduct extensive experiments on two real-world datasets. The experimental results demonstrate the effectiveness of our proposed methods. In addition, the results of the bias evaluation further verify our concerns and highlight the importance of our debiasing method. The rest of the paper is organized as follows. Section 2 summarizes related literature. Section 3 formulates the listwise talent recommendation problem. We elaborate on the proposed L3TR model in Section 4 and discuss the bias issues in Section 5. Section 6 provides experimental results. At last, Section 7 concludes this paper. 
+
+2 Related Work 2.1 Talent Recommendation 
+
+Talent recommendation is an area quite close to person-job matching and job recommendation, all of which are important topics in intelligent recruitment and have been widely studied. One of the pioneering works dates back to Färber et al . [19] , which designs a probability graphic model to make recommendations for person-job matching. Recently, many studies tackle this problem by text matching thanks to the rich textual content in this task. Zhu et al . [87] proposes a CNN-based network to learn joint representations of job postings and resumes, which are further used to make predictions. Subsequently, various deep learning models such as RNNs [47, 48] and memory networks [75] have been employed to improve semantic matching. Beyond textual modeling, some studies leverage collaborative filtering (CF) techniques based on historical interaction data. Lee et al . [32] propose a frequency-based and graph-based method to infer preference for job recommendation. Reusens et al . [51] finds that there is a big difference between the ideal job mentioned by job seekers and the job they apply for, so a user-user CF method is adopted to make use of implicit information. Similar ideas are applied in Ahmed et al . [1] . Hybrid models that Towards Position-Robust Talent Recommendation via Large Language Models 3combine textual features and behavioral data have also emerged. PJFFF [ 29 ] leverages an LSTM-based network to learn implicit representations from historical applications while some special modules are designed to process semi-structured data in job postings and resumes. Bian et al . [4] utilizes a pre-trained BERT to learn text representation and a graph convolutional network to extract relation-based information, which are combined together through a multi-view co-teaching network. Recent advances also include adversarial networks [37], domain adaptation [5], and pre-trained language models [17]. Based on these foundations, LLMs have shown substantial potential in transforming talent recommendation by enabling deeper semantic understanding, richer user modeling, and more interactive recommendation formats [ 34 ]. Pre-trained models such as BERT, RoBERTa, and GPT-3.5/4 have been fine-tuned or prompted for resume-job matching tasks. For instance, CareerBERT [ 52 ]integrates occupational taxonomies to learn skill-aware embeddings, yielding better job matching results. Du et al . [15] leverage GPT-based text encoders to enrich sparse candidate profiles with inferred skills, which improved downstream job recommendation performance. Besides, researchers have explored various LLM-enhanced matching architectures. A common approach is a dual-encoder (twin-tower) model where a resume and a job posting are each encoded by an LLM and compared via a similarity measure [ 77 ]. Other works adopt cross-encoder designs, explicitly modeling token-level interactions between resumes and jobs, and incorporating structured fields (e.g., education, experience) or knowledge graphs extracted via LLMs [70]. LLMs have also opened new avenues for conversational recommendation in hiring. JobRecoGPT [ 20 ] uses GPT-4 to score how well a given resume matches a job description and generates an explanation for the recommendation. Such LLM-powered systems can highlight why a candidate is a strong fit (e.g. matching skills or experiences) or suggest how to improve alignment, offering transparency than black-box scoring models. Despite these advances, most existing talent recommendation models rely on pointwise matching between a job and a single resume. Such approaches evaluate candidates independently and therefore fail to capture the comparative relationships among multiple candidates within a recommendation list. Consequently, developing recommendation methods that can jointly model multiple candidates remains an important yet underexplored direction. 
+
+2.2 Large Language Models for Recommendation 
+
+Recent years have seen a surge of interest in applying LLMs to recommender systems. Early explorations using pre-trained language models (e.g., BERT4Rec [ 56 ]) demonstrated that incorporating textual data could improve recommendations, but these models were limited in scale and scope. Modern LLMs with billions of parameters have shown promise in modeling recommendation data, spanning text-based settings [ 80 ], purely ID-based scenarios [ 58 ], and cross-domain recommendation tasks [ 58 ]. This means that an LLM can recognize nuanced user interests expressed in natural language and even make reasonable recommendations for new items or users in cold-start scenarios by relying on its prior knowledge [ 8 ]. Current research on LLM-based recommendation can be broadly divided into two paradigms [ 73 ]: discriminative and generative recommendations .
+
+Discriminative LLM-based Recommendation refers to approaches where the LLM is used to predict user–item relevance in a supervised manner, often by fine-tuning the model or its embeddings on recommendation data. Many applications adopted this discriminative approach, using pointwise objectives (e.g., predicting a click or rating for each item independently) to integrate language features into recommender models [ 3, 44 , 80 ]. However, pointwise methods may neglect the comparative nature of ranking [ 30 ]. To better align with ranking metrics, recent works have explored pairwise and listwise training strategies with LLMs. In pairwise approaches, the model learns to compare two items at a time, which leverages LLMs’ strength in comparative reasoning and has been shown to yield better results than pointwise scoring [ 30 ]. On the other hand, listwise techniques present a group of candidate items to the LLM. Theoretically, listwise methods are most direct for ranking tasks. Sun et al . [57] show that large commercial LLMs (such as GPT-4) can iteratively process a set of documents to produce high-quality rankings. This further inspired open-source efforts like RankVicuna [ 46 ], RankZypher [ 46 ], and RankLLaMA [ 38 ]. However, LLMs might struggle when asked to consider many candidates simultaneously, due to input length limits and the risk of generating inconsistent or uncalibrated outputs with long prompts [ 49 ]. As a result, listwise LLM ranking often underperforms simpler strategies unless the candidate set is very small. Some researchers have proposed hybrid models that combine pointwise and pairwise objectives, 4 Silin Du and Hongyan Liu achieving the efficiency of pointwise methods while reaping the accuracy gains of pairwise comparisons [ 30 , 49 ]. This trend reflects a broader effort to make LLM-based recommenders both effective and practical. In parallel, the advancements of reasoning LLMs with deep thinking mode (such as OpenAI’s o1 [ 27 ] and DeepSeek-R1 [ 22 ]) motivate the information retrieval community to explicitly incorporate reasoning during training and inference for better ranking performance, which provides insights applicable to LLM-based recommendations. Rank1 [ 71 ] is the first reranking model trained to take advantage of test-time compute. It’s a pointwise model that judges the relevance of one document to a query at a time. Although incorporating reasoning steps can improve performance, the pointwise formulation significantly reduces the efficiency of Rank-1 [ 36 ]. In contrast, Rank-K [ 76 ] adopts a listwise formulation, which is trained by listwise data extracted from information retrieval datasets and related reasoning traces from a large reasoning model. Furthermore, reinforcement learning (RL) has also proven useful for injecting reasoning abilities into LLM rankers. Rank-R1 [ 89 ] designs a rule-based reward mechanism and uses RL to encourage LLM-based rankers to reason over the query and candidates before ranking. REARANK [ 82 ] applies similar RL methods and incorporates ranking metrics within the reward design. Beyond these, ReasonRank [ 36 ] employs a two-stage fine-tuning strategy: a supervised fine-tuning stage to teach the model typical reasoning patterns, and an RL stage with a specially designed multi-view ranking reward to further enhance ranking ability. ReasonRank outperforms prior baselines and achieves state-of-the-art results on several information retrieval benchmarks, while also reducing inference latency compared to a pointwise method (e.g., Rank1). 
+
+Generative LLM-based Recommendation . In contrast to discriminative settings, generative LLMs offer a more flexible interface for recommendation by treating it as a language generation task without the need to calculate each candidate’s ranking score one by one [ 33 ]. For example, Ji et al . [28] prompt an LLM with the user’s history and ask it to generate a recommended item. Wang et al . [64] design a generative paradigm to complement the traditional retrieval-based recommendation methods. They propose an AI-generator to generate items following the user’s instructions and feedback, which can be directly exposed to the users without ranking. Overall, the generative paradigm represents a significant shift in recommender systems research, expanding the role of recommendation models from simple relevance scorers to intelligent assistants that leverage natural language for interactions. Orthogonal to the two paradigms is the diverse design space of LLM-based recommendation systems. A key line of research builds LLM-based autonomous agents for recommendations [ 43 , 83 ]. Many approaches adopt a planner–retriever–recommender architecture that decomposes the task into sub-modules. In RecMind [ 68 ], the LLM-based agent formulates an execution plan, calls external tools like databases or web search APIs to collect needed facts, and then produces a recommendation for the user. While MACRS [ 18 ] leverages several specialized responder agents, coordinated by a planner agent, to maintain coherence and task orientation across multi-turn conversational recommendations. Furthermore, LLM-based agents can invoke external tools for better recommendation quality. Huang et al . [26] presents a general agent framework that leverages LLMs to orchestrate multiple recommendation tools through planning and memory mechanisms for interactive recommendation. Hybrid-MACRS [ 39 ]explicitly combines an LLM agent with a search engine to improve conversational recommendations, allowing the agent to fetch fresh information during the dialogue. In summary, LLMs are poised to become a central component in the next generation of recommender system design, bridging the gap between complex user needs and personalized content discovery. However, most existing studies mainly focus on pointwise or pairwise formulations when applying LLMs to recommendation tasks. Although these approaches can leverage LLMs’ language understanding capabilities, they do not fully exploit the comparative nature of ranking problems. Moreover, applying LLMs to listwise recommendation scenarios involving multiple long textual candidates remains challenging due to context length limitations and potential instability in model outputs [ 24 ]. Consequently, how to effectively align LLMs with listwise recommendation tasks, particularly for scenarios involving long textual candidates such as resumes, remains largely underexplored. 
+
+2.3 Position and Token Bias in Recommendations and Large Language Models 
+
+Position bias in recommender systems generally refers to the phenomenon where users tend to interact more with items shown in higher positions of a ranked list, regardless of their intrinsic relevance [ 9 , 41 ]. This behavior can bias interaction data and reinforce feedback loops that favor items frequently exposed at the top [ 16 ]. This form of user-interaction bias is well-studied and Towards Position-Robust Talent Recommendation via Large Language Models 5has led to various debiasing methods such as inverse propensity scoring [ 2 ] and pairwise sampling techniques [ 63 ]. However, it is conceptually distinct from the position bias that arises within LLMs themselves when they are used to perform ranking or selection tasks. When using LLMs to perform tasks, particularly those involving list processing, two types of intrinsic biases may arise: position bias and token bias . Position bias refers to the model’s tendency to favor items presented at certain positions in the input list, while token bias refers to the model’s preference toward specific identifier tokens (e.g., option labels such as “A”, “B”, “C”, “D”) due to token-level priors learned during pretraining. These biases are closely intertwined in list-based tasks, as the model’s preference for certain tokens can interact with the positional arrangement of contents, jointly influencing the final decision. These two types of biases are observed in multiple-choice question answering tasks, where models consistently show a tendency to favor options based on their order or label. Zheng et al . [85] show that many LLMs are vulnerable to option changes. A model might disproportionately favor early options such as “A” or “B” regardless of their correctness. They argue that this behavior stems from the model’s token-level priors, i.e, token bias, and propose a method named PriDe, which calibrates answer selection by estimating and removing such token-level prior preferences. Position bias has also been observed in other scenarios, such as RAG [ 35 ], in-context learning [ 11 , 74 , 81 ], and LLM-as-a-judge [ 53 ]. For example, Liu et al . [35] find that when processing multiple long documents in RAG, LLMs may ignore documents located in the middle positions. While Cobbina and Zhou [11] report that predictions and accuracy can drift drastically when the positions of demonstration examples, system instruction, and user message in LLM prompt are varied. Further studies reveal that for instruction-tuned models, which generate free-form answers such as “I believe the answer is C”, the simplistic strategy of choosing the option with the highest probability for the first token can be very misleading [ 67 ]. The option token with the highest model logits often does not match the model’s actually stated answer in its generated text. As a result, recent work argues for evaluating the model’s actual text output rather than only its token probabilities [ 65 ]. When the LLM’s full answer text is used, the results are much more stable against perturbations like reordering the multiple-choice options. However, in talent recommendation scenarios, using IDs (option labels in MCQs) to refer to candidates is unavoidable. As each candidate’s resume is lengthy, it is impractical for an LLM to output the full content as its recommendation result. Recent research has extended the study of position bias to LLM-based recommender systems, where models are prompted with a candidate list (each represented by an option label and a very short text) and asked to select or rank items in a zero-shot manner. Hou et al . [24] find that LLMs suffer from position bias when performing zero-shot recommendation tasks. LLMs’ recommendations are highly sensitive to the order in which candidates are presented: when a relevant item appears early in the prompt, the model is more likely to select it, whereas placing the same item at the end significantly reduces its selection rate. This sensitivity contrasts with traditional recommendation models, which are typically invariant to input order. To alleviate this, the authors propose a simple boostrapping strategy. They query the LLM multiple times with the same candidates in a different random order each time. The final recommendation is derived by merging or averaging the LLM’s rankings from these multiple shuffles. This approach can substantially improve the LLM’s ranking performance, reducing the position bias without modifying the model itself. However, the boostrapping strategy requires multiple LLM calls for a single recommendation, which incurs substantial costs, particularly in talent recommendation scenarios where the textual content is extensive. Existing studies have proposed various approaches to mitigate position bias in LLMs across different application settings. In long-context understanding tasks, such as long-document QA and RAG, prior work improves position robustness through attention-strengthening training [ 23 ], attention-based content reordering during inference [ 45 ], calibration of positional attention [ 35 ], hidden-state scaling [ 78 ], and input restructuring such as parallel context windows or position-invariant inference [ 50 , 69 ]. In comparative evaluation tasks, such as LLM-as-a-judge and MCQ, position bias is typically addressed via data augmentation (e.g., swapping candidate orders) and reference-based judging [ 88 ], and calibration strategies for LLM-based judges [ 86 ]. Zheng et al .[85] highlights biases over option positions and label tokens, and proposes inference-time debiasing methods. Notably, these studies mostly focus on pairwise or small candidate sets (e.g., 3–5 options), with relatively short inputs per candidate. Different from these settings, listwise talent recommendation combines both characteristics: the input involves multiple long textual candidates, while the decision-making process relies on understanding long text and output ID tokens (option labels). This hybrid nature suggests that two types of biases may simultaneously arise and interact, jointly affecting recommendation outcomes. 6 Silin Du and Hongyan Liu However, how these biases manifest and interact in LLM-based listwise recommendation remains largely unexplored. Moreover, the gap between language generation and recommendation tasks typically necessitates task-specific adaptation of LLMs [ 3 , 80 ]. Therefore, we develop a fine-tuning framework tailored for listwise talent recommendation, along with methods to decompose position bias and token bias, and corresponding debiasing strategies designed for this setting. A preliminary version of this work was presented at a conference [14]. 
+
+3 Problem Formulation 
+
+Focusing on talent recommendation, we illustrate our proposed model and methodology, which can be readily extended to job recommendation and other domains characterized by long-text item descriptions. For clarity, we summarize all notations used throughout the problem formulation, method design, and bias analysis in Appendix A. We build our talent recommendation system based on job postings and resumes of talents, which are organized in a semi-structured way. For example, a resume usually contains textual descriptions of educational background, job experience, project experience, and some keywords to highlight skills, awards, and so on. Thus, we view each job posting and resume as a set of textual content. DEFINITION 1 (T ALENT RECOMMENDATION ). Let G be the set of job postings and R be the set of resumes. The historical matching records for jobs are represented by M = {( 𝑔 𝑖 , 𝑟 𝑗 , 𝑦 𝑔 𝑖 ,𝑟 𝑗 ) | 𝑔 𝑖 ∈ G , 𝑟 𝑗 ∈ R} , where 𝑦 𝑔 𝑖 ,𝑟 𝑗 ∈ { 0, 1} and 𝑦 𝑔 𝑖 ,𝑟 𝑗 = 1 means 𝑟 𝑗 matches the requirements of 𝑔 𝑖 . For a new job position 𝑔 without any matching records, let C𝑔 = {𝑐 𝑔 
+
+> 1
+
+, 𝑐 𝑔 
+
+> 2
+
+, · · · , 𝑐 𝑔 𝑁 } be a set of candidate resumes for recommendation, where 𝑐 𝑔 𝑗 ∈ R and 𝑁 < |R| . The purpose of talent recommendation is to learn a recommender 𝐹 bases on a subset (i.e., training set) of M that can recommend the most suitable resumes from C𝑔 for 𝑔 .
+
+In previous attempts for this task, 𝐹 is a function to measure the matching degree of a job and a resume, making pointwise recommendations based on the predicted result of 𝑔 and each candidate’s resume 𝑐 𝑔 𝑗 , i.e., 
+
+ˆ𝑦 𝑔 𝑗 = 𝐹 (𝑔, 𝑐 𝑔 𝑗 ), ∀𝑐 𝑔 𝑗 ∈ C 𝑔 (1) However, pointwise recommendation requires 𝐹 to repeatedly process 𝑔 for 𝑁 times, which is particularly inefficient and resource-intensive, especially when 𝐹 is an LLM. In addition, pointwise approaches only consider the relationship between 𝑔 and each resume, ignoring the relationships among resumes within the candidate set. Therefore, we focus on the listwise setting for more efficient and accurate recommendations ( listwise talent recommendation ), where 𝐹 takes 𝑔 and the entire set of candidate resumes C𝑔 as input and predicts the matching scores for all resumes, i.e., 
+
+ˆy𝑔 = 𝐹 (𝑔, C𝑔 ) =  ˆ𝑦 𝑔 
+
+> 1
+
+, ˆ𝑦 𝑔 
+
+> 1
+
+, · · · , ˆ𝑦 𝑔 𝑁 
+
+
+
+We further introduce a ranking function that sorts the candidates in descending order of predicted scores: 
+
+𝜏 𝑔 = argsort ( ˆy𝑔 , descending )
+
+The ranked list of candidates is then written as: 
+
+C𝑔 =< 𝑐 𝑔 𝜏 𝑔 (1) , 𝑐 𝑔 𝜏 𝑔 (2) , · · · , 𝑐 𝑔 𝜏 𝑔 (𝑁 ) >
+
+where 𝜏 𝑔 (𝑙 ) denotes the index of the candidate in C𝑔 ranked at position 𝑙 .
+
+4 Methodology 
+
+In this section, we first introduce the overall procedure for LLM-based list-wise talent recommendation and discuss two methods to extract recommendation results from LLMs. Then, we elaborate on our modified attention mechanism and positional encodings. 
+
+4.1 Recommendation Process Overview 
+
+In-context learning (ICL), first proposed with GPT-3 [ 6], is a common technique for eliciting the ability of LLMs. ICL typically utilizes a structured prompt in natural language, commonly comprising a task description, a few task samples as demonstrations, and query information. It relies solely on the knowledge and capabilities inherent in LLMs. However, even one task sample in our Towards Position-Robust Talent Recommendation via Large Language Models 7listwise setting is a very long text (might be longer than 10k), including a job posting and a sequence of resumes. Integrating task samples within the prompt might exceed the context length of LLMs and significantly increase the computational cost. Therefore, we follow the zero-shot ICL method and design the prompt template without demonstrations for listwise talent recommendation. We add format instructions at the end of the prompt to guide the LLM to generate responses that adhere to a specified format. Figure 1 depicts the prompt template, consisting of the task description, the query information including the job posting and the set of candidate resumes, and the format instructions. [Resume 𝒄 𝒋                                                                                                                             
+
+> 𝒈 ]
+> Resume ID :ID (𝑐 𝑗
+> 𝑔 )assigned in Eq. (2)
+> Educational Background :——————
+> Work Experience :
+> 1. —————— ; 2. —————— ; ……
+> Project Experience :
+> 1. —————— ; 2. —————— ; ……
+> Expected Salary : ¥240,000/year
+> ……
+> [Task Description] You are responsible for recruiting for avacant position in acompany, please
+> rank the resumes of {𝑁 }candidates based on the job description .The ranking should be determined
+> by the matching degree between the resume and the job posting, with candidates who have ahigher
+> matching degree placed at the top .
+> [Query Information]
+> [Job Posting 𝒈 ]
+> Here are the resumes for {𝑁 }candidates ,each with aunique ID .Please use these IDs to reference
+> each resume in the output .
+> [Resume 𝒄 𝟏
+> 𝒈 ]
+> [Resume 𝒄 𝟐
+> 𝒈 ]
+> ……
+> [Resume 𝒄 𝑵
+> 𝒈 ]
+> [Format Instruction] Please directly output the sorted resume IDs without any additional content in
+> JSON format .Here is areference format .
+> {“result” :[1,2,3,…]}
+> [Job Posting 𝒈 ]
+> Company :ABC
+> Position :Software Engineer
+> Position Description :
+> 1.—————— ;2.—————— ;……
+> Requirements :
+> 1.—————— ;2.—————— ;……
+> Salary :¥300 ,000 /year
+> Location :XXX
+> ……
+
+# Fig  1 修改版 
+
+Fig. 1. The Prompt Template for Listwise Talent Recommendation. 
+
+Filling the content of job posting 𝑔 and resumes C𝑔 into the prompt template, we get the prompt 𝑥 𝑔 , consisting of 𝑛 𝑔 tokens: 
+
+𝑥 𝑔  
+
+> 1
+
+, 𝑥 𝑔 
+
+> 2
+
+, · · · 𝑥 𝑔 𝑛 𝑔 ,
+
+𝑥 𝑔 = BuildPrompt  𝑔, C𝑔 ; assign  C𝑔 
+
+ =< 𝑥 𝑔  
+
+> 1
+
+, 𝑥 𝑔 
+
+> 2
+
+, · · · 𝑥 𝑔 𝑛 𝑔 > (2) where assign  C𝑔 
+
+ is an operator to assign IDs to resumes in C𝑔 and BuildPrompt (·) is a prompt generator. A straightforward design of assign  C𝑔 
+
+ is to sequentially number the resumes in C𝑔 , i.e., assign (C 𝑔 ) = [“1” , “2” , · · · , “𝑁 ”]. Given the well-organized prompt 𝑥 𝑔 , an LLM 𝐹 LLM can select the IDs of suitable resumes by generating textual outputs as follows. 
+
+𝑜 𝑔 = 𝐹 LLM (𝑥 𝑔 ) =< 𝑜 𝑔 
+
+> 1
+
+, 𝑜 𝑔 
+
+> 2
+
+, · · · , 𝑜 𝑔   
+
+> |𝑜 𝑔 |
+
+>
+
+Most of the LLMs auto-regressively generate the text. They first calculate the output probability of different tokens in the first place and determine the token through a sampling method. This process repeats iteratively until a termination condition is satisfied. In this case, the desired output of a recommender is a list of sorted resume IDs (or a list of matching scores), requiring an additional step to parse the results from textual outputs. Since this generate-then-parse method extracts information directly from the output text that is comprehensible to humans, we refer to it as the explicit recommendation method, formally stated as follows. DEFINITION 2 (E XPLICIT RECOMMENDATION ). Given the prompt 𝑥 𝑔 related to the job 𝑔 and the candidate set C𝑔 , an LLM-based recommender makes explicit recommendations by first generating textual outputs and then parsing the recommendation results. 
+
+The explicit method heavily relies on the instruction-following ability of LLMs and can be widely applied to both open-source LLMs (e.g., Llama [ 60 ]) and the APIs of closed-source LLMs (e.g., ChatGPT [ 40 ]). Nevertheless, we may fail to parse the results from the text, which inevitably contains various errors, such as duplicate or incorrect IDs of resumes. Fortunately, for open-source 8 Silin Du and Hongyan Liu LLMs, we can directly access the output probability of every token in the vocabulary, including the ID tokens of candidate resumes when the model generates the first token 𝑜 𝑔  
+
+> 1
+
+. This allows us to make recommendations purely based on these probabilities. Since we do not utilize the generated text, we call this method the implicit recommendation method, as stated below. DEFINITION 3 (I MPLICIT RECOMMENDATION ). Given the prompt 𝑥 𝑔 related to the job 𝑔 and its candidate set C𝑔 , a recommender based on an open-source LLM predicts the matching scores between 𝑔 and 𝑐 𝑔 𝑗 ∈ C 𝑔 based on the output probability of different tokens when it generates the first token 𝑜 𝑔  
+
+> 1
+
+in the output, i.e., 
+
+ˆ𝑦 𝑔 𝑗 =
+
+P
+
+
+
+ID (𝑐 𝑔 𝑗 ) | 𝑥 𝑔 
+
+
+
+> 𝑁
+
+Í
+
+> 𝑠 =1
+
+P  ID (𝑐 𝑔 𝑠 ) | 𝑥 𝑔 
+
+ , ∀𝑐 𝑔 𝑗 ∈ C 𝑔 (3) 
+
+where ID (𝑐 𝑔 𝑗 ) is the assigned ID of 𝑐 𝑔 𝑗 and P
+
+
+
+ID (𝑐 𝑔 𝑗 ) | 𝑥 𝑔 
+
+
+
+is the probability of generating ID (𝑐 𝑔 𝑗 ) as the first token in the output. Then recommendations are made according to the probability scores ˆy𝑔 =  ˆ𝑦 𝑔 
+
+> 1
+
+, ˆ𝑦 𝑔 
+
+> 2
+
+, · · · , ˆ𝑦 𝑔 𝑁 
+
+. For example, we can recommend the top-𝑘 ranked resumes. 
+
+The implicit method only calculates the output probability in the first place, avoiding the time-consuming generation process and the complicated parsing step, which is supposed to be more efficient. Besides, the implicit method doesn’t suffer from the potential errors in the explicit method. Nonetheless, implicit methods need accessibility of the output probability, which is infeasible for closed-source LLMs. 
+
+4.2 Fine-tuning LLMs for Listwise Talent Recommendation 
+
+Although LLMs show promising results on several recommendation tasks [12], the mismatch between recommendation and the language model task hinders the performance of LLM-based recommenders [ 3, 80 ]. Thus, we utilize fine-tuning to bridge the gap. For the explicit recommendation methods defined in Definition 2, the generation process inevitably introduces unexpected errors, while the subsequent parsing operations are both complex and non-differentiable. As a result, it is challenging to align the recommendation loss function with either the text output or the parsed results. Therefore, we adopt the implicit recommendation methods defined in Definitions 3 for fine-tuning. To fine-tune open-source LLMs with our task, we arrange the available matching records M to mimic the listwise setting. For each job 𝑔 𝑖 ∈ G that has matched resumes in M, the set of resumes R can be split into a positive set R+ 
+
+> 𝑔 𝑖
+
+and a negative set R− 
+
+> 𝑔 𝑖
+
+according to the matching records. Since the number of resumes directly impacts the prompt length, and the resource requirements (e.g., GPU vRAM) during training are substantially higher than those during inference, we set the number of resumes in the training prompt, 𝑁 train , to be smaller than 𝑁 , the number of resumes used during inference. We leverage each positive record to form the candidate set for each training sample. Specifically, for each record  𝑔 𝑖 , 𝑟 𝑘 , 𝑦 𝑔 𝑖 ,𝑟 𝑘 = 1 ∈ M , the candidate set 
+
+C𝑔 𝑖 ,𝑟 𝑘 contains the positive resume 𝑟 𝑘 and (𝑁 train − 1) resumes randomly sampled from R− 
+
+> 𝑔 𝑖
+
+.As 𝑁 train < 𝑁 , IDs of some resumes during inference may not have appeared during training. The assigned ID of each resume is crucial when calculating the matching score based on Eq. (3). Therefore, this mismatch issue ( 𝑁 train < 𝑁 ) poses challenges for LLMs to predict the matching scores of resumes whose IDs do not appear during training. To solve this problem, we introduce the following sampling procedure when assigning IDs of resumes in Eq. (2). 
+
+assign  C𝑔 𝑖 ,𝑟 𝑘 
+
+ = sample (I , 𝑁 train ) (4) where sample (I , 𝑁 train ) is an operator that uniformly samples 𝑁 train unique IDs from a large set of IDs I. This assignment method ensures that the LLM can learn information of a sufficiently diverse set of IDs during training, so as to be able to handle candidate sets longer than 𝑁 train during inference. Additionally, because the candidate resume IDs in each training sample are randomly chosen and differ across samples, this variability helps prevent the LLM from acquiring a preference for specific IDs (token bias), steering its attention toward the underlying content. For the training sample built on record  𝑔 𝑖 , 𝑟 𝑘 , 𝑦 𝑔 𝑖 ,𝑟 𝑘 = 1 ∈ M , we obtain the predicted matching score ˆ𝑦 𝑔 𝑖  
+
+> 𝑗
+
+of each resume 
+
+𝑐 𝑗 ∈ C 𝑔 𝑖 ,𝑟 𝑘 based on the output probability of the first token, as shown in Eq. (3). Then we define the loss function for this training Towards Position-Robust Talent Recommendation via Large Language Models 9sample as follows. 
+
+L𝑔 𝑖 ,𝑟 𝑘 =∑︁   
+
+> 𝑐 𝑗 ∈ C 𝑔 𝑖 ,𝑟 𝑘
+
+−𝑦 𝑔 𝑖 ,𝑐 𝑗 log ˆ 𝑦 𝑔 𝑖 
+
+> 𝑗
+
+where 𝑦 𝑔 𝑖 ,𝑐 𝑗 ∈ { 0, 1} is the true matching result of 𝑐 𝑗 with job position 𝑔 𝑖 .
+
+4.3 Block Attention 
+
+In talent recommendations, LLMs should primarily focus on the relationship between the job posting and each candidate resume. Simultaneously, LLMs should also consider the relationships among the candidates. As shown in Figure 1, the prompt 𝑥 for a job posting 𝑔 (omitting subscript or superscript where no ambiguity arises) begins with the task description and the job posting, followed by each resume in the candidate set. Based on this structure, we divide 𝑥 into several blocks, as shown below. 
+
+𝑥 = [ 𝑥 1, · · · , 𝑥 𝑏 0
+
+| {z }
+
+> task description
+
+, 𝑥 𝑏 0+1, · · · , 𝑥 𝑏 1
+
+| {z } 
+
+> job posting 𝑔
+
+, · · · , 𝑥 𝑏 𝑗 +1, · · · , 𝑥 𝑏 𝑗 +1
+
+| {z }  
+
+> resume 𝑐 𝑗
+
+, · · · ] (5) The task description is viewed as the zeroth block containing 𝑏 0 tokens. The job posting is the first block with 𝑏 1 − 𝑏 0 tokens, while the 𝑗 -th resume 𝑐 𝑗 is the 𝑗 + 1-th block with 𝑏 𝑗 +1 − 𝑏 𝑗 tokens. Figure 2 displays the attention map of a causal decoding LLM 3, taking the processing of one job posting and four resumes as an example. Rows in the figure represent the current position (Query) we are computing attention for, and columns represent the positions we are allowed to look at (Key). The red part highlights the attention calculations between resume tokens. Task Description 
+
+> Job Posting
+> Resume 1
+> Resume 2
+> Resume 3
+> Resume 4
+> Format Instruction
+
+Fig. 2. Causal Attention Map. 
+
+Listwise recommendation methods have the advantage of modeling the interdependencies among candidate resumes and avoiding redundant processing of the same job posting. However, the default causal attention mechanisms treat all tokens equally. This indiscriminate full attention leads to two issues: (i) substantial computational overhead due to quadratic interactions among all resume tokens, and (ii) dilution of meaningful job–resume and resume–resume relationships. In particular, the model may overemphasize local details within individual resumes, while overlooking the higher-level relational structure across resumes. We propose a modified block attention mechanism that can reduce the cumbersome computations among resumes while ensuring that LLMs do not overlook the relationships among them. We first remove the attention among tokens in different resumes, which is almost equivalent to the pointwise setting, as indicated by the blank cell in Figure 3(a). For each resume 𝑐 𝑗 , we prepend a learnable token 𝑥 𝑐 𝑗 . The embedding of this token is initialized using the average token embedding of the corresponding resume and is further fine-tuned during training. In addition, we designate the first 𝑆 tokens of each resume as special tokens, which include the inserted learnable token. These special tokens can perform attention calculations with every token in the    
+
+> 3Most modern large language models adopt the causal decoder architecture of the Transformer, including representative models such as the GPT series [ 6,40 ], LLaMA series [21, 60], and GLM series [59, 79]
+
+10 Silin Du and Hongyan Liu prompt, as shown in the attention map in Figure 3(b). The remaining normal tokens are restricted to attending only to tokens within the same resume. We expect these special tokens to represent the comprehensive information of their respective resumes, and through the attention computation between special tokens, LLMs can compare different resumes and produce better ranking results. 
+
+𝑥 ′ = [ 𝑥 1, · · · , 𝑥 𝑏 0
+
+| {z }
+
+> task description
+
+, 𝑥 𝑏 0+1, · · · , 𝑥 𝑏 1
+
+| {z } 
+
+> job posting 𝑔
+
+, · · · , 𝑥 𝑐 𝑗 
+
+|{z}   
+
+> learnable tokens for 𝑐 𝑗
+
+, 𝑥 𝑏 𝑗 +1, · · · , 𝑥 𝑏 𝑗 +1
+
+| {z }  
+
+> resume 𝑐 𝑗
+
+, · · · ] 
+
+> remap indices
+
+= [ 𝑥 1, · · · , 𝑥 𝑏 0
+
+| {z }
+
+> task description
+
+, 𝑥 𝑏 0+1, · · · , 𝑥 𝑏 1
+
+| {z } 
+
+> job posting 𝑔
+
+, · · · , 𝑥 𝑏 𝑗 +1, · · · , 𝑥 𝑏 𝑗 +𝑆 
+
+| {z }   
+
+> 𝑆 special tokens of resume 𝑐 𝑗
+
+, 𝑥 𝑏 𝑗 +𝑆 +1, · · · , 𝑥 𝑏 𝑗 +1
+
+| {z }  
+
+> Normal tokens of resume 𝑐 𝑗
+
+· · · ] 
+
+(6) Task Description    
+
+> Job Posting
+> Resume 1
+> Resume 2
+> Resume 3
+> Resume 4
+> Format Instruction
+> (a) Block Attention. Task Description
+> Job Posting
+> Resume 1
+> Resume 2
+> Resume 3
+> Resume 4
+> Format Instruction
+> Special Tokens (b) Block Attention with Special Tokens.
+
+Fig. 3. Attention Map of Block Attention and Its Variant. 
+
+4.4 Local Positional Encoding 
+
+Nearly all state-of-the-art LLMs (e.g., GPT, BERT, Llama) are built on the Transformer architecture [ 61 ], and self-attention is the Transformer’s defining component, enabling LLMs to model contextual and long-range linguistic relationships. However, it cannot recognize the order of the input sequence, thus requiring explicit positional information to be injected, typically in the form of positional encodings. Common positional encoding methods such as RoPE [ 55 ] often exhibit long-term decay , which means the inner product (the core operation in self-attention) decays when the relative distance between tokens increases. While this property aligns to some extent with the intuitive notion of "paying more attention to nearby tokens", excessive decay can severely impair the model’s ability to process long sequences and capture long-range dependencies. The long-term decay inherently introduces a form of position bias, which refers to the model’s tendency to assign disproportionate attention to content appearing earlier or closer in the input sequence, regardless of its actual semantic relevance. In structured prompts or multi-part inputs, as shown in Eq. (5), such bias may cause the model to overemphasize the sections positioned near the query while underutilizing distant but relevant ones [ 35 ]. In our context, this property weakens the interaction between the job posting and the distant resumes, thereby amplifying this position bias and constituting a severe constraint on modeling capabilities. For the listwise talent recommendations task, the tokens in the job posting block are important for each resume. However, the long-term decay property hinders the attention calculation between the last few resumes and the job postings due to the long distance. To solve this problem, we devise a local positional encoding method to mitigate the decay effect. Towards Position-Robust Talent Recommendation via Large Language Models 11 In LLMs, the text input 𝑥 ′ (the prompt with special tokens) is first tokenized, and each token is represented as an embedding vector through an embedding layer, i.e., 
+
+x′ = emb (𝑥 ′) = [x1, · · · , x𝑏 0 , · · · , x𝑏 0+1, · · · , x𝑏 1 , · · · , x𝑏 𝑗 +1, · · · , x𝑏 𝑗 +1 , · · · ] 
+
+where emb (·) returns the embedding of each token and x𝑖 is a 𝑑 -dimensional vector. To explicitly inject position information, an embedding for each position 𝑖 is usually obtained through a positional encoding function, i.e., 𝒑 𝑖 = PE (𝑖, 𝑑 ), where 𝑑 controls the dimension of position embeddings and should be aligned with that of x𝑖 . Then each token x𝑖 is mapped into queries 𝒒 𝑖 , keys 𝒌 𝑖 ,and values 𝒗 𝑖 as follows. 
+
+𝒒 𝑖 = 𝑓 𝑞 (x𝑖 , 𝒑 𝑖 ), 𝒌 𝑖 = 𝑓 𝑘 (x𝑖 , 𝒑 𝑖 ), 𝒗 𝑖 = 𝑓 𝑣 (x𝑖 , 𝒑 𝑖 ) (7) where 𝒒 𝑖 , 𝒌 𝑖 , and 𝒗 𝑖 incorporate the 𝑖 -th position through functions 𝑓 𝑞 , 𝑓 𝑘 , and 𝑓 𝑣 , respectively. Different position encoding methods utilize distinct PE (· , ·) to yield different 𝒑 𝑖 . For example, RoPE generates a sparse rotary matrix and converts it to two dense vectors for element-wise multiplication. The queries and keys are utilized to calculate attention weights, which are used to get the weighted sum over the values, the output of the self-attention layer. Considering the structure of the prompt, we split x′ into several blocks as shown in Eq. (6). From the global view of the whole sequence, the position information 𝒑 𝑖 of x𝑖 can be injected as shown in Eq. (7), enabling the model to learn the relationship between any token and x𝑖 . To capture the connection between 𝑐 𝑗 and the job posting 𝑔 and mitigate the effect of the long-term decay problem, we introduce a local view that only contains 𝑐 𝑗 and 𝑔 , equivalent to placing 𝑐 𝑗 directly after 𝑔 in the prompt. Then for each token x𝑖 that belongs to the resume 𝑐 𝑗 , we calculate local position embeddings 𝒑 ′ 
+
+> 𝑖
+
+by dropping all tokens from the second to the 𝑗 -th block in the original prompt: 
+
+𝒑 ′ 
+
+> 𝑖
+
+= PE (𝑖 − 𝑏 𝑗 + 𝑏 1, 𝑑 ) (8) Figure 4 shows the global and local positions of 𝑥 ′, where position of 𝑥 𝑏 𝑗 +1, i.e., the first token of resume 𝑐 𝑗 , becomes 𝑏 1 + 1.· · · 
+
+# job posting g
+
+# x1, · · · , x b0
+
+# 1 , · · · , b 0
+
+# 1 , · · · , b 0
+
+# xb0+1 , · · · , x b1
+
+# b0 + 1 , · · · , b 1
+
+# b0 + 1 , · · · , b 1 b1 + 1 , · · · , b j+1 − bj + b1
+
+# xbj +1 , · · · , x bj+1 
+
+# bj + 1 , · · · , b j+1 
+
+## Local Position 
+
+## Global Position 
+
+## Prompt 
+
+## task description job posting resume cj
+
+> Fig. 4. Illustration of Global and Local Position Information.
+
+We utilize the local position information by replacing 𝒑 𝑖 in Eq. (7) with 𝒑 ′ 
+
+> 𝑖
+
+. This replacement can enhance the attention calculation between tokens in the job posting and each resume since it reduces the position distance, which will mitigate the negative effect of the long-term decay property. Besides, the special tokens corresponding to different resumes share identical positional information (e.g., 𝑥 𝑏 𝑗 +1 and 𝑥 𝑏 𝑗 +1+1 in Eq. (6)), and they can attend to each other, which means that the computation among these special tokens is unordered. This design is consistent with the fundamental property of listwise recommendation, where the candidate list is conceptually a permutation-invariant set, i.e., the model’s ranking results should remain unchanged regardless of the input order of resumes. We provide theoretical analysis of the local position encoding in Appendix B. Figure 5 shows the architecture of our proposed LLM-based recommendation model, where the blue font highlights our special designs. We utilize a common strategy, e.g., LoRA [ 25 ], to fine-tune the LLM, which inserts additional learnable parameters at each transformer layer while keeping other parameters fixed. 12 Silin Du and Hongyan Liu 𝑔 
+
+𝑐 1 
+
+> 𝑔
+
+𝑐 2 
+
+> 𝑔
+
+…
+
+Prompt Template for Listwise 
+
+Talent Recommendation 
+
+[ID Assignment Method] 
+
+Tokenization and 
+
+Embedding Layer 
+
+Injecting Positional 
+
+Information 
+
+[Local Positional Encoding] 
+
+LLM 
+
+Self -Attention 
+
+[Block Attention with Special  Tokens ]
+
+MLP 
+
+Softmax  Layer 
+
+𝑐 𝑁 
+
+> 𝑔
+
+Learnable 
+
+Parameters 
+
+[Implicit Recommendation] 
+
+Predicting matching probability: 
+
+ො𝑦 1
+
+> 𝑔
+
+, ො𝑦 2
+
+> 𝑔
+
+, … , ො𝑦 𝑁 
+
+> 𝑔
+
+## 更新版 
+
+Transformer Layer  1
+
+Transformer  Layer  M
+
+> …
+> Fig. 5. Architecture of Our Proposed LLM-based Recommendation Model.
+
+5 Debiasing Method 
+
+LLM-based recommenders show volatile performance under the permutation of the candidate list [ 24 ]. In this section, we first investigate the bias patterns and propose methods to detect position and token bias. Then, we design two methods to mitigate the bias issue: a pre-ranker to utilize the bias pattern and a probability-based debiasing method. 
+
+5.1 Bias Patterns and Bias Estimation 
+
+To begin with, we investigate the bias patterns that may arise in listwise recommendation settings. Using a real-world talent-job matching dataset, HRT (see Section 6.1 for more details), we set the length of the candidate list to 𝑁 = 15 . Each candidate resume in the prompt is assigned a unique ID ranging from “A” to “O”. We randomly select a subset M′ from all matching records M to construct a test dataset T . For each selected positive job–resume pair (𝑔, 𝑟 ), we build a candidate list C𝑔 for the job posting 𝑔 by including the matched resume 𝑟 and 14 resumes randomly sampled from those not associated with 𝑔 . We denote the ordered version of this candidate list as C𝑔 = ⟨𝑐 𝑔 
+
+> 1
+
+, 𝑐 𝑔 
+
+> 2
+
+, · · · , 𝑐 𝑔 𝑁 ⟩, where candidates are alphabetically sorted by their names by default. The overall test set can thus be expressed as T = {C𝑔 | ( 𝑔, 𝑟, 1) ∈ M ′ }. To measure the impact of the matched resume’s position on the recommendation performance, we manipulate its position in the candidate list. Specifically, let the matched resume 𝑟 initially occupy position 𝑄 . We then vary 𝑄 across all other positions, while keeping the relative order of the remaining 14 resumes unchanged. Figure 6 shows the Mean Reciprocal Ranking (MRR) for various models with different 𝑄 . List-Imp leverages an open-source LLM (i.e., ChatGLM3-6B [ 79 ]) and adheres to the implicit method in Definition 3. List-Exp performs explicit listwise recommendations with a large commercial closed-source LLM (i.e., GLM-4 [ 59 ]). L3TR − utilizes listwise data and the LoRA method to fine-tune ChatGLM3-6B without any special designs proposed in this paper. We can observe that List-Imp and even List-Exp with over 100B parameters are quite sensitive to 𝑄 . Although the fine-tuned LLM can gain better overall scores, it still exhibits unstable performances. This observation is largely consistent with the results reported in other literature [24, 35]. These bias patterns might be attributed to the position bias and the token bias [ 85 ]. Position bias refers to the tendency of LLMs to favor content that is placed at specific positions, such as the first or second position in the candidate list. Token bias Towards Position-Robust Talent Recommendation via Large Language Models 13 1 4 7 10 13 15  
+
+> Q
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> MRR
+> List-Exp
+> List-Imp
+> L3TR
+> Fig. 6. Performance with Different 𝑄 .
+
+refers to LLMs’ prior tendency to assign more probability mass to certain ID tokens, such as “B” or “D”. Zheng et al . [85] propose some methods to evaluate the position and token bias when LLMs are required to answer multiple-choice questions (MCQs). For example, Zheng et al . [85] remove ID tokens in MCQs and prompt LLMs to output the option contents. This way can eliminate the impact of token bias, leaving only position bias. However, in listwise talent recommendations, it’s impractical to expect LLMs to output the entire selected resume due to its excessive length. Therefore, we propose more reasonable and practical methods to estimate the position and token bias in our scenario. Let D = {𝑑 1, 𝑑 2, . . . , 𝑑 𝑁 } = {“A” , “B” , . . . , “O” } denote the set of ID tokens assigned to the ordered candidate list C𝑔 in the test set 
+
+T . Let 𝜆 ∈ Λ(C𝑔 ) represent a permutation of the candidate list C𝑔 , and let 𝜋 ∈ Π(D) denote a permutation of the ID token set D.We focus on measuring token bias, defined as the inherent preference of the LLM for each ID token 𝑑 𝑖 ∈ D . To make the preference comparable across different IDs and mitigate the influence of the surrounding IDs (e.g., contrast effects), we introduce a distinct 
+
+reference ID set B with size |B| = |D| − 1. For each C𝑔 , exactly one resume is assigned the target ID 𝑑 𝑖 , while the remaining 𝑁 − 1
+
+resumes are assigned IDs from B. For example, when 𝑁 = 15 and the target ID is 𝑑 𝑖 = “A” , we can choose B = {“a” , “b” , . . . , “n” }. A possible ID assignment for C𝑔 is 
+
+⟨“A” : 𝑐 𝑔 
+
+> 1
+
+, “a” : 𝑐 𝑔 
+
+> 2
+
+, “b” : 𝑐 𝑔 
+
+> 3
+
+, · · · , “n” : 𝑐 𝑔 
+
+> 15
+
+⟩
+
+resulting in the ID set B𝐴 = {“A” , “a” , “b” , . . . , “n” }. The reason for introducing B is to ensure a controlled comparison across different ID tokens. When comparing tokens 𝑑 𝑖 ∈ D , it is important to keep ID tokens of all other positions identical. Otherwise, changing the target token may also change IDs at other positions. For instance, suppose we compare “A” and “C” at the first position, while filling the remaining positions with tokens from D in alphabetical order. The resulting ID sequences {“A” , “B” , “C” , · · · , “O” }
+
+and {“C” , “B” , “A” , · · · , “O” } differ not only at the first position (“A” vs. “C”) but also at the third position (“C” vs. “A”). Such unintended differences introduce additional variation that may confound the comparison. By introducing the reference set B, all non-target positions can be fixed with the same reference IDs in a consistent order, ensuring that the comparison isolates the effect of the target token. Under this setup, we exhaustively vary both the order of the candidates ( 𝜆 ∈ Λ(C𝑔 )) and the order of ID assignments (𝜋 ∈ Π(B 𝑑 𝑖 )) to enumerate all possible ID–resume combinations. Now the preference of LLMs for the target token 𝑑 𝑖 ∈ D can be expressed as 
+
+P(𝑑 𝑖 | B 𝑑 𝑖 ) = 1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+1
+
+|Π(B 𝑑 𝑖 )| · | Λ(C𝑔 )| ∑︁ 𝜋 ∈Π ( B 𝑑 𝑖 )∑︁ 𝜆 ∈Λ(C𝑔 )
+
+P  𝑑 𝑖 | 𝑔, 𝜋, 𝜆, B𝑑 𝑖 , C𝑔 
+
+ (9) where P(𝑑 𝑖 | · · · ) is the probability that the LLM selects token 𝑑 𝑖 .14 Silin Du and Hongyan Liu It’s infeasible to enumerate each 𝜋 and 𝜆 due to the time and computation constraints ( ×𝑁 ! costs). To make the procedure tractable, we restrict our analysis to a special set of permutations. First, for 𝜋 we consider 
+
+𝜋 ∗ 
+
+> 𝑗
+
+(𝑑 𝑖 ) = {“a” , “b” , · · · , 𝑑 𝑖 
+
+|{z}  
+
+> Position 𝑗
+
+, · · · , “n” }
+
+where the target ID 𝑑 𝑖 is placed in the 𝑗 -th position, and the remaining 𝑁 − 1 IDs retain their original relative order. Similarly, we also consider special permutations of the candidate resumes 𝜆 ∗ 
+
+> 𝑗
+
+, where the matched resume is placed in the 𝑗 -th position and other resumes remain their original order in C𝑔 . That is to say, the target ID 𝑑 𝑖 is always assigned to the matched resume, and we only vary its position in the list. In this way, LLM’s preference for the ID is equivalent to its preference for the matched resume. Thus, we can use the LLM’s recommendation accuracy performance to reflect its preference on the target ID, making it applicable to both open- and closed-source LLMs. Formally, the estimated preference for 𝑑 𝑖 at position 𝑗 is given by 
+
+1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+P
+
+
+
+𝑑 𝑖 | 𝑔, 𝜋 ∗ 
+
+> 𝑗
+
+(𝑑 𝑖 ), 𝜆 ∗ 
+
+> 𝑗
+
+, B𝑑 𝑖 , C𝑔 
+
+
+
+(10) Summing over the position yields an approximate overall preference for 𝑑 𝑖 .
+
+˜P(𝑑 𝑖 | B 𝑑 𝑖 ) = 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑗 =1
+
+1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+P
+
+
+
+𝑑 𝑖 | 𝑔, 𝜋 ∗ 
+
+> 𝑗
+
+(𝑑 𝑖 ), 𝜆 ∗ 
+
+> 𝑗
+
+, B𝑑 𝑖 , C𝑔 
+
+
+
+(11) Similarly, we can define the preference of LLMs for position 𝑗 as follows. 
+
+P(position 𝑗 | D) = 1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+1
+
+|Π(D)| · | Λ(C𝑔 )| ∑︁ 𝜋 ∈Π ( D ) ∑︁ 𝜆 ∈Λ(C𝑔 )
+
+P  𝑑 𝜋 ( 𝑗 ) | 𝑔, 𝜋, 𝜆, D, C𝑔 
+
+ (12) where 𝜋 ( 𝑗 ) is the index of 𝑗 -th ID in 𝜋 within the original ID token set D. We also set the permutation of the candidate resumes as 
+
+𝜆 ∗ 
+
+> 𝑗
+
+. The right-hand side of Eq. (12) reduces to 
+
+1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+1
+
+|Π|(D)| ∑︁ 𝜋 ∈Π ( D ) 
+
+P
+
+
+
+𝑑 𝜋 ( 𝑗 ) | 𝑔, 𝜋, 𝜆 ∗ 
+
+> 𝑗
+
+, D, C𝑔 
+
+
+
+Enumerating all ID permutations 𝜋 for each job posting 𝑔 is still computationally expensive. Therefore, for each job 𝑔 , we randomly sample a single permutation 𝜋 𝑔 ∼ Π(D) so that the distribution of the ID token before each position 𝑗 is approximately consistent at the level of the entire dataset, which can eliminate the impact of the token bias. 
+
+˜P(position 𝑗 | D) = 1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+P
+
+
+
+𝑑 𝜋 𝑔 ( 𝑗 ) | 𝑔, 𝜋 𝑔 , 𝜆 ∗ 
+
+> 𝑗
+
+, D, C𝑔 
+
+
+
+(13) Using these methods, we evaluate the debiasing capability of the proposed model in Section 6.4. 
+
+5.2 Pre-ranker 
+
+Many LLM-based recommenders tend to achieve higher scores when the matched resume appears at a smaller position index 𝑄 ,i.e., when it is placed near the beginning of the candidate list. Motivated by this observation, we design a pre-ranker to exploit this property. Specifically, we first compute the average word embeddings of the job posting and each resume in the candidate list. Then, we rank the resumes according to their cosine similarity scores with the job posting. This pre-ranking step is applied before the formal LLM-based recommendation so that potentially matched resumes are placed closer to the front of the prompt, which can leverage the LLM’s preference for the content appearing earlier in the candidate list. 
+
+5.3 Probability-based Debiasing Method 
+
+Token bias and position bias are inherently entangled. The LLM may prefer different ID tokens at various positions. Therefore, we aim to mitigate these two sources of bias simultaneously. The true preference of the LLM over resume 𝑐 𝑖 can be defined as follows. 
+
+P(𝑐 𝑖 | 𝑔, D, C𝑔 ) = 1
+
+|Π(D)| · | Λ(C𝑔 )| ∑︁ 𝜋 ∈Π ( D ) ∑︁ 𝜆 ∈Λ(C𝑔 )
+
+P(𝑑 𝜋 (𝑓 𝜆 (𝑐 𝑖 ) ) | 𝑔, 𝜋, 𝜆, D, C𝑔 ) (14) Towards Position-Robust Talent Recommendation via Large Language Models 15 where 𝑓 𝜆 (𝑐 𝑖 ) returns the index of 𝑐 𝑖 under the permutation 𝜆 of the candidate list. In practice, it’s prohibitively expensive to compute all permutations. When calling the LLM to make recommendations, we can instead observe the joint distribution of 𝑐 𝑖 
+
+and an ID token 𝑑 𝑗 as follows. 
+
+Pobs (𝑐 𝑖 , 𝑑 𝑗 | 𝑔, 𝜋, 𝜆, D, C𝑔 ) =
+
+( Pobs 
+
+ 𝑑 𝑗 | 𝑔, 𝜋, 𝜆, D, C𝑔 
+
+ , 𝑗 = 𝜋 (𝑓 𝜆 (𝑐 𝑖 )) 
+
+0, otherwise (15) where Pobs 
+
+ 𝑑 𝑗 | 𝑔, 𝜋, 𝜆, D, C𝑔 
+
+ is the output of implicit recommendation in Eq. (3). We assume that the observed joint distribution of 𝑐 𝑖 and 𝑑 𝑗 can be decomposed as a prior distribution over 𝑑 𝑗 (capturing prior bias) and the true preference distribution over 
+
+𝑐 𝑖 . This assumption, referred to as the Conditional Independence Assumption . It’s equivalent to saying that the LLM holds independent beliefs about 𝑑 𝑗 and 𝑐 𝑖 .
+
+Pobs 
+
+ 𝑐 𝑖 , 𝑑 𝑗 | 𝑔, 𝜋, 𝜆, D, C𝑔 
+
+ = Pprior 
+
+ 𝑑 𝜋 (𝑓 𝜆 (𝑐 𝑖 ) ) | 𝑔, 𝜋, 𝜆, D, C𝑔 
+
+ P  𝑐 𝑖 | 𝑔, 𝜋, 𝜆, D, C𝑔 
+
+ (16) This assumption is reasonable because ID tokens are synthetic identifiers that do not carry semantic information about the resumes. They are only used to mark the positions of candidates within the prompt, and the LLM has no inherent reason to associate a particular ID token with particular resume content. Under this assumption, the true preference for 𝑐 𝑖 should be invariant to permutations of both resumes and ID tokens, i.e., P(𝑐 𝑖 | 𝑔, 𝜋, 𝜆, D, C𝑔 ) = P(𝑐 𝑖 | 𝑔, D, C𝑔 ). In practice, however, LLM-based recommendation operates on a fixed input order. We consider a canonical ordering where ˜𝜆 follows the alphabetical order and 
+
+˜𝜋 = {“A” , “B” , · · · } , such that 𝑖 = ˜𝜋 (𝑓 ˜𝜆 (𝑐 𝑖 )) . Under this fixed ordering, the prior bias towards 𝑑 𝑖 is primarily determined by the position of the matched resume. Therefore, Pprior no longer depends on the specific permutation 𝜋 or mapping 𝜆 , but only on 𝑔 
+
+and D. As a result, Eq. (16) to be simplified as follows: 
+
+Pobs 
+
+
+
+𝑑 𝑖 | 𝑔, ˜𝜋, ˜𝜆, D, C𝑔 
+
+
+
+= Pprior 
+
+ 𝑑 𝑖 | 𝑔, D, C𝑔 
+
+ P  𝑐 𝑖 | 𝑔, D, C𝑔 
+
+ (17) We can utilize the globally observed bias as an approximation of the prior bias of each 𝑔 
+
+ˆP (𝑑 𝑖 | D) = 1
+
+|T | ∑︁ C𝑔 ∈ T 
+
+Pobs 
+
+
+
+𝑑 𝑖 | 𝑔, ˜𝜋, ˜𝜆, D, C𝑔 
+
+
+
+(18) We estimate ˆP (𝑑 𝑖 | D) on a small development set and then use it for debiasing: 
+
+ˆP  𝑐 𝑖 | 𝑑, D, C𝑔 
+
+ =
+
+Pobs 
+
+
+
+𝑑 𝑖 | 𝑔, ˜𝜋, ˜𝜆, D, C𝑔 
+
+
+
+ˆP (𝑑 𝑖 | D) (19) 
+
+6 Experiments 
+
+In this section, we aim to answer the following research questions (RQ) by experimental study: 
+
+• RQ1: Accuracy Performance. Can our proposed methods outperform other talent recommendation baselines in terms of recommendation accuracy? 
+
+• RQ2: Ablation Study. Are the major components of our proposed model effective for improving recommendation accuracy? 
+
+• RQ3: Bias Evaluation. Can our proposed probability-based debiasing method effectively alleviate the bias issue? 
+
+6.1 Experiment setup 
+
+Dataset. To evaluate the performance of our proposed L3TR model, we use two datasets: a private dataset collected from a human resource technology platform and a public dataset. 
+
+• HRT : a dataset provided by a human resource service company and collected from their human resource technology (HRT) platform. The platform’s main service is to recommend candidates for open positions and submit them for recruiters’ review. The time span of this data is around one year. The available information includes details of job postings, resumes, and positive matching pairs of job postings with resumes approved by the recruiters. We use this dataset to perform the talent recommendation task. 16 Silin Du and Hongyan Liu 
+
+• JobRec : a public dataset 4 in a job recommendation challenge hosted by CareerBuilder in 2012. It consists of seven subsets, with each subset containing job application information spanning 13 days. We randomly select one of the subsets for the experiment. For each user, we have their demographic and professional information, alongside their work history, limited to job titles. Although our proposed method is developed for talent recommendation, it can also be adapted for recommending job positions to job seekers, i.e., the job recommendation task. Thus, we use this dataset to test our proposed method for job recommendation. Table 1 summarizes the statistics of the two datasets. The average number of tokens is calculated by the tokenizer of ChatGLM3-6B [ 79 ]. The number of records means the number of matching pairs in the dataset. Examples of these two datasets are provided in Appendix C. 
+
+> Table 1. Dataset Statistics.
+
+Dataset # Resumes # Tokens in Resume # Jobs # Tokens in Job Posting # Records HRT 29057 1214 1198 352 30810 JobRec 4821 44 10642 402 14868 
+
+Baselines. We compare our proposed models against two sets of baseline models. The first set consists of traditional deep learning models designed for the recommendation task, which we refer to as domain-specific models. We implement 4 typical models as shown below: 
+
+• PJFNN [87 ] is a person-job fit model which leverages a convolutional neural network to extract semantic representations of job postings and resumes and matches them based on their cosine similarity. 
+
+• APJFNN [47 ] carefully designs hierarchical recurrent neural networks to dynamically encode the requirement section of job postings and job/project experience section in resumes. 
+
+• BPJFNN [47] is a simplified version of APJFNN, which utilizes BiLSTM to learn representations of each job posting and resume. 
+
+• TRBERT is a twin tower model using pre-trained BERT [ 13 ] as a text encoder and a multi-layer perceptron for predictions. We design and implement this model for talent (or job) recommendation task to evaluate the performance of domain-specific models based on pre-trained language models. The second set includes LLM-based models. We implement 7 representative LLM-based baselines, selected along two dimensions: (1) whether fine-tuning is applied, and (2) whether the recommendation is performed through implicit or explicit methods. For non–fine-tuned models, we select open-source LLMs to implement implicit recommendation methods, and closed-source proprietary LLMs for explicit methods. Since open-source models are typically smaller while proprietary ones are considerably larger, this setup allows us to compare the performance of LLMs across different scales. In addition, we also consider large reasoning models with deep reasoning capability, which have been fine-tuned on various retrieval tasks. These models are expected to exhibit stronger logical inference and ranking abilities, making them suitable for comparison in our listwise recommendation setting. 
+
+• Point-Imp and List-Imp , based on open-source LLMs, leverage the in-context learning method and follow the implicit method defined in Definition 3 for pointwise and listwise recommendations, respectively. 
+
+• Point-Exp and List-Exp use the explicit method described in Definition 2 to prompt LLMs for both pointwise and listwise recommendations. A large commercial model, GLM-4 [59] (larger than 100B), is used in these baselines. 
+
+• TALLRec [3] is originally proposed for pointwise recommendations, which fine-tunes open-source LLMs to predict user preference over target items as a binary classification problem. TALLRec makes predictions by generating “Yes” or “No”, making it difficult to perform the ranking needed in our task. To this end, we modify the output strategy to the implicit method, enabling it to produce matching scores for ranking. 
+
+> 4https://www.kaggle.com/competitions/job-recommendation
+
+Towards Position-Robust Talent Recommendation via Large Language Models 17 
+
+• Rank1 [71 ] is a pointwise ranking model based on reasoning LLMs. It leverages a large reasoning model to generate reasoning traces for query–document pairs, and distills this knowledge into a smaller reranker model. We use the 7B version for comparison, as this pointwise and reasoning-based model exhibits high latency during inference. 
+
+• ReasonRank [36 ] is a listwise reasoning-based ranking model that adopts a two-stage training framework to enhance reasoning ability. It achieves state-of-the-art performance on reasoning-based retrieval benchmarks. We use both the 7B and 32B versions for comparison. For LLM-based recommendation methods based on open-source LLMs, including our proposed method, we choose two LLMs of different sizes: ChatGLM3-6B [ 79 ] and InternLM2.5-20B [ 7]. Specifically, we use ChatGLM3-6B for experiments conducted on dataset HRT and InternLM2.5-20B on dataset JobRec, so that LLMs of different sizes are covered in our evaluation. 
+
+Implementation Details. To evaluate the recommendation performance, we adopt three widely-used metrics: Normalized Discounted Cumulative Gain (ND@ {1, 5}), Recall (R@ {5, 10 }), and Mean Reciprocal Rank (MRR). The detailed computation procedures for each metric are provided in Appendix E. For the HRT dataset (talent recommendation), we randomly select 85% of the job postings from G to form the training set Gtrain ,and use the remaining 15% as the test set Gtest . The matching records whose job postings belong to Gtrain constitute Mtrain , while those associated with Gtest form Mtest . For the pointwise method, we perform a 1:1 negative sampling based on the records in 
+
+Mtrain . For the listwise method, we set the number of candidates per training instance to 𝑁 train = 4. During testing, all models are evaluated with 𝑁 = 15 candidates per job posting. Experimental results with other values of 𝑁 train and 𝑁 are provided in Appendix F. Each test sample is constructed from a positive matching record in Mtest , where the candidate set consists of one positive resume and 14 randomly sampled negative resumes. The set of ID tokens is D = {“A” , “B” , . . . , “O” }. In addition, we randomly sample 100 matching records from Mtrain to construct a subset T , which is used to evaluate the bias issue and estimate the global prior bias. This step is only applied to listwise methods that require debiasing. For the JobRec dataset (job recommendation), we adopt a similar procedure. The only difference lies in the splitting order: we first divide the resume set R into training and test subsets, then partition the matching records M accordingly. The domain-specific models are implemented based on RecBole [ 84 ]. Rank1 and ReasonRank are implemented based on their public models. For methods involved with large commercial models (Point-Exp and List-Exp), we call the API of GLM-4-Plus provided by ZhipuAI 5. TALLRec and our proposed methods share the same open-source LLMs. We adopt the LoRA [ 25 ] method with the rank of 8 to fine-tune the models on the training set for 2 epochs. The number of special tokens for each resume (or job posting in the JobRec dataset) is set as 𝑆 = 10 . Experimental results with other values of 𝑆 are provided in Appendix F. The prompt templates for LLM-based methods are provided in Appendix D. 
+
+6.2 Performance Comparison 
+
+Table 2 and 3 show the performance in terms of accuracy on HRT and JobRec, respectively. Since the key information of each resume in JobRec only contains job titles, we omit APJFNN, which highly relies on rich textual content. L3TR is equipped with the debiasing method described in Eq. (19). We will discuss more details about the bias issue in Section 6.4. First, on both datasets, L3TR outperforms all other baselines in terms of all accuracy performance measures, including methods based on large-scale LLMs. Our proposed model demonstrates a significant improvement in the top-ranked positions of the list. Compared to TALLRec, L3TR achieves a 13.11% increase in R@1 on the HRT dataset and a 3.76% increase on the JobRec dataset. Second, for implicit recommendation methods based on smaller-scale open-source LLMs (in our case, ChatGLM3-6B and InternLM2.5-20B), the pointwise approach (Point-Imp) performs better than its corresponding listwise version (List-Imp), which means that LLMs can understand a pair of a job posting and a resume better but struggle to handle an entire candidate set. This also confirms that LLM-based listwise recommendation remains challenging even with a longer context window. On the other hand, explicit recommendation methods based on large-scale closed-source LLMs possess stronger contextual understanding capabilities, allowing them to utilize the listwise setting to compare information across multiple resumes and thereby achieve 
+
+> 5https://bigmodel.cn/dev/api/normal-model/glm-4
+
+18 Silin Du and Hongyan Liu 
+
+> Table 2. Recommendation Accuracy on HRT.
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .3430 .4236 .1551 .5248 .3348 BPJFNN .5077 .5645 .2607 .7409 .4614 APJFNN .3872 .4857 .1683 .6056 .3646 TRBERT .6078 .6604 .3927 .7937 .5716 LLM-based Models List-Imp (6B) .2087 .3062 .0792 .3564 .2276 List-Exp ( >100B) .7982 .8166 .6815 .8311 .7781 Point-Imp (6B) .5252 .5973 .3267 .7030 .5033 Point-Exp ( >100B) .7850 .7981 .6238 .8191 .7484 TALLRec (6B) .8442 .8532 7046 .8838 .8134 Rank1 (7B) .7833 .7975 .6485 .8927 .7577 ReasonRank (7B) .6643 .6977 .5307 .7782 .6491 ReasonRank (32B) .8046 .8198 .7104 .8886 .7879 Our Models L3TR (6B) .8518 .8659 .8102 .8868 .8531 
+
+> Table 3. Recommendation Accuracy on JobRec.
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .2080 .3132 .0704 .3527 .2285 BPJFNN .2008 .3051 .0669 .3406 .2225 TRBERT .1967 .2976 .0663 .3351 .2197 LLM-based Models List-Imp (20B) .5970 .6444 .4620 .7191 .5860 List-Exp ( >100B) .7539 .7719 .5994 .8844 .7234 Point-Imp (20B) .7119 .7466 .5386 .8616 .6790 Point-Exp ( >100B) .5800 .6288 .3627 .7733 .5417 TALLRec (20B) .9003 .9125 .8437 .9483 .9019 Rank1 (7B) .6559 .6969 .4496 .8420 .6142 ReasonRank (7B) .6429 .6842 .4746 .7940 .6160 ReasonRank (32B) .6935 .7195 .5745 .8123 .6814 Our Models L3TR (20B) .9227 .9313 .8794 .9724 .9231 
+
+better recommendation results than their pointwise counterparts. Note that pointwise methods generally consume more tokens overall, since job posting (or resume in job recommendation task) information needs to be processed repeatedly 𝑁 times. Third, although large reasoning models have been trained on large-scale retrieval data for retrieval and ranking task, they still performs worse than TALLRec in most cases, which is specifically fine-tuned on recommendation data. This suggests the necessity of fine-tuning to align LLMs with the recommendation task. Fourth, most of domain-specific models (PJFNN, BPJFNN, and APJFNN) get limited performance in the top place. Their low results on R@1 indicate their limited capacity to comprehend text information compared with LLMs. 
+
+6.3 Ablation Study 
+
+To verify the effectiveness of each part in L3TR, we implement several variants of L3TR for an ablation study: 
+
+• L3TR − . We remove all designs in Figure 5 and fine-tune the LLM with the listwise data using the implicit method. 
+
+• L3TR-B . We remove the block attention mechanism. 
+
+• L3TR-I . We remove the ID sampling procedure in Eq (4). 
+
+• L3TR-L . We remove the local position encoding method. For a fair comparison, the results of L3TR reported in this section are obtained without any additional debiasing methods. The evaluation results are shown in Table 4 and Table 5 for the two datasets, respectively. The full L3TR model achieves the best Towards Position-Robust Talent Recommendation via Large Language Models 19 performance under all metrics, confirming that the three components jointly contribute to the overall gains. Among them, block attention is the most critical design, as removing it (L3TR-B) leads to the largest performance drop. In contrast, removing random ID assignment (L3TR-I) or local positional encoding (L3TR-L) results in more moderate declines. Besides, we observe that L3TR − significantly outperforms List-Imp on both datasets, verifying that it’s effective to fine-tune LLMs using implicit methods on listwise datasets. However, the performance of L3TR − still lags behind the pointwise fine-tuning method, TALLRec. A possible reason for this gap is that the candidate set length during training ( 𝑁 train = 4 ) is smaller than that in the test data ( 𝑁 = 15 ). Given resource constraints, the candidate set length in the training data is always difficult to fully scale with that in the test data. Therefore, it is crucial to design a more effective listwise fine-tuning method that can overcome the discrepancy between 𝑁 train and 𝑁 .
+
+> Table 4. Ablation Results on HRT.
+
+Model Block Attention Random ID Assignment Local Positional Encoding ND@5 ND@10 R@1 R@5 MRR L3TR − × × × .7692 .7999 .7046 .8284 .7682 L3TR-B × √ √ .6248 .6650 .5248 .7063 .6260 L3TR-I √ × √ .8156 .8501 .7721 .8516 .8195 L3TR-L √ √ × .8204 .8419 .7640 .8696 .8177 L3TR √ √ √ .8379 .8545 .7953 .8762 .8377 
+
+6.4 Bias Evaluation Results 
+
+In this subsection, we focus on answering the third question (RQ3) by evaluating the effectiveness of listwise methods in terms of bias mitigation. We examine four listwise recommendation models: List-Imp, List-Exp, L3TR − , and L3TR. For models based on open-source LLMs, we compare their variants with different debiasing methods. Among the three commonly used accuracy metrics, MRR is a global indicator that does not depend on a predefined top-𝐾 cutoff. Therefore, we choose this metric for our analysis in this section. We focus on the HRT dataset, set the number of candidates to 𝑁 = 15 , and put the matched resume at the 𝑄 -th position. For each value of 𝑄 , we randomly construct five different candidate sets and report the average evaluation results. Figure 7 illustrates the accuracy fluctuations of various models. From Figure 7, we can see that the untuned small LLM (List-Imp with ChatGLM3-6B) exhibits severe bias. When the matched resume appears in the first position of the candidate list ( 𝑄 = 1), it performs well. However, as 𝑄 increases, its accuracy drops sharply. When the matched resume is placed at the end of the candidate list ( 𝑄 = 15 ), performance recovers slightly but remains significantly lower than the result at 𝑄 = 1. Although large commercial LLM (List-Exp with GLM-4-Plus) performs better overall than List-Imp, it still exhibits notable performance fluctuations. Its performance continues to exhibit a pattern of being higher at both ends and lower in the middle. This is similar to the findings reported by Liu et al . [35] in RAG, where key documents placed in the middle of all retrieved documents are more likely to be overlooked by LLMs. Fine-tuning LLMs with domain-specific data can significantly enhance their performance. However, L3TR − , which utilizes listwise data and the LoRA method to fine-tune the LLM without special designs, remains highly sensitive to the position of the matched resume. In contrast, L3TR incorporates local position encoding and block attention, enabling it to better capture the relationships between the job description and each resume. As a result, L3TR achieves highly stable performance that is almost unaffected by changes in 𝑄 .Furthermore, we decompose the observed bias of L3TR and L3TR − . Based on the analysis in Section 5.1, we use Eq. (13) to approximate the LLM’s preference for content located at different positions. We fix the matched resume at position 𝑄 and randomly shuffle the ID tokens of the candidate resumes in each list so that they are no longer in alphabetical order. In this way, we remove the effect of the ID token (token bias) on the performance so that we can measure the position bias of different models. 20 Silin Du and Hongyan Liu 
+
+Table 5. Ablation Results on JobRec. 
+
+Model Block Attention Random ID Assignment Local Positional Encoding ND@5 ND@10 R@1 R@5 MRR L3TR − × × × .8894 .9022 .8295 .9351 .8812 L3TR-B × √ √ .8157 .8576 .7889 .8358 .8232 L3TR-I √ × √ .9023 .9097 .8581 .9402 .9017 L3TR-L √ √ × .9031 .9125 .8665 .9410 .9065 L3TR √ √ √ .9124 .9208 .8683 .9638 .9167 1 4 7 10 13 15 
+
+> Q
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> MRR
+> List-Exp
+> List-Imp
+> L3TR
+> L3TR
+
+Fig. 7. Accuracy Fluctuations with Different 𝑄 .
+
+We repeat the evaluation five times and report the average result. In addition, we record both the performance range and the standard deviation of each model for different 𝑄 . The results are shown in Figure 8 and Table 6. 1 4 7 10 13 15 
+
+Q
+
+0.50 
+
+0.55 
+
+0.60 
+
+0.65 
+
+0.70 
+
+0.75 
+
+0.80 
+
+0.85 
+
+0.90  
+
+> MRR
+> L3TR-L3TR
+
+Fig. 8. Position Bias. Table 6. Performance Range and the Standard Deviation 
+
+Model Range Std L3TR − 0.2081 0.0780 L3TR 0.0140 0.0054 Consistent with the results shown in Figure 7, L3TR exhibits highly stable performance with minimal position bias. In contrast, L3TR − shows a different pattern from Figure 7: it has a lower preference for content at position 1. This suggests that the strong performance of L3TR − at 𝑄 = 1 in Figure 7 can largely be attributed to the model’s bias toward the ID token “A”, since during the evaluation in Figure 7, the resume at the first position was always assigned the ID token “A”. Moreover, the range and standard Towards Position-Robust Talent Recommendation via Large Language Models 21 deviation shown in Table 6 clearly demonstrate that directly fine-tuning an LLM with listwise data can cause severe position bias issues, whereas our designs effectively mitigate this problem. For token bias, we select a set of ID tokens from D = {“A” , “B” , · · · , “O” }, the 15 tokens used to identify each candidate. Based on considerations of both representativeness and efficiency, we choose six of them: “A”, “D”, “G”, “J”, “M”, “O” in this experiment. For each job, we first put its matched resume at position 𝑄 and then iterate through each chosen token, assigning it to that position 𝑄 .For each ID token, we evaluate the model’s accuracy for this token at the position 𝑄 according to Eq. (10), which is shown in Figures 9(a) and 9(b) for L3TR and L3TR − , respectively. We then average the results across all positions to obtain the model’s overall preference for different ID tokens, as presented in Figure 10. 1 4 7 10 13 15              
+
+> Q
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> MRR
+> Token Bias of L3TR
+> L3TR (A)
+> L3TR (D)
+> L3TR (G)
+> L3TR (J)
+> L3TR (M)
+> L3TR (O)
+> (a) 14710 13 15
+> Q
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> MRR
+> Token Bias of L3TR
+> L3TR (A)
+> L3TR (D)
+> L3TR (G)
+> L3TR (J)
+> L3TR (M)
+> L3TR (O) (b)
+> Fig. 9. Token Bias at Different Positions of L3TR and L3TR −.
+
+Figure 9(a) indicates that placing the same ID at different positions has minimal influence on L3TR’s recommendation performance, which further confirms that L3TR exhibits only mild position bias. Although L3TR’s preference varies slightly across different tokens at each position, such variation remains limited. In contrast, both the position and the ID token have a more significant impact on L3TR − ’s performance. As illustrated in Figure 9(b), L3TR − exhibits distinct token preferences depending on position. For example, it strongly favors token “A” in the first position but clearly prefers token “D” in the fourth. Interestingly, the position yielding the best performance for each token aligns with its alphabetical order (e.g., “A” at position 1, “D” at 4, and “G” at 7), suggesting that L3TR − tends to form spurious correlations between token identity and positional index. A comparison between Figures 10(a) and 10(b) further confirms that both models show token-specific preferences, but the variations are far more pronounced for L3TR − . Based on Figures 7, 8, 9(b), and 10(b), these results indicate that the strong performance of L3TR −
+
+when the matched resume appears in the first position of the candidate list ( 𝑄 = 1) mainly stems from its bias toward the ID token “A”, rather than an inherent preference for the first position itself. To leverage the bias patterns observed in Figure 7, we employ the pre-ranker introduced in Section 5.2 to pre-sort the candidate list, thereby increasing the likelihood that the matching resume appears near the front. The pre-ranker is applicable to both open-source and closed-source models. In addition, we adopt a probability-based debiasing method to mitigate both token bias and position bias. All results are presented in Table 7. The pre-ranker method pushes potentially matching resumes toward the front of the candidate list, as LLMs typically favor items placed at the top positions. With this adjustment, List-Exp, List-Imp, and L3TR − achieve MRR improvements ranging from 1.14%–69.77%. For models heavily affected by bias, such as List-Imp, the pre-ranker yields gains of over 50%. Meanwhile, the probability-based debiasing method described in Eq. (19) also benefits various open-source LLM-based models. For instance, all metrics of L3TR − improve by at least 4%. When combined, the two methods deliver even greater performance improvements. Although the observed bias in L3TR is relatively mild, it still gains from both the pre-ranker and probability-based debiasing approaches. 22 Silin Du and Hongyan Liu A D G J M O       
+
+> ID Token
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Averaged MRR
+> Token Bias of L3TR
+> (a) ADGJMO
+> ID Token
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Averaged MRR
+> Token Bias of L3TR (b)
+> Fig. 10. Token Bias of L3TR and L3TR −.
+
+In summary, both the pre-ranker and the probability-based debiasing method enhance model performance beyond the models’ intrinsic capabilities. Models exhibiting stronger bias benefit more substantially, while those with lighter bias still achieve meaningful improvements. 
+
+> Table 7. Evaluations of Different Debiasing Methods on HRT.
+
+Model ND@5 ND@10 R@1 R@5 MRR List-Exp .7982 .8166 .6815 .8311 .7781 + Pre-ranker .7989 .8195 .6997 .8729 .7870 List-Imp .2087 .3062 .0792 .3564 .2276 + Pre-ranker .3946 .4750 .2277 .5660 .3864 + Debiasing Method .2165 .3102 .0859 .3616 .2303 + Pre-ranker and Debiasing Method .3972 .4788 .2524 .5437 .3975 L3TR − .7692 .7999 .7046 .8284 .7682 + Pre-ranker .8091 .8348 .7525 .8663 .8054 + Debiasing Method .8298 .8458 .7756 .8812 .8245 + Pre-ranker and Debiasing Method .8336 .8493 .7904 .8815 .8303 L3TR .8379 .8545 .7953 .8762 .8377 + Pre-ranker .8389 .8552 .7970 .8779 .8381 + Debiasing Method .8445 .8651 .8027 .8795 .8422 + Pre-ranker and Debiasing Method .8518 .8659 .8102 .8868 .8531 
+
+7 Conclusion 
+
+In this paper, we introduced L3TR, a novel framework for aligning large language models with the listwise talent recommendation task. Unlike conventional pointwise approaches, for each job, L3TR directly processes a set of resumes and outputs a ranked candidate list, avoiding redundant processing of each resume. We proposed an implicit recommendation strategy to finetune LLMs and introduce an ID sampling method to resolve the inconsistency between candidate set sizes in the training phase and the inference phase. Then we design a block attention mechanism together with a local positional encoding method to enhance inter-document relationship understanding and mitigate position issue. We further provide a theoretical analysis to validate the design of the local positional encoding method. In addition, we decomposed the observed bias patterns into position bias and token bias, and developed evaluation methods to detect biases as well as training-free debiasing methods. We conduct extensive experiments on two real-world datasets to study the position and token bias and evaluate the performance of our proposed Towards Position-Robust Talent Recommendation via Large Language Models 23 framework and methods. Results demonstrate that L3TR not only improves recommendation accuracy, but also alleviates position bias and token bias. Our findings highlight both the potential and the challenges of applying LLMs to listwise recommendation. LLMs can leverage their strong language understanding ability to model complex job–resume relationships and improve recommendation accuracy. However, their vulnerability to bias underscores the need for adaptation. The study of position and token bias not only advances our understanding of LLM behaviors in ranking settings but also provides a foundation for developing more robust and interpretable recommendation systems. Several research directions remain open for exploration. First, our proposed framework has the potential to be applied to other recommendation scenarios, where both the recommender (e.g., user) and recommendee (item) are described by a lengthy set of tokens. Future work includes applying our method to a broader range of scenarios as demand arises and the relevant data become available. Second, fairness represents another critical consideration in talent recommendation. This issue warrants thorough investigation. Advancing in these directions will pave the way for building more effective LLM-based recommendation systems in talent recruitment service and beyond. 
+
+References 
+
+[1] Shibbir Ahmed, Mahamudul Hasan, Md Nazmul Hoq, and Muhammad Abdullah Adnan. 2016. User interaction analysis to recommend suitable jobs in career-oriented social networking sites. In 2016 International Conference on Data and Software Engineering (ICoDSE) . IEEE, 1–6. [2] Qingyao Ai, Keping Bi, Cheng Luo, Jiafeng Guo, and W Bruce Croft. 2018. Unbiased learning to rank with unbiased propensity estimation. In The 41st international ACM SIGIR conference on research & development in information retrieval . 385–394. [3] Keqin Bao, Jizhi Zhang, Yang Zhang, Wenjie Wang, Fuli Feng, and Xiangnan He. 2023. TALLRec: An Effective and Efficient Tuning Framework to Align Large Language Model with Recommendation. In Proceedings of the 17th ACM Conference on Recommender Systems, RecSys 2023, Singapore, Singapore, September 18-22, 2023 , Jie Zhang, Li Chen, Shlomo Berkovsky, Min Zhang, Tommaso Di Noia, Justin Basilico, Luiz Pizzato, and Yang Song (Eds.). ACM, 1007–1014. doi:10.1145/3604915.3608857 [4] Shuqing Bian, Xu Chen, Wayne Xin Zhao, Kun Zhou, Yupeng Hou, Yang Song, Tao Zhang, and Ji-Rong Wen. 2020. Learning to Match Jobs with Resumes from Sparse Interaction Data using Multi-View Co-Teaching Network. In CIKM ’20: The 29th ACM International Conference on Information and Knowledge Management, Virtual Event, Ireland, October 19-23, 2020 , Mathieu d’Aquin, Stefan Dietze, Claudia Hauff, Edward Curry, and Philippe Cudré-Mauroux (Eds.). ACM, 65–74. doi:10.1145/3340531.3411929 [5] Shuqing Bian, Wayne Xin Zhao, Yang Song, Tao Zhang, and Ji-Rong Wen. 2019. Domain Adaptation for Person-Job Fit with Transferable Deep Global Match Network. In Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing, EMNLP-IJCNLP 2019, Hong Kong, China, November 3-7, 2019 , Kentaro Inui, Jing Jiang, Vincent Ng, and Xiaojun Wan (Eds.). Association for Computational Linguistics, 4809–4819. doi:10.18653/v1/D19-1487 [6] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. 2020. Language Models are Few-Shot Learners. In Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual , Hugo Larochelle, Marc’Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin (Eds.). https://proceedings.neurips.cc/paper/2020/hash/1457c0d6bfcb4967418bfb8ac142f64a-Abstract.html [7] Zheng Cai, Maosong Cao, Haojiong Chen, Kai Chen, Keyu Chen, Xin Chen, Xun Chen, Zehui Chen, Zhi Chen, Pei Chu, Xiaoyi Dong, Haodong Duan, Qi Fan, Zhaoye Fei, Yang Gao, Jiaye Ge, Chenya Gu, Yuzhe Gu, Tao Gui, Aijia Guo, Qipeng Guo, Conghui He, Yingfan Hu, Ting Huang, Tao Jiang, Penglong Jiao, Zhenjiang Jin, Zhikai Lei, Jiaxing Li, Jingwen Li, Linyang Li, Shuaibin Li, Wei Li, Yining Li, Hongwei Liu, Jiangning Liu, Jiawei Hong, Kaiwen Liu, Kuikun Liu, Xiaoran Liu, Chengqi Lv, Haijun Lv, Kai Lv, Li Ma, Runyuan Ma, Zerun Ma, Wenchang Ning, Linke Ouyang, Jiantao Qiu, Yuan Qu, Fukai Shang, Yunfan Shao, Demin Song, Zifan Song, Zhihao Sui, Peng Sun, Yu Sun, Huanze Tang, Bin Wang, Guoteng Wang, Jiaqi Wang, Jiayu Wang, Rui Wang, Yudong Wang, Ziyi Wang, Xingjian Wei, Qizhen Weng, Fan Wu, Yingtong Xiong, Chao Xu, Ruiliang Xu, Hang Yan, Yirong Yan, Xiaogui Yang, Haochen Ye, Huaiyuan Ying, Jia Yu, Jing Yu, Yuhang Zang, Chuyu Zhang, Li Zhang, Pan Zhang, Peng Zhang, Ruijie Zhang, Shuo Zhang, Songyang Zhang, Wenjian Zhang, Wenwei Zhang, Xingcheng Zhang, Xinyue Zhang, Hui Zhao, Qian Zhao, Xiaomeng Zhao, Fengzhe Zhou, Zaida Zhou, Jingming Zhuo, Yicheng Zou, Xipeng Qiu, Yu Qiao, and Dahua Lin. 2024. InternLM2 Technical Report. arXiv:2403.17297 [cs.CL] [8] Shangkun Che, Minjia Mao, and Hongyan Liu. 2024. New Community Cold-Start Recommendation: A Novel Large Language Model-based Method. In ICIS 2024 Proceedings , Vol. 6. https://aisel.aisnet.org/icis2024/data_soc/data_soc/6 [9] Jiawei Chen, Hande Dong, Xiang Wang, Fuli Feng, Meng Wang, and Xiangnan He. 2023. Bias and Debias in Recommender System: A Survey and Future Directions. ACM Trans. Inf. Syst. 41, 3 (2023), 67:1–67:39. doi:10.1145/3564284 [10] Yukang Chen, Shengju Qian, Haotian Tang, Xin Lai, Zhijian Liu, Song Han, and Jiaya Jia. 2024. LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models. In The Twelfth International Conference on Learning Representations . https://openreview.net/forum?id=6PmJoRfdaK [11] Kwesi A. Cobbina and Tianyi Zhou. 2025. Where to show Demos in Your Prompt: A Positional Bias of In-Context Learning. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing, EMNLP 2025, Suzhou, China, November 4-9, 2025 , Christos Christodoulopoulos, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng (Eds.). Association for Computational Linguistics, 29560–29593. doi:10.18653/V1/2025.EMNLP-MAIN.1503 [12] Sunhao Dai, Ninglu Shao, Haiyuan Zhao, Weijie Yu, Zihua Si, Chen Xu, Zhongxiang Sun, Xiao Zhang, and Jun Xu. 2023. Uncovering ChatGPT’s Capabilities in Recommender Systems. In Proceedings of the 17th ACM Conference on Recommender Systems, RecSys 2023, Singapore, Singapore, September 18-22, 2023 , Jie Zhang, 24 Silin Du and Hongyan Liu 
+
+Li Chen, Shlomo Berkovsky, Min Zhang, Tommaso Di Noia, Justin Basilico, Luiz Pizzato, and Yang Song (Eds.). ACM, 1126–1132. doi:10.1145/3604915.3610646 [13] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL-HLT 2019, Minneapolis, MN, USA, June 2-7, 2019, Volume 1 (Long and Short Papers) , Jill Burstein, Christy Doran, and Thamar Solorio (Eds.). Association for Computational Linguistics, 4171–4186. doi:10.18653/v1/n19-1423 [14] Silin Du and Hongyan Liu. 2024. Large Language Models for Listwise Talent Recommendation. In Proceedings of the International Conference on Information Systems (ICIS 2024) . Association for Information Systems. https://aisel.aisnet.org/icis2024/aiinbus/aiinbus/9 [15] Yingpeng Du, Di Luo, Rui Yan, Xiaopei Wang, Hongzhi Liu, Hengshu Zhu, Yang Song, and Jie Zhang. 2024. Enhancing Job Recommendation through LLM-Based Generative Adversarial Networks. In Thirty-Eighth AAAI Conference on Artificial Intelligence, AAAI 2024, Thirty-Sixth Conference on Innovative Applications of Artificial Intelligence, IAAI 2024, Fourteenth Symposium on Educational Advances in Artificial Intelligence, EAAI 2014, February 20-27, 2024, Vancouver, Canada ,Michael J. Wooldridge, Jennifer G. Dy, and Sriraam Natarajan (Eds.). AAAI Press, 8363–8371. doi:10.1609/AAAI.V38I8.28678 [16] Andrii Dzhoha, Alexey Kurennoy, Vladimir Vlasov, and Marjan Celikik. 2024. Reducing Popularity Influence by Addressing Position Bias. arXiv preprint arXiv:2412.08780 (2024). [17] Chuyu Fang, Chuan Qin, Qi Zhang, Kaichun Yao, Jingshuai Zhang, Hengshu Zhu, Fuzhen Zhuang, and Hui Xiong. 2023. RecruitPro: A Pretrained Language Model with Skill-Aware Prompt Learning for Intelligent Recruitment. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining .3991–4002. [18] Jiabao Fang, Shen Gao, Pengjie Ren, Xiuying Chen, Suzan Verberne, and Zhaochun Ren. 2024. A multi-agent conversational recommender system. arXiv preprint arXiv:2402.01135 (2024). [19] Frank Färber, Tim Weitzel, and Tobias Keim. 2003. An Automated Recommendation Approach to Selection in Personnel Recruitment. In 9th Americas Conference on Information Systems, AMCIS 2003, Tampa, FL, USA, August 4-6, 2003 . Association for Information Systems, 302. http://aisel.aisnet.org/amcis2003/302 [20] Preetam Ghosh and Vaishali Sadaphal. 2023. JobRecoGPT - Explainable job recommendations using LLMs. CoRR abs/2309.11805 (2023). arXiv:2309.11805 doi:10.48550/ARXIV.2309.11805 [21] Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 (2024). [22] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al . 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025). [23] Junqing He, Kunhao Pan, Xiaoqun Dong, Zhuoyang Song, Yibo Liu, Yuxin Liang, Hao Wang, Qianguo Sun, Songxin Zhang, Zejian Xie, and Jiaxing Zhang. 2023. Never Lost in the Middle: Improving Large Language Models via Attention Strengthening Question Answering. CoRR abs/2311.09198 (2023). arXiv:2311.09198 doi:10.48550/ARXIV.2311.09198 [24] Yupeng Hou, Junjie Zhang, Zihan Lin, Hongyu Lu, Ruobing Xie, Julian McAuley, and Wayne Xin Zhao. 2024. Large language models are zero-shot rankers for recommender systems. In European Conference on Information Retrieval . Springer, 364–381. [25] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 . OpenReview.net. https://openreview.net/forum?id=nZeVKeeFYf9 [26] Xu Huang, Jianxun Lian, Yuxuan Lei, Jing Yao, Defu Lian, and Xing Xie. 2025. Recommender AI Agent: Integrating Large Language Models for Interactive Recommendations. ACM Trans. Inf. Syst. 43, 4 (2025), 96:1–96:33. doi:10.1145/3731446 [27] Aaron Jaech, Adam Kalai, Adam Lerer, Adam Richardson, Ahmed El-Kishky, Aiden Low, Alec Helyar, Aleksander Madry, Alex Beutel, Alex Carney, et al . 2024. Openai o1 system card. arXiv preprint arXiv:2412.16720 (2024). [28] Jianchao Ji, Zelong Li, Shuyuan Xu, Wenyue Hua, Yingqiang Ge, Juntao Tan, and Yongfeng Zhang. 2024. GenRec: Large Language Model for Generative Recommendation. In Advances in Information Retrieval - 46th European Conference on Information Retrieval, ECIR 2024, Glasgow, UK, March 24-28, 2024, Proceedings, Part III (Lecture Notes in Computer Science, Vol. 14610) , Nazli Goharian, Nicola Tonellotto, Yulan He, Aldo Lipani, Graham McDonald, Craig Macdonald, and Iadh Ounis (Eds.). Springer, 494–502. doi:10.1007/978-3-031-56063-7_42 [29] Junshu Jiang, Songyun Ye, Wei Wang, Jingran Xu, and Xiaosheng Luo. 2020. Learning Effective Representations for Person-Job Fit by Feature Fusion. In CIKM ’20: The 29th ACM International Conference on Information and Knowledge Management, Virtual Event, Ireland, October 19-23, 2020 , Mathieu d’Aquin, Stefan Dietze, Claudia Hauff, Edward Curry, and Philippe Cudré-Mauroux (Eds.). ACM, 2549–2556. doi:10.1145/3340531.3412717 [30] Nithish Kannen, Yao Ma, Gerrit J. J. van den Burg, and Jean Baptiste Faddoul. 2024. Efficient Pointwise-Pairwise Learning-to-Rank for News Recommendation. In Findings of the Association for Computational Linguistics: EMNLP 2024, Miami, Florida, USA, November 12-16, 2024 , Yaser Al-Onaizan, Mohit Bansal, and Yun-Nung Chen (Eds.). Association for Computational Linguistics, 12403–12418. https://aclanthology.org/2024.findings-emnlp.723 [31] Ran Le, Wenpeng Hu, Yang Song, Tao Zhang, Dongyan Zhao, and Rui Yan. 2019. Towards Effective and Interpretable Person-Job Fitting. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management, CIKM 2019, Beijing, China, November 3-7, 2019 , Wenwu Zhu, Dacheng Tao, Xueqi Cheng, Peng Cui, Elke A. Rundensteiner, David Carmel, Qi He, and Jeffrey Xu Yu (Eds.). ACM, 1883–1892. doi:10.1145/3357384.3357949 [32] Yujin Lee, Yeon-Chang Lee, Jiwon Hong, and Sang-Wook Kim. 2017. Exploiting job transition patterns for effective job recommendation. In 2017 IEEE International Conference on Systems, Man, and Cybernetics, SMC 2017, Banff, AB, Canada, October 5-8, 2017 . IEEE, 2414–2419. doi:10.1109/SMC.2017.8122984 [33] Lei Li, Yongfeng Zhang, Dugang Liu, and Li Chen. 2024. Large Language Models for Generative Recommendation: A Survey and Visionary Discussions. In 
+
+Proceedings of the 2024 Joint International Conference on Computational Linguistics, Language Resources and Evaluation, LREC/COLING 2024, 20-25 May, 2024, Torino, Italy , Nicoletta Calzolari, Min-Yen Kan, Véronique Hoste, Alessandro Lenci, Sakriani Sakti, and Nianwen Xue (Eds.). ELRA and ICCL, 10146–10159. https://aclanthology.org/2024.lrec-main.886 [34] Jianghao Lin, Xinyi Dai, Yunjia Xi, Weiwen Liu, Bo Chen, Hao Zhang, Yong Liu, Chuhan Wu, Xiangyang Li, Chenxu Zhu, Huifeng Guo, Yong Yu, Ruiming Tang, and Weinan Zhang. 2025. How Can Recommender Systems Benefit from Large Language Models: A Survey. ACM Trans. Inf. Syst. 43, 2 (2025), 28:1–28:47. doi:10.1145/3678004 [35] Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024. Lost in the middle: How language models use long contexts. Transactions of the Association for Computational Linguistics 12 (2024), 157–173. Towards Position-Robust Talent Recommendation via Large Language Models 25 
+
+[36] Wenhan Liu, Xinyu Ma, Weiwei Sun, Yutao Zhu, Yuchen Li, Dawei Yin, and Zhicheng Dou. 2025. ReasonRank: Empowering Passage Ranking with Strong Reasoning Ability. arXiv preprint arXiv:2508.07050 (2025). [37] Yong Luo, Huaizheng Zhang, Yonggang Wen, and Xinwen Zhang. 2019. ResumeGAN: An Optimized Deep Representation Learning Framework for Talent-Job Fit via Adversarial Learning. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management, CIKM 2019, Beijing, China, November 3-7, 2019 , Wenwu Zhu, Dacheng Tao, Xueqi Cheng, Peng Cui, Elke A. Rundensteiner, David Carmel, Qi He, and Jeffrey Xu Yu (Eds.). ACM, 1101–1110. doi:10.1145/3357384.3357899 [38] Xueguang Ma, Liang Wang, Nan Yang, Furu Wei, and Jimmy Lin. 2024. Fine-tuning llama for multi-stage text retrieval. In Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval . 2421–2425. [39] Guangtao Nie, Rong Zhi, Xiaofan Yan, Yufan Du, Xiangyang Zhang, Jianwei Chen, Mi Zhou, Hongshen Chen, Tianhao Li, Ziguang Cheng, et al . 2024. A hybrid multi-agent conversational recommender system with LLM and search engine in e-commerce. In Proceedings of the 18th ACM Conference on Recommender Systems .745–747. [40] OpenAI. 2022. Introducing chatgpt. https://openai.com/index/chatgpt/ OpenAI Blog, November 2022. [41] Zohreh Ovaisi, Ragib Ahsan, Yifan Zhang, Kathryn Vasilaky, and Elena Zheleva. 2020. Correcting for selection bias in learning-to-rank systems. In Proceedings of the web conference 2020 . 1863–1873. [42] Mohan Parthasarathy and Sameer Pingle. 2014. Study of talent acquisition practices—A review on global perspective. International Journal of Emerging Research in Management & Technology 3, 11 (2014), 80–85. [43] Qiyao Peng, Hongtao Liu, Hua Huang, Jian Yang, Qing Yang, and Minglai Shao. 2025. A Survey on LLM-powered Agents for Recommender Systems. In Findings of the Association for Computational Linguistics: EMNLP 2025, Suzhou, China, November 4-9, 2025 , Christos Christodoulopoulos, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng (Eds.). Association for Computational Linguistics, 11574–11583. https://aclanthology.org/2025.findings-emnlp.620/ [44] Yingtao Peng, Chen Gao, Yu Zhang, Tangpeng Dan, Xiaoyi Du, Hengliang Luo, Yong Li, and Xiaofeng Meng. 2025. Denoising Alignment with Large Language Model for Recommendation. ACM Trans. Inf. Syst. 43, 2 (2025), 32:1–32:35. doi:10.1145/3696662 [45] Alexander Peysakhovich and Adam Lerer. 2023. Attention Sorting Combats Recency Bias In Long Context Language Models. CoRR abs/2310.01427 (2023). arXiv:2310.01427 doi:10.48550/ARXIV.2310.01427 [46] Ronak Pradeep, Sahel Sharifymoghaddam, and Jimmy Lin. 2023. RankZephyr: Effective and Robust Zero-Shot Listwise Reranking is a Breeze! arXiv preprint arXiv:2312.02724 (2023). [47] Chuan Qin, Hengshu Zhu, Tong Xu, Chen Zhu, Liang Jiang, Enhong Chen, and Hui Xiong. 2018. Enhancing Person-Job Fit for Talent Recruitment: An Ability-aware Neural Network Approach. In The 41st International ACM SIGIR Conference on Research & Development in Information Retrieval, SIGIR 2018, Ann Arbor, MI, USA, July 08-12, 2018 , Kevyn Collins-Thompson, Qiaozhu Mei, Brian D. Davison, Yiqun Liu, and Emine Yilmaz (Eds.). ACM, 25–34. doi:10.1145/3209978.3210025 [48] Chuan Qin, Hengshu Zhu, Tong Xu, Chen Zhu, Chao Ma, Enhong Chen, and Hui Xiong. 2020. An Enhanced Neural Network Approach to Person-Job Fit in Talent Recruitment. ACM Trans. Inf. Syst. 38, 2 (2020), 15:1–15:33. doi:10.1145/3376927 [49] Zhen Qin, Rolf Jagerman, Kai Hui, Honglei Zhuang, Junru Wu, Le Yan, Jiaming Shen, Tianqi Liu, Jialu Liu, Donald Metzler, Xuanhui Wang, and Michael Bendersky. 2024. Large Language Models are Effective Text Rankers with Pairwise Ranking Prompting. In Findings of the Association for Computational Linguistics: NAACL 2024, Mexico City, Mexico, June 16-21, 2024 , Kevin Duh, Helena Gómez-Adorno, and Steven Bethard (Eds.). Association for Computational Linguistics, 1504–1518. doi:10.18653/V1/2024.FINDINGS-NAACL.97 [50] Nir Ratner, Yoav Levine, Yonatan Belinkov, Ori Ram, Inbal Magar, Omri Abend, Ehud Karpas, Amnon Shashua, Kevin Leyton-Brown, and Yoav Shoham. 2023. Parallel Context Windows for Large Language Models. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023 , Anna Rogers, Jordan L. Boyd-Graber, and Naoaki Okazaki (Eds.). Association for Computational Linguistics, 6383–6402. doi:10.18653/V1/2023.ACL-LONG.352 [51] Michael Reusens, Wilfried Lemahieu, Bart Baesens, and Luc Sels. 2017. A note on explicit versus implicit information for job recommendation. Decis. Support Syst. 98 (2017), 26–35. doi:10.1016/j.dss.2017.04.002 [52] Julian Rosenberger, Lukas Wolfrum, Sven Weinzierl, Mathias Kraus, and Patrick Zschech. 2025. CareerBERT: Matching resumes to ESCO jobs in a shared embedding space for generic job recommendations. Expert Syst. Appl. 275 (2025), 127043. doi:10.1016/J.ESWA.2025.127043 [53] Lin Shi, Chiyu Ma, Wenhua Liang, Xingjian Diao, Weicheng Ma, and Soroush Vosoughi. 2025. Judging the Judges: A Systematic Study of Position Bias in LLM-as-a-Judge. In Proceedings of the 14th International Joint Conference on Natural Language Processing and the 4th Conference of the Asia-Pacific Chapter of the Association for Computational Linguistics, IJCNLP-AACL 2025, Mumbai, India, December 20-24, 2025 , Kentaro Inui, Sakriani Sakti, Haofen Wang, Derek F. Wong, Pushpak Bhattacharyya, Biplab Banerjee, Asif Ekbal, Tanmoy Chakraborty, and Dhirendra Pratap Singh (Eds.). The Asian Federation of Natural Language Processing and The Association for Computational Linguistics, 292–314. https://aclanthology.org/2025.ijcnlp-long.18/ [54] Rajiv Srivastava, Girish Keshav Palshikar, and Sachin Pawar. 2015. Analytics for improving talent acquisition processes. In International Conference on Advanced Data Analysis, Business Analytics and Intelligence, ICADABAI .[55] Jianlin Su, Murtadha H. M. Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. 2024. RoFormer: Enhanced transformer with Rotary Position Embedding. 
+
+Neurocomputing 568 (2024), 127063. doi:10.1016/J.NEUCOM.2023.127063 [56] Fei Sun, Jun Liu, Jian Wu, Changhua Pei, Xiao Lin, Wenwu Ou, and Peng Jiang. 2019. BERT4Rec: Sequential Recommendation with Bidirectional Encoder Representations from Transformer. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management, CIKM 2019, Beijing, China, November 3-7, 2019 , Wenwu Zhu, Dacheng Tao, Xueqi Cheng, Peng Cui, Elke A. Rundensteiner, David Carmel, Qi He, and Jeffrey Xu Yu (Eds.). ACM, 1441–1450. doi:10.1145/3357384.3357895 [57] Weiwei Sun, Lingyong Yan, Xinyu Ma, Shuaiqiang Wang, Pengjie Ren, Zhumin Chen, Dawei Yin, and Zhaochun Ren. 2023. Is ChatGPT Good at Search? Investigating Large Language Models as Re-Ranking Agents. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023 , Houda Bouamor, Juan Pino, and Kalika Bali (Eds.). Association for Computational Linguistics, 14918–14937. doi:10.18653/V1/2023.EMNLP-MAIN.923 [58] Zuoli Tang, Zhaoxin Huan, Zihao Li, Xiaolu Zhang, Jun Hu, Chilin Fu, Jun Zhou, Lixin Zou, and Chenliang Li. 2025. One Model for All: Large Language Models Are Domain-Agnostic Recommendation Systems. ACM Trans. Inf. Syst. 43, 5 (2025), 118:1–118:27. doi:10.1145/3705727 26 Silin Du and Hongyan Liu 
+
+[59] Team-GLM, Aohan Zeng, Bin Xu, Bowen Wang, Chenhui Zhang, Da Yin, Diego Rojas, Guanyu Feng, Hanlin Zhao, Hanyu Lai, Hao Yu, Hongning Wang, Jiadai Sun, Jiajie Zhang, Jiale Cheng, Jiayi Gui, Jie Tang, Jing Zhang, Juanzi Li, Lei Zhao, Lindong Wu, Lucen Zhong, Mingdao Liu, Minlie Huang, Peng Zhang, Qinkai Zheng, Rui Lu, Shuaiqi Duan, Shudan Zhang, Shulin Cao, Shuxun Yang, Weng Lam Tam, Wenyi Zhao, Xiao Liu, Xiao Xia, Xiaohan Zhang, Xiaotao Gu, Xin Lv, Xinghan Liu, Xinyi Liu, Xinyue Yang, Xixuan Song, Xunkai Zhang, Yifan An, Yifan Xu, Yilin Niu, Yuantao Yang, Yueyan Li, Yushi Bai, Yuxiao Dong, Zehan Qi, Zhaoyu Wang, Zhen Yang, Zhengxiao Du, Zhenyu Hou, and Zihan Wang. 2024. ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools. arXiv:2406.12793 [60] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, et al. 2023. Llama: Open and efficient foundation language models. arXiv preprint arXiv:2302.13971 (2023). [61] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is All you Need. In Advances in Neural Information Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017, December 4-9, 2017, Long Beach, CA, USA , Isabelle Guyon, Ulrike von Luxburg, Samy Bengio, Hanna M. Wallach, Rob Fergus, S. V. N. Vishwanathan, and Roman Garnett (Eds.). 5998–6008. https://proceedings.neurips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html [62] Gavin Walford-Wright and William Scott-Jackson. 2018. Talent Rising; people analytics and technology driving talent acquisition strategy. Strategic HR Review 
+
+17, 5 (2018), 226–233. [63] Qi Wan, Xiangnan He, Xiang Wang, Jiancan Wu, Wei Guo, and Ruiming Tang. 2022. Cross pairwise ranking for unbiased item recommendation. In Proceedings of the ACM web conference 2022 . 2370–2378. [64] Wenjie Wang, Xinyu Lin, Fuli Feng, Xiangnan He, and Tat-Seng Chua. 2023. Generative Recommendation: Towards Next-generation Recommender Paradigm. 
+
+CoRR abs/2304.03516 (2023). arXiv:2304.03516 doi:10.48550/ARXIV.2304.03516 [65] Xinpeng Wang, Chengzhi Hu, Bolei Ma, Paul Rottger, and Barbara Plank. 2024. Look at the Text: Instruction-Tuned Language Models are More Robust Multiple Choice Selectors than You Think. In First Conference on Language Modeling .[66] Xuanhui Wang, Cheng Li, Nadav Golbandi, Michael Bendersky, and Marc Najork. 2018. The lambdaloss framework for ranking metric optimization. In Proceedings of the 27th ACM international conference on information and knowledge management . 1313–1322. [67] Xinpeng Wang, Bolei Ma, Chengzhi Hu, Leon Weber-Genzel, Paul Röttger, Frauke Kreuter, Dirk Hovy, and Barbara Plank. 2024. “My Answer is C”: First-Token Probabilities Do Not Match Text Answers in Instruction-Tuned Language Models. In Findings of the Association for Computational Linguistics ACL 2024 . 7407–7416. [68] Yancheng Wang, Ziyan Jiang, Zheng Chen, Fan Yang, Yingxue Zhou, Eunah Cho, Xing Fan, Yanbin Lu, Xiaojiang Huang, and Yingzhen Yang. 2024. RecMind: Large Language Model Powered Agent For Recommendation. In Findings of the Association for Computational Linguistics: NAACL 2024, Mexico City, Mexico, June 16-21, 2024 , Kevin Duh, Helena Gómez-Adorno, and Steven Bethard (Eds.). Association for Computational Linguistics, 4351–4364. doi:10.18653/V1/2024.FINDINGS-NAACL.271 [69] Ziqi Wang, Hanlin Zhang, Xiner Li, Kuan-Hao Huang, Chi Han, Shuiwang Ji, Sham M. Kakade, Hao Peng, and Heng Ji. 2025. Eliminating Position Bias of Language Models: A Mechanistic Approach. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 .OpenReview.net. https://openreview.net/forum?id=fvkElsJOsN [70] Azmine Toushik Wasi. 2024. HRGraph: Leveraging LLMs for HR data knowledge graphs with information propagation-based job recommendation. In Proceedings of the 1st Workshop on Knowledge Graphs and Large Language Models (KaLLM 2024) . 56–62. [71] Orion Weller, Kathryn Ricci, Eugene Yang, Andrew Yates, Dawn Lawrie, and Benjamin Van Durme. 2025. Rank1: Test-Time Compute for Reranking in Information Retrieval. In Second Conference on Language Modeling . https://openreview.net/forum?id=Pg0PAvbhGv [72] Likang Wu, Zhaopeng Qiu, Zhi Zheng, Hengshu Zhu, and Enhong Chen. 2024. Exploring large language model for graph data understanding in online job recommendations. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 38. 9178–9186. [73] Likang Wu, Zhi Zheng, Zhaopeng Qiu, Hao Wang, Hongchao Gu, Tingjia Shen, Chuan Qin, Chen Zhu, Hengshu Zhu, Qi Liu, Hui Xiong, and Enhong Chen. 2024. A survey on large language models for recommendation. World Wide Web (WWW) 27, 5 (2024), 60. doi:10.1007/S11280-024-01291-2 [74] Zhichao Xu, Daniel Cohen, Bei Wang, and Vivek Srikumar. 2024. In-Context Example Ordering Guided by Label Distributions. In Findings of the Association for Computational Linguistics: NAACL 2024, Mexico City, Mexico, June 16-21, 2024 (Findings of ACL) , Kevin Duh, Helena Gómez-Adorno, and Steven Bethard (Eds.). Association for Computational Linguistics, 2623–2640. doi:10.18653/V1/2024.FINDINGS-NAACL.167 [75] Rui Yan, Ran Le, Yang Song, Tao Zhang, Xiangliang Zhang, and Dongyan Zhao. 2019. Interview Choice Reveals Your Preference on the Market: To Improve Job-Resume Matching through Profiling Memories. In Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining, KDD 2019, Anchorage, AK, USA, August 4-8, 2019 , Ankur Teredesai, Vipin Kumar, Ying Li, Rómer Rosales, Evimaria Terzi, and George Karypis (Eds.). ACM, 914–922. doi:10.1145/3292500.3330963 [76] Eugene Yang, Andrew Yates, Kathryn Ricci, Orion Weller, Vivek Chari, Benjamin Van Durme, and Dawn Lawrie. 2025. Rank-k: Test-time reasoning for listwise reranking. arXiv preprint arXiv:2505.14432 (2025). [77] Xiao Yu, Jinzhong Zhang, and Zhou Yu. 2024. ConFit: Improving Resume-Job Matching using Data Augmentation and Contrastive Learning. In Proceedings of the 18th ACM Conference on Recommender Systems, RecSys 2024, Bari, Italy, October 14-18, 2024 , Tommaso Di Noia, Pasquale Lops, Thorsten Joachims, Katrien Verbert, Pablo Castells, Zhenhua Dong, and Ben London (Eds.). ACM, 601–611. doi:10.1145/3640457.3688108 [78] Yijiong Yu, Huiqiang Jiang, Xufang Luo, Qianhui Wu, Chin-Yew Lin, Dongsheng Li, Yuqing Yang, Yongfeng Huang, and Lili Qiu. 2024. Mitigate Position Bias in Large Language Models via Scaling a Single Dimension. CoRR abs/2406.02536 (2024). arXiv:2406.02536 doi:10.48550/ARXIV.2406.02536 [79] Aohan Zeng, Xiao Liu, Zhengxiao Du, Zihan Wang, Hanyu Lai, Ming Ding, Zhuoyi Yang, Yifan Xu, Wendi Zheng, Xiao Xia, et al . 2023. GLM-130B: An Open Bilingual Pre-trained Model. In The Eleventh International Conference on Learning Representations .[80] Junjie Zhang, Ruobing Xie, Yupeng Hou, Xin Zhao, Leyu Lin, and Ji-Rong Wen. 2025. Recommendation as Instruction Following: A Large Language Model Empowered Recommendation Approach. ACM Trans. Inf. Syst. 43, 5 (2025), 114:1–114:37. doi:10.1145/3708882 [81] Kaiyi Zhang, Ang Lv, Yuhan Chen, Hansen Ha, Tao Xu, and Rui Yan. 2024. Batch-ICL: Effective, Efficient, and Order-Agnostic In-Context Learning. In Findings of the Association for Computational Linguistics, ACL 2024, Bangkok, Thailand and virtual meeting, August 11-16, 2024 (Findings of ACL) , Lun-Wei Ku, Andre Martins, and Vivek Srikumar (Eds.). Association for Computational Linguistics, 10728–10739. doi:10.18653/V1/2024.FINDINGS-ACL.638 [82] Le Zhang, Bo Wang, Xipeng Qiu, Siva Reddy, and Aishwarya Agrawal. 2025. REARANK: Reasoning Re-ranking Agent via Reinforcement Learning. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing, EMNLP 2025, Suzhou, China, November 4-9, 2025 , Christos Christodoulopoulos, Towards Position-Robust Talent Recommendation via Large Language Models 27 
+
+Tanmoy Chakraborty, Carolyn Rose, and Violet Peng (Eds.). Association for Computational Linguistics, 2458–2471. doi:10.18653/V1/2025.EMNLP-MAIN.125 [83] Yu Zhang, Shutong Qiao, Jiaqi Zhang, Tzu-Heng Lin, Chen Gao, and Yong Li. 2025. A survey of large language model empowered agents for recommendation and search: Towards next-generation information retrieval. arXiv preprint arXiv:2503.05659 (2025). [84] Wayne Xin Zhao, Yupeng Hou, Xingyu Pan, Chen Yang, Zeyu Zhang, Zihan Lin, Jingsen Zhang, Shuqing Bian, Jiakai Tang, Wenqi Sun, Yushuo Chen, Lanling Xu, Gaowei Zhang, Zhen Tian, Changxin Tian, Shanlei Mu, Xinyan Fan, Xu Chen, and Ji-Rong Wen. 2022. RecBole 2.0: Towards a More Up-to-Date Recommendation Library. In Proceedings of the 31st ACM International Conference on Information & Knowledge Management, Atlanta, GA, USA, October 17-21, 2022 , Mohammad Al Hasan and Li Xiong (Eds.). ACM, 4722–4726. doi:10.1145/3511808.3557680 [85] Chujie Zheng, Hao Zhou, Fandong Meng, Jie Zhou, and Minlie Huang. 2024. Large Language Models Are Not Robust Multiple Choice Selectors. In The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. https://openreview.net/forum?id= shr9PXz7T0 [86] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Hao Zhang, Joseph E. Gonzalez, and Ion Stoica. 2023. Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. In Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine (Eds.). http://papers.nips.cc/paper_files/paper/2023/hash/91f18a1287b398d378ef22505bf41832-Abstract-Datasets_and_Benchmarks.html [87] Chen Zhu, Hengshu Zhu, Hui Xiong, Chao Ma, Fang Xie, Pengliang Ding, and Pan Li. 2018. Person-Job Fit: Adapting the Right Talent for the Right Job with Joint Representation Learning. ACM Trans. Manag. Inf. Syst. 9, 3 (2018), 12:1–12:17. doi:10.1145/3234465 [88] Lianghui Zhu, Xinggang Wang, and Xinlong Wang. 2025. JudgeLM: Fine-tuned Large Language Models are Scalable Judges. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net. https://openreview.net/forum?id=xsELpEPn4A [89] Shengyao Zhuang, Xueguang Ma, Bevan Koopman, Jimmy Lin, and Guido Zuccon. 2025. Rank-r1: Enhancing reasoning in llm-based document rerankers via reinforcement learning. arXiv preprint arXiv:2503.06034 (2025). 
+
+Appendix A Notation 
+
+Table 8. Notation and Symbol Definitions in the Main Text. 
+
+Symbol Meaning Problem formulation and ranking 
+
+G Set of job postings. 
+
+R Set of resumes (talent pool). 
+
+𝑔 𝑖 The 𝑖 -th job posting, 𝑔 𝑖 ∈ G .
+
+𝑟 𝑗 The 𝑗 -th resume, 𝑟 𝑗 ∈ R .
+
+M Historical matching records set, M = {( 𝑔 𝑖 , 𝑟 𝑗 , 𝑦 𝑔 𝑖 ,𝑟 𝑗 )} .
+
+𝑦 𝑔 𝑖 ,𝑟 𝑗 Ground-truth match label between 𝑔 𝑖 and 𝑟 𝑗 ; 𝑦 𝑔 𝑖 ,𝑟 𝑗 ∈ { 0, 1}.
+
+C𝑔 Candidate resume set for job 𝑔 , C𝑔 = {𝑐 𝑔 
+
+> 1
+
+, 𝑐 𝑔 
+
+> 2
+
+, . . . , 𝑐 𝑔 𝑁 }.
+
+C𝑔 Ranked candidate list for job 𝑔 .
+
+𝑐 𝑔 𝑗 The 𝑗 -th candidate resume in C𝑔 , 𝑐 𝑔 𝑗 ∈ 𝑅 .
+
+𝑁 Number of candidates in a list (candidate list length). 
+
+𝐹 Recommender that outputs matching scores. 
+
+ˆ𝑦 𝑔 𝑗 Predicted matching score for candidate 𝑐 𝑔 𝑗 under job 𝑔 .
+
+ˆy𝑔 Vector of predicted scores for all candidates: ˆy𝑔 = ( ˆ𝑦 𝑔 
+
+> 1
+
+, . . . , ˆ𝑦 𝑔 𝑁 ).
+
+𝜏 𝑔 Ranking permutation induced by sorting predicted scores (descending). 
+
+𝜏 𝑔 (ℓ) Index of the candidate in 𝐶 𝑔 ranked at position ℓ.
+
+⟨· · · ⟩ Ordered list notation (ranked candidate list). 
+
+Prompt construction and LLM outputs 
+
+𝑥 𝑔 Prompt text for job 𝑔 after formatting job posting and candidate resumes. 
+
+𝑥 𝑔 𝑖 The 𝑖 -th token in prompt 𝑥 𝑔 .
+
+𝑛 𝑔 Number of tokens in prompt 𝑥 𝑔 .
+
+Continued on next page 28 Silin Du and Hongyan Liu 
+
+Symbol Meaning 
+
+BuildPrompt (·) Prompt generator function. 
+
+assign (C 𝑔 ) ID assignment operator mapping candidates in 𝐶 𝑔 to distinct identifiers used in the prompt/output. 
+
+ID (𝑐 𝑔 𝑗 ) Assigned ID token for candidate resume 𝑐 𝑔 𝑗 .
+
+𝑜 𝑔 LLM generated output token sequence for job 𝑔 .
+
+𝑜 𝑔 𝑡 The 𝑡 -th output token in 𝑜 𝑔 .
+
+|𝑜 𝑔 | Output length (number of generated tokens). 
+
+𝐹 LLM (·) LLM forward/generation function applied to prompt. 
+
+P(ID (𝑐 𝑔 𝑗 )) Probability that the LLM generates the ID token of 𝑐 𝑔 𝑗 as the first output token. 
+
+ˆ𝑦 𝑔 𝑗 Normalized first-token probability score: ˆ𝑦 𝑔 𝑗 = P(ID (𝑐 𝑔 𝑗 ) )    
+
+> Í𝑁 𝑠 =1P(ID (𝑐 𝑔 𝑠 ) )
+
+.
+
+Training sample construction and loss 
+
+R+ 
+
+> 𝑔 𝑖
+
+Positive resume set for job 𝑔 𝑖 (matched resumes according to 𝑀 ). 
+
+R− 
+
+> 𝑔 𝑖
+
+Negative resume set for job 𝑔 𝑖 (unmatched resumes according to 𝑀 ). 
+
+𝑁 train Number of resumes in the training prompt (typically 𝑁 train < 𝑁 ). 
+
+C𝑔 𝑖 ,𝑟 𝑘 Candidate set constructed for training from positive record (𝑔 𝑖 , 𝑟 𝑘 , 1): includes 𝑟 𝑘 and 𝑁 train − 1
+
+negatives. 
+
+I A large ID pool from which training IDs are sampled. 
+
+sample (I , 𝑁 train ) Operator sampling 𝑁 train unique IDs uniformly from I.
+
+L𝑔 𝑖 ,𝑟 𝑘 Training loss for sample built from record (𝑔 𝑖 , 𝑟 𝑘 , 1).
+
+𝑦 𝑔 𝑖 ,𝑐 𝑗 Ground-truth label for candidate 𝑐 𝑗 w.r.t. job 𝑔 𝑖 in the constructed training list. 
+
+Block attention (prompt blocks and special tokens) 
+
+𝑏 0 Number of tokens in the task-description block (block boundary). 
+
+𝑏 1 Block boundary after the job-posting block; job-posting length is 𝑏 1 − 𝑏 0.
+
+𝑏 𝑗 Boundary index associated with the 𝑗 -th resume block; resume 𝑐 𝑗 spans (𝑏 𝑗 + 1, · · · , 𝑏 𝑗 +1).
+
+𝑆 Number of learnable special tokens inserted before each resume. 
+
+𝑥 𝑐 𝑗  
+
+> 𝑠
+
+The 𝑠 -th special token (learnable) associated with resume 𝑐 𝑗 , 𝑠 ∈ { 1, · · · , 𝑆 }.
+
+𝑥 ′ Modified prompt after inserting special tokens and applying index remapping. 
+
+Local positional encoding (embeddings and attention notation) 
+
+emb (·) Token embedding layer/function. 
+
+x𝑖 Token embedding vector at position 𝑖 (after embedding lookup); x𝑖 ∈ R𝑑 .
+
+𝑑 Embedding dimension; also used as dimension parameter in positional encoding. 
+
+PE (𝑖, 𝑑 ) Positional encoding function producing position embedding for position 𝑖 .
+
+𝒑 𝑖 Global positional embedding at position 𝑖 : 𝒑 𝑖 = PE (𝑖, 𝑑 ).
+
+𝒒 𝑖 , 𝒌 𝑖 , 𝒗 𝑖 Query, key, value vectors at position 𝑖 .
+
+𝑓 𝑞 , 𝑓 𝑘 , 𝑓 𝑣 Functions (linear projections / position embedding injection mechanisms) mapping (x𝑖 , 𝒑 𝑖 ) to 
+
+𝒒 𝑖 , 𝒌 𝑖 , 𝒗 𝑖 .
+
+𝒑 ′ 
+
+> 𝑖
+
+Local positional embedding for token x𝑖 within resume block 𝑐 𝑗 : 𝒑 ′ 
+
+> 𝑖
+
+= PE (𝑖 − 𝑏 𝑗 + 𝑏 1, 𝑑 ).
+
+Bias analysis: datasets, IDs, permutations 
+
+T Test dataset constructed from a subset of matching records by forming candidate lists for evaluation. 
+
+M′ Subset of historical matching records M used to build T .
+
+Continued on next page Towards Position-Robust Talent Recommendation via Large Language Models 29 
+
+Symbol Meaning 
+
+C𝑔 =< 𝑐 𝑔 
+
+> 1
+
+, 𝑐 𝑔 
+
+> 2
+
+, · · · , 𝑐 𝑔 𝑁 > The ordered version of the candidate list C𝑔 where candidates are alphabetically sorted by their names by default. 
+
+𝑄 Position index (in the candidate list) where the matched resume is placed during controlled perturbation. 
+
+D = {𝑑 1, · · · , 𝑑 𝑁 } Set of ID tokens assigned to an ordered candidate list (e.g., {A, B, · · · } ). 
+
+𝑑 𝑖 A specific ID token in D.
+
+Λ(C𝑔 ) Set of permutations of the candidate list C𝑔 .
+
+𝜆 ∈ Λ(C𝑔 ) A permutation of candidates in C𝑔 (reordering resumes). 
+
+Π(D) Set of permutations of the ID token set D.
+
+𝜋 ∈ Π(D) A permutation of ID assignments (reordering IDs). 
+
+B Reference ID set used for token-bias estimation (distinct from D). 
+
+|B| Size of B (set to |D| − 1). 
+
+B𝑑 𝑖 ID set that includes target token 𝑑 𝑖 plus |D| − 1 reference IDs (used when probing preference for 
+
+𝑑 𝑖 ). 
+
+𝜋 ∗ 
+
+> 𝑗
+
+(𝑑 𝑖 ) Special ID permutation placing target token 𝑑 𝑖 at position 𝑗 , keeping others’ relative order. 
+
+𝜆 ∗ 
+
+> 𝑗
+
+Special candidate permutation placing the matched resume at position 𝑗 , keeping others’ relative order. 
+
+𝜋 𝑔 Randomly sampled ID permutation for job 𝑔 (used to approximately average out token bias in Eq. (13)). 
+
+Bias analysis: probability quantities 
+
+P(𝑑 𝑖 | B 𝑑 𝑖 ) Preference/probability of selecting token 𝑑 𝑖 given the constructed ID set B𝑑 𝑖 (conceptual definition). 
+
+˜P(𝑑 𝑖 | B 𝑑 𝑖 ) Approximated overall preference for 𝑑 𝑖 obtained by averaging over positions under restricted permutations. 
+
+P(position 𝑗 | D) Preference for selecting the item at position 𝑗 when IDs are from set D (conceptual definition). 
+
+˜P(position 𝑗 | D) Approximated position preference using sampled 𝜋 𝑔 and restricted 𝜆 ∗ 
+
+> 𝑗
+
+.
+
+𝜋 ( 𝑗 ) Index (in the original ID set D) of the ID token placed at position 𝑗 under permutation 𝜋 .
+
+𝑑 𝜋 ( 𝑗 ) The ID token appearing at position 𝑗 under permutation 𝜋 .
+
+Debiasing derivations: observed vs. true preference 
+
+𝑓 𝜆 (𝑐 𝑖 ) Returns the position/index of candidate 𝑐 𝑖 under candidate permutation 𝜆 .
+
+P(𝑐 𝑖 | 𝑔, D, C𝑔 ) “True” preference distribution over candidates for job 𝑔 , marginalizing over permutations (conceptual). 
+
+Pobs (𝑐 𝑖 , 𝑑 𝑗 |
+
+𝑔, 𝜋, 𝜆, D, C𝑔 )
+
+Observed joint distribution between candidate 𝑐 𝑖 and token 𝑑 𝑗 under a specific (𝜋, 𝜆 ) (from the model’s output). 
+
+Pobs (𝑑 𝑗 | 𝑔, 𝜋, 𝜆, D, C𝑔 ) Observed probability of selecting token 𝑑 𝑗 (typically the implicit first-token distribution). 
+
+Pprior (·) Prior distribution over ID tokens capturing token/position prior bias in the decomposition assumption. 
+
+˜𝜋 Default permutation/order of ID tokens, i.e., the canonical order {A, B, · · · } .
+
+˜𝜆 Default permutation/order of the candidate list, where resumes are arranged in alphabetical order. 30 Silin Du and Hongyan Liu 
+
+B Theoretical Analysis of Local Positional Encoding 
+
+To begin with, we briefly introduce the rotary positional encoding (RoPE) [55]. Throughout this section, we follow the notation used in the original RoPE paper for consistency. Given the query vector 𝒒 𝑚 ∈ R𝑑 at position 𝑚 and the key vector 𝒌 𝑛 ∈ R𝑑 at position 𝑛 , RoPE applies a position-dependent rotation to each of them. For example, the rotation matrix at position 𝑚 is 
+
+R𝒎 =
+
+©«
+
+cos 𝑚𝜃 0 − sin 𝑚𝜃 0 0 0 · · · 0 0sin 𝑚𝜃 0 cos 𝑚𝜃 0 0 0 · · · 0 00 0 cos 𝑚𝜃 1 − sin 𝑚𝜃 1 · · · 0 00 0 sin 𝑚𝜃 1 cos 𝑚𝜃 1 · · · 0 0
+
+... ... ... ... . . . ... ...
+
+0 0 0 0 · · · cos 𝑚𝜃 𝑑 /2−1 − sin 𝑚𝜃 𝑑 /2−1
+
+0 0 0 0 · · · sin 𝑚𝜃 𝑑 /2−1 cos 𝑚𝜃 𝑑 /2−1
+
+ª®®®®®®®®®®®®®®¬
+
+where R𝑚 is block diagonal, orthogonal, and satisfies R𝑚 R⊤ 
+
+> 𝑚
+
+= 𝐼 . After applying R𝑚 and R𝑛 to 𝒒 𝑚 and 𝒌 𝑛 , respectively, the inner product becomes 
+
+(R𝑚 𝒒 𝑚 )⊤ (R𝑛 𝒌 𝑛 ) = 𝒒 ⊤ 
+
+> 𝑚
+
+R𝑛 −𝑚 𝒌 𝑛 ,
+
+where R𝑛 −𝑚 encodes relative position information due to R⊤ 
+
+> 𝑚
+
+R𝑛 = R𝑛 −𝑚 . RoPE exhibits long-term decay : the value 𝒒 ⊤ R𝑛 −𝑚 𝒌 
+
+decreases as the relative distance |𝑛 −𝑚 | grows. The frequencies 𝜃 𝑖 follow the sinusoidal scheme from the original Transformer [ 61 ], i.e., 𝜃 𝑖 = 10000 −2𝑖 /𝑑 . We can group the entries of 𝒒 and 𝒌 in pairs and use the complex notations to express the inner product as follows. 
+
+(R𝑚 𝒒 )⊤ (R𝑛 𝒌 ) = Re 
+
+"𝑑 /2−1∑︁ 
+
+> 𝑖 =0
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 −𝑛 )𝜃 𝑖 
+
+#
+
+. (20) where 𝒒 [2𝑖 :2 𝑖 +1] is the 2𝑖 -th to 2𝑖 + 1-th entries of 𝒒 . Let ℎ𝑖 = 𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1] and 𝑆 𝑗 = Í𝑗 −1 
+
+> 𝑖 =0
+
+𝑒 i(𝑚 −𝑛 )𝜃 𝑖 , with ℎ𝑑 /2 = 0 and 𝑆 0 = 0. By Abel’s transform: 𝑑 /2−1∑︁ 
+
+> 𝑖 =0
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1] ei(𝑚 −𝑛 )𝜃 𝑖 =
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =0
+
+ℎ𝑖 (𝑆 𝑖 +1 − 𝑆 𝑖 ) = −
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝑆 𝑖 +1 (ℎ𝑖 +1 − ℎ𝑖 ).
+
+This yields 𝑑 /2−1∑︁ 
+
+> 𝑖 =0
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 −𝑛 )𝜃 𝑖 =
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝑆 𝑖 +1 (ℎ𝑖 +1 − ℎ𝑖 )
+
+≤
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =0
+
+|𝑆 𝑖 +1 | | ℎ𝑖 +1 − ℎ𝑖 |≤
+
+
+
+max  
+
+> 𝑖
+
+|ℎ𝑖 +1 − ℎ𝑖 |
+
+ 𝑑 /2−1∑︁ 
+
+> 𝑖 =0
+
+|𝑆 𝑖 +1 |
+
+so the decay behavior can be analyzed via the average 1
+
+> 𝑑 /2
+
+Í𝑑 /2 
+
+> 𝑖 =1
+
+|𝑆 𝑖 | as a function of 𝑚 − 𝑛 . Figure 11 shows the results reported by Su et al. [55]. The prompt in listwise talent recommendation has a special structure, which begins with the task description and job posting, followed by each resume in the candidate set, as shown in Eq. (5). Therefore, for the token that belongs to the resume 𝑐 𝑗 , we can calculate its local position as illustrated in Figure 4. Now we consider a hierarchical modification of RoPE, which incorporates both global position 𝑚 and local position 𝑚 ′ into different subspaces of the rotation matrix. Let R𝑚 be decomposed into block diagonals 
+
+R𝑚 = diag (R𝑚, 0, R𝑚, 1, . . . , R𝑚,𝑑 /2−1),
+
+where each R𝑚,𝑖 is a 2 × 2 matrix as follows. 
+
+R𝑚,𝑖 = cos 𝑚𝜃 𝑖 − sin 𝑚𝜃 𝑖 
+
+sin 𝑚𝜃 𝑖 cos 𝑚𝜃 𝑖 
+
+!Towards Position-Robust Talent Recommendation via Large Language Models 31 Neurocomputing 568 (2024) 127063 J. Su et al.      
+
+> Fig. 2. Long-term decay of RoPE.
+> Table 1
+> Comparative results of learned absolute position embedding, Transformer-base [5], the learned relative position embedding RPE [32] and our proposed RoFormer on the WMT 2014 English-to-German translation task [27]. Note that the results of Transformer-base [5] and RPE are retrieved from the original paper of RPE [32]. Best scores are highlighted in bold. Model BLEU Transformer-base [5] 26.5 RPE [32] 26.8 RoFormer 27.5
+
+4.2. Pre-training language modeling 
+
+The second experiment is to validate the performance of our pro-posal in terms of learning contextual representations. To achieve this, we replace the original learned absolute position encoding of BERT with our RoPE during the pre-training step. 
+
+4.2.1. Experimental settings 
+
+We use the BookCorpus [35] and the Wikipedia Corpus [36] from Huggingface Datasets library (Apache License 2.0) for pre-training. The corpus is further split into train and validation sets at 8:2 ratio. We use the masked language-modeling (MLM) loss values of the training process as an evaluation metric. The well-known BERT [4] is adopted as our baseline model. Note that we use bert-base-uncased in our experiments. 
+
+4.2.2. Implementation details 
+
+For RoFormer, we replace the sinusoidal position encoding in the self-attention block of the baseline model with our proposed RoPE and realizes self-attention according to Eq. (8). We train both BERT and RoFormer with batch size 64 and maximum sequence length of 512 for 100k steps. AdamW [37] is used as the optimizer with learning rate 1e −5. 
+
+4.2.3. Results 
+
+The MLM loss during pre-training is shown on the left plot of Fig. 3. Compare to the vanilla BERT, RoFormer experiences faster convergence. 
+
+4.3. Fine-tuning on GLUE tasks 
+
+4.3.1. Experimental settings 
+
+We look at several datasets from GLUE, i.e. MRPC [38], SST-2 [39], QNLI [40], STS-B [41], QQP [42] and MNLI [43]. We use F1-score for MRPC and QQP dataset, spearman correlation for STS-B, and accuracy for the remaining as the evaluation metrics. We use Huggingface Transformers library (Apache License 2.0) [44] to fine-tune each of the aforementioned downstream tasks for 3 epochs with a maximum sequence length of 512, batch size of 32 and learning rates 2, 3, 4, 5e −5. Following [4], we report the best-averaged results on the validation set. 
+
+4.3.2. Results 
+
+The evaluation results of the fine-tuning tasks are reported in Ta-ble 2. For a significant test, we average the performance of three runs with different randomization and report the standard deviation. As can be seen, RoFormer can significantly outperform BERT in three out of six datasets, and the improvements are considerable. 
+
+4.4. Performer with RoPE 
+
+Performer [26] introduces an alternative attention mechanism, lin-ear attention, which is designed to avoid quadratic computation cost that scales with input sequence length. As discussed in Section 3.3, the proposed RoPE can be easily implemented in the PerFormer model to realize the relative position encoding while keeping its linearly scaled complexity in self-attention. We demonstrate its performance with the pre-training task of language modeling. 
+
+4.4.1. Implementation details 
+
+We carry out tests on the Enwik8 dataset [45], which is from English Wikipedia that includes markup, special characters and text in other languages in addition to English text. We incorporate RoPE into the 12 layer char-based PerFormer with 768 dimensions and 12 heads. 2 To better illustrate the efficacy of RoPE, we report the loss curves of the pre-training process with and without RoPE under the same settings, i.e., learning rate 1e −4, batch size 128 and a fixed maximum sequence length of 1024, etc. 
+
+4.4.2. Results 
+
+As shown on the right plot of Fig. 3, substituting RoPE into Per-former leads to rapid convergence and lower loss under the same amount of training steps. These improvements, in addition to the linear complexity, make Performer more attractive. 
+
+Fig. 11. Long-term Decay of RoPE (from Su et al. [55]). 
+
+Suppose that the local position of the 𝑚 -th token is 𝑚 ′ (e.g., within a resume), typically 𝑚 ′ ≤ 𝑚 , while a token at position 𝑛 
+
+belongs to a job posting with local position 𝑛 . To inject local positional information, we replace a subset of R𝑚,𝑖 with R𝑚 ′,𝑖 :
+
+R′ 
+
+> 𝑚
+
+= diag  R𝑚, 0, R𝑚, 1, ... R𝑚,𝑑 /4−1, R𝑚 ′,𝑑 /4, ..., R𝑚 ′,𝑑 /2−1
+
+
+
+R𝑚,𝑖 = cos 𝑚𝜃 𝑖 − sin 𝑚𝜃 𝑖 
+
+sin 𝑚𝜃 𝑖 cos 𝑚𝜃 𝑖 
+
+!
+
+, R𝑚 ′,𝑖 = cos 𝑚 ′𝜃 𝑖 − sin 𝑚 ′𝜃 𝑖 
+
+sin 𝑚 ′𝜃 𝑖 cos 𝑚 ′𝜃 𝑖 
+
+!
+
+This changes the inner product to 
+
+ R′ 
+
+> 𝑚
+
+𝒒 ⊤ (R𝑛 𝒌 ) = Re 
+
+
+
+> 𝑑 /4−1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 −𝑛 )𝜃 𝑖 
+
+| {z }
+
+> Part 1
+
++
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =𝑑 /4
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 ′ −𝑛 )𝜃 𝑖 
+
+| {z }
+
+> Part 2
+
+
+
+(21) For comparison, we can rewrite Eq. (20) into two parts. 
+
+(R𝑚 𝒒 )⊤ (R𝑛 𝒌 ) = Re 
+
+
+
+> 𝑑 /4−1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 −𝑛 )𝜃 𝑖 
+
+| {z }
+
+> Part 1
+
++
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =𝑑 /4
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 −𝑛 )𝜃 𝑖 
+
+| {z }
+
+> Part 2
+
+
+
+(22) Eq. (21) and Eq. (22) share the same Part 1. Therefore, we focus on Part 2. Let ℎ𝑖 = 𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1] and 𝑆 ′ 
+
+> 𝑗
+
+= Í𝑗 −1 
+
+> 𝑖 =𝑑 /4
+
+𝑒 i(𝑚 ′ −𝑛 )𝜃 𝑖 ,with ℎ𝑑 /2 = 0 and 𝑆 ′ 
+
+> 𝑑 /4
+
+= 0. By Abel’s formula: 
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =𝑑 /4
+
+ℎ𝑖 
+
+ 𝑆 ′ 
+
+> 𝑖 +1
+
+− 𝑆 ′
+
+> 𝑖
+
+ = −
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =𝑑 /4
+
+𝑆 ′ 
+
+> 𝑖 +1
+
+(ℎ𝑖 +1 − ℎ𝑖 )
+
+and thus 𝑑 /2−1∑︁ 
+
+> 𝑖 =𝑑 /4
+
+ℎ𝑖 𝑒 i(𝑚 ′ −𝑛 )𝜃 𝑖 ≤
+
+
+
+max  
+
+> 𝑖
+
+|ℎ𝑖 +1 − ℎ𝑖 |
+
+ 𝑑 /2−1∑︁ 
+
+> 𝑖 =𝑑 /4
+
+|𝑆 ′ 
+
+> 𝑖 +1
+
+|
+
+We examine 1
+
+> 𝑑 /4
+
+Í𝑑 /2 
+
+> 𝑖 =𝑑 /4+1
+
+|𝑆 ′ 
+
+> 𝑖
+
+| as a function of 𝑚 ′ − 𝑛 , as shown in Figure 12. From the figure, we conclude that Part 2 also exhibits long-distance decay. Replacing 𝑚 with 𝑚 ′ (𝑚 ′ < 𝑚 ) increases the value of Part 2, thereby increasing the overall dot product 
+
+ R′ 
+
+> 𝑚
+
+𝒒 ⊤ (R𝑛 𝒌 ). In other words, injecting local position enhances the attention between resume tokens ( 𝑚 ) and job posting tokens (𝑛 ). 32 Silin Du and Hongyan Liu 0 200 400 600 800 1000 
+
+Relative Upper Bound 
+
+> 6810 12 14 16
+> Relative Distance
+
+Fig. 12. The Variation of 1
+
+> 𝑑 /4
+
+Í𝑑 /2 
+
+> 𝑖 =𝑑 /4+1
+
+|𝑆 ′ 
+
+> 𝑖
+
+| with Respect to Relative Distance 𝑚 ′ − 𝑛 (𝑑 = 128 ). 
+
+Next, consider using local position in Part 1 while retaining global position in Part 2: 
+
+ R′ 
+
+> 𝑚
+
+𝒒 ⊤ (R𝑛 𝒌 ) = Re 
+
+
+
+> 𝑑 /4−1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 ′ −𝑛 )𝜃 𝑖 
+
+| {z }
+
+> Part 1
+
++
+
+> 𝑑 /2−1
+
+∑︁ 
+
+> 𝑖 =𝑑 /4
+
+𝒒 [2𝑖 :2 𝑖 +1] 𝒌 ∗[2𝑖 :2 𝑖 +1]𝑒 i(𝑚 −𝑛 )𝜃 𝑖 
+
+| {z }
+
+> Part 2
+
+
+
+Define reversed indices: 
+
+ℎ𝑖 = 𝒒 [2(𝑑 /4−1−𝑖 ):2 (𝑑 /4−1−𝑖 )+ 1] 𝒌 ∗[2(𝑑 /4−1−𝑖 ):2 (𝑑 /4−1−𝑖 )+ 1]
+
+𝑆 ′ 
+
+> 𝑗
+
+= 
+
+> 𝑗 −1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝑒 i(𝑚 ′ −𝑛 )𝜃 𝑑 /4−1−𝑖 
+
+with ℎ𝑑 /4 = 0 and 𝑆 ′ 
+
+> 0
+
+= 0. Applying Abel’s formula again: 
+
+> 𝑑 /4−1
+
+∑︁ 
+
+> 𝑖 =0
+
+ℎ𝑖 
+
+ 𝑆 ′ 
+
+> 𝑖 +1
+
+− 𝑆 ′
+
+> 𝑖
+
+ = −
+
+> 𝑑 /4−1
+
+∑︁ 
+
+> 𝑖 =0
+
+𝑆 ′ 
+
+> 𝑖 +1
+
+(ℎ𝑖 +1 − ℎ𝑖 )
+
+Hence, 𝑑 /4−1∑︁ 
+
+> 𝑖 =0
+
+ℎ𝑖 𝑒 i(𝑚 −𝑛 )𝜃 𝑖 ≤
+
+
+
+max  
+
+> 𝑖
+
+|ℎ𝑖 +1 − ℎ𝑖 |
+
+ 𝑑 /4−1∑︁ 
+
+> 𝑖 =0
+
+|𝑆 ′ 
+
+> 𝑖 +1
+
+|
+
+We then examine 1
+
+> 𝑑 /4
+
+Í𝑑 /4 
+
+> 𝑖 =1
+
+|𝑆 ′ 
+
+> 𝑖
+
+| versus 𝑚 ′ − 𝑛 , shown in Figure 13. We can summarize that replacing either the first half or the second half of R𝑚 with R𝑚 ′,∗ strengthens the attention between 𝑚 and 𝑛 . Partitioning R𝑚 into three parts: 
+
+R𝑚 = diag 
+
+©«
+
+R𝑚, 0, . . . , R𝑚,𝑎 1
+
+| {z }
+
+> Part 1
+
+, R𝑚,𝑎 1+1, . . . , R𝑚,𝑎 2
+
+| {z }
+
+> Part 2
+
+, R𝑚,𝑎 2+1, . . . , R𝑚,𝑑 /2−1
+
+| {z }
+
+> Part 3
+
+ª®®®¬Towards Position-Robust Talent Recommendation via Large Language Models 33 0 200 400 600 800 1000 
+
+Relative Upper Bound           
+
+> 246810 12 14 16
+> Relative Distance
+> Fig. 13. The Variation of 1
+> 𝑑 /2
+> Í𝑑 /2
+> 𝑖 =0|𝑆 𝑖 |with Respect to Relative Distance 𝑚 ′−𝑛 (𝑑 =128 ).
+
+Compare: 
+
+R1 
+
+> 𝑚
+
+= diag 
+
+©«
+
+R𝑚, 0, . . . , R𝑚,𝑎 1
+
+| {z }
+
+> Part 1
+
+, R𝑚 ′,𝑎 1+1, . . . , R𝑚 ′,𝑎 2
+
+| {z }
+
+> Part 2
+
+, R𝑚 ′,𝑎 2+1, . . . , R𝑚 ′,𝑑 /2−1
+
+| {z }
+
+> Part 3
+
+ª®®®¬
+
+R2 
+
+> 𝑚
+
+= diag 
+
+©«
+
+R𝑚, 0, . . . , R𝑚,𝑎 1
+
+| {z }
+
+> Part 1
+
+, R𝑚,𝑎 1+1, . . . , R𝑚,𝑎 2
+
+| {z }
+
+> Part 2
+
+, R𝑚 ′,𝑎 2+1, . . . , R𝑚 ′,𝑑 /2−1
+
+| {z }
+
+> Part 3
+
+ª®®®¬
+
+Considering only Part 2 and Part 3, the earlier analysis implies that R1 
+
+> 𝑚
+
+will enhance the attention between 𝑚 and 𝑛 more than 
+
+R2 
+
+> 𝑚
+
+. This means that the greater the dimensional proportion occupied by local position information, the stronger the attention between positions 𝑚 and 𝑛 , with the ideal case being the complete adoption of local position information. Therefore, in L3TR, we replace the global position of each token by its corresponding local position. 
+
+C Data 
+
+Two datasets are involved in our experiments. We provide more information about our data and the process for data preprocessing. Table 9 shows a pair of matched resumes and job postings from HRT. The original dataset is in Chinese, and the translated sample is presented in the table. HRT contains all information on job postings and anonymous information on resumes. During the experiments, we leverage the title, duty, and requirements in job postings and the educational background, job track, and project experience (if available) in resumes. Due to the limited space, we omit the details of each job in the job track. Note that some talents will provide important projects that they have led or worked on in their project experience. Table 10 shows a pair of user profiles and job postings from JobRec. The original dataset is in English. JobRec contains complete details of job postings, while resumes only provide limited information, including some demographic attributes and job titles from work experience. 
+
+D Prompt Template 
+
+For HRT, the pointwise and listwise recommendation templates are presented in Table 11 and Table 12, respectively. For explicit methods, we use the templates in the tables and parse the matching scores or the ranked list from the textual outputs. For implicit methods, we will remove the format instructions and calculate the output probability of special tokens to generate the final 34 Silin Du and Hongyan Liu 
+
+Table 9. A Pair of Matched Resume and Job Posting from HRT. 
+
+Job Description Resume Description Title Sales Manager Education Bachelor degree in Electronic Science and Technology Company A company for enterprise employee training Current Position General Sales Manager Duty 
+
+1. Develop business customer cooperation across the country through a variety of channels (telephone, network, exhibition, chamber of commerce, will sell, visit, friend recommendation, etc.); 2. Mine customer needs and develop customers according to the company’s product characteristics; 3. 
+
+Introduce and promote the company’s mobile learning platform to enterprise customers; 4. 
+
+Design learning plans and customize new media courses for customers according to their needs; 5. Complete the established customer development and sales targets on time; 6. Complete the work assigned by the leader Job Track 1. General sales manager of a company for mobile CRM software in Shenzhen from 2015 to 2019; 2. Area channel director of an Internet marketing software company from 2012 to 2015; 3. Co-founder of a technology company for website construction, searching engine optimization software, nesting bidding promotion from 2011 to 2012; 4. 
+
+Sales manager in a famous website providing efficient network promotion plans from 2009 to 2011; 5. Sales representative in a well-known talent website from 2005 to 2009. Requirement 
+
+1. 3 years and above work experience, master the systematic sales method; 2. With the experience and ability to sell complex solutions for large customers; 3. Strong executive ability, love learning, with strong analysis and summary ability; 4. Have a clear self-cognition and goal direction, can withstand greater work pressure; 5. 
+
+Traditional IT industry distribution experience is preferred; 6. Can adapt to business trips and other emergencies Location Shenzhen, China Workplace Shenzhen, China 
+
+ranking. Specifically, for pointwise methods, the special tokens are “yes” and “no”. While for listwise methods, the special tokens are the ID tokens. For JobRec, the pointwise and listwise recommendation templates are presented in Table 13 and Table 14, respectively. Since the notations in this paper are defined in the context of talent recommendation, they differ slightly from those used in job recommendations. Therefore, we do not include the notation in the tables. The templates follow roughly the same structure as those in HRT, except that the positions of the job posting and candidate information are swapped. Their usage in explicit and implicit methods remains largely consistent. 
+
+E Experiment Details E.1 Metrics 
+
+For a job posting 𝑔 and its candidate set C𝑔 , each model will produce the predicted scores ˆy𝑔 . All candidates in C𝑔 are ranked in descending order of ˆy𝑔 , denoted by the permutation 𝜏 𝑔 . 𝜏 𝑔 (𝑙 ) returns the index of the candidate ranked at position 𝑙 . Similarly, we can get the ranking permutation 𝜏 ∗ 
+
+> 𝑔
+
+based on the ground-truth matching labels {𝑦 𝑔,𝑐 𝑗 | 𝑐 𝑗 ∈ C 𝑔 }. Then the three metrics are calculated as follows. 
+
+• NDCG at cut-off 𝐾 (ND@ 𝐾 ). For each job posting 𝑔 , we first compute the Discounted Cumulative Gain (DCG) at cut-off 𝐾 
+
+based on the ranked list 𝜏 𝑔 :
+
+DCG 𝑔 @𝐾 =
+
+> 𝐾
+
+∑︁ 
+
+> 𝑙 =1
+
+2𝑦 𝑔,𝜏𝑔 (𝑙 ) − 1log 2 (𝑙 + 1)Towards Position-Robust Talent Recommendation via Large Language Models 35 
+
+Table 10. A Pair of Matched Resume and Job Posting from JobRec. 
+
+Job Description Resume Description Title Automotive Service Advisor Degree Type High School Description Briggs Nissan in Lawrence Kansas has an immediate opportunity for the right person to join our team as a Service Advisor. Due to growth and expansion in our department we are looking for the right person that is looking for a career with our team. Outstanding customer relation skills required. ADP computer experience a plus. Service department experience a plus but not required. Some Saturdays required. Excellent benefit package. If you feel you have what it takes be become part of our team. Please contact, Steve Schons, Service Manager Briggs Nissan, Lawrence Ks. (785) 856-7199 Total Work Experience 5.0 years Currently Employed Yes In a Management Position Yes Number of People Managed 10 Duty and Requirement The Service Advisor is responsible for building strong customer relationship and selling the technicians’ time. They greet and consult customers on service needs, perform a thorough vehicle walk-around inspection as part of the write-up, sell and upsell services by emphasizing value, keep customers updated on services, field all live service calls, and take ownership of the customer’s experience by carrying out those additional assignments that allow the dealership to leave an impressionable experience with the customer. Ensure that customers receive prompt, courteous, and effective service. Greet customers and assist them with any inquiries they may have. Perform vehicle walk around and documentation of customer concerns to enable the Technician to properly diagnose and service the vehicle. Drive the sale of technicians’ time to meet the department’s sales forecast. Consult with the customer on applicable service specials. Prioritize required services, and be prepared to provide options upon request. Document declines for services and ask for follow-up on future service considerations. Establish and maintain a close relationship with the customer. Keep the customer informed on completion times, service expenses, and possible changes. Remain involved with the delivery of the vehicle to the customer upon completion to ensure all customer concerns can be addressed. Ensure the customer has a positive dealership experience. Provide concierge support for all owner inquiries, whether by phone or in person, to ensure the customer does not get mishandled. Spend quality time building a relationship with the customer. Know the product well enough to answer characteristic and operational questions regarding the customer’s vehicle. Job Requirements: As a Service Advisor, you will be experienced and aware of the latest customer service practices, and be a persistent problem solver. We have determined some factors that may enable your success as a Service Advisor: One year of experience in a service advisor role is strongly preferred. Must have computer proficiency. Valid driver’s license Work Experience 1. Plane Captain on AH-1W, 2. Sales Representative, 3. Sales Representative and Technician Location Lawrence, Kansas, US Location Lenexa, Kansas, US 
+
+Table 11. Pointwise Recommendation Template for HRT. 
+
+You are responsible for recruiting for a vacant position in a company. Please analyze whether the candidate is suitable for this position, based on the candidate’s resume and the job posting. The job posting is as follows. {𝑔 }
+
+Resume {𝑐 𝑔  
+
+> 1
+
+}
+
+Please output in a JSON format. The referenced output is as follows. { "score": the matching score of the candidate and the job, which should be between 0 and 1.} 
+
+The corresponding ideal DCG (IDCG) is obtained by sorting the candidates in C𝑔 according to the ground-truth labels in descending order: 
+
+IDCG 𝑔 @𝐾 =
+
+> 𝐾
+
+∑︁ 
+
+> 𝑙 =1
+
+2𝑦 𝑔,𝜏 ∗   
+
+> 𝑔 (𝑙 )
+
+− 1log 2 (𝑙 + 1)
+
+The ND@ 𝐾 for 𝑔 is defined as 
+
+ND 𝑔 @𝐾 = DCG 𝑔 @𝐾 
+
+IDCG 𝑔 @𝐾 
+
+Finally, we report the average result across all test samples. 36 Silin Du and Hongyan Liu 
+
+> Table 12. Listwise Recommendation Template for HRT.
+
+You are responsible for recruiting for a vacant position in a company, please rank the resumes of {𝑁 }
+
+candidates based on the job description. The ranking should be determined by the matching degree between the resume and the job posting, with candidates who have a higher matching degree placed at the top. The job posting is as follows. {𝑔 }
+
+Here are the resumes for {𝑁 } candidates, each with a unique ID. Please use the IDs to sort all the resumes. Resume ID: A Content: {𝑐 𝑔  
+
+> 1
+
+}
+
+Resume ID: B Content: {𝑐 𝑔  
+
+> 2
+
+}
+
+... Please directly output the sorted resume IDs without any additional content in JSON format. You should output in the following format. { "result": ["A", "B", ...] } 
+
+> Table 13. Pointwise Recommendation Template for JobRec.
+
+You are an expert at recruitment. Please analyze whether the candidate would be interested in this job based on the information of the candidate and the job posting. The detailed information of the candidate is as follows. {} 
+
+The job posting is as follows. {} 
+
+Please output in a JSON format. The referenced output is as follows. { "score": the matching score of the candidate and the job, which should be between 0 and 1.} 
+
+> Table 14. Listwise Recommendation Template for JobRec.
+
+You are an expert at recruitment. Please rank the following {𝑁 } job postings based on the information of the candidate. Please list job postings that align more closely with the candidate’s interests at the front of the list. The detailed information of the candidate is as follows. {} 
+
+The following are {𝑁 } job postings, each with an ID, which is used to rank all jobs. Job Posting ID: A Content: {} 
+
+Job Posting ID: B Content: {} 
+
+... Please directly output the IDs of ranked job postings in a JSON format. You should output in the following format. { "result": ["A", "B", ...] } 
+
+• Recall at cut-off 𝐾 (R@ 𝐾 ). For each job posting 𝑔 , R@ 𝐾 is defined as 
+
+R𝑔 @𝐾 =
+
+Í𝐾 𝑙 =1 𝑦 𝑔,𝜏 𝑔 (𝑙 )
+
+Í𝑐 𝑗 ∈ C 𝑔 𝑦 𝑔,𝑐 𝑗 
+
+The final R@ 𝐾 over the test set is obtained by averaging over all samples. 
+
+• Mean Reciprocal Rank (MRR). For each job posting 𝑔 , let rank + 
+
+> 𝑔
+
+denote the rank position of the first relevant (positive) candidate in 𝜏 𝑔 :
+
+rank + 
+
+> 𝑔
+
+= min {𝑙 | 𝑦 𝑔,𝜏 𝑔 (𝑙 ) = 1}
+
+The reciprocal rank for sample 𝑔 is defined as 1/rank + 
+
+> 𝑔
+
+. MRR is computed as the mean reciprocal rank across the entire test set. Towards Position-Robust Talent Recommendation via Large Language Models 37 
+
+F Additional Experiment Results F.1 Evaluation Results with Candidate Sets of Different Lengths 
+
+We evaluate each model with 𝑁 = 10 , 20 , 30 , and the results are shown in Tables 15, 16, 17, 18, 19, and 20. As the candidate set size increases from 𝑁 = 10 to 𝑁 = 30 , all models exhibit a clear and consistent performance degradation across ranking metrics. Despite this shared trend, L3TR consistently achieves the best performance at all candidate sizes.    
+
+> Table 15. Recommendation Accuracy on HRT with 𝑁 =10 .
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .3512 .4319 .1613 .5336 .3421 BPJFNN .5189 .5754 .2684 .7521 .4723 APJFNN .3965 .4956 .1759 .6148 .3728 TRBERT .6186 .6713 .4015 .8052 .5839 LLM-based Models List-Imp .2196 .3184 .0857 .3698 .2389 List-Exp .8169 .8335 .7018 .8476 .7964 Point-Imp .5398 .6121 .3379 .7184 .5187 Point-Exp .8036 .8162 .6437 .8369 .7675 TALLRec .8617 .8701 .7239 .8986 .8282 Rank1 .8014 .8153 .6662 .9068 .7763 ReasonRank (7B) .6809 .7134 .5482 .7946 .6658 ReasonRank (32B) .8218 .8362 .7296 .9037 .8056 Our Models L3TR .8694 .8821 .8337 .9035 .8626    
+
+> Table 16. Recommendation Accuracy on HRT with 𝑁 =20 .
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .3316 .4119 .1478 .5112 .3247 BPJFNN .4959 .5512 .2483 .7214 .4489 APJFNN .3749 .4723 .1589 .5881 .3526 TRBERT .5917 .6438 .3784 .7716 .5534 LLM-based Models List-Imp .1958 .2876 .0713 .3349 .2128 List-Exp .7716 .7924 .6519 .8047 .7485 Point-Imp .5026 .5741 .3082 .6715 .4794 Point-Exp .7582 .7726 .5997 .7856 .7209 TALLRec .8251 .8364 .6843 .8619 .7978 Rank1 .7604 .7742 .6268 .8635 .7336 ReasonRank (7B) .6457 .6789 .5098 .7486 .6284 ReasonRank (32B) .7823 .7981 .6895 .8597 .7662 Our Models L3TR .8327 .8476 .7829 .8581 .8334 
+
+F.2 Evaluation Results with Training Sets of Different lengths 
+
+We train L3TR with 𝑁 train = 3, 5, 6 and evaluate models with 𝑁 = 15 . The results are shown in Table 21. Our results show that increasing 𝑁 train does not consistently improve the performance of L3TR − . When the training prompt becomes longer, the model may struggle to extract meaningful ranking patterns, leading to marginal gains or even slight degradation. In contrast, L3TR benefits from moderately larger 𝑁 train , thanks to its local position encoding and specialized attention design, which enable it to better utilize structural information in longer prompts. However, the gains saturate beyond 𝑁 train = 4 or 5. Empirically, setting 𝑁 train to 4–5 is sufficient for handling ranking tasks with candidate list lengths of 15–30. 38 Silin Du and Hongyan Liu    
+
+> Table 17. Recommendation Accuracy on HRT with 𝑁 =30 .
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .3116 .3925 .1353 .4879 .3058 BPJFNN .4689 .5247 .2328 .6894 .4202 APJFNN .3538 .4519 .1471 .5606 .3314 TRBERT .5629 .6158 .3576 .7362 .5221 LLM-based Models List-Imp .1698 .2534 .0601 .3011 .1849 List-Exp .7234 .7471 .6017 .7623 .6992 Point-Imp .4621 .5346 .2771 .6206 .4368 Point-Exp .7089 .7258 .5502 .7432 .6723 TALLRec .7854 .7992 .6469 .8294 .7461 Rank1 .7158 .7311 .5879 .8263 .6877 ReasonRank (7B) .6089 .6441 .4743 .7106 .5898 ReasonRank (32B) .7416 .7604 .6489 .8237 .7224 Our Models L3TR .7956 .8138 .7482 .8226 .7839    
+
+> Table 18. Recommendation Accuracy on JobRec with 𝑁 =10 .
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .2143 .3208 .0786 .3819 .2387 BPJFNN .2071 .3134 .0745 .3698 .2321 TRBERT .2024 .3056 .0739 .3652 .2294 LLM-based Models List-Imp .6184 .6639 .5037 .7485 .6073 List-Exp .7812 .7964 .6521 .9126 .7489 Point-Imp .7368 .7689 .5914 .8897 .7058 Point-Exp .6027 .6495 .4052 .8016 .5639 TALLRec .9156 .9264 .8813 .9637 .9185 Rank1 .6798 .7184 .4982 .8715 .6389 ReasonRank (7B) .6662 .7051 .5267 .8248 .6417 ReasonRank (32B) .7196 .7428 .6249 .8487 .7075 Our Models L3TR .9348 .9419 .9032 .9816 .9364    
+
+> Table 19. Recommendation Accuracy on JobRec with 𝑁 =20 .
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .2049 .3094 .0676 .3474 .2244 BPJFNN .1978 .3014 .0642 .3355 .2185 TRBERT .1937 .2940 .0636 .3301 .2157 LLM-based Models List-Imp .5880 .6367 .4435 .7083 .5755 List-Exp .7426 .7626 .5754 .8711 .7104 Point-Imp .7012 .7376 .5171 .8487 .6668 Point-Exp .5713 .6213 .3482 .7617 .5319 TALLRec .8868 .9016 .8100 .9341 .8857 Rank1 .6461 .6885 .4316 .8294 .6031 ReasonRank (7B) .6333 .6760 .4556 .7821 .6049 ReasonRank (32B) .6831 .7109 .5515 .8001 .6691 Our Models L3TR .9089 .9201 .8442 .9578 .9065 Towards Position-Robust Talent Recommendation via Large Language Models 39    
+
+> Table 20. Recommendation Accuracy on JobRec with 𝑁 =30 .
+
+Type Model ND@5 ND@10 R@1 R@5 MRR Domain-specific Models PJFNN .2006 .3031 .0638 .3392 .2187 BPJFNN .1939 .2956 .0604 .3281 .2129 TRBERT .1896 .2887 .0597 .3215 .2103 LLM-based Models List-Imp .5732 .6234 .4159 .6861 .5587 List-Exp .7214 .7438 .5362 .8475 .6899 Point-Imp .6801 .7176 .4853 .8224 .6445 Point-Exp .5560 .6052 .3206 .7368 .5136 TALLRec .8617 .8794 .7682 .9068 .8584 Rank1 .6268 .6681 .4037 .8032 .5836 ReasonRank (7B) .6147 .6579 .4278 .7576 .5867 ReasonRank (32B) .6624 .6908 .5216 .7745 .6462 Our Models L3TR .8836 .8975 .7931 .9319 .8812  
+
+> Table 21. Recommendation Accuracy on HRT with Different 𝑁 train .
+
+Model 𝑁 train ND@5 ND@10 R@1 R@5 MRR L3TR −
+
+3 .7671 .8010 .6960 .8290 .7629 4 .7692 .7999 .7046 .8284 .7682 5 .7640 .7965 .6955 .8230 .7625 6 .7585 .7920 .6900 .8190 .7570 L3TR 3 .8235 .8490 .7780 .8695 .8250 4 .8379 .8545 .7953 .8762 .8377 5 .8412 .8595 .8050 .8795 .8430 6 .8482 .8613 .8074 .8802 .8451 
+
+F.3 Evaluation Results with Different 𝑆 
+
+We train L3TR with 𝑆 = 0, 1, 5, 15 and evaluate models with 𝑁 = 15 . The results in Table 22 show that the number of special tokens 
+
+𝑆 plays an important role in enabling effective listwise interaction among resumes. When 𝑆 = 0, attention cannot be computed across different resumes. so even with listwise input, the model behaves similarly to pointwise methods (e.g., TALLRec in Table 2). As 𝑆 increases, the model gains more capacity to facilitate information exchange across resumes through attention mechanisms. This enables the model to better compare candidates within the list, leading to consistent improvements in ranking performance. However, the marginal gain gradually diminishes when 𝑆 becomes sufficiently large, suggesting that a moderate number of special tokens (e.g., 10) is sufficient to support effective listwise recommendations. We recommend setting 𝑆 to be sufficiently large to cover the resume identifier, at minimum including the following tokens: “[learnable token] Resume, ID: [Resume ID]”.  
+
+> Table 22. Recommendation Accuracy on HRT with Different 𝑆 .
+
+Model 𝑆 ND@5 ND@10 R@1 R@5 MRR L3TR 0 .8143 .8366 .7706 .8548 .8159 1 .8185 .8375 .7706 .8614 .8211 5 .8262 .8473 .7872 .8630 .8257 10 .8379 .8545 .7953 .8762 .8377 15 .8291 .8512 .7859 .8688 .8310 40 Silin Du and Hongyan Liu         
+
+> F.4 Additional Bias Evaluation Results
+> We present the estimated prior bias (i.e., ˆP(𝑑 𝑖 | D) in Eq. (18)) of L3TR, L3TR −, and List-Imp (c.r. Table 7) in Table 23. The results show that List-Imp exhibits severe prior bias, with probability mass heavily concentrated on ID token “A”, as reflected by the extremely large range and standard deviation. In contrast, L3TR produces a much more uniform prior distribution, achieving the smallest range and standard deviation.
+> Table 23. Estimated Prior Bias on HRT with 𝑁 =15 .
+
+## ID Token List-Imp List-Imp+Pre-ranker L3TR − L3TR − +Pre-ranker L3TR L3TR+Pre-ranker “A” 0.4739 0.5168 0.0826 0.3291 0.0563 0.3133 “B” 0.0424 0.0378 0.0915 0.1278 0.0842 0.1357 “C” 0.0309 0.0318 0.1451 0.1396 0.0770 0.1011 “D” 0.2786 0.2426 0.0867 0.0681 0.0636 0.0602 “E” 0.0204 0.0201 0.1120 0.0667 0.0829 0.0579 “F” 0.0243 0.0267 0.0241 0.0150 0.0654 0.0514 “G” 0.0129 0.0112 0.0618 0.0565 0.0621 0.0582 “H” 0.0029 0.0036 0.0750 0.0501 0.0728 0.0420 “I” 0.0004 0.0004 0.0473 0.0283 0.0608 0.0364 “J” 0.0047 0.0064 0.0256 0.0080 0.0634 0.0206 “K” 0.0014 0.0017 0.0632 0.0326 0.0853 0.0303 “L” 0.0615 0.0642 0.0517 0.0352 0.0532 0.0372 “M” 0.0059 0.0063 0.0380 0.0183 0.0580 0.0312 “N” 0.0189 0.0139 0.0183 0.0078 0.0392 0.0123 “O” 0.0211 0.0155 0.0770 0.0168 0.0756 0.0121 Range 0.4735 0.5164 0.1268 0.3213 0.0290 0.3012 Std. Dev. 0.1277 0.1414 0.0374 0.0794 0.0100 0.0755

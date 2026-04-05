@@ -1,0 +1,617 @@
+Title: RAD-LAD: Rule and Language Grounded Autonomous Driving in Real-Time
+
+URL Source: https://arxiv.org/pdf/2603.28522v2
+
+Published Time: Wed, 01 Apr 2026 00:27:51 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# RAD -LAD : Rule and Language Grounded Autonomous Driving in Real-Time 
+
+Anurag Ghosh 1, Srinivasa Narasimhan 1, Manmohan Chandraker 2,3, and Francesco Pittaluga 2
+
+> 1
+
+Carnegie Mellon University 2NEC Labs America 3UC San Diego 
+
+Abstract. We present LAD , a real-time language–action planner with an interruptible architecture that produces a motion plan in a single forward pass ( ∼20 Hz) or generates textual reasoning alongside a motion plan ( ∼10 Hz). LAD is fast enough for real-time closed-loop deployment, achieving ∼3× lower latency than prior driving language models while setting a new learning-based state of the art on nuPlan Test14-Hard and InterPlan. We also introduce RAD , a rule-based planner designed to address structural limitations of PDM-Closed. RAD achieves state-of-the-art performance among rule-based planners on nuPlan Test14-Hard and InterPlan. Finally, we show that combining RAD and LAD enables hybrid planning that captures the strengths of both approaches. This hy-brid system demonstrates that rules and learning provide complementary capabilities: rules support reliable maneuvering, while language enables adaptive and explainable decision-making. 
+
+Keywords: Closed-Loop Planning · Language Models · Real-Time 
+
+## 1 Introduction 
+
+Consider the driving scenarios in Fig. 1. In the top row, an autonomous vehi-cle navigates a left turn at a pickup zone, a maneuver requiring awareness of lane blockages and intersection geometry. In the bottom row, the same vehicle attempts a right turn through dense, ambiguous traffic where pedestrians, on-coming vehicles, and unclear right-of-way create genuine uncertainty. Both sce-narios appear in current closed-loop planning benchmarks, yet differ profoundly in character. The first demands safe maneuvering to navigate tight spaces; the second requires situational understanding to interpret intent and ambiguity. Improvements to rule-based systems likely cannot address the true semantic long-tail, including situations requiring nuanced understanding of social norms, ambiguous occlusions, or negotiable rights-of-way [17]. For this, we introduce 
+
+LAD (Language-Based Autonomous Driving), a multimodal large language model (MLLM) planner built for real-time closed-loop deployment. A persistent con-cern with language-based planners has been their latency [7,22,41]: prior systems operate at 2-3 Hz, far too slow for reactive closed-loop planning, leading some approaches to employ language models as offline advisors [7, 35]. LAD ’s inter-ruptible inference architecture addresses this by producing a valid plan in a single                   
+
+> arXiv:2603.28522v2 [cs.RO] 31 Mar 2026 2A. Ghosh et al.
+> Fig. 1: Autonomous driving requires rule-following and semantic under-standing. (Top row) A left turn at a pickup/dropoff zone: the ego vehicle (red, with planned trajectory) must navigate around vehicles blocking the lane. (Bottom row) Aright turn through a crowded intersection: dense traffic from multiple directions, pedes-trian crossings, and ambiguous right-of-way require reasoning beyond simple trajectory optimization. Text overlays show LAD ’s real-time situational understanding. The key insight is many scenarios labeled “hard” require only better lane-changing which our rule-based planner RAD can handle. Semantic difficulty demands language-grounded reasoning, e.g. negotiation of ambiguous traffic which LAD handles by generating both motion plans and interpretable explanations at ∼10Hz, enabling real-time deployment.
+
+forward pass ( ∼20Hz) and optionally generating textual reasoning when com-pute budget permits ( ∼10Hz), remaining compatible with safety mechanisms that require immediate re-planning (Section 3.1). Beyond real-time feasibility, our ablations show that language supervision provides complementary train-ing signal for closed-loop planning, yielding strong performance on long-tailed benchmarks including nuPlan Test14-Hard and InterPlan. We also design RAD (Rule-Based Autonomous Driving), a structured plan-ner that extends PDM-Closed [10] with dynamic topology replanning and goal-directed optimization. RAD reveals that many scenarios labeled “hard” in cur-rent benchmarks are geometric in character, resolvable with capabilities like lane changes, while truly difficult cases require the semantic reasoning that language enables. Our hybrid planner, RAD -LAD , combines strict rule-following with language-based reasoning for better performance in long-tailed scenarios. Thus, we view autonomous driving planning as consisting of two complemen-tary challenges: geometric feasibility and semantic reasoning. RAD addresses the geometric component by expanding the planner’s search space through dynamic RAD-LAD 3
+
+topology and maneuver priors. LAD addresses the semantic component by en-abling language-grounded reasoning over ambiguous traffic interactions. The re-sulting hybrid system provides a practical pathway for integrating structured planning and foundation models in real-time autonomy. In summary, our key contributions are: 1. LAD : The first real-time language-action planner to achieve state-of-the-art performance on closed-loop, long-tailed autonomous driving benchmarks. 
+
+LAD demonstrates not only that language-based supervision improves plan-ning performance, but also that inference-time, language-based reasoning is deployable at ∼10Hz. 2. RAD : A flexible rule-based planner that achieves strong performance on long-tail benchmarks by extending the capabilities of existing rule-based planners such as PDM-Closed [10], revealing that much of the benchmark difficulty is geometric rather than semantic. 3. RAD -LAD : An integrated hybrid rule-and-language-based planner that combines the best of both worlds – the interpretable language-based reason-ing and planning of LAD and the physics-based safety guardrails of RAD –to achieve competitive closed-loop planning performance. 
+
+## 2 Related Work 
+
+2.1 Language-Based Planning 
+
+Language-based planning offers a potential solution for the semantic reason-ing gap left by rule and conventional learning-based planners Approaches like DriveVLM [41], DriveGPT4 [45], and EMMA [22] have demonstrated strong scene understanding and reasoning capabilities. However, these systems are fun-damentally limited by latency and open-loop design. Most operate at speeds (e.g., 2–3Hz) insufficient for reactive closed-loop planning or rely on offline pro-cessing [40, 43]. Advisory frameworks [7, 35] attempt to mitigate this by decou-pling reasoning from planning, but this prevents true language-guided improvi-sation. A common limitation across these methods is that plan generation is tightly coupled to full autoregressive text generation, making latency proportional to reasoning depth. LAD addresses this with an interruptible inference architec-ture: a dedicated plan token always produces a valid trajectory in a single forward pass, while optional reasoning tokens precede it to improve planning quality when compute budget permits. A phased training curriculum (inspired by BLIP-2 [26], LLaVA [29], Pi [2]) enables 10Hz planning with reasoning, solving the latency bottleneck that hindered the deployment of prior vision-language-action models. 
+
+2.2 Rule-Based and Learned Planning 
+
+Evaluation in autonomous driving has shifted from open-loop metrics to closed-loop simulation [5], revealing that many state-of-the-art learning-based planners 4 A. Ghosh et al. 
+
+struggle to match the reliability of rule-based systems like PDM-Closed [10]. While PDM-Closed excels on standard benchmarks, its fixed topology means that “long-tail” benchmarks [9, 18] partially reflect its design constraints. RAD 
+
+addresses these with dynamic replanning and goal-directed optimization (Sec-tion 3), significantly outperforming both PDM-Closed and recent hybrid exten-sions [21, 38]. LAD   
+
+> .. .. ..
+> ..
+> ..
+> Interruptible Planning
+> Prompt Tokens
+> Plan Token Reasoning / Answer Tokens
+> Detokenizer
+> Ego Plan: Go straight
+> Map
+> Encoder
+> Agent
+> Encoder
+> Adapter Adapter
+> Prompt: Given
+> Environment
+> and Agent
+> Context, provide
+> the Ego Agent
+> Plan.
+> Tokenizer
+> Plan
+> Head
+
+Fig. 2: LAD Architecture. We encode scene context, adapt it into the language model’s mani-fold, and insert it as pseudo-tokens within the prompt. The decoder produces natural-language reason-ing and a motion plan from the hidden state at <|plan|> .
+
+Pure imitation-based learned planners (e.g., PlanTF [9], DiffusionPlanner [50]) of-fer promise for generalization but often ex-hibit poor adherence to safety constraints in closed-loop settings. Reinforcement learning offers a complementary direction: CaRL [23] trains an action-based RL policy that by-passes the trajectory-to-control interface en-tirely. As output representation and training paradigm are tightly coupled in this setting, we treat this as an orthogonal axis and focus on improving planning through language su-pervision (see Supplemental Material for dis-cussion). 
+
+2.3 Hybrid Planning 
+
+The complementary strengths of rule-based and learned planners have motivated hybrid approaches that combine both. PLUTO [8] augments a learned trajectory predictor with a rules-based scorer, and STR2 [38] extends this with larger-scale mixture-of-experts ar-chitectures. Similarly, DiffusionPlanner [50] and FlowPlanner [39] generate trajectories via generative models and refine them with rule-based scoring. RAD -LAD follows this hybrid paradigm but integrates a learned language-based planner, enabling interpretable reasoning alongside rule compliance. 
+
+## 3 Method 
+
+3.1 LAD : Language-Based Autonomous Driving 
+
+LAD is an anytime multimodal language model planner - it produces a valid motion plan in a single forward pass and optionally generates textual reasoning when computational budget permits, enabling real-time closed-loop deployment. Here, “multimodal” refers to the fusion of structured scene entities (vectorized map and agent representations) with language. RAD-LAD 5
+
+Architecture. We transform a pretrained decoder-only language model into a motion planner by introducing three modifications: (1) scene encodings are injected as pseudo-tokens, (2) a planning head is attached to a designated output position, and (3) inference can be interrupted to meet latency constraints. 
+
+Scene encoding and adaptation. Let M = {mi}Nm 
+
+> i=1
+
+denote the set of map ele-ments (lanes, crosswalks), and A = {aj }Na 
+
+> j=1
+
+denote dynamic and static agents. Both are encoded via PlanTF [9], 
+
+zi = ϕmap PlanTF (mi) ∈ Rdptf , i = 1 , . . . , N m, (1) 
+
+uj = ϕagent PlanTF (aj ) ∈ Rdptf , j = 1 , . . . , N a. (2) Lightweight MLP adapters project these embeddings into the model’s token space: 
+
+˜zi = fmap (zi) ∈ Rdℓ , ˜uj = fagent (uj ) ∈ Rdℓ . (3) While we instantiate LAD with PlanTF for structured inputs, the same adapter pattern extends to vision encoders for camera or lidar modalities. 
+
+Multimodal prompting. Following object-centric tokenization [40], we inject adapted embeddings as pseudo-tokens delimited by special tokens and interleave them with a natural-language task prompt. The decoder-only language model attends over this heterogeneous context as it would attend over a purely textual input. 
+
+Planning Decoder. Rather than generating waypoints autoregressively, we for-mulate planning as classification over a discrete trajectory vocabulary follow-ing prior works [27, 36, 43], V = {vk}Kk=1 , where K is the vocabulary size and each prototype vk ∈ RT ×2 is a trajectory of T waypoints. A small MLP head 
+
+g : Rdℓ → RK at the <|plan|> token produces logits s = g(hplan ). The classifier is trained with the imitation soft cross-entropy loss [27], where targets are de-rived from the proximity of each prototype to the ground-truth trajectory v∗,
+
+yk = exp  −∥ vk − v∗∥2PKj=1 exp  −∥ vj − v∗∥2 , Lplan = log 
+
+> K
+
+X
+
+> k=1
+
+esk −
+
+> K
+
+X
+
+> k=1
+
+yk sk. (4) The classification head follows BERT or ViT class-token heads [12, 13] and GPT’s task-specific output heads [34], adapted to a decoder-only context. 
+
+Textual Supervision. When reasoning (or answer) text is available, we train the model with teacher forcing over response tokens, 
+
+Llanguage = − X
+
+> t∈Ω
+
+log pθ
+
+ w⋆t w⋆<t , X, (5) where, Ω indexes response tokens (excluding prompt and special tokens) and 
+
+X is the multimodal input sequence. The planning head is trained jointly via cross-entropy over the trajectory vocabulary. 6 A. Ghosh et al. 
+
+Overall Objective. The full training loss is a sum of the above terms, 
+
+L = Lplan + Llanguage , (6) and we observed hand-engineered weighting schemes hurt performance. 
+
+Interruptible Anytime Inference. Real-time deployment imposes hard la-tency deadlines that may vary with speed, traffic density, and safety interven-tions. A planner that couples action generation to lengthy reasoning chains can-not meet these constraints reliably. Our interruptible inference architecture ad-dresses this: a valid motion plan is always available from the plan token, while reasoning tokens are generated opportunistically when budget permits. Reasoning LLM Planner           
+
+> Anytime Plan
+> LAD (Anytime policy)
+> Safety
+> Interrupt Real -Time
+> Constraint
+> Stale Plan Reasoning Tokens
+> 0ms 100 ms
+> Fig. 3: Interruptible Anytime Infer-ence. LAD produces a valid plan when interrupted, generating reasoning tokens if budget permits.
+
+The key observation is that rea-soning text is optional for trajectory prediction. When latency constraints are strict, we append <|plan|> di-rectly after the scene tokens and per-form a single prefill pass to obtain 
+
+hplan , yielding a motion plan with one forward pass. When computational budget permits, we allow the model to generate reasoning tokens before in-serting <|plan|> , trading latency for interpretability. The architecture re-mains identical in both cases; only the prompt structure changes. More broadly, because the plan token yields a valid action whether or not reasoning tokens precede it, this architecture is compatible with deployment where a safety mechanism requires an immediate action. This design enables LAD to operate in real-time without reasoning or with short justifications, while remaining compatible with standard inference opti-mizations including KV-caching [31], operator fusion [37], and efficient schedul-ing [25]. Detailed latency analysis is provided in Section 5.4. 
+
+Multimodal Training Training a multimodal planner requires balancing the preservation of language representations while acquiring new capabilities. We adopt the following training curriculum to achieve this balance. 
+
+Stage A: Alignment. The language model remains frozen while only lightweight adapters and multimodal projection layers are trained. This establishes stable grounding of scene encodings within the model’s existing representational space, following alignment strategies in prior multimodal work [26, 29]. RAD-LAD 7
+
+Stage B: LoRA finetuning. LoRA modules [19] and the task-specific planning head are introduced while the backbone remains frozen. The zero-initialized updates of LoRA provide controlled capacity expansion for semantic grounding and trajectory prediction without destabilizing pretrained representations. To maintain linguistic abilities of LAD , we employ a mixed training strategy that co-trains on a small proportion of the Interaction QA dataset alongside the planning objective, following prior work [2, 52] and mitigating catastrophic forgetting of pretrained representations [33]. 
+
+3.2 RAD : Rule-Based Autonomous Driving 
+
+State-of-the-art rule-based planners like PDM-Closed [10] perform remarkably well on standard scenarios (i.e., Val14 [5]) but score badly on long-tailed scenarios (Test14-Hard [9] and InterPlan [18]). These failures stem from specific design choices in the baseline (e.g., fixed topology, no deadlock handling) rather than intrinsic scenario complexity. RAD addresses PDM-Closed’s key limitations such as static topology and no lane changes with dynamic topology replanning , lane-change capability , and goal-directed optimization .
+
+Revisiting Rule-Based Planning in PDM. PDM-Closed [10] planner selects the optimal trajectory π∗ by maximizing a scoring function. To align with the official nuPlan evaluation metrics, this is formulated as a cost function JPDM 
+
+composed of multiplicative penalties (safety constraints) scaling a weighted sum of driving quality objectives, 
+
+JPDM (π) = Ccol Cra Cmp 
+
+
+
+wttc Cttc + wdr Cdr + wsp Csp + wep Cep + wcf Ccf 
+
+
+
+(7) Terms of JPDM include multiplicative penalties for collision Ccol , violating drivable area Cra , not making minimum progress Cmp , and weighted costs for time-to-collision Cttc , speed compliance Csp , rogress along the experts’ route 
+
+Cep , direction compliance Cdr , and comfort Ccf .While robust on standard scenarios, PDM-Closed [10] has a fixed topology: (1) it does not support lane changes; (2) it enforces strict penalties hindering necessary evasive maneuvers; and (3) it does topological planning only once at the start, causing drift. RAD addresses these limitations via the following modifications. 
+
+Dynamic Topological Replanning. PDM-Closed [10] generates 15 candi-dates per timestep but anchors them to proposal paths ( Γstatic ) fixed at ini-tialization , i.e. there is no topological replanning after initialization. If the ego deviates or paths become blocked, proposals are never updated. 
+
+RAD performs full topological replanning at every timestep . We define the proposal paths extraction as a time-dependent function of the current ego state 
+
+st and the map M,
+
+Γt = GraphSearch (st, M). (8) 8 A. Ghosh et al. Goal Goal   
+
+> Ego Ego
+> Blocked
+> Proposal
+> Path
+> Feasible
+> Proposal
+> Paths
+> PDM -Closed RAD
+
+Fig. 4: PDM-Closed’s [10] static proposal paths become blocked by obstacles with no recovery. RAD topologically replans at ev-ery timestep and augments the route with adjacent-lane centerlines. 
+
+Consequently, the set of available trajectory proposals Πt is dynami-cally updated to reflect the instanta-neous topology, 
+
+Πt = [
+
+> γ∈Γt
+
+[
+
+> o∈O
+
+IDM (st, γ, o, v 0). (9) Here, O denotes discrete lateral offsets and v0 is the IDM reference ve-locity. This ensures the optimization horizon always extends from the vehi-cle’s actual current pose, allowing for robust recovery if the vehicle is forced off the nominal path. 
+
+Lane-Changing via Topology Augmentation. To enable lane changes, 
+
+RAD augments the road topology with adjacent-lane centerlines . While PDM-Closed [10] considers a single route-based centerline Γego , RAD expands this to include spatially adjacent centerlines Γadj , even those with opposing traffic flow, 
+
+ΓRAD = {Γego } ∪ { Γleft , Γ right } ∪ Γopp . (10) The proposal set is then expanded to sample trajectories relative to all centerlines in this augmented set, 
+
+Πaug = [
+
+> γ∈ΓRAD
+
+[
+
+> o∈O
+
+IDM (st, γ, o, v 0), (11) where O denotes the set of discrete lateral offsets. This allows the planner to sample from a richer family of trajectories, including feasible lane-change proposals. 
+
+Goal-Directed Optimization. RAD modifies the objective to encourage deci-sive progress toward the mission goal. Instead of relying solely on path-integrated distance, RAD computes a Euclidean distance-to-goal cost. Let pπT be the posi-tion of the ego vehicle at the end of planning horizon T for proposal π, and g
+
+be the global goal coordinates, 
+
+Jgoal (π) = ∥pπT − g∥2. (12) The total cost function JRAD linearly combines the baseline PDM cost with this goal-seeking term, 
+
+JRAD (π) = JPDM (π) + wgoal Jgoal (π). (13) This optimization encourages advancement in open regions and helps escape local minima induced by complex road geometries. RAD-LAD 9
+
+Trajectory Proposal Augmentation via Vocabulary. To diversify candi-date trajectories beyond geometric centerlines, RAD incorporates all K pro-posals from a precomputed trajectory vocabulary . We construct a vocabulary 
+
+V = {vk}Kk=1 by clustering ego trajectories from the nuPlan training set, fol-lowing prior works [27, 36, 43]. The final proposal set ΠRAD is the union of topologically augmented IDM [42] proposals and the data-driven vocabulary, 
+
+ΠRAD = Πaug ∪ { Tego (v) | v ∈ V} . (14) This injects data-driven maneuver priors (e.g., swerves, bypasses) into the rule-based system. Blocked    
+
+> Trajectory
+> Augmented
+> Trajectory
+> Distance
+> To Goal
+> Goal Goal
+> Ego
+> PDM -Closed RAD
+> Fig. 5: RAD combines goal-directed opti-mization with trajectory proposal augmen-tation, adding feasible alternative trajec-tories and favoring trajectories that make progress toward the goal.
+
+Context-Aware Rule Relaxation. 
+
+To handle deadlock situations, RAD 
+
+introduces a soft rule relaxation 
+
+mechanism. We define a relaxation indicator Irelax ∈ {0, 1}, active when blockage is detected. When ac-tive, RAD contextually downweights penalties for driving-direction and driving-area violations, allowing the optimizer to consider safe, short-term deviations from nominal traffic rules to circumvent obstacles. 
+
+3.3 Hybrid Planner Integration 
+
+While LAD and RAD are state-of-the-art methods in their respective class of methods, that is, within learned and rule-based planners, creating a hybrid planner requires careful co-design accounting for the downstream LQR controller and rules scorer. 
+
+Trajectory Refinement Head. Adding a trajectory refinement module pro-vides LAD the ability to refine its trajectory for better rules alignment for hybrid integration. The classifier’s argmax selects a coarse prototype ˆv ∈ RT ×2, which is concatenated with the plan token embedding and passed through an MLP head r : Rdℓ+2 T → R2T to predict per-waypoint offsets, 
+
+˜v = ˆ v + r [hplan ⊕ vec(ˆ v)] 
+
+Crucially, the final layer of r is zero-initialised [49] so that the trajectory refinement head acts as the identity at the start of training and does not interfere with the classifier’s learning signal. The refinement loss is, 
+
+Lrefine = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥˜vt − v∗ 
+
+> t
+
+∥2. (15) 10 A. Ghosh et al. Where is Agent 4 with respect to Ego 
+
+> Agent ?
+> Agent 4 is behind the ego vehicle.
+> Is it safe for Ego Agent to stop ?
+> No, it is not safe for Ego Agent to stop
+> because there is a vehicle
+> approaching from the left.
+> What is the Agent ID of the vehicle
+> that is approaching from the left ?
+> Agent 1
+> Is it safe for Ego Agent to
+> proceed ?
+> Yes, it is safe for ego agent
+> to proceed.
+> Is the pedestrian in front of
+> ego agent ?
+> Assume pedestrian is
+> already static and does
+> not move when honked,
+> what should ego agent
+> do ?
+> The pedestrian is static
+> and does not move, so the
+> ego vehicle should not
+> need to yield.
+> Ego vehicle should yield to
+> the pedestrian.
+> No, the pedestrian is not in
+> front of the Ego Agent.
+> If there were to be in front of
+> Ego agent, what should ego
+> agent do ?
+> Is it safe to take a right
+> turn ?
+> No, it is not safe to take a
+> right turn.
+> Why ?
+> Because the pedestrian is
+> crossing the street.
+
+(a) (b)   
+
+> 349 24
+> 10
+> 53
+
+(c) 
+
+Fig. 6: Scenario Understanding and Reasoning. (a) Cross-modal grounding :
+
+LAD can interpret pedestrians, lane geometry, and turn-safety from scene context. (b) Relational reasoning : LAD can infer spatial relations between agents and antic-ipates conflicts. (c) Conditional reasoning : LAD can evaluate counterfactuals, apply traffic laws, and identify when rules may be safely relaxed. 
+
+Rules-Based Refinement. Following prior work [21, 38, 50] we adopt a cost-based refinement approach, expanding the vocabulary of the rule-based planner by adding learning based planner’s plan as an additional proposal, further ap-plying offsets to the model outputs to augment the rule-based planner with additional candidate trajectories. All the candidate trajectories are then scored using a rules scorer, which can be either PDM-Closed’s [10] or RAD’s scorer. 
+
+## 4 Experimental Details 
+
+Datasets. We train and evaluate our methods on the nuPlan simulator and dataset [5] which is a closed-loop simulator grounded in real-world driving logs. We do not focus on NavSim [11] as it does not perform true closed-loop evalu-ation and CARLA [14] which lacks realistic logged driving data. We train on 1 million nuPlan scenarios following parity with prior work [8,9,39,50]. To provide diverse reasoning supervision, we construct DrivingQA and PlanningQA (See Section E for more details), synthesizing QA pairs from InterDrive [6] behavior annotations using Qwen2.5-32B [1] model and ground trajectories with textual reasoning. This synthetic dataset generates instructions grounded in valid tra-jectories, bridging the gap between raw behavioral data and semantic reasoning. 
+
+Benchmarks. We focus our evaluation on two challenging benchmarks: 
+
+– nuPlan Test14-Hard [9], a subset of 14 scenario types specifically filtered to include difficult cases where the PDM-Closed baseline fails. RAD-LAD 11 
+
+Table 1: Test14-Hard (Reactive) and InterPlan results. RAD rivals hybrid methods without learned components while LAD sets a new state-of-the-art among learned planners while offering textual reasoning ability.                                      
+
+> Type Planner Test14-Hard InterPlan
+> Expert Log Replay 85.96 –Rule IDM [42] 62.26 31 PDM-Closed [10] 75.19 42
+> RAD (Ours) 80.53 72 Learned PlanTF [9] 61.61 32 PLUTO [8] 59.74 –DiffusionPlanner [50] 69.22 25 FlowPlanner [39] 70.42 –
+> LAD (Ours) 70.77 40 Hybrid PLUTO [8] 76.88 49 STR2-CKS-800m [38] 78.58 45 STR2-CPKS-800m [38] 82.02 45 DiffusionPlanner [50] 82.00 –FlowPlanner [39] 80.25 –
+> RAD-LAD (Ours) 81.36 74
+
+– InterPlan [18], a synthetic benchmark designed to test multi-agent inter-action and deadlock resolution in driving. 
+
+Baselines. We compare against three categories: 
+
+– Rule-Based : We evaluate our planners against PDM-Closed [10] (the nu-Plan challenge winner) and IDM. 
+
+– Learning-Based : We compare against PlanTF [9] (a pure Transformer ap-proach), PLUTO [8] (hybrid scoring), STR2 [38] (a vision-centric raster-map-based approach), and Diffusion-Planner [50] and FlowPlanner [39]. These represent the current state-of-the-art in imitation learning based planners. 
+
+– Multimodal Language-based Planners : Unfortunately, no Closed-Loop Language-based Planners have been proposed for the nuPlan benchmark. Thus, we benchmark latency against DriveVLM [41] and DriveGPT4 [44] to contextualize LAD ’s real-time performance. 
+
+Implementation Details. RAD : We implement all the changes to PDM-Closed such as topological replanning using the tuplan_garage framework. 
+
+LAD : We use Qwen3-0.6B [46] as the language backbone. To encode map, agents and decoding agent predictions, we employ PlanTF [9]’s architecture. To achieve real-time performance with LAD , we implement a custom infer-ence backend on a fork of nano-vllm [16] with KV-caching [31] and operator fusion [37]. All inference experiments are conducted on a single NVIDIA RTX A6000 to verify deployment feasibility. 
+
+## 5 Experimental Results 
+
+We evaluate RAD , LAD , and their hybrid combination across nuPlan Test14 splits and the InterPlan benchmark. 12 A. Ghosh et al. 
+
+5.1 Performance on NuPlan Long-Tail Scenarios 
+
+Table 1 summarizes performance across Test14-Hard, and InterPlan. We first discuss Test14-Hard results. RAD achieves 80.53 in the reactive setting, out-performing PDM-Closed by 5.34 points while rivaling hybrid methods. This gap arises not from sophisticated reasoning but from RAD ’s ability to perform lane changes and replan dynamically. PDM-Closed does not include these capabili-ties. Critically, as shown in Table 6 of the supplementary material, RAD also outperforms PDM-Closed on the standard nuPlan split (Val14), demonstrating that RAD is not overfit to long-tail scenarios. This finding has important implications for how we interpret benchmark difficulty. The Test14-Hard split filters for PDM-Closed failures [9], implying that many “hard” cases can be resolved once a planner can change lanes or recover from off-route situations. RAD nearly matches the strongest prior hybrid methods without any learned components. Among learning-based approaches, LAD achieves the strongest reactive per-formance, surpassing all existing methods [9, 39, 50]. 
+
+5.2 Generalization to Synthetic Long-Tail Scenarios 
+
+To evaluate generalization to more diverse long-tail conditions, we turn to In-terPlan [18], a benchmark specifically designed to stress-test planners on more realistic long-tail scenarios. InterPlan augments nuPlan scenarios with additional agents, obstacles, and alternative navigation goals, creating situations that re-quire multi-agent coordination and deadlock resolution. The InterPlan column of Table 1 reveals several insights. First, RAD dra-matically outperforms all rule-based planners nearly doubling prior rule-based state of the art [10]. This confirms that the architectural improvements in RAD 
+
+(lane changes, goal-directed optimization, rule relaxation) provide broad benefits for long-tailed situations. Second, LAD improves performance when compared to other learned closed-loop planners. This demonstrates that real-time language-based reasoning can meaningfully improve planning in interactive scenarios. Our hybrid planner, RAD -LAD reaches 74, outperforming several other hy-brid approaches. The complementary nature of rules and learning based planning is evident: rules handle robust maneuvering and deadlock resolution, while LAD 
+
+contributes contextual reasoning for situations where rules alone are insufficient. 
+
+5.3 Ablations 
+
+Table 2 ablates the incremental contribution of each LAD component on Test14-Hard (Reactive), starting from the PlanTF [9] baseline. For RAD ablations, please see Section C. The original PlanTF baseline considers only 32 dynamic agents; increasing this to 128 does not improve performance, likely because the additional distant agents introduce noise without providing useful planning signal. Adding static RAD-LAD 13           
+
+> Table 2: LAD component ablations on Test14-Hard (Reactive). Each com-ponent contributes incrementally, with language supervision through DrivingQA and PlanningQA providing complementary gains on top of input and architectural improve-ments. Textual reasoning acts as a useful inductive bias for trajectory prediction.
+> Component Test14-Hard (R)
+> PlanTF 61.61 + 128 Objects 59.73 + Static Objects 68.49 + Plan Token 68.90 + LLM/DrivingQA 69.75 + PlanningQA ( LAD )70.77
+
+objects (e.g., barriers, cones) confirms that static scene context is critical for safe maneuvering, making PlanTF [9] competitive with DiffusionPlanner [50], PLUTO [8], and FlowPlanner [39]. This is consistent with recent findings that, for planning and control, architecture and input quality [9] dominate over the choice of training objective [30]. Introducing the plan token (Section 3) validates that single-step classifica-tion is effective for extracting waypoints from hidden state. Incorporating Driv-ingQA with our multimodal large language model, further improves performance by 0.85 points, indicating that diverse language supervision provides useful in-ductive bias for trajectory prediction even when the QA content is not directly conditioned on the planning output. Finally, adding PlanningQA with ego be-havior text (scenario type, meta-action) that is temporally aligned with the ground-truth trajectory yields the final LAD model at 70.77, demonstrating that action-aligned textual supervision provides complementary learning signal for trajectory prediction. 
+
+5.4 Real-Time Performance 
+
+A persistent concern with closed-loop language-based planners is latency - prior literature have widely regarded these planners as too slow for closed-loop de-ployment [7, 22, 24, 41]. Some prior work sidestep this failure-mode entirely by using language models only as offline advisors [7,35]. We show this trade-off may not be necessary and Table 3 shows that this limitation is not fundamental. In contrast, LAD operates at 20Hz (43ms) without reasoning and maintains approximately 10Hz operation (102ms) with 10 output tokens which is sufficient for real-time justifications. Note that without reasoning LAD runs faster than DiffusionPlanner [50] and FlowPlanner [39], which produce no textual output at all. Our current implementation leaves significant room for further acceleration through orthogonal optimizations such as improved quantization strategies [47], suggesting that the gains reported here represent a lower bound. 
+
+5.5 Qualitative Analysis 
+
+Beyond quantitative metrics, LAD ’s multimodal phased training (Section 3.1) enables it to reason conversationally about driving scenarios. Figure 6 illustrates three capabilities essential for a language-based planner. 14 A. Ghosh et al. 
+
+Table 3: LAD achieves real-time language-based planning. Without reasoning, 
+
+LAD runs at 43 ms ( ∼20 Hz), comparable to recent closed-loop planners. With reason-ing enabled (10 tokens), LAD operates at ∼10 Hz, demonstrating that language-based planning need not sacrifice latency for textual reasoning.                                  
+
+> Model Reasoning Latency (ms) Hardware
+> DriveVLM [41] Yes 410 Orin X–2 DriveGPT4-V2-8B [44] No 2500 —DriveGPT4-V2-1.5B [44] No 345 —DriveGPT4-V2-0.5B [44] No 124 —PlanTF [9] No 12 A6000 DiffusionPlanner [50] No 50 A6000 FlowPlanner [39] No 83 A6000
+> LAD No 43 A6000
+> LAD (10 tokens max) Yes 102 A6000
+> LAD (40 tokens max) Yes 222 A6000
+
+In example (a), LAD demonstrates cross-modal situational grounding: it interprets lane topology, pedestrian motion, and turn geometry directly from the scene context, enabling it to judge turn-safety and explain its reasoning. Example (b) highlights relational reasoning, where LAD identifies spatial relationships between agents (e.g., which vehicle is behind or approaching) and uses these relations to anticipate potential conflicts. Example (c) shows conditional and rule-aware reasoning: LAD evaluates counterfactuals, applies traffic laws such as pedestrian right-of-way, and understands when rules can be safely relaxed. These capabilities translate directly into improved closed-loop behavior. In Appendix B.3, we present additional visual comparisons showing LAD navi-gating complex intersections, roundabouts, and blocked-lane scenarios while ar-ticulating its high-level intent. In each case, the generated reasoning remains consistent with the scene layout and executed trajectory, and LAD outperforms PlanTF in scenarios requiring adaptive decision-making. We also provide video demonstrations for the interested reader. 
+
+## 6 Conclusion 
+
+We presented two complementary approaches for autonomous driving planning that address different aspects of real-world complexity. RAD demonstrates that carefully designed rule-based planners remain highly competitive when equipped with richer topology exploration and goal-directed optimization, substantially improving geometric maneuvering capabilities while retaining the reliability and interpretability of structured planning. In parallel, LAD introduces the first real-time language-action planner for closed-loop driving. Through interruptible inference, LAD produces valid tra-jectories in a single forward pass while optionally generating language-based rea-soning when compute permits, enabling semantic understanding of ambiguous traffic without sacrificing responsiveness required for safety-critical systems. Together, these methods illustrate a practical path toward combining struc-tured planning and foundation models in autonomous driving. Our results with 
+
+RAD -LAD suggest that rules and language-grounded learning offer complemen-tary capabilities, yielding systems that are both robust in routine driving and adaptable to the long tail of real-world scenarios. RAD-LAD 15 
+
+## References 
+
+1. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., Tang, J., et al.: Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 (2025) 10, 27 2. Black, K., Brown, N., Darpinian, J., Dhabalia, K., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Galliker, M.Y., et al.: π0. 5: a vision-language-action model with open-world generalization. arXiv preprint arXiv:2504.16054 (2025) 3, 7, 19 3. Black, K., Galliker, M.Y., Levine, S.: Real-time execution of action chunking flow policies. arXiv preprint arXiv:2506.07339 (2025) 25 4. Bojarski, M., Del Testa, D., Dworakowski, D., Firner, B., Flepp, B., Goyal, P., Jackel, L.D., Monfort, M., Muller, U., Zhang, J., et al.: End to end learning for self-driving cars. arXiv preprint arXiv:1604.07316 (2016) 25 5. Caesar, H., Kabzan, J., Tan, K.S., Fong, W.K., Wolff, E., Lang, A., Fletcher, L., Beijbom, O., Omari, S.: nuplan: A closed-loop ml-based planning benchmark for autonomous vehicles. arXiv preprint arXiv:2106.11810 (2021) 3, 7, 10, 24, 26, 27 6. Chang, W.J., Zhan, W., Tomizuka, M., Chandraker, M., Pittaluga, F.: Langtraj: Diffusion model and dataset for language-conditioned trajectory simulation. In: ICCV (2025) 10, 19, 26, 27 7. Chen, Y., Ding, Z.h., Wang, Z., Wang, Y., Zhang, L., Liu, S.: Asynchronous large language model enhanced planner for autonomous driving. In: ECCV (2024) 1, 3, 13, 20 8. Cheng, J., Chen, Y., Chen, Q.: Pluto: Pushing the limit of imitation learning-based planning for autonomous driving. arXiv preprint arXiv:2404.14327 (2024) 4, 10, 11, 13, 18, 19, 24 9. Cheng, J., Chen, Y., Mei, X., Yang, B., Li, B., Liu, M.: Rethinking imitation-based planners for autonomous driving. In: ICRA (2024) 4, 5, 7, 10, 11, 12, 13, 14, 18, 19, 22, 23, 24, 25 10. Dauner, D., Hallgarten, M., Geiger, A., Chitta, K.: Parting with misconceptions about learning-based vehicle motion planning. In: CoRL (2023) 2, 3, 4, 7, 8, 10, 11, 12, 24 11. Dauner, D., Hallgarten, M., Li, T., Weng, X., Huang, Z., Yang, Z., Li, H., Gilitschenski, I., Ivanovic, B., Pavone, M., et al.: Navsim: Data-driven non-reactive autonomous vehicle simulation and benchmarking. NeurIPS (2024) 10 12. Devlin, J., Chang, M.W., Lee, K., Toutanova, K.: Bert: Pre-training of deep bidi-rectional transformers for language understanding. In: NAACL-HLT (2019) 5 13. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al.: An image is worth 16x16 words: Transformers for image recognition at scale. In: ICLR (2021) 5 14. Dosovitskiy, A., Ros, G., Codevilla, F., Lopez, A., Koltun, V.: CARLA: An open urban driving simulator. In: CoRL (2017) 10 15. Driess, D., Xia, F., Sajjadi, M.S., Lynch, C., Chowdhery, A., Ichter, B., Wahid, A., Tompson, J., Vuong, Q., Yu, T., et al.: Palm-e: an embodied multimodal language model. In: ICML (2023) 19 16. GeeeekExplorer: nano-vLLM: A lightweight vllm implementation built from scratch. https://github.com/GeeeekExplorer/nano-vllm (2025) 11 17. Ghosh, A., Zheng, S., Tamburo, R., Vuong, K., Alvarez-Padilla, J.R., Zhu, H., Cardei, M., Dunn, N., Mertz, C., Narasimhan, S.G.: Roadwork: A dataset and benchmark for learning to recognize, observe, analyze and drive through work zones. In: ICCV (2025) 1 16 A. Ghosh et al. 18. Hallgarten, M., Stoll, M., Zell, A.: Can vehicle motion planning generalize to real-istic long-tail scenarios? In: IROS (2024) 4, 7, 11, 12 19. Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W.: Lora: Low-rank adaptation of large language models. In: ICLR (2022) 7 20. Hu, Y., Yang, J., Chen, L., Li, K., Sima, C., Zhu, X., Chai, S., Du, S., Lin, T., Wang, W., et al.: Planning-oriented autonomous driving. In: CVPR (2023) 25 21. Huang, Z., Liu, H., Lv, C.: Gameformer: Game-theoretic modeling and learning of transformer-based interactive prediction and planning for autonomous driving. In: ICCV (2023) 4, 10 22. Hwang, J.J., Xu, R., Lin, H., Hung, W.C., Ji, J., Choi, K., Huang, D., He, T., Cov-ington, P., Sapp, B., et al.: Emma: End-to-end multimodal model for autonomous driving. Transactions on Machine Learning Research (2024) 1, 3, 13, 18 23. Jaeger, B., Dauner, D., Beißwenger, J., Gerstenecker, S., Chitta, K., Geiger, A.: Carl: Learning scalable planning policies with simple rewards. In: CoRL (2025) 4, 25 24. Jiang, S., Huang, Z., Qian, K., Luo, Z., Zhu, T., Zhong, Y., Tang, Y., Kong, M., Wang, Y., Jiao, S., et al.: A survey on vision-language-action models for au-tonomous driving. arXiv preprint arXiv:2506.24044 (2025) 13 25. Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C.H., Gonzalez, J., Zhang, H., Stoica, I.: Efficient memory management for large language model serving with PagedAttention. In: SOSP (2023) 6 26. Li, J., Li, D., Savarese, S., Hoi, S.C.H.: Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In: ICML (2023) 3, 6 27. Li, Z., Li, K., Wang, S., Lan, S., Yu, Z., Ji, Y., Li, Z., Zhu, Z., Kautz, J., Wu, Z., et al.: Hydra-mdp: End-to-end multimodal planning with multi-target hydra-distillation. arXiv preprint arXiv:2406.06978 (2024) 5, 9 28. Li, Z., Yu, Z., Lan, S., Li, J., Kautz, J., Lu, T., Alvarez, J.M.: Is ego status all you need for open-loop end-to-end autonomous driving? In: CVPR (2024) 18 29. Liu, H., Li, C., Wu, Q., Lee, Y.J.: Visual instruction tuning. NeurIPS (2023) 3, 6 30. Pan, C., Anantharaman, G., Huang, N.C., Jin, C., Pfrommer, D., Yuan, C., Per-menter, F., Qu, G., Boffi, N., Shi, G., et al.: Much ado about noising: Dispelling the myths of generative robotic control. arXiv preprint arXiv:2512.01809 (2025) 13 31. Pope, R., Douglas, S., Chowdhery, A., Devlin, J., Bradbury, J., Heek, J., Xiao, K., Agrawal, S., Dean, J.: Efficiently scaling transformer inference. MLSys (2023) 6, 11 32. Prakash, A., Chitta, K., Geiger, A.: Multi-modal fusion transformer for end-to-end autonomous driving. In: CVPR (2021) 25 33. Que, H., Liu, J., Zhang, G., Zhang, C., Qu, X., Ma, Y., Duan, F., Bai, Z., Wang, J., Zhang, Y., et al.: D-cpt law: Domain-specific continual pre-training scaling law for large language models. NeurIPS (2024) 7 34. Radford, A., Narasimhan, K., Salimans, T., Sutskever, I., et al.: Improving lan-guage understanding by generative pre-training. OpenAI Technical Report (2018) 535. Sharan, S., Pittaluga, F., Chandraker, M., et al.: Llm-assist: Enhancing closed-loop planning with language-based reasoning. arXiv preprint arXiv:2401.00125 (2023) 1, 3, 13 36. Shi, S., Jiang, L., Dai, D., Schiele, B.: Motion transformer with global intention localization and local movement refinement. NeurIPS (2022) 5, 9 RAD-LAD 17 37. Spector, B., Juravsky, J., Sul, S., Dugan, O., Lim, D., Fu, D., Arora, S., Ré, C.: “look ma, no bubbles! designing a low-latency megakernel for llama-1b”. Blog post, Hazy Research, Stanford (May 2025), https://hazyresearch.stanford. edu/blog/2025-05-27-no-bubbles 6, 11 38. Sun, Q., Wang, H., Zhan, J., Nie, F., Wen, X., Xu, L., Zhan, K., Jia, P., Lang, X., Zhao, H.: Generalizing motion planners with mixture of experts for autonomous driving. In: ICRA (2025) 4, 10, 11, 24 39. Tan, T., Zheng, Y., Liang, R., Wang, Z., Zheng, K., Zheng, J., Li, J., Zhan, X., Liu, J.: Flow matching-based autonomous driving planning with advanced interactive behavior modeling. In: NeurIPS (2025) 4, 10, 11, 12, 13, 14, 18, 19, 24, 25 40. Tian, T., Li, B., Weng, X., Chen, Y., Schmerling, E., Wang, Y., Ivanovic, B., Pavone, M.: Tokenize the world into object-level knowledge to address long-tail events in autonomous driving. In: CoRL (2024) 3, 5 41. Tian, X., Gu, J., Li, B., Liu, Y., Wang, Y., Zhao, Z., Zhan, K., Jia, P., Lang, X., Zhao, H.: DriveVLM: The convergence of autonomous driving and large vision-language models. In: CoRL (2024) 1, 3, 11, 13, 14, 18 42. Treiber, M., Hennecke, A., Helbing, D.: Congested traffic states in empirical ob-servations and microscopic simulations. Physical review E (2000) 9, 11, 24 43. Wu, W., Feng, X., Gao, Z., Kan, Y.: Smart: Scalable multi-agent real-time motion generation via next-token prediction. NeurIPS (2024) 3, 5, 9 44. Xu, Z., Bai, Y., Zhang, Y., Li, Z., Xia, F., Wong, K.Y.K., Wang, J., Zhao, H.: Drivegpt4-v2: Harnessing large language model capabilities for enhanced closed-loop autonomous driving. In: CVPR (2025) 11, 14, 18 45. Xu, Z., Zhang, Y., Xie, E., Zhao, Z., Guo, Y., Wong, K.Y.K., Li, Z., Zhao, H.: Drivegpt4: Interpretable end-to-end autonomous driving via large language model. Robotics and Automation Letters (2024) 3 46. Yang, A., Li, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Gao, C., Huang, C., Lv, C., et al.: Qwen3 technical report. arXiv preprint arXiv:2505.09388 (2025) 11 47. Zandieh, A., Daliri, M., Hadian, M., Mirrokni, V.: Turboquant: Online vector quan-tization with near-optimal distortion rate. arXiv preprint arXiv:2504.19874 (2025) 13 48. Zhai, J.T., Feng, Z., Du, J., Mao, Y., Liu, J.J., Tan, Z., Zhang, Y., Ye, X., Wang, J.: Rethinking the open-loop evaluation of end-to-end autonomous driving in nuscenes. arXiv preprint arXiv:2305.10430 (2023) 18 49. Zhang, L., Rao, A., Agrawala, M.: Adding conditional control to text-to-image diffusion models. In: ICCV (2023) 9 50. Zheng, Y., Liang, R., ZHENG, K., Zheng, J., Mao, L., Li, J., Gu, W., Ai, R., Li, S.E., Zhan, X., et al.: Diffusion-based planning for autonomous driving with flexible guidance. In: ICLR (2025) 4, 10, 11, 12, 13, 14, 18, 19, 24, 25 51. Zhou, Z., Cai, T., Zhao, Seth Z.and Zhang, Y., Huang, Z., Zhou, B., Ma, J.: Autovla: A vision-language-action model for end-to-end autonomous driving with adaptive reasoning and reinforcement fine-tuning. NeurIPS (2025) 18 52. Zitkovich, B., Yu, T., Xu, S., Xu, P., Xiao, T., Xia, F., Wu, J., Wohlhart, P., Welker, S., Wahid, A., et al.: Rt-2: Vision-language-action models transfer web knowledge to robotic control. In: CoRL (2023) 7, 19 18 A. Ghosh et al. 
+
+## A Design Rationale and Extended Discussion 
+
+Architecture & Design Philosophy 
+
+Q: How does LAD ’s interruptible architecture enable reasoning before planning? A: Prior language-based planners couple action generation to full autoregressive text generation, creating a latency-quality tradeoff. LAD ’s interruptible archi-tecture avoids this: reasoning tokens precede the plan token, allowing the model to “think before acting” within a single forward pass. Our ablations show that adding reasoning tokens improves planning quality, indicating that the plan to-ken attends to its textual reasoning chain. This design naturally extends to richer test-time reasoning strategies as future work, requiring no architectural changes. 
+
+Q: How is the reasoning budget controlled at inference? A: In the current evaluation, the token count is a fixed hyperparameter. The key property is that the plan token always produces a valid trajectory regardless of how many reasoning tokens precede it. This makes the system directly com-patible with external safety monitors that may demand immediate re-planning at any moment—the plan is never “incomplete.” 
+
+Q: Why is a 0.6B LLM backbone sufficient, and what are the scaling prospects? A: Qwen3-0.6B was chosen deliberately to satisfy the real-time latency con-straint while still demonstrating a core hypothesis: that language supervision improves planning. The ablation in Table 2 confirms that language supervision consistently improves planning quality even at this scale. Importantly, the LAD 
+
+architecture (plan token, interruptible inference, adapters) is model-size agnostic; scaling to larger backbones requires no architectural changes, making studying scaling behavior a natural direction for future work. 
+
+Context & Positioning 
+
+Q: How does LAD relate to concurrent VLA/VLM planners? A: These methods [22,41,44,51] target a different operating regime: they process camera images, use larger backbones, and are primarily evaluated on vision-centric benchmarks or synthetic simulators. LAD addresses a complementary setting, real-time language-action planning on nuPlan, the standard closed-loop benchmark. Accordingly, LAD is compared against the best performing methods on the nuPlan benchmark: [8, 9, 39, 50]. 
+
+Q: Why does LAD use vectorized inputs rather than camera or Li-DAR inputs? A: End-to-end VLA/VLM planners [22,41,44] study a different problem, jointly learning perception and planning from raw sensor data, and typically rely on open-loop evaluation, which does not reliably predict closed-loop performance [28, 48]. Our work addresses a complementary question: whether language supervi-sion improves the planning component itself. We evaluate in nuPlan’s realistic RAD-LAD 19    
+
+> Fig. 7: LAD demonstrates strong spatio-temporal understanding when navigating a complex left-turn. In each case, it correctly identifies nearby pedestrians, crosswalks, and turning geometry, and produces a safe, smooth trajectory while articulating its high-level intent (e.g., “turning left,” “near pedestrian on crosswalk”). LAD ’s textual explanations remain consistent with the scene layout and the executed motion plan.
+
+closed-loop simulator, the standard setting for state-of-the-art planners [8, 9, 39, 50]. A key advantage of this setting is scalable language supervision: closed-loop simulators with logged data enable straightforward construction of trajectory-aligned QA pairs, as we demonstrate with DrivingQA and PlanningQA, lever-aging behavior annotations [6] as one source of grounding. More broadly, we believe deployed planners will likely consume varying input configurations depending on available sensors and infrastructure, from vision and LiDAR alone to full stack inputs including HD maps and tracked agents. Recent work in robotics [2, 15, 52] suggests that training across diverse modality combinations yields complementary gains. Language supervision from log-replay simulators like nuPlan offers a particularly portable training signal, as it can be synthesized regardless of the underlying sensor modality. LAD ’s modality-agnostic adapter pattern supports this direction: augmenting the encoder with, e.g., a vision backbone is feasible with few changes. 
+
+Empirical Insights 
+
+Q: What is the key insight behind RAD ’s design? A: RAD contributes both a concrete algorithmic improvement, and the empir-ical finding it enables: these extensions close most of the gap between PDM-Closed and human performance on Test14-Hard, demonstrating that existing long-tail benchmarks predominantly capture capabilities absent from the base-line planner rather than intrinsic scenario difficulty. The deliberate simplicity of RAD is what makes this insight useful: because the fix is simple, the large performance gain can be attributed directly to the new capabilities rather than to added model capacity or data. 
+
+Q: PDM-Closed already scores 15 proposals at every timestep. Why does it still need dynamic replanning? 20 A. Ghosh et al. 
+
+A: PDM-Closed is the strongest existing rule-based planner in the literature but was designed with a fixed topology. Despite scoring 15 candidates, PDM-Closed anchors all of them to proposal paths fixed at initialization, and there is no topological replanning after the first timestep. If the ego drifts or paths become blocked, the underlying topology is never updated. The official implementation reflects this design choice: 
+
+> # L98 abstract_pdm_closed_planner.py # TODO: Find additional conditions to trigger re-planning create_new_proposals = self._iteration == 0
+
+As a result, PDM-Closed does not support lane changes or off-route recovery. 
+
+RAD addresses exactly this: it performs full topological replanning at every timestep, regenerating proposal paths from the current ego state and augmenting them with adjacent-lane centerlines. 
+
+Q: How do RAD and LAD complement each other? A: The two planners address different axes of difficulty. Many Test14-Hard sce-narios are geometric in character, which RAD already handles well, so the hybrid gain on this split is modest. On InterPlan, which tests multi-agent interaction, the improvement from adding LAD is more pronounced, indicating that the lan-guage component contributes most in semantically complex scenarios. Beyond numeric scores, LAD provides interpretable reasoning for every decision, which is a critical capability for deployment that pure rule-based systems cannot offer. 
+
+Q: Do the improvements generalize beyond long-tail benchmarks? A: Yes. As shown in Table 6, RAD marginally improves over PDM-Closed on Val14, confirming that lane-change capability and dynamic replanning do not harm general driving. Among imitation-based learned planners, LAD outper-forms PlanTF on Val14 as well. Notably, RAD ’s trajectory vocabulary is drawn from the full nuPlan training set, so its strong Test14-Hard performance does not reflect overfitting to rare maneuvers. The human-gap analysis in Table 8 reinforces this: both planners remain close to human performance on Val14, yet PDM-Closed’s gap on Test14-Hard is roughly 4 × larger than RAD ’s. This insight indicates that most of the “difficulty” captured by Test14-Hard reflects capabilities outside PDM-Closed’s design scope, while RAD ’s improvements gen-eralize across both standard and long-tailed conditions. 
+
+Reproducibility 
+
+Q: What is the latency measurement methodology? A: Prior work has noted that LLM-based planners face “significant challenges, including elevated resource consumption and extended inference times, which pose substantial obstacles to practical deployment” [7]. All closed-loop planners in Table 3 (PlanTF, DiffusionPlanner, FlowPlanner, and LAD ) are measured on the same A6000 hardware under identical evaluation conditions. Our results show that this limitation is not fundamental: LAD is fast enough for closed-loop deployment (10 Hz with reasoning, 20 Hz without), and among closed-loop planners evaluated on this hardware, LAD is competitive while being the only RAD-LAD 21   
+
+> Fig. 8: LAD handles diverse road configurations by accurately understanding lane topology, control rules, and surrounding agents. Its generated reasoning reflects this situational awareness (e.g., “on stopline stop sign,” “crossing an intersection”, “following lane without lead”), and its trajectory choices align with these high-level descriptions.
+
+method that also produces interpretable reasoning. DriveVLM’s reported Orin latency is included only for reference to concurrent language-based planners. 
+
+Q: Will code, models, and data be released? A: Yes. We will release code and model weights. 
+
+## B LAD : Language Based Autonomous Driving 
+
+B.1 Structured Reasoning for Inference 
+
+To satisfy strict latency constraints while retaining interpretability, LAD uses 
+
+structured reasoning templates that restrict generation to task-relevant tokens. Instead of open-ended text generation for the planning reasoning, we use tem-plates with designated fill-in fields, 
+
+Ego is {scenario_type} and is {meta_action}<|plan|> .The model generates only the tokens within curly braces (e.g., meta actions like 
+
+following_lane , turning_left ). Do note that the DrivingQA dataset is open ended and is part of the data-mix while training. 
+
+Training Augmentation. During training, we randomly truncate reasoning mid-generation before the <|plan|> token. This augmentation ensures the model learns to produce valid plans regardless of how much reasoning context is avail-able. We observed no drop in planning performance from this truncation strategy. 
+
+Multi-Turn Capability. While LAD is trained exclusively on single-turn QA pairs from Interaction-QA dataset, it retains the multi-turn conversational ability of its base language model (Qwen3-0.6B). The examples in Figure 6 demonstrate this emergent capability at inference time. 22 A. Ghosh et al. LAD PlanTF    
+
+> Fig. 9: LAD produces safe and consistent trajectories through this complex round-about while simultaneously articulating its high-level intent (e.g., “ego vehicle is travers-ing pickup-dropoff and is turning left”). In contrast, PlanTF [9] frequently hesitates or commits to suboptimal maneuvers. LAD ’s textual reasoning aligns with its chosen motion plan, providing interpretable justification for each action.
+
+B.2 Latency Measurement Methodology 
+
+Our latency measurements reported in Table 3 represent end-to-end inference time , measured from receiving vectorized inputs (map elements, agent states) to extracting the final waypoint trajectory. This includes the PlanTF encoder forward pass, MLP adapter projection, language model prefill (and optional autoregressive decoding for reasoning tokens), planning head forward pass, and trajectory vocabulary lookup. Measurements are averaged over 1000 warm-start inference calls. The reported times do not include data loading or raw sensor pre-processing. 
+
+B.3 More Visual Comparisons 
+
+We present a few scenarios where LAD shows good spatio-temporal understand-ing of the map and other agents around while navigating (See Figure 7 and Fig-ure 8). We also present some visual comparisons between LAD and PlanTF [9] in Figure 9 and Figure 10. We also show more visual results in our associated supplementary video. RAD-LAD 23 LAD PlanTF 
+
+Fig. 10: LAD correctly infers from the scene that the ego lane is blocked by static ob-jects. It then selects the farther unblocked lane and executes a safe maneuver through the intersection, identifying relevant dynamic objects (“long vehicle”). In contrast, PlanTF [9] continues to follow the blocked lane or hesitates, failing to account for the static obstacles. 
+
+## C RAD Ablation Studies 
+
+In this section, we provide ablation studies of the various algorithmic novelties relative to PDM-Closed. The effectiveness of these components is validated on subsets of nuPlan Test14 and InterPlan subsets that do not overlap with the benchmark subsets. 
+
+Table 4: RAD Ablation on nuPlan Test14 subset 
+
+PDM-Closed +Replan +Vocab Aug. +Adj. Centerlines 
+
+92.75 93.92 94.40 94.51 
+
+Table 5: RAD Ablation on InterPlan subset 
+
+RAD +Goal Opt. +Rule Relaxation 
+
+84.31 90.22 92.99 24 A. Ghosh et al. 
+
+Table 6: Val14 (Reactive) results. RAD marginally improves over PDM-Closed, confirming that dynamic replanning and lane-change capability do not degrade nominal driving quality. LAD outperforms PlanTF among learned planners, demonstrating that language supervision preserves normal driving performance. 
+
+Type Planner Val14 (R) 
+
+Expert Log Replay 93.68 Rule IDM [42] 79.31 PDM-Closed [10] 92.12 
+
+RAD (Ours) 92.31 
+
+Learned PlanTF [9] 77.07 PLUTO [8] 80.01 DiffusionPlanner [50] 82.80 FlowPlanner [39] 83.31 
+
+LAD (Ours) 78.40 Hybrid PLUTO [8] 87.00 STR2-CKS-800m [38] 92.12 DiffusionPlanner [50] 92.90 
+
+FlowPlanner [39] 92.38 
+
+RAD -LAD (Ours) 92.35 
+
+Table 7: Impact of Downstream Controller. Replacing the default LQR controller with iLQR improves LAD ’s score by 4.07, consistent with the hidden imitation gap arising due to not accounting for downstream controller [9]. Thus, controller-awareness is an important consideration for trajectory-based planners. 
+
+Planner Controller Val14 (R) 
+
+LAD LQR 78.40 
+
+LAD iLQR 82.47 
+
+## D Additional Results 
+
+D.1 Results on Regular Driving Situations 
+
+Table 6 reports performance on nuPlan Val14 [5], the standard split representa-tive of normal driving situations. RAD marginally improves over PDM-Closed, confirming that dynamic replanning and lane-change capability do not degrade nominal driving quality. Among imitation-based learned planners, LAD outper-forms PlanTF, demonstrating that language supervision does not harm normal driving performance. 
+
+D.2 Impact of Downstream Controller 
+
+Prior work [9] suggested the existence of a hidden imitation gap which arises due to the discrepancy between trajectory-based planner and the downstream RAD-LAD 25 
+
+controller. The expert trajectory serves as the ground truth during the train-ing of the imitation-based planner. The predicted trajectory is processed by a downstream controller (could be LQR or iterative LQR or some other algorithm) and the underlying system dynamics, which are not considered during training. Thus, during roll out in closed-loop evaluation, this discrepancy may lead to a decrease in planning performance as predictions do not consider what can be actually actuated or tracked by the downstream controller. In Table 7, we confirm this hidden imitation gap is the reason impeding 
+
+LAD ’s performance in normal driving situations. Changing the downstream con-troller from LQR to a more robust iterative LQR (iLQR) controller improves performance by 4.07% closing the gap between LAD and other state-of-the-art imitation methods [39, 50]. However, we note that these iLQR results depart from the standard nuPlan evaluation protocol 1, which couples a fixed LQR controller with the simulation. As our results show, this coupling is suboptimal: the LQR controller degrades the closed-loop performance of trajectory-based planners. Prior work [23] cor-roborates this finding, showing that even the human expert trajectory loses ∼3points under the default LQR controller compared to a more accurate iLQR controller. This suggests that nuPlan scores partially reflect controller quality rather than planning quality alone. We concur with prior work [23] that simulators and benchmarks for au-tonomous driving should decouple control from simulation. The choice of con-troller is inherently tied to the planner’s output representation, an observation that has long motivated end-to-end approaches to autonomous driving [4,20,32]. Bridging this gap is an orthogonal research direction: our work focuses on im-proving planning through language supervision. Addressing the control inter-face, whether through alternative output representations [23], learning the con-troller [9], smoother action execution strategies [3], or benchmark redesign, is a complementary but distinct line of work. 
+
+D.3 Does RAD overfit to long-tailed situations? 
+
+Table 8 compares the performance gap between planners and human expert driving on Val14 versus Test14-Hard. While both RAD and PDM-Closed achieve near-human performance on Val14, PDM-Closed exhibits a notably larger gap on the long-tailed splits. Crucially, RAD ’s improvements stem from general-purpose driving capabil-ities, i.e., lane changes, dynamic topology replanning, and goal-directed opti-mization, rather than heuristics tailored to specific failure modes. The asymmetry in human gaps is revealing. Both methods are near-human on Val14, so baseline planning quality is comparable. On Test14-Hard, however, PDM-Closed’s gap widens to roughly 2× RAD ’s gap. Since RAD differs from PDM-Closed only in structural capabilities, this excess gap indicates that many                          
+
+> 1https://nuplan-devkit.readthedocs.io/en/latest/competition.html 26 A. Ghosh et al.
+> Table 8: Human-gap analysis across splits. Both RAD and PDM-Closed achieve near-human performance on Val14, but RAD maintains a significantly smaller gap on Test14-Hard, suggesting that RAD ’s lane-change and replanning capabilities generalize to long-tail scenarios without overfitting.
+> Val14 Test14-Hard Method Score Human Gap Score Human Gap
+> PDM-Closed 93.20 0.80 75.19 10.77
+> RAD 92.31 1.69 80.53 5.43 Human (Expert) 94.00 –85.96 –
+
+Test14-Hard scenarios are “hard” not because of inherent complexity, but because PDM-Closed lacked certain structural capabilities. Finally, RAD ’s Val14 score marginally improves over PDM-Closed, ruling out the overfitting hypothesis. If RAD were specialized to long-tail scenarios at the expense of normal driving, we would expect a regression on Val14. Instead, the consistent or improved performance across both splits confirms that RAD ’s gains are attributable to improvements in general planning capabilities. 
+
+## E Datasets 
+
+E.1 DrivingQA Dataset 
+
+Training multimodal language models for autonomous driving requires grounded question-answering data that captures the nuanced dynamics of multi-agent in-teractions. Existing driving QA datasets often focus on object recognition or simple scene descriptions, lacking structured annotations for ego-centric plan-ning decisions and inter-agent relationships. To address this gap, we introduce 
+
+DrivingQA , a synthetically generated instruction-tuning dataset built on top of NuPlan [5]. DrivingQA contains 1.2 million question-answer pairs spanning 3.3 million driving scenarios taken from 8,457 nuplan scenes, with explicit anno-tations for ego vehicle plans, agent-of-interest (AOI) behaviors, and multi-agent interactions. 
+
+Data Sources. We leverage heuristic and human annotated behavior annotations from InterDrive [6] which provide structured per-agent behavior labels (e.g., lane position, turn intent, speed state, intersection behavior) for nuPlan scenes (a scene is a 20 second driving log). We additionally employ GPT-4o rephrased descriptions that introduce natural language diversity for the same underlying behaviors. We associate each scene with one or more NuPlan scenario types (from a taxonomy of types such as starting_left_turn ), along with precise temporal annotations indicating when each scenario occurs within the 20-second scene ( min_time , max_time in seconds). RAD-LAD 27 
+
+Generation Pipeline. For each scene with annotated interactions, we construct structured prompts for three subject categories: the ego vehicle , the agent of interest (the primary interacting agent), and other agents present in the scene. Each prompt includes the subject’s behavior description, interaction context, and scenario type metadata. We employ Qwen2.5-32B [1] to generate 2 to 4 QA pairs per ego/agent of interest subject and 1 to 3 pairs for every other agent. To ensure entity-agnostic generalization, all agents are referenced using spe-cial tokens: <|ego|> for the ego vehicle, <|agent_of_interest|> for the pri-mary interacting agent, and <|agent|> for all other agents. While training, we replace these tokens with the numerical ID’s assigned to each agent. Each answer is tagged with a provenance label, either stated (directly from annotations), de-duced (inferred from context), or unknown (insufficient evidence), which enables us to perform filtering before training. 
+
+Question-Answer Diversity. The system prompt encourages lexical and struc-tural diversity, varying interrogatives (what/which/how/why/does/can), para-phrasing answers, and including negative/counterfactual questions (e.g., “Is Agent 
+
+<|ego|> turning left?” when the ground truth is going straight). Questions span multiple categories including planning (ego maneuver intent), behavior (agent motion states), interaction (yielding, priority, relative positioning), and spatial 
+
+(lane occupancy, intersection traversal). 
+
+E.2 PlanningQA Dataset 
+
+While DrivingQA (Section E.1) provides broad scene understanding through open-ended question-answer pairs, it lacks temporal grounding to the ego vehi-cle’s immediate action. PlanningQA addresses this gap by pairing each training trajectory with a short textual description of the ego’s behavior, temporally aligned with the ground-truth waypoints. This provides the model with action-conditioned language supervision: text that describes what the ego is doing when the plan is executed , rather than general scene-level information. 
+
+Scenario Type. Each nuPlan scenario carries a scenario type label drawn from nuPlan’s official taxonomy of 75 types [5]. These types are algorithmically mined from driving logs via atomic event primitives (e.g., intersection entry, high lateral acceleration, dense traffic) and cover both frequent maneuvers (e.g., following_ lane_with_lead , starting_left_turn , changing_lane ) and rare long-tail events (e.g., near_miss , waiting_for_pedestrian_to_cross , traversing_pickup_ dropoff ). Because nuPlan natively provides temporal bounds ( min_time , max_ time ) for each scenario within a scene, we can associate the correct scenario type, ensuring alignment between the label and the ground-truth trajectory. 
+
+Meta-Action. In addition to the scenario type, we annotate each planning timestep with a meta-action label describing the ego vehicle’s high-level behavioral intent. These labels are derived from the heuristic single-agent behavior annotations provided by InterDrive [6], which assigns structured per-agent labels (e.g., lane 28 A. Ghosh et al. 
+
+System Directive 
+
+You generate high-quality instruction-tuning QA data for self-driving scenarios. Assume your role is of a Planner agent reasoning about the scene and the agents in it. Entity References: In all questions and answers, use these exact references: – ego vehicle: ‘Agent <|ego|>’ – primary interacting agent: ‘Agent <|agent_of_interest|>’ – any other agent: ‘Agent <|agent|>’ Never use raw IDs. IDs belong only in metadata. Scene Context: A scene is a 20-second driving segment. Scenarios are triggered by ego behavior at specific time instants. Each scenario has a type from the NuPlan taxonomy. Grounding Rules: Only use facts in the provided JSON. If a detail is not stated and cannot be deduced, answer ‘Unknown’ with answer_source ‘unknown’. Do not refer to the input text in your answers. Diversity: Vary interrogatives (what/which/how/why/does/can), paraphrase answers, include negative/counterfactual questions. Avoid repeating the same template. Output: Valid JSON array with schema: {question, answer, answer_source, tags}. 
+
+User Prompt (per-subject) 
+
+Task: Produce 2 to 4 QA items for the Ego subject. Additional Instructions: Ask about current state, scenario type, plan, interactions with agent of interest. Scene token: {scene_token} Scenario type aggregates: (context only, do NOT ask about min_time/max_time) [{"scenario_type": "on_intersection", "agent_track_token": null, "min_time": 8.15, "max_time": 9.65}, {"scenario_type": "traversing_intersection", ...}] Subject: ego, Type: VEHICLE Has interaction: true Input data (JSON): {"reasoning_text": "Is in middle lane, crossing an intersection, going straight.", "ego": {"other_agent_token": "<|nuplan_token|>"}, "has_interaction": true} 
+
+Output Schema 
+
+[{"question": "What maneuver is Agent <|ego|> planning?", "answer": "Go straight through the intersection.", "answer_source": "stated", "tags": ["planning", "intersection"]}, ...] 
+
+Fig. 11: DrivingQA generation prompt. Template used to synthesize trajectory-grounded QA pairs from driving logs, for LAD ’s scalable language supervision pipeline. RAD-LAD 29 
+
+position, turn intent, speed state, intersection behavior) based on calibrated ge-ometric and kinematic heuristics applied to the nuPlan driving logs. We extract and map the ego-relevant subset of these annotations to a compact set of meta-actions such as following_lane , turning_left , turning_right , stationary ,and lane_change .
+
+Template Format. During training, PlanningQA supervision is provided as a short structured sentence preceding the <|plan|> token. Because the template is short and fixed-format, it adds minimal latency during inference while provid-ing action-aligned textual supervision that is complementary to the open-ended DrivingQA pairs.

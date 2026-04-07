@@ -1,0 +1,332 @@
+Title: LLM-based Listwise Reranking under the Effect of Positional Bias
+
+URL Source: https://arxiv.org/pdf/2604.03642v1
+
+Published Time: Tue, 07 Apr 2026 00:31:45 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# LLM-based Listwise Reranking under the Effect of Positional Bias 
+
+Jingfen Qiao 1⋆, Jin Huang 2, Xinyu Ma 3, Shuaiqiang Wang 3, Dawei Yin 3,Evangelos Kanoulas 1, and Andrew Yates 4 
+
+> 1
+
+University of Amsterdam, Amsterdam, The Netherlands 
+
+{j.qiao, e.kanoulas}@uva.nl  
+
+> 2
+
+University of Cambridge, United Kingdom  
+
+> 3
+
+Baidu Inc., China  
+
+> 4
+
+Johns Hopkins University, United States 
+
+andrew.yates@jhu.edu 
+
+Abstract. LLM-based listwise passage reranking has attracted attention for its effectiveness in ranking candidate passages. However, these models suffer from positional bias, where passages positioned towards the end of the input are less likely to be moved to top positions in the ranking. We hypothesize that there are two primary sources of positional bias: (1) architectural bias inherent in LLMs and (2) the imbalanced positioning of relevant documents. To address this, we propose DebiasFirst, a method that integrates positional calibration and position-aware data augmen-tation during fine-tuning. Positional calibration uses inverse propensity scoring to adjust for positional bias by re-weighting the contributions of different positions in the loss function when training. Position-aware augmentation augments training data to ensure that each passage ap-pears equally across varied positions in the input list. This approach markedly enhances both effectiveness and robustness to the original ranking across diverse first-stage retrievers, reducing the dependence of NDCG@10 performance on the position of relevant documents. Debias-First also complements the inference-stage debiasing methods, offering a practical solution for mitigating positional bias in reranking. 
+
+## 1 Introduction 
+
+Large language models (LLMs) have received increased attention for their ap-plications in information retrieval (IR) [ 43 , 42 ]. Listwise passage reranking is a core application of LLMs in IR, aiming to rank a list of candidate passages. Sun et al. [ 33 ] found that, with proper instructions, GPT-4 can deliver competitive, even superior results to state-of-the-art supervised methods for listwise reranking. Subsequent studies proposed to fine-tune open-source LLMs to perform listwise reranking, thereby improving the efficacy of this task [22,24,26,40,27]. Recent studies have highlighted positional bias , where LLMs prioritize content based on its position within the given context [ 11 , 38 , 36 , 19 , 4, 28 , 5]. Several forms  
+
+> ⋆
+
+Corresponding author  
+
+> arXiv:2604.03642v1 [cs.IR] 4 Apr 2026 2J. Qiao et al.
+
+of positional bias have been observed, e.g., prompt order effects [ 36 ], where certain orders outperform others, and the “lost in the middle” phenomenon [ 19 ], where performance degrades when relevant information is in the middle of long contexts. Tang et al. [ 34 ] identified positional bias that depends on the pairwise positions of items in the ranking list. To investigate how input position affects reranking performance, we evaluate a widely used reranking model by changing the position of the relevant passage within its input. We observed that ranking performance is reduced when a relevant passage is not positioned at the beginning of the input, as detailed in Section 6. This positional bias makes reranking performance fundamentally unreliable and overly dependent on ordering. To address positional bias, recent studies have proposed methods targeting the inference and fine-tuning stages of LLM-based reranking methods, respectively. At the inference stage, most approaches mitigate positional bias by aggregating output rankings generated from different input orders [ 34 , 12 , 41 ]. For example, PermSC [ 34 ] aggregates rerankings across various permutations and derives a central ranking that minimizes positional bias by selecting the one closest to all permutations under distance metrics. Alternatively, ListT5 [ 40 ] generates a sorted list of input passages in increasing order of relevance, progressively eliminating irrelevant passages to deduce the most relevant passages, thereby mitigating positional bias. While effective, these approaches require additional memory [ 14 ]or multiple inference runs [ 34 ]. Apart from the inference stage, some studies have attempted to eliminate positional bias in listwise reranking by introducing random shuffling augmentations of fine-tuning data [ 22 , 24 ]. Yet, these models still suffer from positional bias: our experiments show that ranking performance is reduced when relevant passages are not in the initial position. Motivated by this, we propose a method that improves robustness to variations in input order at the fine-tuning stage, ensuring more stable performance across all positions. To better reduce positional bias in LLM-based listwise reranking, we first conduct a causal analysis through hypothesis testing, assuming bias arises from (1) architectural bias inherent in LLMs and (2) the imbalanced positioning of rele-vant documents. Building on this, we propose a debiasing method for LLM-based listwise reranking, consisting of two components: positional calibration using inverse propensity scoring (IPS) and position-aware augmentation. IPS-based po-sitional calibration adjusts for positional bias by re-weighting the contributions of different positions in the loss function for reranking. Position-aware augmentation augments training data to ensure that each passage appears equally across differ-ent positions of the input list. Together, these techniques substantially improve robustness to input order, reducing the dependence of NDCG@10 performance on the position of relevant documents. This reduction leads to improved ranking performance across both in-domain and out-of-domain datasets, achieving a 2%-4% increase in average NDCG@10 depending on the setting. 
+
+## 2 Preliminary 
+
+Given an instruction prompt X that includes a query q and a list of candidate passages {xi|1 ≤ i ≤ k}, listwise rerankers aim to rerank these passages simul-LLM-based Listwise Reranking under the Effect of Positional Bias 3
+
+taneously, ensuring that those most relevant to query q appear higher in the reranked list. The position of passage xi in the reranking permutation is denoted as ˆπq (xi), which is determined by the relevance score fθ (xi) predicted by the LLM-based method. For simplicity, we omit the superscript q when the query is clear from the context. The true reranking permutation comes in the form of sequence y = [ y1] > [y2]... > [yk], where yi denotes the identifier of the i-th most relevant document. Recent work [ 22 ,24 ] has proposed fine-tuning LLMs as rerankers with a language modeling (LM) objective, minimizing the prediction error in predicting correct document identifiers in the generation sequence: 
+
+LLM = −
+
+> |y|
+
+X
+
+> i=1
+
+log( Pθ (yi|X, y <i )) , (1) where Pθ denotes the conditional probability of predicting the target yi based on the prompt X and the preceding identifiers y<i .Such LLM reranking methods lack efficiency as they generate the reranking permutation in the form of an ordered sequence of candidate passage identifiers. To improve efficiency, First [ 26 ] proposes leveraging the output logits of the first generated identifier to directly derive a ranked ordering of the input passages. Specifically, fθ (xi) is the output vocabulary logit for the passage identifier of passage xi during the first token generation in the First model. Building on this, First formulates its training objective as follows: 
+
+LRank = X 
+
+> π(xi)<π (xj)
+
+1
+
+i + j δ(fθ (xi), f θ (xj )) . (2) A logistic loss function δ(·) = log (1 + exp (·)) is applied to measure the relative difference in the predicted relevance scores between two passages. Here, the weight 1/(i + j) assigns greater weights to higher ranked passages, reducing the risk of misranking those that are more relevant. Drawing from the success of the language modeling objective in listwise reranking, First combines LRank and LLM into the final joint loss for fine-tuning the LLM parameters θ:
+
+LFirst = λLRank + LLM , (3) where λ controls the relative importance of two losses. 
+
+## 3 Causal Analysis of Positional Bias 
+
+Before introducing our method to mitigate positional bias, we first analyze the causes of positional bias associated with LLMs in listwise passages reranking. Inspired by literature [ 32 , 33 , 34 , 39 ], we demonstrate the causal relationships between data (X), LLM model (LLM), positional bias (P), and the resulting reranking permutation ( π) in Figure 1 and hypothesize the following two primary sources of positional bias. 
+
+Bias arising from the architecture of LLM (LLM → P). LLMs commonly use rotary position embedding (RoPE) [ 32 ], a type of relative positional encoding that 4 J. Qiao et al. X πLLM 
+
+> P
+
+Fig. 1: A causal directed acyclic graph illustrating the relationships between input (X), LLM, positional bias (P), and the resulting output ( π) in listwise reranking. encodes absolute positional information using rotation matrix, thus enhancing their ability to capture and manipulate long-term dependencies between tokens in sentences. However, architecture often diminishes focus on tokens located further from the query, as the scale of attention decays over distance [ 6]. Moreover, Xiao et al. [ 39 ] observed that earlier tokens in a sequence receive disproportionately high attention logits, even when they are not semantically important. Additionally, LLM-based rerankers often face generation failure, where LLMs fail to predict passage identifiers. A common solution is to append unpredicted passages in their original input order from the first stage retriever to the end of LLMs’ output [ 33 ]. This may exacerbate positional bias as it preserves the initial order of passages in the reranking output. 
+
+Bias arising from imbalanced relevance distribution across input posi-tions (X → P). Training data used for fine-tuning LLMs often exhibits an unequal distribution of relevant documents across different positions in the input sequence, as shown on the left of Figure 3. In general, we observe that passages initially positioned higher in the input are significantly more likely to be relevant in the MS MARCO training set, as evidenced by the higher frequency of these passages occupying higher positions in the true reranking permutation. This imbalance can heighten the sensitivity of LLMs to positional cues, thereby exacerbating bias toward early passages in the input during the fine-tuning process. Together, the imbalanced relevance distribution in the training data (X) and the positional bias inherent in the LLM architecture (LLM) contribute to a great emphasis on early-positioned passages (P) when fine-tuned LLMs are used to generate reranking permutations ˆπ.
+
+## 4 Method 
+
+Our method DebiasFirst mitigates positional bias in fine-tuned LLMs for listwise reranking through two components: positional calibration and position-aware augmentation. Positional calibration operates at the loss-function level, employing inverse propensity scoring (IPS) to adjust the loss contribution of underrepre-sented or overrepresented input positions. Position-aware augmentation (Pos-Aug) enhances the robustness of the model by ensuring that each passage appears equally across various positions in the input list. 
+
+4.1 Positional Calibration through IPS 
+
+To reduce the positional bias that causes varying attention across different input positions, we want to balance the contribution of each passage by adjusting the LLM-based Listwise Reranking under the Effect of Positional Bias 5
+
+Fig. 2: Overview of the proposed positional calibration using IPS. Each document’s relevance score fθ (xi) is calibrated by multiplying it with estimated inverse propensity values πq (xi) to account for positional bias. The heatmap on the right visualizes the estimated inverse propensities across input and output positions. influence of transitions between input and reranking positions based on their frequency, as illustrated in Figure 2. Formally, given a passage xi and its true relevant position π(xi), let ωi,π (xi)
+
+denote the influence of the transition between the input and reranking positions, referred to as propensity, which quantifies positional bias in LLM fine-tuning. Building on the learning-to-rank objective in the First model (See Eq. (2)) and the idea of IPS, we adjust the loss for a pair of passages (xi, x j ) by inversely weighting it with the product of their propensities ωi,π (xi) and ωj,π (xj ):
+
+LRank-IPS = X 
+
+> π(xi)<π (xj)
+
+δ(fθ (xi), f θ (xj )) (i + j) · ωi,π (xi) · ωj,π (xj )
+
+. (4) If certain transitions ( i.e., from certain input positions to certain reranking positions) are overrepresented with high propensities, LRank-IPS assigns low weights to these transitions, thereby reducing the influence of positional bias on the training process. Conversely, LRank-IPS assigns a high weight to transitions that are frequently underrepresented with low propensities. 
+
+Positional Bias Estimation. LRank-IPS requires accurate propensities to remove the effect of positional bias, which we estimate by adoptiong a randomization strategy inspired by previous work [ 1]. We shuffle passages n times for each query to augment the original prompt set X , denoted as eX .Given input position i and any position output position π, the propensity 
+
+ωi,π can be estimated as the fraction of all transitions assigned to the reranking position π from input position i in the modified prompt set eX :
+
+ωi,π =
+
+P  
+
+> (q,i )∈eX
+
+1ˆπq (xi)= π
+
+|Q| · k · n , (5) where |Q| is the number of queries and |Q| · k · n is the total number of passages observed in all the permutations in eX .6 J. Qiao et al. 
+
+(a) Original (b) Using Pos-Aug Fig. 3: Number of passages (z) with in-put positions (x) and true reranking positions (y). 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20  
+
+> Ours: DebiasFirst
+> First
+> RankZephyr
+> ListT5
+> Position of Relevant Passage
+
+Fig. 4: Performance of LLM-based reranking methods when changing the position of the relevant passages within their input on MS MARCO (dev). 1. Unbiased Random Shuffling : Initially, the passages for each query are randomly shuffled using the Fisher-Yates shuffling algorithm [ 30 ]. It produces an unbiased permutation, ensuring that every passage has an equal probability of appearing in any position [8]. 2. Grouping and Rotation : The shuffled passages are then divided into n
+
+groups. By rotating these groups in order, we generate different n permu-tations of the passage order, ensuring a balanced distribution of relevant passages across both input and output positions. 
+
+4.2 Position-Aware Augmentation 
+
+To further mitigate positional bias arising from the imbalanced distribution of rel-evant passages in the training data, we implement a position-aware augmentation (Pos-Aug) strategy to enhance training data. This augmentation strategy ensures each passage appears in a wide variety of positions across multiple training instances. By exposing the model to diverse positional contexts, we reduce the likelihood of the model overfitting to specific positional patterns. Our proposed Pos-Aug involves two primary steps: Figure 3 illustrates the movement of passages in the training data from their input positions to reranking positions, showing the frequency of each transition before and after applying position-aware augmentation. We clearly observe varied passage orders in the augmented training data after applying Pos-Aug, which helps reduce the influence of positional bias when fine-tuning on such data. Finally, by combining both positional calibration with IPS and the position-aware augmentation, we present DebiasFirst, a comprehensive method to mitigate positional bias in LLM-based listwise passages reranking. Building on previous findings regarding the benefits of jointly fine-tuning with a language modeling objective [26], our final training objective is defined below: 
+
+LDebiasFirst = λLRank-IPS + LLM . (6) The LLM parameters θ are updated by optimizing LDebiasFirst on data augmented using our position-aware augmentation strategy. LLM-based Listwise Reranking under the Effect of Positional Bias 7
+
+## 5 Experimental Setup 
+
+Dataset and evaluation. Our study utilizes the same training dataset as in previous works by [ 26 ] and [ 22 , 24 ] to ensure consistency for comparative analysis. This dataset, which comprises 40K instances labeled by GPT-4 and originating from [ 24 ], was created using 5K queries from MS MARCO [ 2]. Our positional-aware augmentation techniques are implemented on this training data. The study evaluates model performance across both in-domain datasets (MS MARCO Dev, TREC DL 2019 and 2020) and an out-of-domain dataset (BEIR). Three different first-stage retrievers (Contriever [ 13 ], Splade++ [ 9], BM25) are used. All evaluations use NDCG@10 as the relevance metric. 
+
+Baselines. We compared our method against two categories of baselines: (1) fine-tuned LLMs for listwise passages reranking and (2) the inference-stage debiasing approach. In terms of fine-tuned LLMs, we evaluated our approach against RankZephyr [ 24 ], First [ 26 ], and ListT5 [ 40 ]. RankZephyr uses random augmentation to mitigate positional bias, while ListT5 eliminates positional bias by jointly considering the relevance of multiple candidate passages at both the training and inference stages. First [ 26 ] does not incorporate any positional bias mitigation techniques at either the training or inference stage. In addition, we also compare with the inference-stage debiasing approach proposed by [ 34 ] to investigate the complementary effect between inference-stage and tuning-stage debiasing in LLM-listwise reranking. RankZephyr, First, and our method employ a sliding window approach using a window size of 20 and a step size of 10. 
+
+Training Configuration. Following our baselines [ 24 ,26 ], we use Zephyr β [ 35 ], an instruction-following 7-billion parameter LLM based on Mistral [ 16 ], for listwise reranking. We fine-tune Zephyr for listwise reranking for three epochs, using an effective batch size of 8 with gradient accumulation of 4, a learning rate of 5e−6, and bf16. Additionally, we integrate noisy embeddings [ 15 ] to enhance robustness. Training takes about 7 hours on four 40GB Nvidia A100 GPUs using DeepSpeed [25]. We use λ = 0 .1 for scaling the weighted RankNet loss. 
+
+Propensity estimation. We sampled 3,000 queries from the MS MARCO training set. For each query, we retrieved the top 20 candidate passages via BM25. These 20 passages were shuffled 10 times per query, resulting in a total of 30,000 samples for propensity estimation. We employed the First model checkpoint released in [26] to re-rank the above samples and estimate propensities. 
+
+## 6 Results and Discussion 
+
+In this section, we evaluate the effectiveness of our method in mitigating positional bias through a controlled position experiment on the MS MARCO development set (RQ1). We then examine whether reducing positional bias improves rerank-ing performance across diverse datasets (RQ2) and under different first-stage retrievers (RQ3). Finally, we analyze the complementary benefits of combining our approach with inference-stage debiasing methods (RQ4). 8 J. Qiao et al. 
+
+Table 1: Evaluation of positional calibration with IPS and Pos-Aug on in-domain (TREC and MS MARCO) and out-of-domain (BEIR) Datasets; All reranking is conducted using Contriever as the first-stage retriever; † ‡ indicates a paired significant t-test p < 0.01 . ( † indicates a test when compared to First. ‡ indicates a test when compared to RankZephyr.); We used the following abbreviations for dataset names: HotpotQA (HQA), NFCorpus (NFC), DBPedia (DBP), Trec-covid (Tcovid), Climate-Fever (CFever), and MS MARCO (MSM).                                                                                                                  
+
+> TREC BEIR Method Order DL19 DL20 MSM FiQA HQA NFC NQ Scidocs Scifact DBP Tcovid CFever Avg.
+> ListT5(r=2) Original 69.9 67.3 46.3 41.7 71.5 36.3 53.1 17.2 74.1 46.1 80.3 24.4 49.1 RankZephyr Original 69.3 71.2 42.7 42.2 71.6 37.7 65.6 20.5 76.7 50.0 78.4 25.6 51.1 First Original 68.2 70.2 44.3 42.4 74.2 37.4 66.3 20.5 74.6 50.8 79.0 26.9 51.6 DebiasFirst Original 70.0 72.0 †43.7 44.3 †‡ 75.8 †‡ 37.8 68.2 †‡ 21.3 †‡ 76.6 51.9 †‡ 79.6 24.9 52.4
+> ListT5(r=2) Shuffle 69.0 67.9 45.8 42.0 70.0 35.7 57.9 18.0 73.9 44.3 77.0 23.8 48.8 RankZephyr Shuffle 69.6 70.7 41.0 39.9 70.1 37.2 65.1 19.4 74.3 49.1 76.9 25.4 49.8 First model Shuffle 67.3 69.0 42.1 39.2 73.3 35.1 65.6 18.9 73.5 48.6 76.4 25.4 49.8 DebiasFirst Shuffle 71.1 †71.4 43.4 ‡44.3 †‡ 75.5 †‡ 37.6 †68.1 †‡ 20.7 †‡ 75.5 51.7 †‡ 78.8 24.6 52.0
+
+RQ1: How effective is DebiasFirst in reducing positional bias? We conduct a controlled positional bias analysis using the MS MARCO dev set. Specifically, we select the top 20 candidate passages retrieved by the first-stage retriever Contriever [ 13 ] and systematically place the relevant passage at different positions (from 1 to 20). By varying the position of the relevant passage, we are able to directly assess the efficacy of our method in handling changes to the relevant passage in the input order. As illustrated in Figure 4, DebiasFirst maintains remarkably consistent performance across all positions, while the baselines falter when the relevant passage appears later in the list. This stability of DebiasFirst highlights its ability to reduce reliance on initial passage placement. However, the positional bias mitigation in LLM-based listwise reranking in-troduces trade-offs. By distributing attention evenly across positions, DebiasFirst underperforms RankZephyr [ 24 ] in the first three positions and trails both First and ListT5 [ 40 ] in the first four. This shift reflects a focus on equitable treatment of all input positions, slightly reducing emphasis on the front positions of input. These observations prompt further analysis of DebiasFirst’s performance across diverse datasets (RQ2) and with different first-stage retrievers (RQ3). 
+
+RQ2: Does the elimination of positional bias help to improve the performance of reranking across datasets? To explore this, we evaluated DebiasFirst and baselines under two conditions: (1) the original order, where passages are sorted by the first-stage retriever, typically placing relevant passages at the top; and (2) a shuffled order, where relevant passages are placed in a random position of input, as shown in Table 1. The shuffled order evaluation tries to mirror real-world challenges, such as dynamic news ranking aggregator [ 3, 31 ], where articles stream in by recency rather than relevance, and federated search [ 29 ], LLM-based Listwise Reranking under the Effect of Positional Bias 9
+
+Table 2: Evaluation of the robustness with different first-stage retriever; All models are evaluated using NDCG@10. A † indicates a paired significant t-test 
+
+p < 0.01 . † indicates a test when compared to First with same first-stage retriever.                                                                                                                                                                        
+
+> TREC BEIR Reranker First-stage DL19 DL20 MSM FiQA HQA NFC NQ Scidocs Scifact DBP Tcovid CFever Avg. First-stage Retriever Effectiveness
+> -BM25 50.6 48.0 22.8 23.6 63.3 32.2 30.6 14.9 67.9 31.8 59.5 16.5 37.8 -Contriever 44.5 42.1 40.7 32.9 63.8 32.8 49.8 16.5 67.7 41.3 59.6 23.7 43.1 -Splade++ 73.2 72.0 44.9 34.8 68.7 34.7 53.8 15.9 70.4 43.7 72.7 23.0 46.4 -RRF 66.8 61.0 39.1 34.5 69.0 35.2 50.0 17.4 72.9 44.4 78.0 26.3 47.5
+> Second-stage Reranker Effectiveness
+> First BM25 72.7 71.1 37.7 39.3 74.7 32.2 57.5 19.5 75.4 46.2 83.1 24.0 49.0 DebiasFirst BM25 74.5 72.7 38.5 41.4 †76.3 †32.2 59.1 †20.7 †76.3 46.7 86.1 †23.7 50.1
+> First Contriever 68.2 70.2 44.3 42.4 74.2 37.4 66.3 20.5 74.6 50.8 79.0 26.9 51.6 DebiasFirst Contriever 70.0 72.0 †43.7 44.3 †75.8 †37.8 68.2 †21.3 †76.6 51.9 †79.6 24.9 52.4
+> First Splade++ 75.6 79.4 45.1 42.8 76.7 37.5 66.6 20.0 75.7 51.3 85.6 26.3 52.7 DebiasFirst Splade++ 76.9 82.2 †43.9 44.4 †78.3 †37.5 68.5 †21.3 †76.0 52.3 †86.6 24.6 53.3
+> First RRF 77.3 80.0 44.2 42.7 77.1 37.8 67.0 20.2 76.1 52.5 87.1 26.6 53.1 DebiasFirst RRF 78.4 82.4 †44.0 44.8 †78.6 38.7 68.7 †21.6 †76.2 53.3 †88.0 †24.7 53.9
+
+where passages from multiple sources merge without a unified relevance score. All reranking is conducted using Contriever as the first-stage retriever. 
+
+Impact on original and shuffled order. In the original order, DebiasFirst outperforms the baselines (First, RankZephyr, and ListT5) across both in-domain and out-of-domain datasets. It significantly surpasses First and RankZephyr in 6 of 12 datasets and achieves notable gains over RankZephyr in the remaining 6. This strong performance indicates that eliminating positional bias does not reduce overall effectiveness, even when relevant passages are placed at the top. In the shuffled order, DebiasFirst maintains its effectiveness. Unlike the baselines, whose performance reduces with randomized passage order, DebiasFirst exhibits only a minimal performance drop compared to the original order. 
+
+RQ3: Does DebiasFirst remain effective with different first-stage re-trievers? We evaluate how DebiasFirst performs against three different first-stage retrievers: Contriever, Splade++ [ 9], and BM25. We additionally apply reciprocal rank fusion (RRF) [7] to fuse results from the three first-stage retrievers. As shown in Table 2, DebiasFirst consistently outperforms the baseline First on most datasets. With weaker retrievers like BM25, DebiasFirst mitigates low-quality initial rankings by fairly assessing passage relevance in all positions. With stronger retrievers, it refines already-strong rankings. Overall, DebiasFirst demonstrates robust performance across various retrievers. 
+
+RQ4: Does DebiasFirst outperform the inference-stage debiasing base-line? Previous literature PermSC [ 34 ] focuses on eliminating positional bias by aggregating rankings from multiple reranked input orders. PermSC computes a central ranking that minimizes positional bias by identifying the ranking closest 10 J. Qiao et al. First DebiasFirst First PSC DebiasFirst PSC 65                    
+
+> 66
+> 67
+> 68
+> 69
+> 70
+> 71
+> 72
+> 73
+> 12345678910 11 12 13 14 15 16 17 18 19 20
+> NDCG@10
+> SHUFFLE ORDER NUMBER
+
+(a) Evaluation on DL2019 65                     
+
+> 66
+> 67
+> 68
+> 69
+> 70
+> 71
+> 72
+> 73
+> 12345678910 11 12 13 14 15 16 17 18 19 20
+> NDCG@10
+> SHUFFLE ORDER NUMBER
+
+(b) Evaluation on DL2020 
+
+Fig. 5: Evaluating the complementary effects of inference-Stage (PermSC approach [34 ]) and tuning-stage (our approach) debiasing in LLM-Based listwise passage reranking; Bars represent the performance on each shuffled ordering; Lines represent the aggregated performance using PermSC rank aggregation. 
+
+to all permutations in terms of distance metrics. To evaluate whether our method surpasses the inference-stage method, we implemented PermSC [ 34 ] rank aggre-gation with DebiasFirst and First [ 26 ] model. Figure 5 shows the performance of DebiasFirst compared to First [26] across 20 different shuffled inputs. 
+
+Effectiveness of inference vs. tuning stage debiasing. On DL2019, De-biasFirst (green bar) consistently outperformed the First with PermSC rank aggregation (orange line) across all 20 runs. On DL2020, DebiasFirst is inferior to First with PermSC in 3 out of 20 runs. This difference is attributed to the stable performance of DebiasFirst on DL2019, which exhibited a variance of 0.08 across all runs, compared to a higher variance of 0.120 on DL2020. Overall, the results demonstrate that debiasing during the tuning phase is more effective than implementing it during the inference phase. 
+
+Complementary benefits of inference-stage debiasing. We also investi-gated whether applying PermSC rank aggregation at the inference stage remains beneficial for models already debiased during tuning. To this end, we imple-mented PermSC rank aggregation with both DebiasFirst and First, and analyzed their performance across 20 shuffled runs on DL2019 and DL2020. Results show PermSC rank aggregation (green line) can still improve performance of Debias-First (green bar), but the improvement becomes less. Furthermore, DebiasFirst achieves optimal performance with fewer shuffles than First. It reaches peak performance at shuffle order 4 for DL2019 and 6 for DL2020, compared to or-ders 6 and 8 for First, respectively. Thus, while PermSC rank aggregation can still provide a complementary benefit, it is less critical for DebiasFirst, as its tuning-stage debiasing already makes it robust to input order. 
+
+## 7 Ablation Study 
+
+To assess each component’s effectiveness in reducing positional bias, we performed an ablation study by isolating key elements and evaluating their effects on ranking LLM-based Listwise Reranking under the Effect of Positional Bias 11 10           
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 1357911 13 15 17 19
+> NDCG@10
+> Position of Relevant Passage
+> DebiasFirst
+> DebiasFirst Rank -IPS
+> DebiasFirst Rank
+
+(a) Comparison of IPS Strategy w/o LM 10            
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 1357911 13 15 17 19
+> NDCG@10
+> Position of Relevant Passage
+> DebiasFirst
+> DebiasFirst Rank -IPS+LM
+> DebiasFirst Rank+LM
+
+(b) Comparison of IPS Strategy with LM 10           
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 1357911 13 15 17 19
+> NDCG@10
+> Position of Relevant Passage
+> DebiasFirst
+> DebiasFirst PosAug
+> DebiasFirst RandAug
+> DebiasFirst NoAug
+
+(c) Comparison of Augmentation Strategy 10            
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 1357911 13 15 17 19
+> NDCG@10
+> Position of Relevant Passage
+> DebiasFirst
+> DebiasFirst Rank -IPS+LM
+> DebiasFirst PosAug
+
+(d) Comparison of Synergistic Impact 
+
+Fig. 6: Comparison of positional calibration with IPS and Pos-Aug on the MS MARCO Dev Set. All models are evaluated using NDCG@10. performance. We tested five variants: (1) DebiasFirst NoAug , which excludes any augmentation; (2) DebiasFirst RandAug using the random augmentation strategy used by RankZephyr [ 24 ]; (3) DebiasFirst Rank excluding both IPS calibration and LM optimization objective; (4) DebiasFirst Rank-IPS using IPS calibration but excluding LM loss; and (5) DebiasFirst Rank-IPS+LM incorporating both IPS calibration and LM optimization objective. 
+
+Impact of IPS. We compared variants with and without IPS across all 20 input positions, as in Figure 6 (a-b). Results demonstrate that IPS calibration reduces performance variance across positions. Compared to the baseline vari-ant (DebiasFirst Rank ), the IPS-enhanced model (DebiasFirst Rank-IPS ) typically achieves equal or superior performance. Integrating a LM optimization objective further enhances performance and reduces positional variance. 
+
+Impact of position-aware augmentation. To evaluate the effectiveness of position-aware augmentation, we compared three variants: DebiasFirst NoAug ,DebiasFirst RandAug and DebiasFirst PosAug (Figure 6 (c)). The variant without augmentation (blue line) exhibits a significant performance decline from the first to the last input position, indicating a high degree of positional bias. Random augmentation (green line) helps reduces this drop, but it does not fully mitigate the positional bias issue. In contrast, DebiasFirst PosAug , which more evenly distributes training instances across input and output positions, demonstrated the lowest performance variance across input positions. This result suggests that 12 J. Qiao et al. 
+
+Table 3: Evaluation of positional calibration with IPS and Pos-Aug on in-domain (TREC and MS MARCO) and out-of-domain (BEIR) Datasets. A †
+
+indicates a paired significant t-test p < 0.01 . ( † indicates a test when compared to DebiasFirst RandAug without IPS calibration.)                                                                                                                                                
+
+> TREC BEIR Strategy Order DL19 DL20 MSM FiQA HQA NFC NQ Scidocs Scifact DBP Tcovid CFever Avg.
+> DebiasFirst N oAug Original 57.7 54.9 43.5 40.7 74.6 35.9 65.2 19.1 75.9 46.7 72.0 27.9 50.2 DebiasFirst RandAug Original 68.5 70.2 44.5 42.4 74.2 37.4 66.1 20.4 74.6 50.8 79.1 26.7 51.6 DebiasFirst P osAug Original 69.7 70.6 43.9 44.2 †75.7 †37.3 68.1 †21.4 †74.8 51.4 78.6 23.7 51.9 DebiasFirst Rank-IPS+LM Original 70.2 71.2 44.4 44.6 †75.5 †37.8 68.7 †20.7 76.9 †51.9 †78.4 25.6 52.5
+> DebiasFirst Original 70.0 72.0 †43.7 44.3 †75.8 †37.8 68.2 †21.3 †76.6 51.9 †79.6 24.9 52.4 DebiasFirst N oAug Shuffle 49.0 48.4 27.2 29.4 67.0 27.7 55.1 13.0 66.3 35.4 60.0 22.0 40.3 DebiasFirst RandAug Shuffle 67.3 69.0 42.1 39.2 73.3 35.1 65.6 18.9 73.5 48.6 76.4 25.4 49.8 DebiasFirst P osAug Shuffle 69.3 70.3 43.3 †43.7 †75.4 †37.7 †67.8 †21.2 †75.1 51.3 †78.7 24.5 51.9 DebiasFirst Rank-IPS+LM Shuffle 69.6 71.2 43.4 44.6 †75.3 †37.0 †68.5 †20.1 †75.7 †51.5 †78.0 25.2 51.9
+> DebiasFirst Shuffle 71.1 †71.4 43.4 44.3 †75.5 †37.6 †68.1 †20.7 †75.5 51.7 †78.8 24.6 52.0
+
+more evenly distributing training instances across input and output positions can serve as an effective calibration strategy. 
+
+Synergistic Impact. The combined effect of IPS and Pos-Aug is indicated by the green squares in Figure 6. This combined variant further reduces variance across input positions and leads to a more stable performance across all input positions. It consistently outperforms individual configuration. 
+
+Impact on overall ranking performance. We finally evaluated the overall ranking performance of each variant on both MS MARCO and BEIR datasets in Table 3. The Pos-Aug augmentation variants, DebiasFirst PosAug , showed sub-stantial improvements, outperforming DebiasFirst RandAug in 9 out of 12 datasets on original order, and 10 out of 12 datasets on shuffled order. Similarly, the DebiasFirst Rank-IPS+LM demonstrates a clear advantage compared to Debias-First RandAug without IPS calibration, outperforming it in 9 out of 12 datasets on original order and 11 out of 12 datasets on shuffled order. Finally, the full model DebiasFirst, which integrates both IPS and Pos-Aug, achieves a better overall performance compared to all other variants. 
+
+## 8 Related Work 
+
+LLMs as Listwise Rankers. Recent studies [ 33 , 23 ,24 ,26 , 40 , 20 ,27 ] have lever-aged LLMs to simultaneously rank lists of passages by producing reranked document identifiers. These methods can be broadly categorized into two ap-proaches: one that predicts the entire sequence of passage identifiers [ 33 , 23 ,24 , 40 ], and another that generates a single token and utilizes its output logits for rank-ing [ 26 ,44 ]. The single token approach is much more efficient than the full token approach, as it only needs to be decoded once for each ranking process. In this LLM-based Listwise Reranking under the Effect of Positional Bias 13 
+
+study, we choose to build on the efficient single-token generation approach for listwise passage reranking. 
+
+Mitigating positional bias by output aggregations. Despite the success of LLMs in listwise reranking, their effectiveness is adversely affected by positional bias [ 34 ]. To address this, some studies mitigate bias at inference through output aggregation [ 12 ,41 ,36 , 18 ]. They aim to improve output consistency by aggregating rankings derived from multiple runs with varied candidate orders. Specifically, Tang et al. [ 34 ] aggregate multiple rankings by minimizing the Kendall tau distance across all sampled rankings. LLM-RankFusion [ 41 ] enhances order consistencies by employing in-context learning for order-agnostic comparisons and calibrating preference probabilities. However, inference-stage bias mitigation methods significantly increase computational demands, posing challenges for practical implementations in real-time or large-scale systems. 
+
+Mitigate positional bias by fine-tuning. Other studies [ 22 , 24 ], have at-tempted to mitigate positional bias through random shuffling augmentation, but have found that it sacrifices overall effectiveness. Alternatively, Yoon et al. [ 40 ]tackled positional bias by employing tournament sort to predict from least to most relevant, but at the cost of increasing computational overload. In unbiased learning-to-rank, inverse propensity scoring (IPS) is a widely used approach to mitigate bias in user clicks [ 17 , 21 , 37 , 1, 10 ]. Drawing on this, we propose fine-tuning LLMs with IPS to estimate and correct positional bias, improving listwise reranking effectiveness. 
+
+## 9 Conclusion 
+
+In this study, we introduce DebiasFirst, a method designed to mitigate po-sitional bias for listwise reranking by integrating positional calibration with inverse propensity scoring (IPS) and position-aware augmentation. We show that both positional calibration and position-aware augmentation effectively reduce positional bias, particularly in enhancing the ranking performance of relevant passages positioned at the end of the input list. DebiasFirst consistently enhances ranking performance across both in-domain and out-of-domain datasets, demonstrating strong generalizability and effectiveness across diverse first-stage retrievers. However, this study is limited to reranking scenarios with a window size of 20 candidate passages. The effectiveness of IPS and Pos-Aug in handling longer context remains unexplored, such as reranking with a window size of 100 passages. Future work will focus on assessing the effectiveness of IPS and Pos-Aug in long-context settings. 
+
+Acknowledgments 
+
+We thank all reviewers for their feedback. This research was supported by the project VI.Vidi.223.166 of the NWO Talent Programme (partly) financed by the Dutch Research Council (NWO). The views expressed in this paper are those of the authors and do not necessarily reflect the views of their institutions or sponsors. 14 J. Qiao et al. 
+
+Disclosure of Interests 
+
+The authors have no competing interests to declare that are relevant to the content of this article. 
+
+## References 
+
+1. Ai, Q., Bi, K., Luo, C., Guo, J., Croft, W.B.: Unbiased learning to rank with unbiased propensity estimation. In: The 41st International ACM SIGIR Conference on Research & Development in Information Re-trieval. p. 385–394. ACM (Jun 2018). https://doi.org/10.1145/3209978.3209986, http://dx.doi.org/10.1145/3209978.3209986 2. Bajaj, P., Campos, D., Craswell, N., Deng, L., Gao, J., Liu, X., Majumder, R., McNamara, A., Mitra, B., Nguyen, T., et al.: Ms marco: A human generated machine reading comprehension dataset. arXiv preprint arXiv:1611.09268 (2016) 3. Chakraborty, A., Ghosh, S., Ganguly, N., Gummadi, K.P.: Optimizing the recency-relevancy trade-off in online news recommendations. In: Proceedings of the 26th International Conference on World Wide Web. p. 837–846. WWW ’17, International World Wide Web Conferences Steering Committee, Republic and Canton of Geneva, CHE (2017). https://doi.org/10.1145/3038912.3052656, https://doi.org/10.1145/3038912.3052656 4. Chen, S., Gutiérrez, B.J., Su, Y.: Attention in large language models yields efficient zero-shot re-rankers (2024), https://arxiv.org/abs/2410.02642 5. Chen, Y.S., Jin, J., Kuo, P.T., Huang, C.W., Chen, Y.N.: Llms are bi-ased evaluators but not biased for retrieval augmented generation (2024), https://arxiv.org/abs/2410.20833 6. Chen, Y., Lv, A., Luan, J., Wang, B., Liu, W.: Hope: A novel positional encoding without long-term decay for enhanced context awareness and extrapolation. arXiv preprint arXiv:2410.21216 (2024) 7. Cormack, G.V., Clarke, C.L., Buettcher, S.: Reciprocal rank fusion outperforms condorcet and individual rank learning methods. In: Proceedings of the 32nd international ACM SIGIR conference on Research and development in information retrieval. pp. 758–759 (2009) 8. Eberl, M.: Fisher-yates shuffle. Arch. Formal Proofs 2016 , 19 (2016) 9. Formal, T., Lassance, C., Piwowarski, B., Clinchant, S.: From distillation to hard negative sampling: Making sparse neural ir models more effective (2022). https://doi.org/10.48550/ARXIV.2205.04733, https://arxiv.org/abs/2205.04733 10. Hager, P., Deffayet, R., Renders, J.M., Zoeter, O., de Rijke, M.: Unbiased learning to rank meets reality: Lessons from baidu’s large-scale search dataset. In: Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval. pp. 1546–1556 (2024) 11. Hofstätter, S., Lipani, A., Althammer, S., Zlabinger, M., Hanbury, A.: Miti-gating the position bias of transformer models in passage re-ranking (2021), https://arxiv.org/abs/2101.06980 12. Hou, Y., Zhang, J., Lin, Z., Lu, H., Xie, R., McAuley, J., Zhao, W.X.: Large language models are zero-shot rankers for recommender systems (2024), https://arxiv.org/abs/2305.08845 13. Izacard, G., Caron, M., Hosseini, L., Riedel, S., Bojanowski, P., Joulin, A., Grave, E.: Unsupervised dense information retrieval with contrastive learning (2021). https://doi.org/10.48550/ARXIV.2112.09118, https://arxiv.org/abs/2112.09118 LLM-based Listwise Reranking under the Effect of Positional Bias 15 14. Izacard, G., Grave, E.: Leveraging passage retrieval with generative models for open domain question answering (2020), https://arxiv.org/abs/2007.0128 15. Jain, N., Chiang, P.y., Wen, Y., Kirchenbauer, J., Chu, H.M., Somepalli, G., Bartoldson, B.R., Kailkhura, B., Schwarzschild, A., Saha, A., et al.: Neftune: Noisy embeddings improve instruction finetuning. arXiv preprint arXiv:2310.05914 (2023) 16. Jiang, A.Q., Sablayrolles, A., Mensch, A., Bamford, C., Chaplot, D.S., Casas, D.d.l., Bressand, F., Lengyel, G., Lample, G., Saulnier, L., et al.: Mistral 7b. arXiv preprint arXiv:2310.06825 (2023) 17. Joachims, T., Swaminathan, A., Schnabel, T.: Unbiased learning-to-rank with biased feedback. In: Proceedings of the Tenth ACM International Conference on Web Search and Data Mining. p. 781–789. WSDM ’17, Association for Computing Machinery, New York, NY, USA (2017). https://doi.org/10.1145/3018661.3018699, https://doi.org/10.1145/3018661.3018699 18. Li, Z., Wang, C., Ma, P., Wu, D., Wang, S., Gao, C., Liu, Y.: Split and merge: Align-ing position biases in llm-based evaluators (2024), https://arxiv.org/abs/2310.01432 19. Liu, N.F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., Liang, P.: Lost in the middle: How language models use long contexts. Transactions of the Association for Computational Linguistics 12 , 157–173 (2024) 20. Liu, W., Ma, X., Zhu, Y., Zhao, Z., Wang, S., Yin, D., Dou, Z.: Sliding windows are not the end: Exploring full ranking with long-context large language models (2024), https://arxiv.org/abs/2412.14574 21. Oosterhuis, H., de Rijke, M.: Unifying online and counterfactual learning to rank: A novel counterfactual estimator that effectively utilizes online interven-tions. In: Proceedings of the 14th ACM International Conference on Web Search and Data Mining. p. 463–471. WSDM ’21, Association for Computing Ma-chinery, New York, NY, USA (2021). https://doi.org/10.1145/3437963.3441794, https://doi.org/10.1145/3437963.3441794 22. Pradeep, R., Sharifymoghaddam, S., Lin, J.: RankVicuna: Zero-shot listwise docu-ment reranking with open-source large language models. arXiv:2309.15088 (2023) 23. Pradeep, R., Sharifymoghaddam, S., Lin, J.: Rankvicuna: Zero-shot list-wise document reranking with open-source large language models (2023), https://arxiv.org/abs/2309.15088 24. Pradeep, R., Sharifymoghaddam, S., Lin, J.: RankZephyr: Effective and robust zero-shot listwise reranking is a breeze! arXiv:2312.02724 (2023) 25. Rasley, J., Rajbhandari, S., Ruwase, O., He, Y.: Deepspeed: System optimizations enable training deep learning models with over 100 billion parameters. In: Proceed-ings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining. pp. 3505–3506 (2020) 26. Reddy, R.G., Doo, J., Xu, Y., Sultan, M.A., Swain, D., Sil, A., Ji, H.: First: Faster improved listwise reranking with single token decoding (2024), https://arxiv.org/abs/2406.15657 27. Ren, R., Wang, Y., Zhou, K., Zhao, W.X., Wang, W., Liu, J., Wen, J.R., Chua, T.S.: Self-calibrated listwise reranking with large language models. In: Proceedings of the ACM on Web Conference 2025. p. 3692–3701. WWW ’25, Association for Computing Machinery, New York, NY, USA (2025). https://doi.org/10.1145/3696410.3714658, https://doi.org/10.1145/3696410.3714658 28. Shi, L., Ma, C., Liang, W., Diao, X., Ma, W., Vosoughi, S.: Judging the judges: A systematic study of position bias in llm-as-a-judge (2025), https://arxiv.org/abs/2406.07791 16 J. Qiao et al. 29. Shokouhi, M., Azzopardi, L., Thomas, P.: Effective query expansion for fed-erated search. In: Proceedings of the 32nd Annual International ACM SI-GIR Conference on Research and Development in Information Retrieval, SI-GIR 2009, Boston, MA, USA, July 19-23, 2009. pp. 427–434. ACM (2009), https://doi.org/10.1145/1571941.1572015 30. Simoes Pereira, J.: Algorithm 234: Poisson-charlier polynomials. Communications of the ACM 7(7), 420 (1964) 31. Styskin, A., Romanenko, F., Vorobyev, F., Serdyukov, P.: Recency rank-ing by diversification of result set. In: Proceedings of the 20th ACM international conference on Information and knowledge management. p. 1949–1952. ACM (Oct 2011). https://doi.org/10.1145/2063576.2063862, http://dx.doi.org/10.1145/2063576.2063862 32. Su, J., Ahmed, M., Lu, Y., Pan, S., Bo, W., Liu, Y.: Roformer: Enhanced transformer with rotary position embedding. Neurocomputing 568 , 127063 (2024) 33. Sun, W., Yan, L., Ma, X., Wang, S., Ren, P., Chen, Z., Yin, D., Ren, Z.: Is chatgpt good at search? investigating large language models as re-ranking agents (2023), https://arxiv.org/abs/2304.09542 34. Tang, R., Zhang, X., Ma, X., Lin, J., Ture, F.: Found in the middle: Permutation self-consistency improves listwise ranking in large language models. arXiv preprint arXiv:2310.07712 (2023) 35. Tunstall, L., Beeching, E., Lambert, N., Rajani, N., Rasul, K., Belkada, Y., Huang, S., von Werra, L., Fourrier, C., Habib, N., et al.: Zephyr: Direct distillation of lm alignment. arXiv preprint arXiv:2310.16944 (2023) 36. Wang, P., Li, L., Chen, L., Cai, Z., Zhu, D., Lin, B., Cao, Y., Liu, Q., Liu, T., Sui, Z.: Large language models are not fair evaluators. arXiv preprint arXiv:2305.17926 (2023) 37. Wang, X., Bendersky, M., Metzler, D., Najork, M.: Learning to rank with selection bias in personal search. In: Proceedings of the 39th Interna-tional ACM SIGIR Conference on Research and Development in Informa-tion Retrieval. p. 115–124. SIGIR ’16, Association for Computing Machin-ery, New York, NY, USA (2016). https://doi.org/10.1145/2911451.2911537, https://doi.org/10.1145/2911451.2911537 38. Wang, Z., Zhang, H., Li, X., Huang, K.H., Han, C., Ji, S., Kakade, S.M., Peng, H., Ji, H.: Eliminating position bias of language models: A mechanistic approach. arXiv preprint arXiv:2407.01100 (2024) 39. Xiao, G., Tian, Y., Chen, B., Han, S., Lewis, M.: Efficient streaming language models with attention sinks. arXiv preprint arXiv:2309.17453 (2023) 40. Yoon, S., Choi, E., Kim, J., Yun, H., Kim, Y., Hwang, S.w.: Listt5: Listwise reranking with fusion-in-decoder improves zero-shot retrieval. arXiv preprint arXiv:2402.15838 (2024) 41. Zeng, Y., Tendolkar, O., Baartmans, R., Wu, Q., Chen, L., Wang, H.: Llm-rankfusion: Mitigating intrinsic inconsistency in llm-based ranking (2024), https://arxiv.org/abs/2406.00231 42. Zhai, C.: Large language models and future of information retrieval: Opportunities and challenges. In: Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval. pp. 481–490 (2024) 43. Zhu, Y., Yuan, H., Wang, S., Liu, J., Liu, W., Deng, C., Chen, H., Liu, Z., Dou, Z., Wen, J.R.: Large language models for information retrieval: A survey. arXiv preprint arXiv:2308.07107 (2023) LLM-based Listwise Reranking under the Effect of Positional Bias 17 44. Zhuang, S., Zhuang, H., Koopman, B., Zuccon, G.: A setwise approach for effective and highly efficient zero-shot ranking with large language models. In: Proceedings of the 47th International ACM SIGIR Confer-ence on Research and Development in Information Retrieval. p. 38–47. SIGIR 2024, ACM (Jul 2024). https://doi.org/10.1145/3626772.3657813, http://dx.doi.org/10.1145/3626772.3657813

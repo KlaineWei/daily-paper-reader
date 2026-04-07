@@ -1,0 +1,667 @@
+Title: User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation
+
+URL Source: https://arxiv.org/pdf/2604.03671v1
+
+Published Time: Tue, 07 Apr 2026 00:30:13 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation 
+
+# Xingyuan Xiang ∗
+
+Huazhong University of Science and Technology Wuhan, China taoistsword@gmail.com 
+
+# Xiangchen Pan ∗
+
+Huazhong University of Science and Technology Wuhan, China pxcstart666@gmail.com 
+
+# WeiWei †
+
+Huazhong University of Science and Technology Wuhan, China weiw@hust.edu.cn 
+
+## Abstract 
+
+Conversational Recommender Systems (CRSs) leverage natural lan-guage interactions for personalized recommendation, yet information-scarce dialogue histories and single-turn recommendation paradigms may severely hinder accurate modeling of complex user preferences. To alleviate this issue, recent studies have introduced LLM-based user simulators, which generate natural language feedback and per-form simulated multi-turn interactions to assist recommendation. Nevertheless, since simulators cannot access true user preference labels during inference, their feedback may deviate from actual user interests, causing errors to accumulate over multiple interac-tions and severely affecting the generalization of the recommender. Inspired by the multi-step reasoning capabilities of LLMs and the effectiveness of reinforcement learning in policy optimization, we propose SMTPO, a user simulator-guided multi-turn preference optimization conversational recommendation framework. To align simulator-generated feedback with true user preferences in the absence of explicit labels, we enhance feedback quality via multi-task supervised fine-tuning (SFT), enabling the simulator to better reflect users’ complex and diverse needs. To address the challenge of biased feedback destabilizing multi-turn optimization, we first allow the Reasoning LLM-based recommender to learn preference reasoning and recommendation patterns through SFT and then employ reinforcement learning with fine-grained reward design to progressively align with true user preferences, improving recom-mendation performance. Extensive experiments on public datasets demonstrate the effectiveness and transferability of our method. 
+
+## Keywords 
+
+Conversational Recommendation, User Simulator, Multi-Turn Pref-erence Optimization, Large Language Model, Reinforcement Learn-ing  
+
+> ∗These authors contributed equally to this work.
+> †Corresponding author. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference XX, Woodstock, NY
+> ©2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+ACM Reference Format: 
+
+Xingyuan Xiang, Xiangchen Pan, and WeiWei. 2018. User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversa-tional Recommendation. In Proceedings of Make sure to enter the correct conference title from your rights confirmation email (Conference XX). ACM, New York, NY, USA, 11 pages. https://doi.org/XXXXXXX.XXXXXXX 
+
+## 1 Introduction 
+
+Conversational Recommender Systems (CRSs) aim to provide per-sonalized recommendation to users via natural language interac-tions. The key challenge of CRS lies in the inherently brief nature of typical conversations, easily leading to insufficient historical context in modeling user preferences. As such, prior work often leverages external information (e.g., knowledge graphs (KGs) [ 4 , 47 ]or reviews [ 46 ]) to enhance user preference understanding. Re-cently, Large Language Models (LLMs) have been integrated into CRS for their strong semantic understanding and reasoning capabil-ities, such as specially designed alignment strategies like zero-shot CRSs via prompting [ 16 ]. Despite success, LLMs often struggle to effectively incorporate collaborative filtering (CF) [ 34 , 45 , 49 ], a cornerstone of traditional recommendation systems. Accordingly, sequential research on LLM-driven CRS has increasingly focused on hybrid approaches to effectively overcome such issues, for in-stance, retrieval-reranking paradigm to identify similar candidates for LLM-based reranking [ 39 ], or retrieval-augmented generation to seamlessly integrate LLMs with CF for effectiveness validation [ 48 ]. Nonetheless, user preferences are often diverse and complex (even given rich knowledge), so relying solely on single-turn interaction may limit the accuracy of CRSs [ 29 ], while excessive engagement may severely degrade the overall conversational experience. To this end, recent works [ 12 , 27 , 40 ] have explored leverag-ing LLM-based user simulators to enhance CRSs’ understanding of complex user preferences and improve overall recommendation per-formance. These methods typically comprise two components, i.e., a user simulator modeling true user preference and a recommender 
+
+generating context-aware recommendation based on dynamically generated user feedback, such as GRSU [29], where a frozen LLM-based recommender produces candidates via beam search and is subsequently refined through a generative reward model-based simulator for optimal selection. However, it may be detrimental to the generalization of CRSs, as deviations between simulated user feedback and true user preferences can cause substantial error prop-agation. Without loss of generality, taking the case in Figure 1 as an example, the simulator incorrectly interprets the user’s preference                 
+
+> arXiv:2604.03671v1 [cs.IR] 4 Apr 2026 Conference XX, June 03–05, 2018, Woodstock, NY Xingyuan Xiang, Xiangchen Pan, and WeiWei Our method
+> <think>...</think>
+> Iron Man (2008) {Attribute: action ,
+> superhero }
+> The Hangover (2009) {Attribute: comedy }
+> Recommender: How about
+> Guardians of the Galaxy? {Attribute: action ,
+> comedy ,superhero }
+> Simulator: Maybe try
+> comedy movies
+> with heroic characters.
+> User: Hi, I’m looking
+> for some action movies.
+> Pref: action, superhero Pref: action, comedy ,
+> superhero
+> Conversation History
+> beam-search
+> Previous method
+> Turn 1
+> ......
+> Turn 2
+> Turn K
+> ......
+> -Truth preference
+> -Target movie
+> ......
+> Multi-Turn RL
+> Recommend: ...
+> Reasoning: ...
+> Recommend: ...
+> Reasoning: ... Reward
+> Our method
+
+Figure 1: The previous method frozen recommender param-eters, relied on beam search and simulator-filtered results, making it sensitive to feedback bias. Our method trains the SFT-initialized recommender via RL to achieve robust and accurate preference modeling and recommendation. 
+
+as “comedy,” thereby biasing the recommender’s filtering and lead-ing the beam-search process to gradually deviate from the user’s actual preferences. Actually, it is still non-trivial to design a proper LLM-based CRS framework, requiring solutions to two core challenges: (1) Effectively aligning simulator-generated feedback with true user preferences remains challenging, as ground-truth preferences are unavailable during inference, making the development of reliable preference-free user simulator a critical open problem. (2) Enhanc-ing user preference modeling under biased or imperfect feedback is also difficult, as simulator-generated feedback may mislead the recommender, highlighting the need for the recommender to ro-bustly achieve multi-turn preference optimization under dynamic and biased feedback. To address these challenges, drawing on the success of practices of LLM-based agents [ 9, 18 ] as well as the strong multi-step reason-ing capabilities of Reasoning LLMs [ 11 , 44 ], we propose SMTPO (Simulator Multi-Turn Preference Optimization), a simulator-guided CRS framework based on Reasoning LLM. In SMTPO, the simulator generates high-quality feedback to guide recommendations, the re-triever dynamically filters the candidate set, and the recommender uses both to iteratively optimize preferences and recommendations via reinforcement learning (RL). To tackle the challenge of gener-ating high-quality feedback, we employ an LLM-based simulator to produce natural language responses and train it via multi-task supervised fine-tuning (SFT), enabling it to generate concrete and informative feedback that guides the recommender to make ac-curate recommendations. To ensure robust multi-turn preference optimization under biased feedback, we use a Reasoning LLM as the recommender backbone and adopt a two-stage training process: first, SFT is used to allow the recommender to initially grasp the task patterns; then, RL combined with fine-grained rewards is intro-duced, enabling the recommender to gradually align with true user preferences over multiple interactions, as illustrated in Figure 1. Additionally, to prevent the LLM-based recommender from gen-erating items outside the global item space [ 29 ], we design a dual semantic-collaborative view retriever to dynamically constrain the candidate set and improve recommendation accuracy. In summary, the main contributions of this paper are as follows: 
+
+• We propose a novel multi-turn interactive conversational recom-mendation framework, SMTPO. To the best of our knowledge, this is the first work that jointly trains the recommender via SFT and RL, enabling continuous optimization of user preferences across multiple interaction turns. 
+
+• We construct a simulator-guided CRSs consisting of a user sim-ulator, a retriever, and a recommender. Multi-task fine-tuning improves the quality of simulator-generated feedback, and the retriever effectively integrates feedback with the candidate set, thereby stably enhancing recommendation performance. 
+
+• Extensive experiments further demonstrate that our method sig-nificantly outperforms existing baselines on multiple datasets, verifying its effectiveness and superiority. 
+
+## 2 Related Work 
+
+LLM-based Conversational Recommender Systems (CRSs). 
+
+Existing CRS research can be broadly categorized into attribute-based CRSs [ 7 , 19 , 20 , 38 ] and generation-based CRSs [ 5, 22 , 30 , 33 ]. Attribute-based CRSs rely on fixed templates, leading to mechan-ical interaction patterns, while generation-based CRSs combine pre-trained language models (PLMs) with knowledge graphs but still struggle to model diverse user preferences. Given the powerful semantic understanding capabilities of LLMs [ 31 , 32 ], recent studies have introduced them into CRS to address these limitations. For example, He et al . [16] systematically analyzed the performance of LLMs in zero-shot CRS; Xi et al . [35] proposed MemoCRS, which leverages a memory-augmented LLM to manage users’ historical preferences, thereby enhancing the personalization of recommen-dations; Yang and Chen [39] unified the LLM into a CRS with both retrieval and generation capabilities through instruction tuning. LLMs not only possess strong language understanding and genera-tion capabilities but can also exhibit multi-step reasoning abilities through reinforcement learning (RL) [ 41 , 42 ] or multi-path sam-pling [ 2, 28 ]. RL-based post-training methods, such as DeepSeek-R1 [ 13 ] and Kimi k1.5 [ 26 ], enable user preference analysis and candidate item evaluation. Although the reasoning capabilities of LLMs have been validated in structured tasks, their potential in CRS remains largely unexplored. 
+
+User Simulator for CRSs. Although LLMs bring new opportu-nities to CRSs, they often struggle to model user preferences with limited context, and frequent reliance on real users increases interac-tion costs. To address this, prior studies introduced user simulators that generate natural language feedback to assist recommender optimization [ 12 , 23 , 27 , 40 ]. Early works mainly used simulators for evaluation with ground-truth preference labels [ 27 , 40 ], making them difficult to apply directly in real interaction scenarios. Wang et al . [29] were the first to propose a simulator that does not re-quire preference labels, enabling automatic interaction with CRSs. However, due to the lack of a proper supervision mechanism, these methods become unreliable when the simulator’s feedback is bi-ased. The generalization ability of the recommender still needs improvement. Our method belongs to the LLM-based CRS and introduces a user simulator. Unlike previous methods, SMTPO employs a label-free simulator to generate high-quality natural language feedback and User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation Conference XX, June 03–05, 2018, Woodstock, NY 
+
+adopts a Reasoning LLM as the recommender backbone, leveraging its strong multi-step reasoning ability and RL algorithm, SMTPO achieves multi-turn preference optimization to filter noisy feedback, and significantly enhances recommendation performance. 
+
+## 3 Methodology 3.1 Overview of SMTPO 
+
+In this paper, we propose a multi-turn preference optimization framework for conversational recommendation, named SMTPO ,which is composed of three core modules: user simulator , re-triever and the Reasoning LLM-based recommender . The overall framework is illustrated in Figure 2. 
+
+Task formulation: Conversational recommender systems (CRSs) aim to provide recommendations through multi-turn interactions. Considering that a single-turn interaction cannot fully capture complex and diverse user preferences, in this work, we introduce a label-free user simulator to provide feedback and interact au-tomatically with the recommender for more personal recommen-dation. The user simulator generates feedback 𝐹 𝑡 based on the conversation history 𝐷 , the set of entities and attributes 𝐼 𝐷 =
+
+{( 𝑖 1, 𝑎 1), (𝑖 2, 𝑎 2), . . . , (𝑖 𝑛 , 𝑎 𝑛 )} mentioned in the conversation, and the previous turn recommendation results 𝑅 𝑡 −1. After receiving the feedback, the recommender performs preference inference 𝑃 𝑡 and outputs new recommendation results 𝑅 𝑡 . Formally, the multi-turn interaction between the user simulator and the recommender up to the turn 𝑡 is represented as the sequence: 
+
+C𝑡 = {( 𝐷, 𝐼 𝐷 , 𝐹 𝜏 , (𝑃 𝜏 , 𝑅 𝜏 ))} 𝑡 𝜏 =1. (1) Based on the above definitions, the CRS task under multi-turn interaction can be formalized as: 
+
+(
+
+𝐹 𝑡 = Simulator (𝐷, 𝐼 𝐷 , 𝑅 𝑡 −1),
+
+(𝑃 𝑡 , 𝑅 𝑡 ) = Recommender (𝐷, 𝐼 𝐷 , 𝐹 𝑡 ), 𝑡 = 1, . . . ,𝑇 , (2) where 𝑅 0 denotes the initial recommendation list. The interaction proceeds iteratively until reaching the maximum number of turns 
+
+𝑇 or the target item 𝑖 ∗ is successfully recommended. 
+
+Retrieval-reranking paradigm: To prevent the LLM-based rec-ommender from generating results over the global item space and motivated by the proven effectiveness of the retrieval-reranking paradigm in prior work [ 39 , 48 ], we introduce a retriever between the simulator and the recommender to provide a candidate item set. Specifically, we first leverage the simulator-generated user feed-back 𝐹 𝑡 and the recommender’s previous preference inference 𝑃 𝑡 −1,together with the conversation history 𝐷 and entity information 
+
+𝐼 𝐷 , to jointly model the representation of the current interaction from semantic and collaborative perspectives. Formally, at turn 𝑡 ,the semantic side information consists of the conversation history 
+
+𝐷 , user feedback 𝐹 𝑡 , and user preferences 𝑃 𝑡 −1; the collaborative side information is represented by the collaborative embeddings of both the entity set 𝐼 𝐷 and the previous recommendation list 
+
+𝑅 𝑡 −1 within the knowledge graph G. The retriever computes the interaction representation 𝑑 𝑡 and calculates its similarity with all item embeddings to obtain the candidate item set 𝐼 𝑡 
+
+> cand
+
+.
+
+Module training: To ensure more stable multi-turn interaction training, the simulator and retriever modules are trained indepen-dently and prior to the recommender module. The simulator is trained to generate high-quality user feedback, achieved via multi-task supervised fine-tuning (SFT), as detailed in subsection 3.2. The retriever is trained to recall candidate item sets containing the target items, realized through collaborative-semantic dual-view modeling, as detailed in subsection 3.3. The recommender is trained to contin-uously and stably optimize preference understanding and improve recommendation performance during multi-turn interactions. We use the reinforcement learning (RL) algorithm to achieve this, as detailed in subsection 3.4. 
+
+## 3.2 User Simulator: Generate High-quality Feedback 
+
+In our approach, the user simulator is designed to provide user feedback to the recommender based on the current recommenda-tion list and the conversation history, enabling the recommender to update its understanding of user preferences and generate more accurate recommendations. However, providing high-quality user feedback in the absence of true preference labels remains a sig-nificant challenge. To address this, we have designed a multi-task SFT method to train the LLM-based simulator, ensuring that the feedback generated by the simulator resembles real user behavior. This section describes the task design and training procedure of the simulator. 
+
+3.2.1 Feedback Generation Task. Considering that the goal of the user simulator is to provide specific and informative user feedback, we design a feedback generation task that enables the simulator to generate feedback based on conversation history 𝐷 and the items and attributes 𝐼 𝐷 mentioned in the conversation. The instruction input includes 𝐷 , 𝐼 𝐷 . To better reflect realistic multi-turn interaction scenarios, we also include a human-constructed recommendation list 𝑅 human  
+
+> 𝐷
+
+in the input. To cover as many interaction cases as possible, we design four construction strategies: (1) hard negative sample list containing the target item, (2) hard negative sample list excluding the target item, (3) simple negative sample list containing the target item, and (4) simple negative sample list excluding the target item, denoted as 𝐻 +, 𝐻 − , 𝑆 +, and 𝑆 − . The difficulty of the negative samples is measured by the overlap of their attributes with those of the target item. We employ GPT-3.5-Turbo [ 25 ] to construct high-quality feedback as supervision signals, where the information of the target item is additionally included in the instruction to ensure the correctness of the ground truth. The formal definition of the feedback generation task is presented as follows: 
+
+𝐹 = 𝐿𝐿𝑀 𝑠𝑖𝑚𝑢𝑙𝑎𝑡𝑜𝑟 (𝐷, 𝐼 𝐷 , 𝑅 human  
+
+> 𝐷
+
+) (3) where 𝑅 human  
+
+> 𝐷
+
+∈ { 𝐻 +, 𝐻 −, 𝑆 +, 𝑆 − }.
+
+3.2.2 Attribute Alignment Task. To ensure that the simulator gen-erates high-quality feedback, we require the simulator to resemble real users not only in style and semantics but also in alignment with the target item at the attribute level for finer-grained alignment with user preferences. Thus, we design an attribute alignment task, where the simulator predicts the target item 𝑖 ∗ and its attributes 𝑎 ∗
+
+based on the conversation history 𝐷 and mentioned entity set 𝐼 𝐷 .The formal definition is as follows: 
+
+(𝑖 ∗, 𝑎 ∗) = 𝐿𝐿𝑀 𝑠𝑖𝑚𝑢𝑙𝑎𝑡𝑜𝑟 (𝐷, 𝐼 𝐷 ) (4) Conference XX, June 03–05, 2018, Woodstock, NY Xingyuan Xiang, Xiangchen Pan, and WeiWei (4) Train Retriever 
+
+> Entity set
+> Recommend list
+> Semantic encoder
+> Collaborative encoder
+> Adapter
+> Cross-Attention
+> Cross-Attention
+> Conversation history
+> Feedback
+> Preference
+
+Candidate set 
+
+... 
+
+Global item pool 
+
+(3) Train User Simulator 
+
+Task 1: Feedback generation 
+
+Task 2: Attribute alignment 
+
+Task 3: Target prediction 
+
+> Natural feedback
+
+Yes/No 
+
+> Recommend list
+
+Predicted item 
+
+Preferred attributes 
+
+LLM 
+
+SFT 
+
+Simulator 
+
+Entity set 
+
+Conversation history 
+
+(2)  Train Recommender 
+
+# ... 
+
+(b) Multi-turn RL stage 
+
+> Next Turn
+
+Update ( )( )
+
+Previous interactions 
+
+User simulator feedback Recommend: ... 
+
+> Reasoning: ...
+> Recommend: ...
+> Reasoning: ...
+> Recommend: ...
+> Reasoning: ...
+
+Prompt GPT to 
+
+generate examples 
+
+(a) SFT stage 
+
+Conversation history 
+
+Entity set 
+
+Reasoning: <think>...</think> 
+
+Recommend:  Rank list: [...] 
+
+Reasoning: <think>...</think> 
+
+Recommend:  Rank list: [...] 
+
+Reasoning: <think>...</think> 
+
+Recommend:  Rank list: [...] 
+
+Format reward Recommend reward Preference Reward  
+
+> length =10
+> RANK LIST: [Title,..., Title]
+> <think>Step 1......Step 5... </think>
+
+... 
+
+# ... 
+
+# ... 
+
+Advantage estimation 
+
+Adapter 
+
+Reasoning LLM 
+
+Adapter SFT-initialized Recommender  
+
+> Semantic encoder
+> Preference Real preference
+
+Retrieved candidate set 
+
+Calculate reward 
+
+New recommend list 
+
+New preference inference 
+
+(1)  Multi-turn Interaction 
+
+Input Entity set 
+
+... 
+
+Conversation history 
+
+# ...... 
+
+Recommender 
+
+Recommender 
+
+Retrieve initial candidate set 
+
+Simulator & Retriever 
+
+Simulator & Retriever 
+
+Interaction process       
+
+> RANK LIST: [...]
+> <think> Step 1: Preference inference... Step5: ... </think>
+> RANK LIST: [...]
+> <think> Step 1: Preference inference... Step5: ... </think>
+> User simulator feedback
+> Retrieved candidate set
+
+Figure 2: Overview of SMTPO training and multi-turn interaction: (1) The multi-turn interaction process among the recom-mender, simulator, and retriever. (2) The recommender is trained first with SFT and then with multi-turn RL. (3) The simulator is trained via multi-task SFT. (4) The retriever is obtained using collaborative–semantic dual-view modeling. 
+
+3.2.3 Target Prediction Task. During multi-turn interactions, the recommendation list generated by the recommender may contain noise. Specifically, some candidate items may have semantics incon-sistent with the conversation history or the user’s true preferences. The simulator requires strong judgment to filter out these irrelevant items, so we designed a target prediction task. Let the simulator de-termine whether the current item 𝑖 𝑗 (where 𝑖 𝑗 ∈ 𝐻 + ∪𝐻 − ∪𝑆 + ∪𝑆 − )is the target item of the user, based on the dialogue history 𝐷 and the entity set 𝐼 𝐷 . The simulator should return a variable 𝐹𝑙𝑎𝑔 ("Yes" or "No") as its response. The formal definition is as follows: 
+
+𝐹𝑙𝑎𝑔 = 𝐿𝐿𝑀 𝑠𝑖𝑚𝑢𝑙𝑎𝑡𝑜𝑟 (𝑖 𝑗 |𝐷, 𝐼 𝐷 ) (5) 
+
+Model training: We adopt LoRA [ 17 ] to perform multi-task SFT on the LLM to obtain the user simulator. During training, for each task instance (I , 𝑜 ) ∈ Inst , the model updates the parameters 
+
+Θ𝑢 by maximizing the conditional probability of the target output sequence. The loss function is defined as follows: 
+
+L𝑠𝑖𝑚𝑢𝑙𝑎𝑡𝑜𝑟 = −∑︁   
+
+> ( I ,𝑜 ) ∈ 𝐼𝑛𝑠𝑡
+> |𝑜 |
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑙𝑜𝑔𝑃𝑟 (𝑜 𝑖 |𝑜 <𝑖 , I; Θ𝑢 ) (6) Here, I denotes the input instruction and 𝑜 denotes the output. 
+
+## 3.3 Retriever: Recall Candidate Set 
+
+To avoid the LLM-based recommender generating items outside the global item space, we adopt a retrieval–reranking paradigm and design a dual-view retriever. It encodes each dialogue from semantic and collaborative perspectives to retrieve a candidate set from the global item pool. 
+
+3.3.1 Feature Embedding. Semantic Embedding : On the seman-tic side, we use a pre-trained language model (PLM) as the semantic encoder 𝐸 𝑇 , which encodes the conversation history 𝐷 , user feed-back 𝐹 , and the recommender’s textual preference inference 𝑃 to User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation Conference XX, June 03–05, 2018, Woodstock, NY 
+
+obtain semantic representation 𝑒 𝑠 :
+
+𝑒 𝑠 = 𝐸 𝑇 (𝐷, 𝐹, 𝑃 ) (7) 
+
+Collaborative Embedding : Besides semantic information, struc-tural relations among entities provide rich collaborative filtering knowledge. We pretrain an encoder 𝐸 𝐶 to model this knowledge by constructing a knowledge graph G from WikiMKG [ 24 ] and applying a GCN model for entity representation. To capture the potential collaborative signals between entities and their related attributes, we treat each movie–attribute pair as a positive sample and unrelated attributes as negative samples and optimize 𝐸 𝐶 us-ing the BPR loss. After pretraining, we freeze 𝐸 𝐶 , encode 𝐼 𝐷 and the human-constructed recommendation list 𝑅 ℎ𝑢𝑚𝑎𝑛 𝐷 , using mean pooling to obtain collaborative representation 𝑒 𝑐 :
+
+𝑒 𝑐 = 𝐴𝑣𝑔𝑃𝑜𝑜𝑙 (𝐸 𝐶 (𝐼 𝐷 , 𝑅 ℎ𝑢𝑚𝑎𝑛 𝐷 )) (8) 
+
+3.3.2 Dual-view Modeling. After obtaining the initial features, in order to better integrate the conversation representations of the two views, we adopt a cross-attention mechanism for feature fusion. Due to the semantic dimension 𝐷𝑖𝑚 𝑠 and collaborative dimension 
+
+𝐷𝑖𝑚 𝑐 not being the same, spatial alignment is required first. We use an adapter to map semantic information 𝑒 𝑠 to the collaborative space. This process can be formally defined as follows: 
+
+ˆ𝑒 𝑠 = 𝑊 2 (𝑊 1𝑒 𝑠 + 𝑏 1) + 𝑏 2 (9) Where 𝑊 1 ∈ 𝑅 𝐷𝑖𝑚 𝑠 × 𝐷𝑖𝑚𝑠  
+
+> 2
+
+, 𝑊 2 ∈ 𝑅 𝐷𝑖𝑚𝑠   
+
+> 2×𝐷𝑖𝑚 𝑐
+
+, 𝑏 1 ∈ 𝑅 𝐷𝑖𝑚𝑠  
+
+> 2×1
+
+, 𝑏 2 ∈
+
+𝑅 𝐷𝑖𝑚 𝑐 ×1 are weight matrices and bias of the adapter. After completing spatial alignment, feature fusion is performed based on cross-attention. Taking the collaborative side as an ex-ample, we set it ˆ𝑒 𝑠 as the query vector and 𝑒 𝑐 as the key and value vector. Let 𝑄 𝑠 = ˆ𝑒 𝑠 𝑊 𝑄 , 𝐾 𝑐 = 𝑒 𝑐 𝑊 𝐾 ,𝑉 𝑐 = 𝑒 𝑐 𝑊 𝑉 , where 𝑊 𝑄 ,𝑊 𝐾 ,𝑊 𝑉 
+
+∈ 𝑅 𝐷𝑖𝑚 𝑐 ×𝐷𝑖𝑚 𝑐 , the collaborative feature that integrates semantic side information can be represented as: 
+
+˜𝑒 𝑐 = 𝑆𝑜 𝑓 𝑡𝑚𝑎𝑥 ( 𝑄 𝑠 𝐾 𝑇 𝑐 
+
+√𝐷 )𝑉 𝑐 (10) The same approach can be used to obtain semantic features that integrate collaborative side information ˜𝑒 𝑠 . By concatenating these two fusion vectors, the feature representation of conversation 𝐷 can be obtained 𝑒 = [ ˜𝑒 𝑐 : ˜𝑒 𝑠 ]. Similarly, we concatenate the text features 
+
+𝑖 𝑠 and collaborative features 𝑖 𝑐 of the item as the fused features on the item side. We then retrieve the recommended candidate set by calculating feature similarity. For the given conversation 𝐷 and item 𝑖 , the recall probability is calculated as follows: 
+
+𝑃 𝐷,𝑖 = [ ˜𝑒 𝑐 : ˜ 𝑒 𝑠 ]𝑇 [𝑖 𝑐 : 𝑖 𝑠 ] (11) where 𝑖 𝑠 is encoded by the text encoder 𝐸 𝑇 based on the text de-scription of the item, and 𝑖 𝑐 is encoded by the graph embedding model 𝐸 𝐶 . Finally, we rank and return the top-k items by recall probability as a candidate item set for conversation 𝐷 𝑡 in the t-th turn of interaction. 
+
+Model training : As mentioned earlier, we obtain collaborative features by a GCN model, which is pre-trained based on G. Regard-ing the data construction on the text side of the training set, to better simulate real interaction scenarios as closely as possible, user feedback was generated by the user simulator trained in subsec-tion 3.2, and user preferences were simulated using GPT-3.5-Turbo during the data construction stage. In addition, to ensure stable and efficient training, the parameters of 𝐸 𝑇 and 𝐸 𝐶 are frozen during the retriever training phase. Based on the final recall probability, we use InfoNCE loss to train the retriever module: 
+
+L𝑟𝑒𝑡𝑟𝑖𝑒𝑣𝑎𝑙 = −𝑙𝑜𝑔 𝑒𝑥𝑝 (𝑃 𝐷,𝑖 ∗ )
+
+𝑒𝑥𝑝 (𝑃 𝐷,𝑖 ∗ ) + Í𝑁 𝑘 =1 𝑒𝑥𝑝 (𝑃 𝐷,𝑖 𝑘 𝑛𝑒𝑔 ) (12) where 𝑖 ∗ represents the target item of conversation 𝐷 , 𝑖 𝑛𝑒𝑔 is the negative sample, and 𝑁 is the number of negative samples. Negative samples are obtained by randomly sampling after excluding the target item and the entities mentioned in the dialogue. 
+
+## 3.4 Recommender: Reason User Preferences and Fine-grained Ranking 
+
+The role of the recommender is to analyze user preferences based on the conversation history and the user feedback, and to rerank the candidate set. Due to the excellent language comprehension and reasoning capabilities of the Reasoning LLM, we use it as the foundation of the recommender and optimize it through a two-stage training paradigm. 
+
+3.4.1 Two Stage Model Training. We propose a two-stage model training approach. In the first stage, we perform SFT to help the model develop an initial understanding of the reasoning process and the recommendation task. In the second stage, we apply multi-turn RL to enhance the model’s deep reasoning and adaptive adjustment capabilities during multi-turn interactions, ultimately achieving more robust recommendation performance. 
+
+SFT stage: We first define the interaction scenario and task setup of the recommender. The instruction input 𝑄 consists of the task description 𝐼𝑛𝑠𝑡 , dialogue history 𝐷 , candidate item set 
+
+𝐼 𝑐𝑎𝑛𝑑 , and user feedback 𝐹 . The candidate set 𝐼 𝑐𝑎𝑛𝑑 is obtained from the retriever module, while the task description 𝐼𝑛𝑠𝑡 requires the recommender to analyze user preferences based on {𝐷, 𝐼 𝑐𝑎𝑛𝑑 , 𝐹 }
+
+and re-rank the candidate items, with the output being the Top-10 item list 𝑅 . To enhance the recommender’s capability for deep reasoning, we further require the model to follow a step-by-step reasoning process before providing the final answer, including preference inference → attribute matching → scoring → ranking 
+
+→ recommendation explanation. The gold reasoning trajectory 
+
+ˆ𝑇 and recommendation results ˆ𝑅 are generated by GPT-3.5-Turbo, with additional inputs 𝑅 human  
+
+> 𝐷
+
+∈ 𝐻 +, 𝐻 −, 𝑆 +, 𝑆 − and the user’s target item 𝑖 ∗ and attribute 𝑎 ∗. Thus, each training sample is constructed as a triplet (𝑄,𝑇 , 𝑅 ), where 𝑇 denotes the reasoning trajectory and 
+
+𝑅 denotes the recommendation output. The fine-tuning objective is formally defined as follows: 
+
+𝜃 ∗ = arg min  
+
+> 𝜃
+
+E(𝑄,𝑇 ,𝑅 )∼D 𝑠 𝑓 𝑡 L𝑠 𝑓 𝑡 (𝐿𝐿𝑀 𝜃 (𝑄 ),𝑇 , 𝑅 ) (13) where D𝑠 𝑓 𝑡 represents the training dataset in the SFT stage and 
+
+L𝑠 𝑓 𝑡 is used to encourage the recommender to generate reasoning chains and answers consistent with standard supervised data. 
+
+Multi-turn RL stage: To better align with real multi-turn inter-action scenarios and enhance the recommender’s reasoning over user preferences, we introduce a multi-turn RL stage following the SFT stage. Unlike single-turn supervised training, multi-turn interactions continuously accumulate historical information and user feedback, where biased feedback from the simulator can lead Conference XX, June 03–05, 2018, Woodstock, NY Xingyuan Xiang, Xiangchen Pan, and WeiWei 
+
+to significant error accumulation. To ensure stable preference opti-mization under such bias, we employ the GRPO algorithm to model the recommender’s policy evolution across multi-turn interactions, with the optimization objective defined as: 
+
+J𝐺𝑅𝑃𝑂 (𝜃 ) = E𝑞 ∼𝑃 (𝑄 ),{𝑜 𝑖 }𝐺 𝑖 =1∼𝜋 𝜃 old (𝑂 |𝑞 )
+
+"
+
+1
+
+𝐺 
+
+> 𝐺
+
+∑︁ 
+
+> 𝑖 =1
+
+min 𝜋 𝜃 (𝑜 𝑖 |𝑞 )
+
+𝜋 𝜃 old (𝑜 𝑖 |𝑞 ) 𝐴 𝑖 ,
+
+clip 𝜋 𝜃 (𝑜 𝑖 |𝑞 )
+
+𝜋 𝜃 old (𝑜 𝑖 |𝑞 ) , 1 − 𝜖, 1 + 𝜖 
+
+!
+
+𝐴 𝑖 
+
+!
+
+− 𝛽𝐷 𝐾𝐿 (𝜋 𝜃 ∥ 𝜋 ref )
+
+#
+
+(14) where 𝐴 𝑖 represents the relative advantage within the group. By normalizing the action rewards within the same group, stable train-ing can be achieved and efficiency can be improved. 
+
+3.4.2 Reward Design. In order to provide stable and effective guid-ance for multi-turn optimization of the model, we have designed three types of reward functions, namely format reward, recom-mend reward, and preference reward. Next, we describe the reward computation process at each turn 𝑡 .
+
+Format reward: The format reward is mainly used to encourage models to reason step-by-step according to the specified reasoning procedure and then provide answers after reasoning. Here, we de-sign corresponding reward functions for both the reasoning process and the answer to impose format constraints. Process format reward: For the process format reward, we mainly consider whether the model reasoning steps comply with the five-step specification (preference inference, attribute matching, scor-ing, sorting, explanation). By performing regular matching on the <think> labels output by the model, the score is calculated based on the number of matches 𝑁 𝑚𝑎𝑡𝑐ℎ . The reward function is as follows: 
+
+𝑟 𝑡ℎ𝑖𝑛𝑘 =
+
+ 1 − |𝑁 𝑚𝑎𝑡𝑐ℎ −5| 
+
+> 5
+
+, if 1 ≤ 𝑁 𝑚𝑎𝑡𝑐ℎ ≤ 70, 𝑜𝑡ℎ𝑒𝑟𝑤𝑖𝑠𝑒 (15) Answer format reward: As the recommendation task is a rerank-ing task and returns a top-k item list, we determine whether it matches the standard answer format 𝐴𝑛𝑠 : (RANK LIST: [Title,..., Title]). The answer reward function is shown as follows: 
+
+𝑟 𝑎𝑛𝑠𝑤𝑒𝑟 =
+
+ 1, if match ( 𝐴𝑛𝑠 )
+
+0, otherwise (16) 
+
+Recommend reward: This reward is used to enhance the rec-ommendation ranking ability of the model. Based on the target item 
+
+𝑖 ∗ in the conversation, the overall quality of the refined ranking result 𝑅 𝑡 provided by the model is evaluated. Here, we design two metrics, Hit and Rank. Hit reward: Hit reward is used to determine whether the target item is on the refined ranking list, formally defined as follows: 
+
+𝑟 ℎ𝑖𝑡 =
+
+ 1, if 𝑖 ∗ ∈ 𝑅 𝑡 
+
+0, otherwise (17) Rank reward: Rank reward is a linear decay reward. Based on the position of the target item 𝑖 ∗ at 𝑝𝑜𝑠 𝑖 ∗ ∈ [ 1, 𝑙𝑒𝑛 (𝑅 𝑡 )] in the refined ranking list 𝑅 𝑡 , the formal definition is as follows: 
+
+𝑟 𝑟𝑎𝑛𝑘 =
+
+(
+
+1 − 𝑝𝑜𝑠 𝑖 ∗ −1len (𝑅 𝑡 ) , if 𝑖 ∗ ∈ 𝑅 𝑡 
+
+0, if 𝑖 ∗ ∉ 𝑅 𝑡 
+
+(18) 
+
+Preference reward: The preference reward is used to enhance the model’s preference understanding ability. We extract the prefer-ence inference 𝑃 𝑡 from the reasoning chain and compare it with the standard preference of the conversation ˆ𝑃 and calculate semantic similarity to determine whether the current model’s preference understanding is accurate. 
+
+𝑟 𝑃𝑟𝑒 𝑓 𝑒𝑟 = 𝑓 𝑠𝑖𝑚 (𝐸 𝑇 (𝑃 𝑡 ), 𝐸 𝑇 ( ˆ𝑃 )) (19) Where 𝑓 𝑠𝑖𝑚 is the cosine similarity function, and 𝐸 𝑇 is the text encoder. 
+
+## 3.5 Multi-Turn Interaction 
+
+This section introduces the multi-turn interaction process of SMTPO. As shown in Figure 2, in the first turn, the retriever retrieves an initial candidate set 𝐼 0 
+
+> cand
+
+based on the conversation history 𝐷 and the entity set 𝐼 𝐷 . The recommender then performs preference rea-soning 𝑃 0 and outputs the initial recommendation list 𝑅 0. In the subsequent turn 𝑡 , the simulator generates feedback 𝐹 𝑡 based on the previous recommendation list. The retriever combines the current feedback with the previous preference to retrieve a new candidate set 𝐼 𝑡 
+
+> cand
+
+. The recommender then updates preference reasoning 𝑃 𝑡 
+
+and generates a new recommendation list 𝑅 𝑡 based on the previous interactions C𝑡 = {( 𝐷, 𝐼 𝐷 , 𝐹 𝜏 , (𝑃 𝜏 , 𝑅 𝜏 ))} 𝑡 𝜏 =1. The process terminates when the maximum number of turns 𝑇 is reached or the target item 
+
+𝑖 ∗ is successfully recommended. 
+
+## 4 Experiments 
+
+In this section, we attempt to answer the following research ques-tions (RQs): RQ1: How does our method perform on the overall con-versational recommendation task? (Sec 4.2) RQ2: Does the training process of the user simulator and the recommender help improve recommendation performance? (Sec 4.3) RQ3: Does the multi-turn preference optimization process lead to improvements in recom-mendation performance? (Sec 4.4) RQ4: Where do the gains in recommendation performance come from, and does the system truly elicit user preferences? (Sec 4.5) 
+
+## 4.1 Experiment Setups 
+
+4.1.1 Dataset. To verify the effectiveness of our method, we con-duct experiments on two widely used CRS datasets, namely Re-Dial [ 21 ] and INSPIRED [ 14 ]. ReDial contains 10,006 dialogues, 956 users, and 6,924 items, while INSPIRED is slightly smaller, contain-ing 10,01 dialogues, 1,482 users, and 1,123 items. We follow the same dataset partitioning strategy as in the previous works. 
+
+4.1.2 Baselines. We compare with the following baselines: (1) Conventional recommendation models: We include Item Popularity, which ranks items by their historical frequency, and BERT [8], a PLM fine-tuned to predict candidate items. (2) General LLMs as Zero-shot CRSs: We evaluate LLMs in a zero-shot setting, including Llama-3.1-8B-Instruct [ 10 ] (L3.1-8B-I), an open-source 8B-parameter model, and GPT-3.5-Turbo and GPT-4o [ 1], which are closed-source models developed by OpenAI. (3) State-of-the-Art CRS Methods: This group includes ReDial [ 21 ], KBRD [ 4], a knowledge-enhanced CRS using subgraphs from DBpe-dia; KGSF [ 47 ], leveraging item and word oriented KGs; TREA [ 22 ], User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation Conference XX, June 03–05, 2018, Woodstock, NY 
+
+Table 1: Comparison of the main results between our method and baseline methods. The best result is given in bold. Significant improvements are marked with * (t-test, p < 0.05). 
+
+Dataset Metric Popularity BERT L3.1-8B-I GPT-3.5 GPT-4o ReDial KBRD KGSF TREA VRICR UniCRS DCRS MSCRS SMTPO 
+
+ReDial Recall@1 0.011 0.027 0.037 0.043 0.047 0.010 0.033 0.035 0.045 0.054 0.065 0.076 0.081 0.092* 
+
+Recall@10 0.053 0.142 0.136 0.165 0.189 0.065 0.150 0.175 0.204 0.244 0.241 0.253 0.264 0.270* 
+
+NDCG@10 0.029 0.075 0.067 0.091 0.106 0.034 0.083 0.094 0.114 0.138 0.143 0.154 0.161 0.165* 
+
+MRR@10 0.021 0.055 0.046 0.069 0.077 0.024 0.062 0.070 0.087 0.106 0.113 0.123 0.128 0.130* 
+
+INSPIRED Recall@1 0.031 0.049 0.043 0.053 0.079 0.009 0.042 0.051 0.047 0.043 0.085 0.093 0.096 0.099* 
+
+Recall@10 0.155 0.189 0.162 0.177 0.196 0.048 0.135 0.132 0.146 0.141 0.230 0.226 0.257 0.273* 
+
+NDCG@10 0.085 0.112 0.097 0.109 0.121 0.023 0.088 0.092 0.095 0.091 0.149 0.153 0.168 0.174* 
+
+MRR@10 0.064 0.088 0.077 0.088 0.098 0.015 0.073 0.079 0.076 0.075 0.125 0.130 0.140 0.142* 
+
+employing tree-structured reasoning; VRICR [ 43 ], adopting varia-tional bayesian pretraining; UniCRS [ 30 ], unifying recommendation and generation via prompt tuning; DCRS [ 5], retrieving contextu-ally similar dialogues to enhance recommendation; and MSCRS [ 33 ], integrating collaborative and multimodal information through se-mantic graphs and prompt learning. 
+
+4.1.3 Metric. Given the remarkable performance of LLMs in con-versation tasks [ 3 ], we follow existing work [ 29 , 37 ] to focus our evaluation primarily on the recommendation task. We use Recall@k, NDCG@k, and MRR@k for evaluation, with 𝑘 ∈ { 1, 10 }. We clarify that during inference, each dialogue instance in the test set is inde-pendently run for the full multi-turn interaction (up to five turns). For each turn 𝑡 , recommendation metrics are computed indepen-dently on the same fixed and complete test set, rather than on the subset of dialogues that have not yet reached the target. 
+
+4.1.4 Implementation Details. For user simulator, we adopt Llama-3.1-8B-Instruct as the backbone. The model is SFT-trained for 5 epochs with a learning rate of 1 × 10 −5, LoRA rank 8, and the AdamW optimizer. For retriever, training runs up to 50 epochs with early stopping, a learning rate of 5 × 10 −5, and the Adam optimizer. The top-20 candidates are retrieved using bge-base-en-v1.5 [ 36 ] for text encoding and LightGCN [ 15 ] for collaborative encoding. For recommender, we adopt DeepSeek-R1-Distill-Llama-8B [ 13 ]. It is SFT-trained for 8 epochs (learning rate 5 × 10 −5, LoRA rank 8, AdamW), followed by multi-turn GRPO optimization for 3 epochs. The group size of GRPO is 4, with gradient accumulation 8, max length 2048, learning rate 1 × 10 −5, and 5 interaction turns. FlashAttention2 [ 6 ] accelerates training. The recommender receives 20 candidates and outputs a final top-10 list. 
+
+## 4.2 Overall Performance Analysis 
+
+To answer RQ1, we compare SMTPO with baselines in Table 1 and summarize the following observations: (1) Traditional methods perform poorly. BERT outperforms Pop-ularity but remains far below most methods, showing that semantic understanding alone cannot capture complex user preferences. (2) General LLMs are competitive but not optimal. Zero-shot LLMs underperform specialized CRS models, highlighting the need for CRS-specific optimization. (3) Representative CRS baselines perform well, each with dis-tinct strengths. Notably, UniCRS and DCRS excel by combining entity representations with dialogue context and prompt-based optimization, while DCRS outperforming UniCRS via contextual retrieval. MSCRS integrates multi-modal features and semantic graphs, showing that enriching contextual representation with multi-source information is effective and motivates further use of simulated feedback and multi-turn preference optimization. (4) Our proposed SMTPO outperforms all baselines, thanks to its design for feedback effectiveness and stable preference modeling. The simulator, fine-tuned with multi-task instructions, generates high-quality feedback without true labels, mitigating failure and misleading issues during the inference stage. The recommender un-dergoes two-stage training, first with SFT and then with RL, where during the multi-turn RL stage, fine-grained rewards gradually align preferences with the true user preferences even under biased feedback, enhancing robustness and generalization. A dual-view retriever combining semantic and collaborative signals ensures ac-curate candidate sets and prevents generating items outside the global item space. 
+
+## 4.3 Ablation: Recommender and User Simulator 
+
+To evaluate the impact of the SFT stage and the multi-turn RL stage on the recommender’s performance, we conducted ablation experi-ments on the INSPIRED dataset. The experimental settings are as follows: w/o RL : The recommender trained with SFT only, without RL. w/o SFT : The recommender trained with RL only, without SFT. 
+
+w/o Pref : The recommender’s preference inferences are not used during candidate retrieval. w/o Rec : The recommender’s recom-mendation list is not used during candidate retrieval. As shown in Table 2, removing SFT significantly degrades performance (e.g., Recall@1 drops from 0.099 to 0.056), highlighting its key role in warm-starting the model and enhancing reasoning with limited data. Removing RL also lowers performance (Recall@1 = 0.075), though less severely, indicating RL helps refine preference model-ing and recommendation strategies via reward feedback. Ignoring Conference XX, June 03–05, 2018, Woodstock, NY Xingyuan Xiang, Xiangchen Pan, and WeiWei 
+
+Table 2: Ablation study of the simulator and the recom-mender on INSPIRED dataset. The best result is given in bold. Significant improvements are marked with * (t-test, p < 0.05). 
+
+Method Recall@1 Recall@10 NDCG@10 MRR@10 w/o RL 0.075 0.203 0.129 0.107 w/o SFT 0.056 0.187 0.108 0.084 w/o Pref 0.082 0.217 0.144 0.122 w/o Rec 0.076 0.207 0.136 0.113 w/ Single-task 0.095 0.220 0.152 0.130 w/o Feedback 0.072 0.197 0.126 0.105 SMTPO 0.099* 0.273* 0.174* 0.142* 
+
+preference (w/o Pref) or recommendation lists (w/o Rec) during retrieval reduces all metrics, showing the critical role of recom-mender–retrieval interaction. To evaluate the effectiveness of reward design in the multi-turn RL stage, we conducted ablation studies on the reward design. Since the format reward ensures correct interaction with the simulator and retriever, we focused on the contributions of the recommen-dation and preference rewards. To retain basic recommendation ability, the hit reward was kept, while the preference and rank rewards were removed in experiments. As shown in Figure 3, re-moving any of these rewards leads to a clear performance drop, with the rank reward having the greatest impact, highlighting its importance for the recommender’s reranking ability. To evaluate the impact of multi-task SFT on the effectiveness of feedback generation, we conducted ablation studies on the simu-lator module of SMTPO, as shown in Table 2. The settings are as follows: w/ Single-task : Simulator is fine-tuned on a single task (feedback generation) instead of all tasks. w/o Feedback : Natural language feedback from the simulator is not used during candi-date generation. Results show that single-task SFT (w/ Single-task) underperforms full multi-task SFT (SMTPO) across all metrics, in-dicating that multi-task SFT enables the simulator to produce more detailed and informative feedback, better guiding the recommender. The simulator fine-tuned with single-task training (w/ Single-task) still outperforms most baselines, which indirectly demonstrates the effectiveness of our method in handling low-quality feedback. Furthermore, unused simulator feedback (w/o Feedback) during re-trieval leads to further performance drops, especially in Recall@10 and NDCG@10, highlighting the critical role of natural language feedback in candidate selection. 
+
+## 4.4 Multi-Turn Optimization 
+
+To evaluate the effect of multi-turn preference optimization, we analyzed SMTPO’s recommendation performance over multiple conversation turns. Figures 4a and 4b show the recommender’s R@10/N@10 and the retriever’s R@20/N@20 across turns. Results indicate that recommender’s R@10 and N@10 steadily improve with more turns, demonstrating that multi-turn interac-tions help it better capture and refine user preferences. Notably, recommender’s N@10 eventually surpasses the retriever’s N@20, highlighting its effectiveness in reranking. In contrast, retriever’s - Rank 
+
+> reward
+> - Preference
+> reward
+> SMTPO
+> 0.150
+> 0.155
+> 0.160
+> 0.165
+> 0.170
+> 0.175
+> NDCG@10
+
+(a) NDCG - Rank  
+
+> reward
+> - Preference
+> reward
+> SMTPO
+> 0.10
+> 0.11
+> 0.12
+> 0.13
+> 0.14
+> 0.15
+> MRR@10
+
+(b) MRR 
+
+Figure 3: The performance impact of different rewards on the INSPIRED dataset [14]. Table 3: Blind-simulator and Noisy-feedback test on SMTPO. The best result is given in bold. Significant improvements are marked with * (t-test, p < 0.05). 
+
+R@10 Turn 1 Turn 2 Turn 3 Turn 4 Turn 5 Blind Simulator 0.161 0.194 0.171 0.164 0.167 Noise Test 0.161 0.182 0.185 0.178 0.181 SMTPO 0.161 0.210* 0.256* 0.266* 0.273* Trun 1 Trun 2 Trun 3 Trun 4 Trun 5  
+
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35 Recommender R@10
+> Retriever R@20
+
+(a) Recall Trun 1 Trun 2 Trun 3 Trun 4 Trun 5   
+
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> 0.125
+> 0.150
+> 0.175
+> 0.200 Recommender N@10
+> Retriever N@20
+
+(b) NDCG 
+
+Figure 4: Impact of multi-turn preference optimization on recommendation performance. 
+
+R@20 and N@20, which mainly handle candidate generation, show limited improvement, indicating that the fine-ranking stage plays a more critical role in optimizing final recommendation performance. Overall, multi-turn preference optimization can gradually estab-lish a reliable understanding of user preferences within a limited number of turns, effectively avoiding error accumulation caused by biased feedback, and thus significantly improving the accuracy and robustness of interactive conversational recommendation. 
+
+## 4.5 Source of Performance Gains 
+
+To analyze the sources of SMTPO’s performance gains, we study the role of dynamic inputs in multi-turn interactions. The user simulator generates feedback based on both dialogue context and User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation Conference XX, June 03–05, 2018, Woodstock, NY 
+
+Table 4: Case study of multi-turn preference optimization on the inspired dataset.                                 
+
+> Base Info Target Item Joker "category": [drama film, psychological thriller film, crime film]; "director": Todd Phillips
+> History user: I’m looking for something superhero-related, like Guardians of the Galaxy .recommender: Are you interested in comic-book characters?
+> user: Yes, I love characters like Spider-Man, Iron Man, and Captain America. recommender: Would you like to watch the trailer for The Avengers ?user: Yes, that sounds great. recommender: That’s the movie with Thanos, right? user: Yes, Thanos is in it. recommender:
+> Superhero team-ups are always fun. user: Agreed, these superhero mashups have been great.
+> Turn 0 (Cold Start) Candidates(I) Avengers(1), Avengers: Endgame(2), Marvel(3), ... Joker(15), ... Suicide Squad(20)
+> Reasoning(O) Step1: Preference Inference. The user prefers action superhero movies, mentioning Guardians of the Galaxy, Spider-Man, Iron Man, Captain America, and the Avengers with Thanos, indicating a taste for thrilling films. Step2: . . .
+> RecList(O) Avengers(1), Avengers: Endgame(2), Avengers: Infinity War(3), ... Aquaman(10)
+> Turn 1 (Warm Up) Feedback(I) I enjoy superhero films featuring team-ups and epic battles against villains like Thanos, especially in Marvel productions that blend action with character depth, ensemble dynamics, and emotional stakes.
+> Candidates(I) Star Wars(1), Avengers(2), Black Panther(3), ... Joker(8), ... Black Widow(20)
+> Reasoning(O) Step1: Preference Inference. The user prefers intense, character-driven films with psychological drama and crime elements, emphasizing dark atmosphere, societal themes, and strong performances. Step2: . . .
+> RecList(O) Blade Runner(1), Blade Runner 2049(2), Joker(3),... Avengers: Infinity War(10)
+> Turn 2 (Warm Up) Feedback(I) I enjoy superhero team-up films with high stakes, mixing action, sci-fi, and humor, featuring ensemble casts like Iron Man and Captain America against threats such as Thanos, especially in Marvel productions.
+> Candidates(I) Star Wars(1), Avengers(2), Black Panther(3), ... Joker(9), ... John Wick(20)
+> Reasoning(O) Step1: Preference Inference. The user prefers crime dramas with thriller elements, focusing on complex characters, dark atmosphere, and strong performances, with an emphasis on crime themes. Step2: . . .
+> RecList(O) Joker(1), Blade Runner 2049(3), Blade Runner(3), ... Star Wars(10)
+
+previous recommendations. To verify the necessity of dynamic in-puts, we conduct a blind simulator experiment where the simulator only accesses dialogue history without recommender outputs. As shown in Table 3, performance drops significantly, indicating that SMTPO’s gains come from dynamic interaction modeling rather than pretraining memorization. We further examine whether the recommender truly learns from multi-turn feedback. To rule out gains from prompt engineering or model memorization, we conduct a noise injection experiment, randomly replacing simulator feedback with irrelevant chat. As shown in Table 3, recommendation performance drops and shows no improvement over turns, indicating that SMTPO’s gains stem from continuously fitting real user preferences via feedback signals, rather than from prompt engineering or model memorization. Overall, the multi-turn preference optimization mechanism grad-ually builds a reliable estimate of users’ implicit preferences within a few turns. During training, the recommender uses a multi-view re-ward to align dialogue context and simulator feedback with target items. At inference, it updates its understanding of user prefer-ences from the learned feedback-driven posterior, enabling robust preference elicitation and improved recommendation performance. 
+
+## 4.6 Case Study 
+
+Table 4 presents a representative example illustrating the effec-tiveness of SMTPO in multi-turn preference optimization. As the interaction progresses, the retriever consistently recalls the tar-get item, and the majority of retrieved candidates share salient attributes with it. This observation highlights the robustness of our dual-view modeling strategy in fusing dynamic interaction signals across turns. Meanwhile, the simulator-generated feedback at each turn is well aligned with the entity information in the dialogue context and pro-vides targeted guidance for refining the current recommendation results. This demonstrates that multi-task instruction fine-tuning enables the simulator to produce specific and constructive user feedback rather than generic responses. From the recommendation outcomes across turns, we observe that the recommender initially fails to select the target item from the candidate set. However, with continued multi-turn interactions, the target item is gradually ranked higher, eventually emerging as the top recommendation. This behavior indicates that the proposed multi-turn reinforcement learning framework allows the recom-mender to iteratively refine its understanding of user preferences and continuously improve recommendation quality. Moreover, the evolving preference summary increasingly aligns with the attribute information of the target item, further validating the effectiveness of the proposed multi-turn preference optimization mechanism. 
+
+## 5 Conclusion 
+
+This work presents SMTPO, a simulator-guided conversational rec-ommendation framework based on Reasoning LLM that leverages a user simulator to enable multi-turn preference optimization. Within the framework, the simulator generates high-quality feedback via multi-task instruction tuning to guide the recommender in under-standing complex user preferences. The recommender is trained in two stages, gradually aligning with true preferences over mul-tiple interactions, while a dual-view dynamic retriever (semantic and collaborative) constrains the candidate set, enhancing preci-sion and avoiding items outside the global item space. Experiments show that multi-task SFT significantly improves simulator feedback Conference XX, June 03–05, 2018, Woodstock, NY Xingyuan Xiang, Xiangchen Pan, and WeiWei 
+
+quality, and both SFT and multi-turn RL are crucial for the recom-mender’s preference modeling and recommendations. Multi-turn preference optimization allows the recommender to progressively build reliable user preference understanding. Overall, SMTPO effec-tively exploits LLM reasoning, achieving notable gains in accuracy, robustness, and generalization. Our work provides a potential di-rection for future exploration of applying large language models in multi-turn preference optimization. 
+
+## References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Floren-cia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al . 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 
+
+(2023). [2] Bradley Brown, Jordan Juravsky, Ryan Ehrlich, Ronald Clark, Quoc V Le, Christo-pher Ré, and Azalia Mirhoseini. 2024. Large language monkeys: Scaling inference compute with repeated sampling. arXiv preprint arXiv:2407.21787 (2024). [3] Yupeng Chang, Xu Wang, Jindong Wang, Yuan Wu, Linyi Yang, Kaijie Zhu, Hao Chen, Xiaoyuan Yi, Cunxiang Wang, Yidong Wang, et al . 2024. A survey on evaluation of large language models. ACM transactions on intelligent systems and technology 15, 3 (2024), 1–45. [4] Qibin Chen, Junyang Lin, Yichang Zhang, Ming Ding, Yukuo Cen, Hongxia Yang, and Jie Tang. 2019. Towards knowledge-based recommender dialog system. arXiv preprint arXiv:1908.05391 (2019). [5] Huy Dao, Yang Deng, Dung D Le, and Lizi Liao. 2024. Broadening the view: Demonstration-augmented prompt learning for conversational recommendation. In Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval . 785–795. [6] Tri Dao. 2023. Flashattention-2: Faster attention with better parallelism and work partitioning. arXiv preprint arXiv:2307.08691 (2023). [7] Yang Deng, Yaliang Li, Fei Sun, Bolin Ding, and Wai Lam. 2021. Unified conversa-tional recommendation policy learning via graph-based reinforcement learning. In Proceedings of the 44th International ACM SIGIR Conference on Research and Development in Information Retrieval . 1431–1441. [8] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. Bert: Pre-training of deep bidirectional transformers for language understanding. In 
+
+Proceedings of the 2019 conference of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers) . 4171–4186. [9] Xiaofei Dong, Xueqiang Zhang, Weixin Bu, Dan Zhang, and Feng Cao. 2024. A survey of llm-based agents: Theories, technologies, applications and suggestions. In 2024 3rd International Conference on Artificial Intelligence, Internet of Things and Cloud Computing Technology (AIoTC) . IEEE, 407–413. [10] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. 2024. The llama 3 herd of models. arXiv e-prints (2024), arXiv–2407. [11] Yi Fang, Wenjie Wang, Yang Zhang, Fengbin Zhu, Qifan Wang, Fuli Feng, and Xiangnan He. 2025. Reason4Rec: Large Language Models for Recommendation with Deliberative User Preference Alignment. arXiv preprint arXiv:2502.02061 
+
+(2025). [12] Xueyang Feng, Jingsen Zhang, Jiakai Tang, Wei Li, Guohao Cai, Xu Chen, Quanyu Dai, Yue Zhu, and Zhenhua Dong. 2025. Expectation Confirmation Preference Optimization for Multi-Turn Conversational Recommendation Agent. arXiv preprint arXiv:2506.14302 (2025). [13] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al . 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025). [14] Shirley Anugrah Hayati, Dongyeop Kang, Qingxiaoyang Zhu, Weiyan Shi, and Zhou Yu. 2020. Inspired: Toward sociable recommendation dialog systems. arXiv preprint arXiv:2009.14306 (2020). [15] Xiangnan He, Kuan Deng, Xiang Wang, Yan Li, Yongdong Zhang, and Meng Wang. 2020. Lightgcn: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval . 639–648. [16] Zhankui He, Zhouhang Xie, Rahul Jha, Harald Steck, Dawen Liang, Yesu Feng, Bodhisattwa Prasad Majumder, Nathan Kallus, and Julian McAuley. 2023. Large language models as zero-shot conversational recommenders. In Proceedings of the 32nd ACM international conference on information and knowledge management .720–730. [17] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al . 2022. Lora: Low-rank adaptation of large language models. ICLR 1, 2 (2022), 3. [18] Xu Huang, Weiwen Liu, Xiaolong Chen, Xingmei Wang, Hao Wang, Defu Lian, Yasheng Wang, Ruiming Tang, and Enhong Chen. 2024. Understanding the planning of LLM agents: A survey. arXiv preprint arXiv:2402.02716 (2024). [19] Wenqiang Lei, Xiangnan He, Yisong Miao, Qingyun Wu, Richang Hong, Min-Yen Kan, and Tat-Seng Chua. 2020. Estimation-action-reflection: Towards deep interaction between conversational and recommender systems. In Proceedings of the 13th international conference on web search and data mining . 304–312. [20] Wenqiang Lei, Gangyi Zhang, Xiangnan He, Yisong Miao, Xiang Wang, Liang Chen, and Tat-Seng Chua. 2020. Interactive path reasoning on graph for conver-sational recommendation. In Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining . 2073–2083. [21] Raymond Li, Samira Ebrahimi Kahou, Hannes Schulz, Vincent Michalski, Laurent Charlin, and Chris Pal. 2018. Towards deep conversational recommendations. 
+
+Advances in neural information processing systems 31 (2018). [22] Wendi Li, Wei Wei, Xiaoye Qu, Xian-Ling Mao, Ye Yuan, Wenfeng Xie, and Dangyang Chen. 2023. Trea: Tree-structure reasoning schema for conversational recommendation. arXiv preprint arXiv:2307.10543 (2023). [23] Ying-Chun Lin, Jennifer Neville, Jack W Stokes, Longqi Yang, Tara Safavi, Mengt-ing Wan, Scott Counts, Siddharth Suri, Reid Andersen, Xiaofeng Xu, et al . 2024. Interpretable user satisfaction estimation for conversational systems with large language models. arXiv preprint arXiv:2403.12388 (2024). [24] Zhangchi Qiu, Ye Tao, Shirui Pan, and Alan Wee-Chung Liew. 2024. Knowledge graphs and pretrained language models enhanced representation learning for conversational recommender systems. IEEE transactions on neural networks and learning systems (2024). [25] Wasswa Shafik. 2024. Introduction to chatgpt. In Advanced applications of gener-ative AI and natural language processing models . IGI Global Scientific Publishing, 1–25. [26] Kimi Team, Angang Du, Bofei Gao, Bowei Xing, Changjiu Jiang, Cheng Chen, Cheng Li, Chenjun Xiao, Chenzhuang Du, Chonghua Liao, et al . 2025. Kimi k1. 5: Scaling reinforcement learning with llms. arXiv preprint arXiv:2501.12599 (2025). [27] Xiaolei Wang, Xinyu Tang, Wayne Xin Zhao, Jingyuan Wang, and Ji-Rong Wen. 2023. Rethinking the evaluation for conversational recommendation in the era of large language models. arXiv preprint arXiv:2305.13112 (2023). [28] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. 2022. Self-consistency improves chain of thought reasoning in language models. arXiv preprint arXiv:2203.11171 (2022). [29] Xiaolei Wang, Chunxuan Xia, Junyi Li, Fanzhe Meng, Lei Huang, Jinpeng Wang, Wayne Xin Zhao, and Ji-Rong Wen. 2025. Search-Based Interaction For Conver-sation Recommendation via Generative Reward Model Based Simulated User. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval . 75–84. [30] Xiaolei Wang, Kun Zhou, Ji-Rong Wen, and Wayne Xin Zhao. 2022. Towards unified conversational recommender systems via knowledge-enhanced prompt learning. In Proceedings of the 28th ACM SIGKDD conference on knowledge discov-ery and data mining . 1929–1937. [31] Yuling Wang, Changxin Tian, Binbin Hu, Yanhua Yu, Ziqi Liu, Zhiqiang Zhang, Jun Zhou, Liang Pang, and Xiao Wang. 2024. Can small language models be good reasoners for sequential recommendation?. In Proceedings of the ACM Web Conference 2024 . 3876–3887. [32] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al . 2022. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems 35 (2022), 24824–24837. [33] Yibiao Wei, Jie Zou, Weikang Guo, Guoqing Wang, Xing Xu, and Yang Yang. 2025. MSCRS: Multi-modal Semantic Graph Prompt Learning Framework for Conversational Recommender Systems. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval .42–52. [34] Junda Wu, Cheng-Chun Chang, Tong Yu, Zhankui He, Jianing Wang, Yupeng Hou, and Julian McAuley. 2024. Coral: collaborative retrieval-augmented large language models improve long-tail recommendation. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 3391–3401. [35] Yunjia Xi, Weiwen Liu, Jianghao Lin, Bo Chen, Ruiming Tang, Weinan Zhang, and Yong Yu. 2024. Memocrs: Memory-enhanced sequential conversational recommender systems with large language models. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management . 2585– 2595. [36] Shitao Xiao, Zheng Liu, Peitian Zhang, Niklas Muennighoff, Defu Lian, and Jian-Yun Nie. 2024. C-pack: Packed resources for general chinese embeddings. In Proceedings of the 47th international ACM SIGIR conference on research and development in information retrieval . 641–649. [37] Zhouhang Xie, Junda Wu, Hyunsik Jeon, Zhankui He, Harald Steck, Rahul Jha, Dawen Liang, Nathan Kallus, and Julian McAuley. 2024. Neighborhood-based collaborative filtering for conversational recommendation. In Proceedings of the 18th ACM Conference on Recommender Systems . 1045–1050. User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation Conference XX, June 03–05, 2018, Woodstock, NY 
+
+[38] Kerui Xu, Jingxuan Yang, Jun Xu, Sheng Gao, Jun Guo, and Ji-Rong Wen. 2021. Adapting user preference to online feedback in multi-round conversational rec-ommendation. In Proceedings of the 14th ACM international conference on web search and data mining . 364–372. [39] Ting Yang and Li Chen. 2024. Unleashing the retrieval potential of large language models in conversational recommender systems. In Proceedings of the 18th ACM Conference on Recommender Systems . 43–52. [40] Se-eun Yoon, Zhankui He, Jessica Maria Echterhoff, and Julian McAuley. 2024. Evaluating large language models as generative user simulators for conversa-tional recommendation. arXiv preprint arXiv:2403.09738 (2024). [41] Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, et al . 2025. Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 
+
+(2025). [42] Yu Yue, Yufeng Yuan, Qiying Yu, Xiaochen Zuo, Ruofei Zhu, Wenyuan Xu, Jiaze Chen, Chengyi Wang, TianTian Fan, Zhengyin Du, et al . 2025. Vapo: Efficient and reliable reinforcement learning for advanced reasoning tasks. arXiv preprint arXiv:2504.05118 (2025). [43] Xiaoyu Zhang, Xin Xin, Dongdong Li, Wenxuan Liu, Pengjie Ren, Zhumin Chen, Jun Ma, and Zhaochun Ren. 2023. Variational reasoning over incomplete knowl-edge graphs for conversational recommendation. In Proceedings of the sixteenth ACM international conference on web search and data mining . 231–239. [44] Keyu Zhao, Fengli Xu, and Yong Li. 2025. Reason-to-Recommend: Using Interaction-of-Thought Reasoning to Enhance LLM Recommendation. arXiv preprint arXiv:2506.05069 (2025). [45] Bowen Zheng, Yupeng Hou, Hongyu Lu, Yu Chen, Wayne Xin Zhao, Ming Chen, and Ji-Rong Wen. 2024. Adapting large language models by integrating collaborative semantics for recommendation. In 2024 IEEE 40th International Conference on Data Engineering (ICDE) . IEEE, 1435–1448. [46] Yongsen Zheng, Ruilin Xu, Ziliang Chen, Guohua Wang, Mingjie Qian, Jinghui Qin, and Liang Lin. 2024. HyCoRec: Hypergraph-Enhanced Multi-Preference Learning for Alleviating Matthew Effect in Conversational Recommendation. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 2526–2537. [47] Kun Zhou, Wayne Xin Zhao, Shuqing Bian, Yuanhang Zhou, Ji-Rong Wen, and Jingsong Yu. 2020. Improving conversational recommender systems via knowl-edge graph based semantic fusion. In Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining . 1006–1014. [48] Yaochen Zhu, Chao Wan, Harald Steck, Dawen Liang, Yesu Feng, Nathan Kallus, and Jundong Li. 2025. Collaborative Retrieval for Large Language Model-based Conversational Recommender Systems. In Proceedings of the ACM on Web Con-ference 2025 . 3323–3334. [49] Yaochen Zhu, Liang Wu, Qi Guo, Liangjie Hong, and Jundong Li. 2024. Collab-orative large language model for recommender systems. In Proceedings of the ACM Web Conference 2024 . 3162–3172.

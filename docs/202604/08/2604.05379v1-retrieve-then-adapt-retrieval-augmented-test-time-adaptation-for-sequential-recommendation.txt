@@ -1,0 +1,551 @@
+Title: Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation
+
+URL Source: https://arxiv.org/pdf/2604.05379v1
+
+Published Time: Wed, 08 Apr 2026 00:36:49 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation 
+
+# Xing Tang 
+
+Shenzhen Technology University Shenzhen, China 
+
+# Jingyang Bin 
+
+Shenzhen Technology University Shenzhen, China 
+
+# Ziqiang Cui 
+
+City University of Hong Kong Hong Kong SAR 
+
+# Xiaokun Zhang 
+
+City University of Hong Kong Hong Kong SAR 
+
+# Fuyuan Lyu 
+
+McGill University Montreal, Canada 
+
+# Jingyan Jiang 
+
+Shenzhen Technology University Shenzhen, China 
+
+# Dugang Liu 
+
+Shenzhen University Shenzhen, China 
+
+# Chen Ma 
+
+City University of Hong Kong Hong Kong SAR 
+
+# Xiuqiang He ∗
+
+Shenzhen Technology University Shenzhen, China 
+
+## Abstract 
+
+The sequential recommendation (SR) task aims to predict the next item based on users’ historical interaction sequences. Typically trained on historical data, SR models often struggle to adapt to real-time preference shifts during inference due to challenges posed by distributional divergence and parameterized constraints. Existing approaches to address this issue include test-time training, test-time augmentation, and retrieval-augmented fine-tuning. However, these methods either introduce significant computational overhead, rely on random augmentation strategies, or require a carefully de-signed two-stage training paradigm. In this paper, we argue that the key to effective test-time adaptation lies in achieving both effective augmentation and efficient adaptation. To this end, we propose Retrieve-then-Adapt ( ReAd ), a novel framework that dynamically adapts a deployed SR model to the test distribution through re-trieved user preference signals. Specifically, given a trained SR model, ReAd first retrieves collaboratively similar items for a test user from a constructed collaborative memory database. A light-weight retrieval learning module then integrates these items into an informative augmentation embedding that captures both collabora-tive signals and prediction-refinement cues. Finally, the initial SR prediction is refined via a fusion mechanism that incorporates this embedding. Extensive experiments across five benchmark datasets demonstrate that ReAd consistently outperforms existing SR meth-ods. 
+
+## CCS Concepts 
+
+• Information systems → Recommender systems . 
+
+> ∗Corresponding author Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference acronym ’XX, Woodstock, NY
+> ©2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+## Keywords 
+
+Retrieval-Augmented, Test-time Adaptation, Sequential Recommen-dation 
+
+ACM Reference Format: 
+
+Xing Tang, Jingyang Bin, Ziqiang Cui, Xiaokun Zhang, Fuyuan Lyu, Jingyan Jiang, Dugang Liu, Chen Ma, and Xiuqiang He. 2018. Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommenda-tion. In Proceedings of Make sure to enter the correct conference title from your rights confirmation email (Conference acronym ’XX). ACM, New York, NY, USA, 12 pages. https://doi.org/XXXXXXX.XXXXXXX 
+
+## 1 Introduction 
+
+In recent years, sequential recommendation (SR) has attracted con-siderable attention for its ability to learn user preferences from sequential behavioral data [ 42 , 45 ]. Early SR research primarily focused on designing increasingly sophisticated architectures to capture implicit user patterns from historica=l interactions [ 12 , 14 ,27 , 28 , 32 , 41 ]. However, due to the limited number of interactions between users and items, training SR models often suffers from data sparsity, making it challenging to learn high-quality user rep-resentations [ 21 ]. To mitigate this issue, some recent studies have turned to self-supervised learning (SSL), leveraging data augmen-tation and contrastive loss to align different augmented views of the data [ 5 ]. With the success of contrastive learning, SR models can now incorporate additional knowledge during training, thereby enhancing the quality of user representations. Despite efforts to train the SR model, improving its performance at test time or the inference stage remains an open challenge. As illustrated in Figure 1, the SR model relies on frozen parameters inherited from the training stage during inference. This static repre-sentation poses some challenges because it fails to adapt to dynamic test-time environments. First, deployed SR models rely on training data collected from historical user behavior. While SSL enhances data through parametric or heuristic augmentation, preference shifts—caused by temporal, locational, or interest changes—are com-mon in live recommendation environments [ 38 , 43 ]. For instance, in the example illustrated in Figure 1, a sports product may be the predicted next item during vacation periods in the training data. However, at test time—such as at the start of a new semester—the actual next item could be a book, reflecting a temporal shift in user   
+
+> arXiv:2604.05379v1 [cs.IR] 7 Apr 2026 Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xing Tang, et al. Sequential Recommendation Model
+> Sequential Recommendation Model
+> Test-time Data Training Data
+> Model Parameters
+> Training Stage Inference Stage
+> preference shift
+
+Figure 1: An overview of the sequential recommendation model in both the training and inference stages. Model pa-rameters are transferred from training to inference, while input behavior sequences during inference are subject to preference shift. 
+
+preference. Second, trained models encode collaborative signals into their parameters, thereby amplifying the model’s weakness in adapting to online distribution shifts. In particular, interactions in-volving long-tail items often suffer from inadequate representation and are easily dominated by popular items [ 17 ]. When adapting to a test-time sequence, SR models rely heavily on outputs derived from fixed parameters that encode historical collaborative signals. How-ever, these signals can quickly become outdated or biased when long-tail items gain popularity, leading to a mismatch with the evolving data distribution. Together, these challenges highlight a fundamental issue in SR: how to effectively address distribution shifts during inference in sequential recommendation. Recent studies have explored test-time learning paradigms to improve sequential recommendation during inference. Test-time training (TTT) has been introduced into recommendation sys-tems [ 38 , 39 , 43 ], leveraging an auxiliary task to facilitate real-time model updating. However, as SR architectures become increasingly complex [ 2 , 40 , 42 ], the computational overhead of such auxiliary tasks can no longer be overlooked during inference. Alternatively, lightweight test-time augmentation (TTA) methods have been ex-plored, which enhance sequential recommendation by augmenting input sequences at inference time and aggregating predictions with-out introducing additional tasks or structures [ 6, 13 ]. Yet, because it relies on random augmentation operators and simple averaging, this method often lacks robustness and may fail to generalize ef-fectively. Another line of work addresses preference drift through retrieval-augmented fine-tuning, which accelerates adaptation to test data by combining recommendation and retrieval learning dur-ing pre-training [ 44 ]. This approach, however, requires a carefully structured pre-training stage that jointly incorporates recommenda-tion and retrieval learning. Overall, there remains a clear need for a low-cost, efficient, and model-agnostic adaptation mechanism that effectively enhances sequential recommendation performance at test time without incurring significant computational or structural overhead. In this paper, we propose a novel framework, Re trieve-then-
+
+Ad apt (ReAd), to address the challenges outlined above. Designing a retrieval-augmented test-time adaptation method for sequential recommendation presents two main challenges. First, unlike lan-guage models [ 8] or vision-language models [ 16 ], SR lacks access to external knowledge sources for the retrieval-based enhancement of a pre-trained model. Defining a suitable knowledge base is thus crucial; it must identify what knowledge is essential and establish a feasible retrieval mechanism. As noted earlier, collaborative signals encoded within model parameters are often weak. To this end, our retrieval mechanism augments predictions directly at test time. We address this challenge by constructing a memory-based knowledge base that maps sequence representations to collaborative items extracted from the training data. This design enables the retrieval of relevant items based on historically similar behavior sequences, thereby enhancing predictions explicitly at test time—without re-lying solely on implicit parametric knowledge. The second chal-lenge lies in effectively integrating the retrieved items. Similar to retrieval-augmented generation (RAG) [ 8 ], which retrieves multiple documents per query, our method also retrieves several items per query. To enable efficient adaptation to each test sample, we aim to refine predictions directly from these retrieved items without incurring high computational costs. To this end, we introduce a lightweight retrieval learning module that fuses the retrieved items into a unified representation, coupled with a mechanism to adjust the final prediction using this fused representation. We summarize our major contributions as follows: 
+
+• We systematically identify the core challenges in improving se-quential recommendation models at test time, highlighting that effective augmentation and efficient adaptation are crucial for enhancing real-world performance. 
+
+• We introduce ReAd, a novel retrieval-augmented test-time adap-tation framework for SR. ReAd constructs a memory knowledge base to retrieve and integrate collaborative items relevant to the input sequence, enabling dynamic prediction refinement that better adapts to test-time behavioral shifts. 
+
+• Extensive experiments are conducted on five public datasets. The experimental results demonstrate the effectiveness and efficiency of the proposed method. The remainder of this paper is structured as follows. Section 2 reviews related work in sequential recommendation, test-time learn-ing paradigms, and retrieval-augmented recommendation. Section 3 introduces the preliminary definitions and task formulation for sequential recommendation. Our proposed ReAd framework is pre-sented in detail in Section 4, followed by experimental results and analysis in Section 5. Finally, Section 6 concludes the paper and outlines potential directions for future work. 
+
+## 2 Related Work 
+
+In this section, we provide a brief review of related work. Our study builds upon three key research lines: sequential recommendation, test-time strategies for sequential recommendation, and retrieval-augmented recommendation. 
+
+## 2.1 Sequential Recommendation 
+
+The learning paradigm of sequential recommendation (SR) models has progressed from traditional models [ 11 , 25 ] to deep learning approaches [ 12 , 14 , 27 , 28 , 47 ]. For instance, GRU4Rec [ 12 ] and Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Caser [ 28 ] employed Gated Recurrent Units (GRU) and convolu-tional networks, respectively, to capture the dynamics of user pref-erences. Following the success of attention mechanisms in language modeling [ 30 ], transformer-based SR models have gained promi-nence [ 14 , 27 ]. More recently, inspired by large foundation models in language processing, several studies have explored scaling up the parameter sizes of SR models [ 40 , 42 ]. Another important research direction addresses data sparsity in sequential recommendation by integrating self-supervised learning (SSL) techniques [ 19 , 24 , 35 , 46 ]. A key aspect of these approaches is data augmentation, which has evolved from heuristic operations—such as cropping, masking, and dropout—to model-enhanced strategies, including diffusion models [ 5, 33 ] and large language model-based augmentation [ 4]. Additional efforts focus on improving semantic alignment across augmented views through techniques such as contrastive learning and invariant representation learning [3, 22, 48]. Despite these advances, existing methods primarily operate dur-ing training and remain vulnerable to distribution shifts encoun-tered during inference, limiting their effectiveness in real-world, dynamic recommendation scenarios. 
+
+## 2.2 Test-Time Learning Paradigms for SR 
+
+Building on the preceding discussion, recent research has increas-ingly focused on test-time strategies for sequential recommenda-tion, particularly test-time training (TTT) [ 18 ] and test-time aug-mentation (TTA) [ 26 ]. For example, TTT4Rec [ 39 ] adapts model parameters during inference by leveraging additional real-time data. Following this direction, T 2ARec [ 43 ] and PCRec [ 34 ] further ex-plore ways to update trained models at test time. T 2ARec introduces a state-space model with two alignment modules to capture shifts in user interest distributions, while PCRec incorporates real-time hidden-state inference and performs one-step optimization during deployment. Despite their effectiveness, these approaches require specialized architectures and incur non-negligible computational overhead during inference. In parallel, TTA-based operators such as TNoise and TMask [ 6 ] investigate data augmentation applied directly at test time. While these enhancements yield performance gains over baseline models, they remain susceptible to failure due to the inherent randomness of augmentation and potential mis-alignment with model architecture. 
+
+## 2.3 Retrieval-Augmented Recommendation 
+
+Retrieval-Augmented Generation (RAG) has gained prominence in large language models (LLMs) for its ability to incorporate ex-ternal knowledge from structured databases [ 8, 10 ]. Inspired by this paradigm, several works have introduced retrieval-augmented strategies into recommendation systems to enhance performance [ 1,4, 29 , 31 , 36 , 44 ]. These approaches retrieve external knowledge from diverse sources, such as LLM-generated content [ 4, 31 ], cross-domain information [ 29 ], or historical user behavior [ 44 ]. For in-stance, RaSeRec [ 44 ] proposes a two-stage framework involving pre-training and fine-tuning to mitigate preference drift. However, like other similar methods, it operates primarily during the training phase and cannot adapt dynamically during inference, thus limiting its applicability in real-time recommendation settings. 
+
+## 3 Preliminaries 
+
+In this section, we first introduce the standard sequential recom-mendation model, followed by the formal problem formulation for test-time adaptation. 
+
+## 3.1 Sequential Recommendation Model 
+
+We begin with the notation used in sequential recommendation. The goal of sequential recommendation is to predict the next item a user is likely to interact with based on their historical behavior sequence. Let U = {𝑢 1, 𝑢 2, . . . , 𝑢 | U | } denote the set of users and 
+
+V = {𝑣 1, 𝑣 2, . . . , 𝑣 | V | } denote the set of items, where |U| and |V | 
+
+are the number of users and items, respectively. For each user 
+
+𝑢 ∈ U , the historical interaction sequence in chronological order is represented as s𝑢 = {𝑣 𝑢  
+
+> 1
+
+, 𝑣 𝑢  
+
+> 2
+
+, . . . , 𝑣 𝑢   
+
+> |s𝑢 |
+
+}, where 𝑣 𝑢 𝑡 ∈ V is the item that user 𝑢 interacted with at time step 𝑡 . Given s𝑢 , a sequential recommendation model 𝑀 is trained to maximize the likelihood of the next item: 
+
+arg max   
+
+> 𝑣 ∗∈ V
+
+𝑝  𝑣 |s|+ 1 = 𝑣 ∗ | s𝑢 , (1) where 𝑝 (· | s𝑢 ) denotes the output probability distribution of model, representing the likelihood of candidate items given the user’s historical sequence. 
+
+## 3.2 Problem Formulation 
+
+At test time, our objective is to adapt the trained sequential model 
+
+𝑀 to improve next-item prediction for a given user 𝑢 𝑡 and her input sequence s𝑢 𝑡 , while leveraging item embeddings {e𝑗 | 𝑗 ∈ V} .To enable retrieval-based augmentation, a key subproblem is to construct an indexed collaborative memory base D that supports efficient look-up of relevant items. Formally, the augmentation step can be expressed as: 
+
+𝑓 aug : (D , 𝑀 ; s𝑢 𝑡 ) −→ eaug , (2) where 𝑓 aug is a retrieval-augmentation function that maps the base 
+
+D and the input sequence s𝑢 𝑡 to an augmented embedding eaug .Based on this augmented representation, the final adaptation ob-jective follows the setting introduced in prior work on retrieval-augmented test-time adaptation [9, 16]: 
+
+𝑣 ∗ = 𝑔 adapt 
+
+
+
+𝑝 init , 𝑝 aug 
+
+
+
+, (3) where 𝑔 adapt denotes the adaptation operator applied at test time, and 𝑣 ∗ is the final predicted item based on the initial prediction 𝑝 init 
+
+and the augmented prediction 𝑝 aug .Note that during test-time adaptation, the original training data is not accessible, and the forward computation through 𝑀 is assumed to be computationally efficient. The core contributions of this paper focus on designing effective instantiations of the two functions 𝑓 aug 
+
+and 𝑔 adapt .
+
+## 4 Methodology 
+
+In this section, we present the proposed ReAd (Retrieve-then-Adapt) framework in detail. We begin with a high-level overview of its workflow, followed by a step-by-step explanation of the retrieval-augmentation and adaptation mechanisms in subsequent subsec-tions. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xing Tang, et al. Representation   
+
+> encoder
+> Test user sequence
+> Collaborative Memory
+> Representation
+> ...
+> Top-ksimilar representation
+> Retrieval Learning Module
+> Retrieval representation
+> ...
+> Top-ksimilar representation
+> a.online
+> Cross-attention Layer
+> Retrieval representation
+> ...
+> ...
+> ...
+> b.offline
+> Initial Prediction
+> Augmented Prediction
+> Representation
+> Final Prediction
+
+Figure 2: The overall framework of ReAd. (a) Online adaptation: The test user sequence is encoded by the encoder 𝑀 𝜃 and used to retrieve the top-𝑘 most similar representations from the Collaborative Memory base. The retrieved representations are fused via the Retrieval Learning Module, then combined with the initial prediction 𝑝 init to produce the final augmented prediction. (b) Offline retrieval learning: The retrieval representations are refined via a cross-attention layer, supervised by the recommendation loss Lrec and the alignment loss Lalign , with KL-divergence used to stabilize training. The red box indicates offline components, while the blue box corresponds to online inference. 
+
+## 4.1 The Overview of ReAd 
+
+The Figure 2 presents the overall framework of the proposed ReAd method. The framework operates in two main steps: offline prepa-ration and online adaptation. In the offline stage (Section 4.2), we construct a collaborative memory base D from the training data. To effectively integrate the retrieved candidate items, we design a retrieval learning module that processes candidate item embeddings. Notably, the parameters of the trained sequential model remain fixed during this stage, ensuring that the retrieval process remains lightweight and does not introduce additional training overhead. During the online inference stage (Section 4.3), for a given test user sequence, the retrieval module selects the top-𝑘 most relevant items from D based on sequence similarity and fuses their embed-dings into a retrieved representation. This representation is then used to refine the model’s initial prediction, ultimately yielding the final augmented prediction through a learnable fusion mechanism. 
+
+## 4.2 Collaborative-based Retrieval 
+
+During the training stage, the sequential recommendation model 𝑀 
+
+is optimized using historical user behavior data to learn and encode collaborative signals. To provide necessary context for the subse-quent adaptation process, we first outline the standard training procedure. 
+
+4.2.1 Model Training. We construct a trainable item embedding matrix 𝑀 E ∈ R| V | × 𝑑 for the entire item set V, mapping each item to a 𝑑 -dimensional dense vector. During training, each user sequence 
+
+s𝑢 is split into subsequence–label pairs ({ 𝑣 𝑢  
+
+> 1
+
+, · · · , 𝑣 𝑢 𝑗 }, 𝑣 𝑢 𝑗 +1), where the latter denotes the item to be predicted. Given a subsequence 
+
+{𝑣 𝑢  
+
+> 1
+
+, · · · , 𝑣 𝑢 𝑗 }, the sequential model 𝑀 first computes its represen-tation h𝑢 𝑗 ∈ R1×𝑑 via the representation encoder, denoted 𝑀 𝜃 . The similarities between h𝑢 𝑗 and all item embeddings are then obtained as: 
+
+r = h𝑢 𝑗 𝑀 ⊤ 
+
+> E
+
+, (4) where r ∈ R| V | , and the value of each entry 𝑟 𝑖 indicates the unnor-malized affinity between the sequence representation and item 𝑣 𝑖 ,and the ranking of 𝑟 𝑖 determines the predicted order of candidate items. While inference relies on the top-𝑘 ranking derived from r,training optimizes the negative log-likelihood over the full item set via softmax: 
+
+Lrec = −∑︁   
+
+> 𝑢 ∈ U |s𝑢 |
+
+∑︁ 
+
+> 𝑗 =1
+
+log (𝑒 h𝑢 𝑗 e⊤  
+
+> 𝑣 𝑢 𝑗 +1
+
+/Σ𝑣 𝑖 ∈ V 𝑒 h𝑢 𝑗 e⊤ 
+
+> 𝑣 𝑖
+
+). (5) Here, e𝑣 𝑢 𝑗 +1 denotes the embedding of the target item 𝑣 𝑢 𝑗 +1, and e𝑣 𝑖 
+
+represents the embedding of any item in V. The model parameters are updated by minimizing Lrec , thereby encoding collaborative signals in a parametric manner. 
+
+4.2.2 Collaborative Memory Database. Based on the trained repre-sentation encoder 𝑀 𝜃 , we construct a retrieved memory database 
+
+D that explicitly stores collaborative signals. Specifically, for each training sequence s𝑢 , we compute its representation h𝑢 using 𝑀 𝜃 .The embedding of the corresponding next item e𝑣 𝑢 is associated with h𝑢 to form a pair < h𝑢 , e𝑣 𝑢 >, which encapsulates a sequential pattern in user behavior. Here, h𝑢 serves as the index in D, and the collection of such pairs comprises the entries of the database. Sequences with similar representations h typically correspond to similar target items, reflecting that collaborative signals are explic-itly encoded and accessible in this memory structure. During inference, given a test user sequence s𝑢 𝑡 , we first derive its representation h𝑢 𝑡 via 𝑀 𝜃 . This representation is then used to retrieve the top-𝑘 most relevant item embeddings from D based on cosine similarity: Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+T𝐾 = {e𝑘 |𝑠 𝑢 𝑡 ,𝑘 ∈ Top −𝑘 (h𝑢 𝑡 , D, 𝐾 )} , (6) where 𝑠 𝑢 𝑡 ,𝑘 = cos (h𝑢 𝑡 , h𝑢 ) = h𝑢 𝑡 · h𝑢 
+
+∥h𝑢 𝑡 ∥∥ h𝑢 ∥ ,
+
+where Top −𝑘 (.; 𝐾 ) is a function that selects the 𝐾 highest values from the database regarding the representation as a query. For effi-ciency, the retrieval process can be accelerated using approximate nearest-neighbor search libraries such as FAISS [7]. 
+
+4.2.3 Retrieval Learning. To utilize the retrieved item embeddings from T𝐾 , a simple strategy—commonly employed in test-time aug-mentation methods [ 6 ]—is to average predictions based on Equa-tion 4. While efficient, this strategy introduces increasing noise as 𝐾 grows. Another straightforward alternative is to manually weight the embeddings, which is both subjective and difficult to generalize. We propose a lightweight, learning-based weighting scheme, illustrated in the offline part of Figure 2, which requires minimal additional computation during retrieval. Specifically, we treat the sequence representation h𝑢 𝑡 as the query and the retrieved item set T𝐾 as both the keys and the values. The retrieved embedding is then obtained via cross-attention: 
+
+eaug = softmax ( 𝑄𝐾 ⊤
+
+√𝑑 )𝑉 , 
+
+where 𝑄 = h𝑢 𝑡 W𝑞 , 𝐾 = e𝐾 W𝑘 , 𝑉 = e𝐾 W𝑣 . (7) Here, e𝐾 ∈ R𝐾 ×𝑑 stacks the retrieved embeddings, and W𝑞 ∈ R𝑑 ×𝑑 ′
+
+,
+
+W𝑘 ∈ R𝑑 ×𝑑 ′
+
+and W𝑣 ∈ R𝑑 ×𝑑 are learnable projection matrices. The attention distribution over the retrieved items is given by: 
+
+paug = softmax ( 𝑄𝐾 ⊤
+
+√𝑑 ), (8) which reflects the similarity between the query and each retrieved item under the learned transformations. The projection matrices are optimized through two complemen-tary loss terms: a recommendation loss that ensures the augmented representation improves prediction accuracy, and an alignment loss that calibrates the attention weights based on each retrieved item’s intrinsic predictive utility. We encourage the combined representation h = 0.5h𝑢 𝑡 + 0.5eaug 
+
+to better predict the target item e𝑡 , the target item embedding. The recommendation loss then ensures the augmented representation to improve the prediction: 
+
+Lrec = − log exp  he ⊤
+
+> 𝑡
+
+Í𝑣 𝑖 ∈ V exp  he ⊤
+
+> 𝑣 𝑖
+
+ . (9) While paug in Equation 8 captures similarity between the query and retrieved items, this similarity alone may not reflect an item’s true utility for refining the final prediction. For instance, a highly similar popular item could provide redundant information, whereas a moderately similar but discriminative long-tail item might be more beneficial for correcting the prediction. To address this gap, we introduce an alignment loss, which calibrates paug by aligning it with a reference distribution pref that explicitly encodes each retrieved item’s predictive usefulness. We first measure how well each retrieved item, e𝑘 , independently predicts the target, e𝑡 :
+
+ℓ (e𝑘 , e𝑡 ) = − log (exp (e𝑘 e⊤ 
+
+> 𝑡
+
+)
+
+Σ𝑣 𝑖 ∈ V exp (e𝑘 e⊤ 
+
+> 𝑣 𝑖
+
+) . (10) A lower ℓ (·) indicates stronger predictive capability. The reference distribution is then defined as: 
+
+pref = softmax ({− ℓ (e𝑘 , e𝑡 )} 𝐾 𝑘 =1), (11) assigning a higher probability to items that are more predictive of the target. The alignment loss aims to pull the attention distribution toward this utility-aware reference. Finally, the alignment loss is defined as the Kullback–Leibler divergence between the attention distribution paug and this utility-aware reference: 
+
+Lalign = 𝐷 𝐾𝐿 (paug || pref ). (12) Minimizing this term encourages the learned attention weights to not only reflect similarity but also align with each item’s intrinsic contribution to predicting the target. In effect, the KL - divergence acts as a calibrator: it adjusts the similarity -based attention to-ward a distribution that prioritizes items with high predictive value, thereby ensuring that the aggregation step focuses on information that is truly beneficial for the final recommendation. The overall training objective combines the recommendation loss and the alignment loss: 
+
+L = Lrec + 𝜆 Lalign , (13) where the 𝜆 balances two terms. Notice that this design ensures the retrieval -learning module satisfies the following two complemen-tary criteria: (1) Preserving collaborative signals through the attention mecha-nism. The cross -attention module naturally captures the similar-ity between the query (user sequence representation) and each retrieved item. This similarity reflects historical co -occurrence and interaction patterns encoded in the training data—i.e., the collaborative signals. (2) Emphasizing predictive utility via the KL -driven alignment with pref . While similarity provides a useful prior, it does not guarantee that an item will help refine the current prediction. The KL - divergence term introduces a helpful objective: it aligns the attention distribution with a reference distribution that directly measures each retrieved item’s ability to individually predict the target. This alignment effectively re -weights the retrieved items, amplifying those that are not only similar but also predictively discriminative for the specific target item. Notice that the extra computation in our retrieval learning is mar-ginal, requiring only the optimization of three matrices using the training data, and is model-agnostic, requiring no architectural as-sumptions about the underlying sequential recommendation model. 
+
+## 4.3 Test-Time Adaptation 
+
+Once the augmented embedding eaug is obtained, we first compute the corresponding augmentation-based prediction probability 𝑝 aug 
+
+via the same similarity computation used in Equation 4. Specifically: 
+
+𝑝 aug (𝑣 = 𝑣 ∗ | s𝑢 𝑡 ) = exp  eaug e⊤
+
+> 𝑣 ∗
+
+Í𝑣 𝑖 ∈ V exp  eaug e⊤
+
+> 𝑣 𝑖
+
+ . (14) Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xing Tang, et al. 
+
+With both the initial and augmentation predictions available, the next step is to refine the final prediction by effectively combining these two signals, as formulated in Equation 3. We implement this refinement as follows: 
+
+𝑝  𝑣 = 𝑣 ∗ | s𝑢 𝑡  = 𝛼 × 𝑝 init 
+
+ 𝑣 = 𝑣 ∗ | s𝑢 𝑡 
+
++ ( 1 − 𝛼 ) 𝑝 aug 
+
+ 𝑣 = 𝑣 ∗ | s𝑢 𝑡 , (15) where 𝑝 init is the initial prediction and 𝑝 aug is the augmentation-based prediction, respectively. To adaptively determine the mixing coefficient 𝛼 , we propose an entropy -based dynamic fusion mecha-nism that weights each prediction based on its uncertainty across the entire item set. 
+
+4.3.1 Uncertainty Estimation via Entropy. We quantify the uncer-tainty of a prediction distribution by its entropy. For a probability vector p = [𝑝 𝑣 1 , · · · , 𝑝 𝑣 |V | ] obtained via softmax as Equation 14, the entropy is computed as: 
+
+𝐻 (p) = −∑︁  
+
+> 𝑣 𝑖 ∈ V
+
+𝑝 𝑣 𝑖 log (𝑝 𝑣 𝑖 + 𝜖 ), (16) where 𝜖 = 10 −8 ensures numerical stability. Because the item set is typically large and follows a long -tail distribution, computing entropy over all items can dilute the discriminative signal. To focus on the most plausible candidates, we restrict the entropy calculation to the top-𝜌 items with the highest logit scores: 
+
+𝐻 top (p) = −∑︁   
+
+> 𝑣 𝑖 ∈𝜏 top (p)
+
+𝑝 𝑣 𝑖 log  𝑝 𝑣 𝑖 + 𝜖 , (17) where 𝜏 top (p) denotes the set of items whose logits rank in the top 
+
+𝜌 fraction. This truncation serves two purposes: (1) it concentrates the uncertainty measure on the region that matters most for rank-ing, and (2) it amplifies the relative difference in entropy between the two predictions, making the fusion weights more sensitive to genuine confidence variations. 
+
+4.3.2 Confidence-Driven Fusion Weight. Let 𝐻 init top and 𝐻 aug top be the truncated entropies of the initial and augmented predictions, re-spectively. the fusion weight 𝛼 is computed as: 
+
+𝛼 =
+
+exp 
+
+ 
+
+> 11+𝐻 init top
+
+
+
+exp 
+
+ 
+
+> 1
+> 𝐻 init top
+
+
+
++ exp 
+
+ 
+
+> 11+𝐻 init aug
+
+ . (18) The rationale behind this formulation is that lower entropy corre-sponds to higher prediction confidence. When a model outputs a sharply peaked distribution (low 𝐻 ), it expresses strong discrimi-native certainty among the top candidates, and should therefore receive a larger weight in the fusion. Conversely, a flat distribution (high 𝐻 ) reflects uncertainty and is assigned a smaller weight. This entropy -guided weighting scheme enables ReAd to dynam-ically balance the contributions of the original sequential represen-tation and the retrieval -augmented signal, seamlessly adapting to the varying confidence levels across different user sequences at test time. 
+
+## 5 Experiments 
+
+In this section, we conduct extensive experiments to address the following research questions: 
+
+• RQ1 ( Performance ): Does ReAd consistently outperform exist-ing sequential recommendation baselines? 
+
+• RQ2 ( Generalization ): How well does ReAd generalize across different backbone SR architectures? 
+
+• RQ3 ( Hyperparameter Analysis ): How do key hyperparam-eters in retrieval learning module, i.e., the number of retrieved items 𝐾 and the fusion weight 𝜆 , affect the performance of ReAd? 
+
+• RQ4 ( Ablation & Efficiency ): What is the contribution of each core component in ReAd, and is the introduced computational overhead acceptable for real-time inference? 
+
+• RQ5 ( Retrieval Quality ): Does ReAd indeed retrieve seman-tically relevant and prediction - helpful items during test - time adaptation? 
+
+## 5.1 Experimental Settings 
+
+5.1.1 Datasets. We evaluate our method using five public datasets that represent diverse recommendation scenarios, which are widely adopted in previous sequential recommendation research. Four Amazon subsets—Office, Beauty, Sports, and Home—span distinct product categories and exhibit varied interaction sparsity, reflecting real - world e -commerce environments. The ML -1M dataset provides a widely adopted benchmark in the movie domain with denser user activity. Following common practice in sequential recommenda-tion [ 6, 24 ], we filter out users and items with fewer than five interactions to ensure data quality and mitigate extreme sparsity. Table 1 summarizes the resulting dataset statistics. 
+
+Table 1: Statistics of the datasets used in experiments.                               
+
+> Statistic Office Beauty Sport Home ML-1M #Users 4,906 22,364 35,599 66,520 6,040 #Items 2,421 12,102 18,358 28,238 3,706 #Interactions 53,258 198,502 296,337 551,682 1,000,209 Avg. Actions 10.86 8.88 8.32 8.29 165.60 Sparsity 99.55% 99.93% 99.95% 99.97% 95.53%
+
+5.1.2 Baselines. To conduct a comprehensive evaluation, we in-clude twelve baselines that fall into three categories as outlined in Section 2. The first group comprises architectural models de-signed to capture sequential patterns, including GRU4Rec [12 ], 
+
+SASRec [14], and BERT4Rec [27]. The second group consists of contrastive learning - based methods that address data sparsity through augmentation and alignment. 
+
+CL4SRec [ 35 ], DuoRec [ 24 ], CoSeRec [ 19 ], and MCLRec [ 22 ]adopt various augmentation strategies for contrastive learning. S3-Rec [ 46 ], ICLRec [3], and ICSRec [ 23 ] align different views of the sequence to improve representation learning. The third group covers test - time adaptation methods designed to mitigate preference shift during inference: RaSeRec [ 44 ] and 
+
+TTA [6]. Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+5.1.3 Evaluation Metrics. To ensure an unbiased evaluation, we adopt the leave - one -out strategy to split each user’s interaction sequence into training, validation, and test segments. During eval-uation, we rank all items in the catalog for every test sequence and compute metrics over the full ranking list, avoiding the potential bias introduced by negative -item sampling. We employ two widely used ranking-based metrics: Hit Ratio@K (HR@K) and Normal-ized Discounted Cumulative Gain@K (ND@K) with 𝐾 ∈ { 5, 10 , 20 }.Higher values of both metrics indicate better ranking performance. 
+
+5.1.4 Implementation Details. For all baseline models, we use the open -source implementations provided in RecBole [ 37 ] under their recommended settings. Our proposed ReAd framework is intention-ally model - agnostic. To demonstrate this property, we instantiate it on representative models from both the architectural group (SAS-Rec) and the contrastive -learning group (DuoRec), thereby showing that ReAd can be flexibly combined with different types of sequen-tial recommendation backbones. We set the embedding dimension to 64 and the batch size to 256 across all experiments. All other hyperparameters for the base-lines are carefully tuned following the configurations described in their original papers. Training is performed with the Adam opti-mizer [ 15 ] using a learning rate of 0.001 The three related hyper-parameters in our method are the 𝐾 values in Equation 6 and 𝜆 in Equation 13, which balance the recommendation and alignment objectives. The top ratio in Equation 17, which controls the frac-tion of items considered in the entropy - based fusion. We hence search 𝐾 ∈ { 1, 3, 5, 10 , 15 , 20 }, 𝜆 ∈ { 0, 0.5, 1, 1.5, 2}, and top ratio in 
+
+𝜌 ∈ { 10% , 5% , 1% , 0.5% , 0.1% }. All experiments are conducted on an NVIDIA GeForce RTX 4090D and run for ten runs, reporting the average results for all methods. 
+
+## 5.2 Overall Performance (RQ1) 
+
+We compare our ReAd with the mentioned baselines, and the overall results are illustrated in Table 2. We make several observations as follows. 
+
+• When built upon DuoRec as the backbone, ReAd consistently achieves the best results across all five datasets, demonstrating its effectiveness. The performance gap between ReAd (+DuoRec) and both ReAd (+SASRec) and the test - time baselines (TTA and RaSeRec) also highlights the benefit of incorporating contrastive learning during training. Notably, RaSeRec—which introduces re-trieval through a dedicated pre -training architecture but does not use contrastive learning—performs comparably to TTA, while ReAd (+DuoRec) outperforms both. This confirms that ReAd is model -agnostic and can flexibly leverage different training paradigms (e.g., contrastive learning) to further boost perfor-mance. 
+
+• Compared with the original SASRec, both TTA and ReAd (+SAS-Rec) improve the performance, confirming the value of test - time augmentation. However, ReAd (+SASRec) consistently surpasses TTA, indicating that our retrieval - augmented refinement, which integrates both retrieval-based augmentation and confidence - aware prediction fusion, is more effective than TTA’s purely input - level augmentation. 
+
+• The performance gains of ReAd are more pronounced on the four Amazon datasets (Office, Beauty, Sports, Home), which are relatively sparse, than on the denser ML - 1M dataset. This pattern suggests that preference shifts are more salient in sparse se-quences, where historical signals alone are insufficient to capture them. Both RaSeRec and ReAd, which employ retrieval mecha-nisms, show greater improvements on sparse data, reinforcing the importance of augmenting sparse sequences with externally retrieved collaborative signals. 
+
+## 5.3 Generalize to Other Architectures (RQ2) 
+
+To further verify the generalization capability of ReAd, we apply it to SR models with different architectural designs: SASRec and DuoRec use causal (unidirectional) self - attention; BERT4Rec em-ploys regular (bidirectional) self - attention; and GRU4Rec relies on gated recurrent units [ 20 ]. The results are summarized in Table 3, along with the earlier SASRec results in Table 2. The ReAd con-sistently improves recommendation performance across all tested architectures, confirming its model -agnostic design. Moreover, the magnitude of improvement varies, with most gains exceeding 10% ,although a few remain modest. This is attributed to the inherent capacity of the backbone model: stronger base models may leave less room for relative improvement, and dataset characteristics: preference shifts are more pronounced in datasets where sequential patterns are sparse or evolve rapidly, leading to larger gains from test - time augmentation. Overall, these experiments demonstrate that ReAd effectively enhances a diverse set of sequential recom-mendation architectures, validating its robustness and practical applicability. 
+
+## 5.4 Hyperparameter Sensitivity (RQ3) 
+
+Figure 3: Effects of hyperparamter of the 𝐾 value of Top— 𝑘 
+
+retrieved items and 𝜆 value controled KL loss. 
+
+As discussed in Section 4, ReAd involves three key hyperparam-eters. The first two are the number of retrieved items 𝐾 and the Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xing Tang, et al. 
+
+Table 2: Performance comparison of different methods on five public datasets. Bold font indicates the best performance, while underlined values represent the second-best. Our ReAd achieves the state-of-the-art result among all baseline models, as confirmed by a paired t-test with a significance level of 0.01. 
+
+Dataset Metric GRU4Rec SASRec BERT4Rec S3-Rec CL4SRec CoSeRec ICLRec DuoRec MCLRec ICSRec RaSeRec TTA ReAd (+SASRec) ReAd (+DuoRec) Office HR@5 0.0277 0.0544 0.0376 0.0443 0.0480 0.0577 0.0564 0.0644 0.0671 0.0651 0.0669 0.0548 0.0614 0.0698 
+
+HR@10 0.0532 0.0899 0.0666 0.0658 0.0665 0.0811 0.0815 0.1011 0.1071 0.1051 0.1042 0.0896 0.0936 0.1090 
+
+HR@20 0.0985 0.1388 0.1166 0.1221 0.1121 0.1346 0.1195 0.1552 0.1648 0.1576 0.1641 0.1389 0.1452 0.1668 
+
+ND@5 0.0169 0.0369 0.0233 0.0296 0.0308 0.0394 0.0345 0.0410 0.0407 0.0416 0.0429 0.0371 0.0401 0.0456 
+
+ND@10 0.0252 0.0483 0.0326 0.0383 0.0385 0.0500 0.0439 0.0527 0.0538 0.0525 0.0549 0.0492 0.0517 0.0582 
+
+ND@20 0.0365 0.0605 0.0452 0.0523 0.0502 0.0611 0.0534 0.0663 0.0691 0.0679 0.0699 0.0625 0.0665 0.0727 
+
+Beauty HR@5 0.0206 0.0377 0.0340 0.0395 0.0471 0.0506 0.0498 0.0538 0.0563 0.0540 0.0570 0.0416 0.0439 0.0582 
+
+HR@10 0.0325 0.0598 0.0526 0.0619 0.0654 0.0726 0.0741 0.0825 0.0869 0.0841 0.0865 0.0629 0.0696 0.0874 
+
+HR@20 0.0499 0.0877 0.0789 0.0937 0.0985 0.1031 0.1059 0.1184 0.1212 0.1198 0.1221 0.0921 0.0978 0.1243 
+
+ND@5 0.0127 0.0237 0.0222 0.0251 0.0273 0.0339 0.0331 0.0340 0.0344 0.0338 0.0369 0.0266 0.0286 0.0386 
+
+ND@10 0.0166 0.0308 0.0282 0.0323 0.0350 0.0410 0.0405 0.0433 0.0446 0.0435 0.0461 0.0329 0.0369 0.0481 
+
+ND@20 0.0209 0.0378 0.0349 0.0403 0.0410 0.0488 0.0488 0.0523 0.0539 0.0525 0.0554 0.0419 0.0439 0.0573 
+
+Sport HR@5 0.0107 0.0216 0.0170 0.0220 0.0256 0.0285 0.0291 0.0310 0.0322 0.0316 0.0315 0.0239 0.0232 0.0331 
+
+HR@10 0.0178 0.0326 0.0281 0.0336 0.0382 0.0426 0.0429 0.0471 0.0486 0.0479 0.0487 0.0398 0.0348 0.0496 
+
+HR@20 0.0279 0.0479 0.0444 0.0510 0.0553 0.0636 0.0639 0.0692 0.0720 0.0712 0.0711 0.0637 0.0567 0.0726 
+
+ND@5 0.0068 0.0148 0.0109 0.0147 0.0150 0.0179 0.0181 0.0193 0.0204 0.0202 0.0196 0.0168 0.0160 0.0221 
+
+ND@10 0.0091 0.0184 0.0144 0.0185 0.0217 0.0231 0.0238 0.0245 0.0260 0.0245 0.0251 0.0214 0.0197 0.0274 
+
+ND@20 0.0116 0.0222 0.0185 0.0229 0.0244 0.0275 0.0286 0.0300 0.0311 0.0301 0.0308 0.0266 0.0236 0.0332 
+
+Home HR@5 0.0055 0.0096 0.0083 0.0103 0.0136 0.0153 0.0146 0.0190 0.0198 0.0198 0.0196 0.0108 0.0120 0.0203 
+
+HR@10 0.0104 0.0148 0.0143 0.0155 0.0198 0.0232 0.0225 0.0278 0.0286 0.0289 0.0293 0.0175 0.0183 0.0298 
+
+HR@20 0.0180 0.0227 0.0241 0.0260 0.0282 0.0336 0.0345 0.0402 0.0419 0.0418 0.0409 0.0266 0.0277 0.0426 
+
+ND@5 0.0034 0.0063 0.0052 0.0074 0.0079 0.0107 0.0101 0.0117 0.0122 0.0128 0.0121 0.0069 0.0081 0.0133 
+
+ND@10 0.0049 0.0080 0.0072 0.0092 0.0100 0.0133 0.0133 0.0145 0.0150 0.0152 0.0152 0.0091 0.0101 0.0163 
+
+ND@20 0.0068 0.0100 0.0096 0.0115 0.0121 0.0159 0.0161 0.0176 0.0185 0.0179 0.0181 0.0113 0.0125 0.0196 
+
+ML-1M HR@5 0.0462 0.1407 0.1364 0.1192 0.1163 0.1117 0.1312 0.1909 0.1889 0.1913 0.1932 0.1359 0.1624 0.1956 
+
+HR@10 0.0654 0.2200 0.2156 0.2079 0.2006 0.1878 0.2196 0.2859 0.2832 0.2799 0.2844 0.2136 0.2382 0.2897 
+
+HR@20 0.0980 0.3227 0.3164 0.3181 0.3121 0.2997 0.3357 0.3839 0.3796 0.3844 0.3879 0.3175 0.3417 0.3897 
+
+ND@5 0.0299 0.0898 0.0902 0.0748 0.0738 0.0693 0.0844 0.1297 0.1288 0.1287 0.1328 0.0814 0.1053 0.1341 
+
+ND@10 0.0360 0.1153 0.1156 0.1120 0.0989 0.0981 0.1116 0.1603 0.1600 0.1588 0.1646 0.1105 0.1297 0.1653 
+
+ND@20 0.0442 0.1411 0.1410 0.1347 0.1289 0.1269 0.1371 0.1850 0.1833 0.1851 0.1888 0.1372 0.1558 0.1907 
+
+alignment - loss coefficient 𝜆 in Equation 13, which govern retrieval learning. Across different backbone models, performance follows a consis-tent trend: it initially improves with larger 𝐾 , peaks at an optimal value, and then declines. This pattern can be explained as follows: a moderate increase in 𝐾 enriches the augmentation signal with more collaborative information, but beyond a certain point, irrelevant or noisy items are introduced, which hinder the learning process. Therefore, selecting an appropriate 𝐾 is crucial for achieving the best improvement. In contrast, varying 𝜆 does not lead to significant changes in performance. We hypothesize that this is because the retrieved set is relatively small and the items are already collabora-tively relevant, so strictly aligning the attention distribution with the reference distribution yields diminishing returns. The fraction 𝜌 of top - ranked items considered in 𝜏 𝑡𝑜𝑝 directly influences the entropy -based fusion weight 𝛼 in Equation 15, and consequently the final adapted prediction. As shown in Figure 4, a larger top -ratio generally leads to better performance, whereas using the full item set (i.e., top - ratio = 100% )—though more sta-ble—consistently degrades results. This can be explained by the long -tail nature of item catalogs: when entropy is computed over all 
+
+Figure 4: The effect of number of top ratio items in 𝜏 𝑡𝑜𝑝 .
+
+items, the numerous low - probability tail items dilute the discrimi-native signal, making the entropies of the initial and augmented predictions too similar. 
+
+## 5.5 Ablation Study and Efficiency Analysis (RQ4) 
+
+In this section, we conduct ablation studies to dissect the contri-bution of each component in ReAd. The variants and their results are summarized in Table 4: 𝑤 /𝑜 Rec removes the recommendation Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Table 3: ReAd improvements on different backbones. All the results are significant with 𝑝 -value < 0.01 
+
+Dataset Metric GRU4Rec BERT4Rec Orig ReAd Imp. Orig ReAd Imp. Office HR@5 0.0277 0.0320 15.52% 0.0376 0.0437 16.22% HR@10 0.0532 0.0595 11.84% 0.0666 0.0742 11.41% ND@5 0.0169 0.0199 17.75% 0.0233 0.0271 16.31% ND@10 0.0252 0.0288 14.29% 0.0326 0.0369 13.19% Beauty HR@5 0.0206 0.0225 9.22% 0.0340 0.0372 9.41% HR@10 0.0325 0.0344 5.85% 0.0526 0.0585 11.22% ND@5 0.0127 0.0147 15.75% 0.0222 0.0242 9.01% ND@10 0.0166 0.0186 12.05% 0.0282 0.0311 10.28% Sport HR@5 0.0107 0.0119 11.21% 0.0170 0.0190 11.76% HR@10 0.0178 0.0189 6.18% 0.0281 0.0305 8.54% ND@5 0.0068 0.0078 14.71% 0.0109 0.0124 13.76% ND@10 0.0091 0.0100 9.89% 0.0144 0.0161 11.81% Home HR@5 0.0055 0.0059 7.27% 0.0083 0.0093 12.05% HR@10 0.0104 0.0109 4.81% 0.0143 0.0159 11.19% ND@5 0.0034 0.0036 5.88% 0.0052 0.0058 11.54% ND@10 0.0049 0.0052 6.12% 0.0072 0.0079 9.72% ML-1M HR@5 0.0462 0.0505 9.31% 0.1364 0.1412 3.52% HR@10 0.0654 0.0733 12.08% 0.2156 0.2243 4.04% ND@5 0.0299 0.0338 13.04% 0.0902 0.0929 2.99% ND@10 0.0360 0.0409 13.61% 0.1156 0.1196 3.46% 
+
+Table 4: Ablation study results on different datasets.                                                   
+
+> Method HR@10 NDCG@10 Beauty Home Office Sport Beauty Home Office Sport w/o Rec 0.0643 0.0218 0.0752 0.0345 0.0332 0.0095 0.0381 0.0198 w/o Att 0.0786 0.0268 0.0901 0.0436 0.0413 0.0127 0.0484 0.0207 w/o 𝛼 0.0845 0.0279 0.1044 0.0479 0.0451 0.0149 0.0536 0.0243 w/o KL 0.0863 0.0293 0.1074 0.0489 0.0473 0.0159 0.0571 0.0269
+> ReAd 0.0874 0.0298 0.1090 0.0496 0.0481 0.0163 0.0582 0.0274
+
+loss Lrec in Equation 13, 𝑤 /𝑜 KL removes the alignment loss Lalign ,
+
+𝑤 /𝑜 Att uses non - trainable attention weights based solely on cosine similarity, and 𝑤 /𝑜 𝛼 fixes the fusion weight as 0.5.We then provide some insights based on the reported results. First, removing Lrec degrades performance, confirming that aug-mentation must be guided by the prediction objective. Second, the 
+
+𝑤 /𝑜 Att variant underperforms, highlighting the need for learnable attention to capture predictive utility beyond mere similarity. Third, fixed fusion ( 𝑤 /𝑜 𝛼 ) harms results, underscoring the importance of dynamic, confidence -aware weighting. Finally, omitting Lalign 
+
+results in the least drop, consistent with earlier analysis: when retrieved items are few and relevant, strict alignment provides mar-ginal benefit. Meanwhile, we illustrate inference overhead in Figure 5, which reveals that ReAd incurs additional time due to retrieval. However, thanks to parallel refinement in the retrieval - learning module, the extra latency remains acceptable while delivering superior accuracy. 
+
+Figure 5: The inference time considering batch inference and sample inference. 
+
+## 5.6 Case Study (RQ5) 
+
+The Figure 6 provides a case study on MovieLens, illustrating how ReAd handles preference shift at test time. The test sequence (red) transitions from drama to thriller, revealing a temporal drift in interest. 
+
+Figure 6: A case study on the MovieLens dataset showing retrieval results. Red dashed lines represent the test sequence and target item; blue dashed lines represent two retrieved sequences and their corresponding items. 
+
+Retrieved sequences (blue) not only share overlapping items (“Now and Then”, “Dead Presidents”, “Red Rock West”)—confirming collaborative relevance—but also supply complementary items (“Casino”, “Heat”) that reinforce the emerging thriller preference while bridg-ing earlier drama context (“Alligator”, “Saint of Fort Washington”). This example highlights two key advantages of ReAd. First, the model does not rely solely on the most recent interactions; instead, it retrieves sequences that are historically similar and collectively reflect both past and emerging interests. Second, retrieved items are not merely popular or globally similar; they are selectively aligned with the local transition in the test sequence (from drama to thriller), enabling the fusion module to refine predictions toward the actual Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xing Tang, et al. 
+
+next item (“Red Rock West”). Thus, ReAd compensates for distribu-tion shift by dynamically enriching test-time representations. 
+
+## 6 Conclusion 
+
+In this work, we proposed ReAd, a novel retrieval -augmented test - time adaptation framework for sequential recommendation. To address the challenge of preference shift during inference, ReAd intro-duces a collaborative memory database to retrieve historically rel-evant items, a lightweight retrieval learning module that learns to fuse retrieved items into an augmentation embedding, and an entropy - based adaptation mechanism that dynamically balances the original prediction with the augmented signal based on confi-dence. Extensive experiments on five benchmark datasets demon-strate that ReAd consistently improves recommendation perfor-mance across different backbone architectures. Ablation studies and hyper -parameter analysis validate the contribution of each component and the robustness of the design. Furthermore, ReAd maintains competitive inference efficiency, introducing only min-imal overhead compared to existing retrieval -based methods. A qualitative case study illustrates how ReAd effectively retrieves relevant items to adapt to evolving user preferences. Overall, ReAd provides a practical and model -agnostic solution for enhancing sequential recommendation models under real - world test - time dis-tribution shifts. Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+## References 
+
+[1] Shuqing Bian, Wayne Xin Zhao, Jinpeng Wang, and Ji-Rong Wen. 2022. A relevant and diverse retrieval-enhanced data augmentation framework for sequential recommendation. In Proceedings of the 31st ACM International Conference on Information & Knowledge Management . 2923–2932. [2] Zheng Chai, Qin Ren, Xijun Xiao, Huizhi Yang, Bo Han, Sijun Zhang, Di Chen, Hui Lu, Wenlin Zhao, Lele Yu, et al . 2025. Longer: Scaling up long sequence modeling in industrial recommenders. In Proceedings of the Nineteenth ACM Conference on Recommender Systems . 247–256. [3] Yongjun Chen, Zhiwei Liu, Jia Li, Julian McAuley, and Caiming Xiong. 2022. Intent contrastive learning for sequential recommendation. In Proceedings of the ACM Web Conference 2022 . 2172–2182. [4] Ziqiang Cui, Yunpeng Weng, Xing Tang, Xiaokun Zhang, Dugang Liu, Shiwei Li, Peiyang Liu, Bowei He, Weihong Luo, Xiuqiang He, et al . 2025. Semantic Retrieval Augmented Contrastive Learning for Sequential Recommendation. arXiv preprint arXiv:2503.04162 (2025). [5] Ziqiang Cui, Haolun Wu, Bowei He, Ji Cheng, and Chen Ma. 2024. Context Matters: Enhancing Sequential Recommendation with Context-aware Diffusion-based Contrastive Learning. In Proceedings of the 33rd ACM International Con-ference on Information and Knowledge Management (Boise, ID, USA) (CIKM ’24) .Association for Computing Machinery, New York, NY, USA, 404–414. [6] Yizhou Dang, Yuting Liu, Enneng Yang, Minhan Huang, Guibing Guo, Jianzhe Zhao, and Xingwei Wang. 2025. Data augmentation as free lunch: Exploring the test-time augmentation for sequential recommendation. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval . 1466–1475. [7] Matthijs Douze, Alexandr Guzhva, Chengqi Deng, Jeff Johnson, Gergely Szilvasy, Pierre-Emmanuel Mazaré, Maria Lomeli, Lucas Hosseini, and Hervé Jégou. 2024. The Faiss library. (2024). arXiv:2401.08281 [cs.LG] [8] Wenqi Fan, Yujuan Ding, Liangbo Ning, Shijie Wang, Hengyun Li, Dawei Yin, Tat-Seng Chua, and Qing Li. 2024. A survey on rag meeting LLMs: Towards retrieval-augmented large language models. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 6491–6501. [9] Xinqi Fan, Xueli Chen, Luoxiao Yang, Chuin Hong Yap, Rizwan Qureshi, Qi Dou, Moi Hoon Yap, and Mubarak Shah. 2025. Test-Time Retrieval-Augmented Adap-tation for Vision-Language Models. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 8810–8819. [10] Yunfan Gao, Yun Xiong, Xinyu Gao, Kangxiang Jia, Jinliu Pan, Yuxi Bi, Yixin Dai, Jiawei Sun, Haofen Wang, and Haofen Wang. 2023. Retrieval-augmented generation for large language models: A survey. arXiv preprint arXiv:2312.10997 
+
+2, 1 (2023). [11] Ruining He and Julian McAuley. 2016. Fusing similarity models with markov chains for sparse sequential recommendation. In 2016 IEEE 16th international conference on data mining (ICDM) . IEEE, 191–200. [12] Balázs Hidasi and Alexandros Karatzoglou. 2018. Recurrent Neural Networks with Top-k Gains for Session-based Recommendations. In Proceedings of the 27th ACM International Conference on Information and Knowledge Management 
+
+(Torino, Italy) (CIKM ’18) . Association for Computing Machinery, New York, NY, USA, 843–852. [13] Wei Jin, Tong Zhao, Jiayuan Ding, Yozen Liu, Jiliang Tang, and Neil Shah. 2023. Empowering Graph Representation Learning with Test-Time Graph Transforma-tion. In ICLR .[14] Wang-Cheng Kang and Julian McAuley. 2018. Self-Attentive Sequential Rec-ommendation . In 2018 IEEE International Conference on Data Mining (ICDM) .IEEE Computer Society, Los Alamitos, CA, USA, 197–206. doi:10.1109/ICDM. 2018.00035 [15] Diederik P Kingma. 2014. Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 (2014). [16] Youngjun Lee, Doyoung Kim, Junhyeok Kang, Jihwan Bang, Hwanjun Song, and Jae-Gil Lee. 2025. RA-TTA: Retrieval-Augmented Test-Time Adaptation for Vision-Language Models. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net. [17] Siyi Liu and Yujia Zheng. 2020. Long-tail Session-based Recommendation. In 
+
+Proceedings of the 14th ACM Conference on Recommender Systems (Virtual Event, Brazil) (RecSys ’20) . Association for Computing Machinery, New York, NY, USA, 509–514. [18] Yuejiang Liu, Parth Kothari, Bastien van Delft, Baptiste Bellot-Gurlet, Taylor Mordan, and Alexandre Alahi. 2021. TTT++: when does self-supervised test-time training fail or thrive?. In Proceedings of the 35th International Conference on Neural Information Processing Systems (NIPS ’21) . Curran Associates Inc., Red Hook, NY, USA, Article 1669, 13 pages. [19] Zhiwei Liu, Yongjun Chen, Jia Li, Philip S Yu, Julian McAuley, and Caiming Xiong. 2021. Contrastive self-supervised sequential recommendation with robust augmentation. arXiv preprint arXiv:2108.06479 (2021). [20] Aleksandr Petrov and Craig Macdonald. 2022. A Systematic Review and Replica-bility Study of BERT4Rec for Sequential Recommendation. In Proceedings of the 16th ACM Conference on Recommender Systems (Seattle, WA, USA) (RecSys ’22) .Association for Computing Machinery, New York, NY, USA, 436–447. [21] Xiuyuan Qin, Huanhuan Yuan, Pengpeng Zhao, Junhua Fang, Fuzhen Zhuang, Guanfeng Liu, Yanchi Liu, and Victor Sheng. 2023. Meta-optimized Contrastive Learning for Sequential Recommendation. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval .89–98. [22] Xiuyuan Qin, Huanhuan Yuan, Pengpeng Zhao, Junhua Fang, Fuzhen Zhuang, Guanfeng Liu, Yanchi Liu, and Victor Sheng. 2023. Meta-optimized Contrastive Learning for Sequential Recommendation. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval .89–98. [23] Xiuyuan Qin, Huanhuan Yuan, Pengpeng Zhao, Guanfeng Liu, Fuzhen Zhuang, and Victor S. Sheng. 2024. Intent Contrastive Learning with Cross Subsequences for Sequential Recommendation. In Proceedings of the 17th ACM International Con-ference on Web Search and Data Mining (Merida, Mexico) (WSDM ’24) . Association for Computing Machinery, New York, NY, USA, 548–556. [24] Ruihong Qiu, Zi Huang, Hongzhi Yin, and Zijian Wang. 2022. Contrastive learning for representation degeneration problem in sequential recommendation. In Proceedings of the fifteenth ACM international conference on web search and data mining . 813–823. [25] Steffen Rendle, Christoph Freudenthaler, and Lars Schmidt-Thieme. 2010. Factor-izing personalized Markov chains for next-basket recommendation. In Proceedings of the 19th International Conference on World Wide Web (Raleigh, North Carolina, USA) (WWW ’10) . Association for Computing Machinery, New York, NY, USA, 811–820. [26] Divya Shanmugam, Davis Blalock, Guha Balakrishnan, and John Guttag. 2021. Better aggregation in test-time augmentation. In Proceedings of the IEEE/CVF international conference on computer vision . 1214–1223. [27] Fei Sun, Jun Liu, Jian Wu, Changhua Pei, Xiao Lin, Wenwu Ou, and Peng Jiang. 2019. BERT4Rec: Sequential Recommendation with Bidirectional Encoder Rep-resentations from Transformer. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management (Beijing, China) (CIKM ’19) . Association for Computing Machinery, New York, NY, USA, 1441–1450. [28] Jiaxi Tang and Ke Wang. 2018. Personalized Top-N Sequential Recommendation via Convolutional Sequence Embedding. In Proceedings of the Eleventh ACM International Conference on Web Search and Data Mining (Marina Del Rey, CA, USA) (WSDM ’18) . Association for Computing Machinery, New York, NY, USA, 565–573. [29] Xing Tang, Chaohua Yang, Yuwen Fu, Dongyang Ao, Shiwei Li, Fuyuan Lyu, Dugang Liu, and Xiuqiang He. 2025. Retrieval Augmented Cross-Domain Life-Long Behavior Modeling for Enhancing Click-through Rate Prediction. In Pro-ceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 2 . 4891–4900. [30] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. Advances in neural information processing systems 30 (2017). [31] Junda Wu, Cheng-Chun Chang, Tong Yu, Zhankui He, Jianing Wang, Yupeng Hou, and Julian McAuley. 2024. CoRAL: Collaborative Retrieval-Augmented Large Language Models Improve Long-tail Recommendation. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining 
+
+(Barcelona, Spain) (KDD ’24) . Association for Computing Machinery, New York, NY, USA, 3391–3401. [32] Shu Wu, Yuyuan Tang, Yanqiao Zhu, Liang Wang, Xing Xie, and Tieniu Tan. 2019. Session-based recommendation with graph neural networks. In Proceedings of the Thirty-Third AAAI Conference on Artificial Intelligence and Thirty-First Innovative Applications of Artificial Intelligence Conference and Ninth AAAI Sym-posium on Educational Advances in Artificial Intelligence (Honolulu, Hawaii, USA) 
+
+(AAAI’19/IAAI’19/EAAI’19) . AAAI Press, Article 43, 8 pages. [33] Zihao Wu, Xin Wang, Hong Chen, Kaidong Li, Yi Han, Lifeng Sun, and Wenwu Zhu. 2023. Diff4Rec: Sequential Recommendation with Curriculum-scheduled Diffusion Augmentation. In Proceedings of the 31st ACM International Confer-ence on Multimedia (Ottawa ON, Canada) (MM ’23) . Association for Computing Machinery, New York, NY, USA, 9329–9335. [34] Wenjia Xie, Hao Wang, Minghao Fang, Ruize Yu, Wei Guo, Yong Liu, Defu Lian, and Enhong Chen. 2025. Breaking the Bottleneck: User-Specific Optimization and Real-Time Inference Integration for Sequential Recommendation. In Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 2. 3333–3343. [35] Xu Xie, Fei Sun, Zhaoyang Liu, Shiwen Wu, Jinyang Gao, Jiandong Zhang, Bolin Ding, and Bin Cui. 2022. Contrastive learning for sequential recommendation. In 
+
+2022 IEEE 38th international conference on data engineering (ICDE) . IEEE, 1259– 1273. [36] Jian Xu, Sichun Luo, Xiangyu Chen, Haoming Huang, Hanxu Hou, and Linqi Song. 2025. RALLRec: Improving Retrieval Augmented Large Language Model Recommendation with Representation Learning. In Companion Proceedings of the ACM on Web Conference 2025 (Sydney NSW, Australia) (WWW ’25) . Association for Computing Machinery, New York, NY, USA, 1436–1440. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xing Tang, et al. 
+
+[37] Lanling Xu, Zhen Tian, Gaowei Zhang, Junjie Zhang, Lei Wang, Bowen Zheng, Yifan Li, Jiakai Tang, Zeyu Zhang, Yupeng Hou, Xingyu Pan, Wayne Xin Zhao, Xu Chen, and Ji-Rong Wen. 2023. Towards a More User-Friendly and Easy-to-Use Benchmark Library for Recommender Systems. In SIGIR . ACM, 2837–2847. [38] Xihong Yang, Yiqi Wang, Jin Chen, Wenqi Fan, Xiangyu Zhao, En Zhu, Xinwang Liu, and Defu Lian. 2025. Dual Test-Time Training for Out-of-Distribution Recommender System. IEEE Trans. on Knowl. and Data Eng. 37, 6 (March 2025), 3312–3326. [39] Zhaoqi Yang, Yanan Wang, and Yong Ge. 2024. TTT4Rec: A Test-Time Training Approach for Rapid Adaption in Sequential Recommendation. arXiv preprint arXiv:2409.19142 (2024). [40] Yufei Ye, Wei Guo, Jin Yao Chin, Hao Wang, Hong Zhu, Xi Lin, Yuyang Ye, Yong Liu, Ruiming Tang, Defu Lian, and Enhong Chen. 2025. FuXi-𝛼 : Scaling Recom-mendation Model with Feature Interaction Enhanced Transformer. In Companion Proceedings of the ACM on Web Conference 2025 (Sydney NSW, Australia) (WWW ’25) . Association for Computing Machinery, New York, NY, USA, 557–566. [41] Fajie Yuan, Alexandros Karatzoglou, Ioannis Arapakis, Joemon M. Jose, and Xiangnan He. 2019. A Simple Convolutional Generative Network for Next Item Recommendation. In Proceedings of the Twelfth ACM International Conference on Web Search and Data Mining (Melbourne VIC, Australia) (WSDM ’19) . Association for Computing Machinery, New York, NY, USA, 582–590. [42] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhaojie Gong, Fangda Gu, Jiayuan He, et al . 2024. Actions speak louder than words: trillion-parameter sequential transducers for generative recommendations. In Proceedings of the 41st International Conference on Machine Learning . 58484– 58509. [43] Changshuo Zhang, Xiao Zhang, Teng Shi, Jun Xu, and Ji-Rong Wen. 2025. Test-Time Alignment with State Space Model for Tracking User Interest Shifts in Sequential Recommendation. In Proceedings of the Nineteenth ACM Conference on Recommender Systems (RecSys ’25) . Association for Computing Machinery, New York, NY, USA, 461–471. [44] Xinping Zhao, Baotian Hu, Yan Zhong, Shouzheng Huang, Zihao Zheng, Meng Wang, Haofen Wang, and Min Zhang. 2024. Raserec: Retrieval-augmented se-quential recommendation. arXiv preprint arXiv:2412.18378 (2024). [45] Guorui Zhou, Jiaxin Deng, Jinghao Zhang, Kuo Cai, Lejian Ren, Qiang Luo, Qian-qian Wang, Qigen Hu, Rui Huang, Shiyao Wang, et al . 2025. OneRec Technical Report. arXiv preprint arXiv:2506.13695 (2025). [46] Kun Zhou, Hui Wang, Wayne Xin Zhao, Yutao Zhu, Sirui Wang, Fuzheng Zhang, Zhongyuan Wang, and Ji-Rong Wen. 2020. S3-rec: Self-supervised learning for se-quential recommendation with mutual information maximization. In Proceedings of the 29th ACM international conference on information & knowledge management .1893–1902. [47] Kun Zhou, Hui Yu, Wayne Xin Zhao, and Ji-Rong Wen. 2022. Filter-enhanced MLP is All You Need for Sequential Recommendation. In Proceedings of the ACM Web Conference 2022 (Virtual Event, Lyon, France) (WWW ’22) . Association for Computing Machinery, New York, NY, USA, 2388–2399. [48] Peilin Zhou, Jingqi Gao, Yueqi Xie, Qichen Ye, Yining Hua, Jaeboum Kim, Shoujin Wang, and Sunghun Kim. 2023. Equivariant contrastive learning for sequential recommendation. In Proceedings of the 17th ACM Conference on Recommender Systems . 129–140.

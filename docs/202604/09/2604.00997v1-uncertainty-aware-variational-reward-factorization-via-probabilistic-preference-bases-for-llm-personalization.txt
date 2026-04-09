@@ -1,0 +1,1035 @@
+Title: Uncertainty-Aware Variational Reward Factorization via Probabilistic Preference Bases for LLM Personalization
+
+URL Source: https://arxiv.org/pdf/2604.00997v1
+
+Published Time: Thu, 02 Apr 2026 01:26:06 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+Preprint. Under review. 
+
+# Uncertainty-Aware Variational Reward Factorization via Probabilistic Preference Bases for LLM Personalization 
+
+Gyuseok Lee 1 Wonbin Kweon 1 Zhenrui Yue 1
+
+SeongKu Kang 2 Jiawei Han 1 Dong Wang 1
+
+> 1
+
+University of Illinois Urbana-Champaign 2Korea University 
+
+{gyuseok2,wonbin,zhenrui3,hanj,dwang24 }@illinois.edu seongkukang@korea.ac.kr 
+
+## Abstract 
+
+Reward factorization personalizes large language models (LLMs) by decom-posing rewards into shared basis functions and user-specific weights. Yet, existing methods estimate user weights from scarce data in isolation and as deterministic points, leading to inaccurate and unreliable inference. We introduce Variational Reward Factorization (VRF), an uncertainty-aware framework that represents each user’s preferences as a variational distri-bution in a shared preference space. VRF infers user distributions via a variational encoder, derives weights through Wasserstein distance match-ing with shared probabilistic bases, and downweights uncertain estimates through a variance-attenuated loss. On three benchmarks, VRF outper-forms all baselines across seen and unseen users, few-shot scenarios, and varying uncertainty levels, with gains extending to downstream alignment. 
+
+## 1 Introduction 
+
+Aligning large language models (LLMs) with human preferences has attracted growing interest (Ziegler et al., 2019; Bai et al., 2022; Touvron et al., 2023; Rafailov et al., 2024). One prominent line of research is reward modeling, which first learns preferences from pairwise feedback, then guides LLM alignment (e.g., RLHF) (Christiano et al., 2017; Stiennon et al., 2020; Ouyang et al., 2022). However, conventional approaches learn a single, shared reward model that inevitably collapses toward the average user, neglecting the diverse and often conflicting preferences (Bakker et al., 2022; Casper et al., 2023; Durmus et al., 2024). Beyond this one-size-fits-all assumption, personalized alignment of LLMs has been ex-plored (Kirk et al., 2024a; Sorensen et al., 2024). A leading approach is reward factoriza-tion (Bose et al., 2025; Shenfeld et al., 2025), which decomposes a scalar reward as ru = w⊤ 
+
+> u
+
+ϕ,where wu ∈ ∆K−1 are user-specific weights and ϕ ∈ RK are shared basis reward functions, with each ϕk capturing a distinct preference aspect. This factorization enables efficient personalization without training a per-user reward model (Zollo et al., 2024; Cai et al., 2026). However, existing reward factorization methods face two fundamental challenges in model-ing user weights wu: (C1) isolated preference modeling and (C2) deterministic point estimates .
+
+(C1) Inaccurate estimation from isolated preference modeling: Inferring user preferences requires sufficient observations, yet per-user preference data is typically scarce 1 (Christiano et al., 2017; Ryan et al., 2025), leading to inaccurate estimation. While users often share com-mon preference patterns that could compensate for limited data, existing methods estimate each user’s weight in isolation, failing to leverage this commonality. This problem extends to unseen users, who need to estimate wu from scratch without any learned structure. We empirically confirm that performance generally degrades with less data in our experiments. 
+
+(C2) Unreliable inference from deterministic point estimates: User preference histories inherently carry uncertainty (Casper et al., 2023; Siththaranjan et al., 2024), arising from both data scarcity and preference diversity. Yet existing methods estimate the user weight 
+
+> 1
+
+e.g., users in PRISM (Kirk et al., 2024b) have only 5.7 conversations on average. 
+
+1
+
+> arXiv:2604.00997v1 [cs.CL] 1 Apr 2026
+
+Preprint. Under review. User B: Diverse Preferences ( Uncertain )User A: Consistent Preference s (Certain )                 
+
+> ”Maybe it could be ... "
+> "I suppose it’s..." Factual
+> "I feel like the answer is ... "Factual
+> Factual
+> "I feel like the answer is ... "Factual
+> Casual
+> "Per the specification, ..." Empathetic
+> Chosen Rejected Chosen Rejected
+> "The answer is as follows."
+> “Here are the key facts...”
+> “The data shows that ... ”
+> “According to studies ... ”“Sure thing! It’s A.”
+> “Here are the key facts...”
+> “Great question! Let me...”
+> Preferences Preferences
+
+Figure 1: Motivating example. Preferences can be consistent (certain) or diverse (uncertain). as a deterministic point, which cannot express how reliably the estimate captures the user’s underlying preferences. As illustrated in Figure 1, users exhibit varying preference patterns: User A is consistent within a single style, while User B spreads across multiple styles. Intuitively, the estimate for User B should entail greater uncertainty than that for User A. However, without uncertainty quantification, deterministic point estimates implicitly assign uniform certainty to every user, leading to unreliable inference of user preferences. In this paper, we propose Variational Reward Factorization ( VRF ) for uncertainty-aware LLM personalization. The core idea of VRF is to represent each user not as a deterministic point but as a variational distribution in a shared preference space, from which user-specific weights are derived. Specifically, VRF introduces three key components: (1) a variational encoder that infers each user’s preferences as a Gaussian distribution from a small reference set, (2) shared probabilistic preference bases with Wasserstein distance-based matching that jointly accounts for preference direction and confidence, and (3) a variance-attenuated preference loss that downweights uncertain reward estimates during training. VRF systematically addresses both challenges. For C1 , the shared preference bases encode population-level patterns, allowing data-scarce users to benefit from collective signals. For 
+
+C2 , the probabilistic formulation of users and bases enables uncertainty-aware preference modeling, supported by the variance-attenuated loss. At inference, the variational encoder with shared bases enables effective user weight estimation for unseen users in a single forward pass without any optimization. Our core contributions are as follows: • We identify two fundamental challenges of existing reward factorization approaches that remain underexplored in the literature, highlighting the need for systematic investigation. • We propose VRF, an uncertainty-aware reward factorization framework that represents users and preference bases as probabilistic distributions over a shared preference space. • We validate VRF on three datasets, showing consistent improvements over state-of-the-art baselines on seen and unseen users. Further analyses highlight its robustness across vary-ing data scarcity and uncertainty levels, with gains extending to downstream alignment. 
+
+## 2 Related Work 
+
+LLM Personalization. Personalizing LLMs to individual user preferences has been ex-plored along several axes. Prompt-based methods incorporate user histories (Dai et al., 2023; Li et al., 2023) or retrieval-augmented context (Richardson et al., 2023; Salemi et al., 2024) into the input without additional training. Other approaches personalize LLMs at the parametric level, including per-user adapters (Tan et al., 2024a;b), user embeddings (Doddapaneni et al., 2024; Liu et al., 2025), and steering vectors (Cao et al., 2024; Zhang et al., 2025). While these methods implicitly encode user preferences at either the input or parametric level, our approach explicitly models them within the reward modeling framework. 
+
+Personalized Reward Modeling. Reward modeling directly learns human preferences from pairwise comparisons to guide LLM alignment (e.g., RLHF) (Christiano et al., 2017; Stiennon et al., 2020; Ouyang et al., 2022). However, conventional approaches learn a single, shared reward model that fails to capture diverse user preferences (Bakker et al., 2022; Casper et al., 2023; Durmus et al., 2024). To address this, reward factorization represents the personalized reward using shared basis functions and user-specific weights (Bose et al., 2025; Chen et al., 2025; Shenfeld et al., 2025). Yet, existing methods face two key limitations in modeling user weights: (1) isolated per-user estimation that ignores shared 2Preprint. Under review. preference patterns, and (2) deterministic point estimates that lack uncertainty quantification. Although PAL (Chen et al., 2025) employs shared prototypes, they are designed for reward computation rather than user weight estimation, and its ideal point formulation lacks uncertainty quantification. 2 VPL (Poddar et al., 2024) introduces variational inference for measuring uncertainty, but infers each user in isolation, leading to posterior collapse under sparse feedback (Kim & Kim, 2026). These challenges motivate an uncertainty-aware reward factorization that leverages shared preference patterns beyond individual observations. 
+
+## 3 Preliminaries 
+
+3.1 Problem Formulation 
+
+For each user u ∈ U , we partition pairwise preference data into two disjoint sets: a reference set Cu for inferring user preferences and a target set Du for computing the personalized reward. Each set contains triplets (x, y+, y−), where x ∈ X is a query and y+, y− ∈ Y 
+
+are chosen and rejected responses. Our goal is to learn a personalized reward function 
+
+ru(x, y|C u) over Du. The reward function is then used for personalized alignment of a policy model, either at training time like RLHF (Christiano et al., 2017; Ouyang et al., 2022) or at inference time like best-of-N sampling (Stiennon et al., 2020; Touvron et al., 2023). 
+
+3.2 User-Agnostic Reward Modeling 
+
+Early approaches to reward modeling (Ziegler et al., 2019; Stiennon et al., 2020; Ouyang et al., 2022) adopt the Bradley-Terry (BT) model (Bradley & Terry, 1952) to formulate the probability that response y+ is preferred over y− given x as: 
+
+P(y+ ≻ y− | x) = σ rθ (x, y+) − rθ (x, y−), (1) where rθ (x, y) ∈ R is a single reward function shared across all users and σ(·) is the sigmoid function. rθ is optimized by minimizing the negative log-likelihood as follows: 
+
+LBT (θ) = −E(x,y+,y− )∼D 
+
+log σ rθ (x, y+) − rθ (x, y−) , (2) where D = S 
+
+> u∈U
+
+Du. Since rθ is optimized over the aggregated data across users, it collapses heterogeneous preferences into a generic reward. For instance, given a prompt x, if User A prefers a formal response y1 over a casual one y2, while User B prefers the opposite, rθ
+
+averages these conflicting signals ( rθ (x, y1) ≈ rθ (x, y2)), thereby failing to satisfy either user. 
+
+3.3 Reward Factorization 
+
+To capture individual user preferences, recent work (Bose et al., 2025; Shenfeld et al., 2025) factorizes the single scalar reward as follows: 
+
+ru(x, y) = w⊤ 
+
+> u
+
+ϕ(x, y), (3) where ϕ(x, y) = [ ϕ1(x, y), . . . , ϕK (x, y)] ⊤ ∈ RK denotes K shared basis reward functions parameterized by a neural network, with each ϕk scoring a distinct preference style (e.g., conciseness or formality). wu ∈ ∆K−1 is a user weight that personalizes the reward by determining the relative importance among the bases. The training objective is as follows: 
+
+LRF (w, ϕ) = −Eu∼U E(x,y+,y− )∼D u
+
+log σ ru(x, y+) − ru(x, y−) . (4) 
+
+> 2Other approaches leverage cross-user signals but do not adopt reward factorization (Li et al., 2024; Choi et al., 2025), or share reward heads but route at the textual level without per-user inference (Shen et al., 2025). None of these methods address uncertainty in user weight estimation. DPL (Siththaranjan et al., 2024) captures reward uncertainty but does not personalize to individual users.
+
+3Preprint. Under review. Product of                            
+
+> Gaussians
+> 𝑦 !
+> "(rejected): “1. Install Python. 2. Follow the tutorial.”
+> 𝑦 !
+> #(chosen): ”Dive in! Try print( ′hello’) and play around.”
+> 𝑥 !(query): “How to learn Python?”
+> Reference Set 𝒞 !(User 𝑢 :prefers casual, friendly tone )
+> User Preference
+> Distribution 𝑞 !
+
+(a) Variational User Preference Encoding (b) Uncertainty -Aware Matching                         
+
+> Δ𝝓 =𝝓 𝑥 ,𝑦 !−𝝓 𝑥 ,𝑦 "
+> Reward Basis D ifference
+> 𝑥 ",𝑦 "
+> #,𝑦 "
+> $
+> Target Set 𝒟 !Probabilistic Preference Bases
+> 𝒘 #,%
+> 𝒘 #,&
+> 𝒘 #,'
+> 𝒘 #,(
+> 𝒘 #,)
+> Δ𝜙 %
+> Δ𝜙 &
+> Δ𝜙 '
+> Δ𝜙 (
+> Δ𝜙 )
+> ⊙
+> Variational Training Loss
+> ℒVBT +ℒSEP +𝛽 3ℒREG
+> User
+> Weight 𝒘 !
+> Δ𝑟
+> Personalized
+> Reward Diff
+> 𝝓 3,3
+> LLM
+> (No grad)
+> MLP
+> Gaussians from 𝒞 !
+> Variational User Encoder
+
+Figure 2: Overall framework of VRF. Best viewed in color. However, existing reward factorization methods estimate wu in isolation without leveraging shared preference patterns (C1), and represent it as a deterministic point without uncertainty quantification (C2), resulting in inaccurate and unreliable personalization. 
+
+## 4 Variational Reward Factorization 
+
+To address these challenges, we propose Variational Reward Factorization (VRF ), which represents each user’s preferences not as a deterministic point, but as a variational distribu-tion in a shared preference space, from which the user weight is derived. We first infer the user preference distribution (§4.1), then derive the user weight in probabilistic preference space (§4.2). We further propose uncertainty-aware training objectives (§4.3). Finally, we present few-shot inference for unseen users (§4.4). Figure 2 shows an overview of VRF. 
+
+4.1 Variational User Preference Encoding 
+
+We propose a variational user encoder that infers each user’s preference distribution qu =
+
+N (μu, diag (σ2
+
+> u
+
+)) from a small reference set Cu. Here, μu encodes the preference location and σu captures its uncertainty, which is inherently absent in deterministic point estimates. 
+
+Variational Pairwise Encoding. Given the reference set Cu for user u, we form a pairwise representation vi ∈ R2H from each triplet 3 (xi, y+ 
+
+> i
+
+, y− 
+
+> i
+
+). Then, a two-layer MLP maps vi to Gaussian parameters μi, σi ∈ RD, resulting in |C u| Gaussians (i.e., {N (μi, diag (σ2 
+
+> i
+
+)) }|C u | 
+
+> i=1
+
+). 
+
+User Preference Aggregation. To aggregate |C u| Gaussians into a single user distribution 
+
+qu = N (μu, diag (σ2
+
+> u
+
+)) , we adopt the product of Gaussians (Bishop, 2006), which yields a closed-form aggregation: 
+
+μu = ∑Mu 
+
+> i=1
+
+μi ⊙ σ−2
+
+> i
+
+∑Mu 
+
+> i=1
+
+σ−2
+
+> i
+
+, σ2 
+
+> u
+
+= 1
+
+∑Mu 
+
+> i=1
+
+σ−2
+
+> i
+
+, (5) where ⊙ is element-wise multiplication. Unlike simple averaging, the product of Gaussians enables more reliable estimation, weighting each observation by its precision σ−2 
+
+> i
+
+. Thus, μu
+
+reflects more confident observations while σu decreases as more observations are available. 
+
+> 3
+
+vi = [ h+  
+
+> i+h−
+> i
+> 2
+
+∥ h+ 
+
+> i
+
+− h− 
+
+> i
+
+] ∈ R2H , where h+ 
+
+> i
+
+= LLM (xi ∥y+ 
+
+> i
+
+) ∈ RH and h− 
+
+> i
+
+= LLM (xi ∥y− 
+
+> i
+
+) ∈ RH
+
+are last-token hidden states extracted under no gradient and ∥ denotes concatenation. The mean and difference capture shared content and preference direction, respectively. 
+
+4Preprint. Under review. 
+
+4.2 Uncertainty-Aware Preference Matching 
+
+Given the user distribution qu = N (μu, diag (σ2
+
+> u
+
+)) , we derive the user weight wu ∈ ∆K−1
+
+over K shared probabilistic preference bases (i.e., Gaussians). By representing both users and bases as distributions, we enable uncertainty-aware preference matching between them. 
+
+Probabilistic Preference Bases. We maintain K shared preference bases P = {pk}Kk=1,where pk = N (μk, diag (σ2 
+
+> k
+
+)) with μk, σk ∈ RD as learnable parameters. Each pk represents a distinct preference style (e.g., conciseness, formality, or empathy), corresponding to the 
+
+k-th reward function ϕk(x, y). The bases P are randomly initialized and learned to capture domain-specific preference patterns that minimize the overall training objective. The preference bases P offer three key benefits: (1) sharing bases across users encodes population-level patterns, allowing data-sparse and unseen users to benefit from collective signals (C1); (2) modeling bases as Gaussians enables uncertainty-aware matching with qu,naturally incorporating preference uncertainty into wu (C2); and (3) P is parameter-efficient, as the number of bases remains fixed regardless of the user population size. 
+
+User Weight Derivation via Wasserstein Distance. We derive the user weight wu via the squared 2-Wasserstein distance 4 W2(·, ·)2 between the user distribution qu and each preference basis pk. For diagonal Gaussians, this admits a closed form W2(qu, pk)2 = 
+
+> 1
+> D
+
+(∥μu − μk∥22 + ∥σu − σk∥22) (Villani, 2008), which naturally accounts for both preference location and uncertainty. We then derive wu from these distances via softmax: 
+
+wu = [ wu,1 , . . . , wu,K ]⊤ ∈ ∆K−1, wu,k = exp (−W 2(qu, pk)2/τd)
+
+∑Kj=1 exp (−W 2(qu, pj)2/τd) , (6) where τd is a temperature hyperparameter. The resulting wu encodes an uncertainty-aware soft assignment over preference bases, yielding the personalized reward in Eq. (3). 
+
+4.3 Training Objectives Variance-Attenuated Bradley-Terry Loss. Under the original Bradley-Terry loss LBT ,the pairwise preference probability is computed as P(y+ ≻ y− | x) = σ(∆rBT ), where 
+
+∆rBT = rθ (x, y+) − rθ (x, y−) is a scalar reward difference. However, this formulation does not account for uncertainty in reward estimation. To address this, we propose a variance-attenuated preference loss that replaces the scalar ∆rBT with a Gaussian ∆ru ∼ N (μ∆, σ2
+
+> ∆
+
+).Let ∆ϕ = [ ∆ϕ1, . . . , ∆ϕK ]⊤ ∈ RK denote the reward basis differences, where ∆ϕk =
+
+ϕk(x, y+) − ϕk(x, y−). Given the user weight wu, the Gaussian parameters are computed as: 
+
+μ∆ =
+
+> K
+
+# ∑
+
+> k=1
+
+wu,k∆ϕk, σ2 
+
+> ∆
+
+=
+
+> K
+
+# ∑
+
+> k=1
+
+wu,k(∆ϕk − μ∆)2, (7) where μ∆ and σ2 
+
+> ∆
+
+are the mean and variance of the reward basis differences weighted by 
+
+wu. We approximate ∆ru ∼ N (μ∆, σ2
+
+> ∆
+
+) via moment matching (Minka, 2001). The pairwise preference probability of user u then becomes P(y+ ≻ y− | x, u) = E∆ru [σ(∆ru)] . As this expectation is analytically intractable 5, we apply MacKay’s Approximation (MacKay, 1992) to derive a closed-form variance-attenuated Bradley-Terry loss: 
+
+LVBT (w, ϕ, P ) = −Eu∼U E(x,y+,y− )∼D u
+
+
+
+log σ
+
+ μ∆√1+πσ 2 
+
+> ∆/8
+
+ 
+
+. (8) 
+
+LVBT adaptively scales the gradient via σ2
+
+> ∆
+
+, which depends on the concentration of wu:(1) when wu is concentrated (e.g., one-hot), σ2 
+
+> ∆
+
+= 0 and LVBT recovers LBT ; (2) as wu 
+
+> 4Unlike KL divergence,
+
+W2 is symmetric and considers the geometric structure of the latent space.  
+
+> 5E∆ru
+
+[σ(∆ru)] = R ∞ 
+
+> −∞σ
+
+(∆ru)N (∆ru | μ∆, σ2
+
+> ∆
+
+) d(∆ru), which has no analytic solution. 
+
+5Preprint. Under review. becomes more diffuse, σ2 
+
+> ∆
+
+grows and attenuates the gradient (see Appendix C.1 and C.2). Consequently, LVBT enables uncertainty-aware reward estimation. 
+
+Variational Training Objective. Following variational inference (Kingma & Welling, 2014), we derive the final training objective as: 
+
+L(w, ϕ, P ) = LVBT + LSEP + β · L REG . (9) 
+
+LSEP = ∑1≤i<j≤K max  0, τm − W 2(pi, pj)2 promotes diversity among the K preference bases with margin τm. LREG = Eu∼U [DKL (qu ∥ p(z))] regularizes qu to lie within the learned preference space using a mixture-of-Gaussians prior 6 p(z) = 1 
+
+> K
+
+∑Kk=1 pk instead of a standard N (0, I). β controls the regularization strength. 
+
+4.4 Few-Shot Inference for Unseen Users 
+
+At inference time, the basis reward functions ϕ are known, but the user weight wu′ for an unseen user u′ is derived on-the-fly. 7 Given a small reference set Cu′ , the variational encoder infers the user distribution qu′ (§4.1), from which wu′ is derived (§4.2). The personalized reward is then obtained via Eq. (3) . Unlike methods requiring gradient-based optimiza-tion (Bose et al., 2025; Chen et al., 2025; Shenfeld et al., 2025), VRF estimates wu′ via a single forward pass without additional optimization. 
+
+## 5 Experiments 
+
+5.1 Experimental Setup Datasets. We evaluate on three benchmarks: PersonalLLM (Zollo et al., 2024), where 
+
+α ∈ { 0.001, 0.01, 0.1 } controls preference diversity; TL;DR (Stiennon et al., 2020), where 
+
+n ∈ { 100, 150 } denotes the number of training triplets per seen user; and PRISM (Kirk et al., 2024b). Detailed statistics are provided in Appendix A.1. 
+
+Evaluation Metric. We report pairwise preference accuracy as the primary metric: Acc = 
+
+> 1
+> |D test |
+
+∑(x,y+,y−,u)∈D test 1[ru(x, y+) > ru(x, y−)] . Results are averaged over 5 random seeds, controlling model initialization and data splits. Performance is evaluated across three distinct splits: Seen, Unseen, and Overall (the macro-average of Seen and Unseen). 
+
+Baselines. We compare VRF with several baselines: the pretrained Ref (Qwen Team, 2025), non-personalized BT (Stiennon et al., 2020; Ouyang et al., 2022), and personalized methods including VPL (Poddar et al., 2024), PAL (Chen et al., 2025), LoRe (Bose et al., 2025), and PReF (Shenfeld et al., 2025). Detailed explanations of each baseline are in Appendix A.2. 
+
+Implementation Details. We employ Qwen3-0.6B (Qwen Team, 2025) as the backbone for the basis reward functions 8 ϕ, fully fine-tuned given its compact size. For VRF and VPL, the backbone is additionally used as the variational encoder without gradient updates. All base-lines are tuned following their original protocols. Detailed hyperparameter configurations are provided in Appendix A.3. Backbone scale analysis is discussed in Appendix B.1. 
+
+5.2 Performance Comparison Main Results. Table 1 shows that VRF consistently achieves the best performance across all datasets and splits, indicating its effectiveness for personalized reward modeling across syn-      
+
+> 6Since DKL against a mixture-of-Gaussians prior lacks a closed form, we estimate it via Monte Carlo sampling with the reparameterization trick (see Appendix C.3).
+> 7For seen users, the learned weights wuare cached during training and applied directly.
+> 8ϕcomprises the backbone and a two-layer MLP ( H
+
+→ H/ 4 → K) on the last-token hidden state. 
+
+6Preprint. Under review. Table 1: Overall performance comparison on three datasets. 
+
+PersonalLLM Method Very Diverse ( α=0.001) Moderately Diverse ( α=0.01) Near Uniform ( α=0.1) Seen Unseen Overall Seen Unseen Overall Seen Unseen Overall Ref 58.6 ±0.2 58.9 ±0.9 58.8 ±0.4 59.1 ±0.3 59.0 ±0.6 59.1 ±0.4 59.9 ±0.2 60.0 ±0.2 60.0 ±0.2 
+
+BT 90.3 ±0.3 90.5 ±0.4 90.4 ±0.2 91.1 ±0.4 91.0 ±0.3 91.1 ±0.2 94.8 ±0.2 94.6 ±0.4 94.7 ±0.2 
+
+VPL 86.4 ±0.4 86.9 ±0.5 86.6 ±0.2 87.3 ±0.5 87.4 ±0.3 87.3 ±0.2 91.7 ±0.2 91.5 ±0.5 91.6 ±0.3 
+
+PAL 88.8 ±0.5 89.3 ±0.1 89.0 ±0.3 89.3 ±0.5 89.2 ±0.3 89.2 ±0.2 93.0 ±0.2 92.8 ±0.4 92.9 ±0.3 
+
+LoRe 89.4 ±1.2 88.6 ±0.3 89.0 ±0.5 89.6 ±0.9 88.7 ±0.2 89.2 ±0.6 92.7 ±0.2 92.5 ±0.3 92.6 ±0.2 
+
+PReF 94.4 ±0.2 81.1 ±0.1 87.7 ±0.1 94.0 ±0.3 82.4 ±0.5 88.2 ±0.2 94.3 ±0.1 90.4 ±0.4 92.3 ±0.2 
+
+VRF 95.6 ±0.4 95.1 ±0.3 95.3 ±0.3 95.5 ±0.1 94.7 ±0.2 95.1 ±0.1 96.8 ±0.0 96.4 ±0.2 96.6 ±0.1 
+
+Method TL;DR ( n=100 ) TL;DR ( n=150 ) PRISM 
+
+Seen Unseen Overall Seen Unseen Overall Seen Unseen Overall Ref 51.9 ±0.2 51.8 ±0.7 51.8 ±0.3 51.9 ±0.2 51.8 ±0.7 51.8 ±0.3 54.7 ±0.7 54.9 ±0.3 54.8 ±0.5 
+
+BT 59.9 ±0.7 59.0 ±0.7 59.5 ±0.7 61.5 ±0.6 60.4 ±0.6 60.9 ±0.5 60.0 ±0.7 60.2 ±0.9 60.1 ±0.5 
+
+VPL 58.6 ±1.0 57.5 ±0.4 58.1 ±0.7 58.7 ±1.2 56.7 ±0.3 57.7 ±0.5 59.6 ±0.7 58.8 ±1.0 59.2 ±0.7 
+
+PAL 60.4 ±0.7 59.1 ±0.3 59.8 ±0.4 61.7 ±0.5 60.6 ±0.4 61.2 ±0.1 60.8 ±0.4 60.8 ±0.9 60.8 ±0.5 
+
+LoRe 61.6 ±0.5 61.0 ±0.6 61.3 ±0.6 62.3 ±0.8 61.0 ±0.7 61.7 ±0.6 60.4 ±1.0 59.7 ±0.9 60.0 ±0.9 
+
+PReF 55.7 ±2.5 56.7 ±2.2 56.2 ±1.9 59.9 ±1.3 59.2 ±1.8 59.5 ±1.5 53.1 ±1.6 51.4 ±1.2 52.3 ±1.3 
+
+VRF 62.3 ±1.2 61.5 ±0.9 61.9 ±1.0 63.3 ±1.1 62.4 ±1.1 62.9 ±1.1 62.1 ±0.6 61.6 ±0.5 61.8 ±0.3 
+
+thetic and real-world settings. The gains over BT highlight the importance of user-specific modeling, while improvements over VPL and PAL suggest that combining variational user representations with shared preference bases provides complementary benefits. Unlike LoRe and PReF, which rely on deterministic user representations, VRF represents both users and preference bases as probabilistic distributions, enabling uncertainty-aware preference modeling. This allows the model to quantify preference uncertainty and attenuate ambigu-ous preference signals during training, leading to more robust preference learning. Notably, on PersonalLLM, the performance gap widens as user preferences become more diverse (α=0.001), suggesting that VRF more effectively captures heterogeneous user preferences. 
+
+In-Depth Comparison. Figure 3 examines unseen users in PRISM across four dimensions: (a) few-shot adaptation, (b) uncertainty robustness, (c) inference-time alignment, and (d) adaptation efficiency. For (a) and (b), PReF is excluded due to its unstable performance. Note that (a) evaluates reward model accuracy by varying |C u|, while (c) measures downstream alignment quality via best-of-N sampling, grouping users by their original reference set size. Additional few-shot adaptation and uncertainty robustness results on PersonalLLM and TL;DR are provided in Appendix B.3. (a) Few-Shot Adaptation. Figure 3a reports accuracy by varying |C u| ∈ { 1, 3, 5, 7, 9 }. VRF achieves the highest accuracy across all values of |C u|. Notably, the improvement over the best competitor (PAL) is largest at |C u| = 1 (+1.9%), indicating that VRF effectively infers user preferences even from minimal user history. This result suggests that shared preference bases enable data-scarce users to leverage collective knowledge from the user population. The variational encoder, regularized by the mixture-of-Gaussians prior, further maps users within this learned preference space. Together, these components address the isolated estimation problem (C1). (b) Uncertainty Robustness. Figure 3b categorizes unseen users into three bins (low, mid, high) based on their preference uncertainty σu.9 VRF consistently outperforms all base-lines across all uncertainty levels. This robustness stems from our uncertainty-aware dis-tributional matching between users and preference bases and variance-attenuated train-ing, jointly mitigating the unreliable inference from deterministic point estimates (C2). (c) Inference-Time Alignment. We evaluate inference-time alignment via best-of-N sam-pling to assess whether improved reward estimation translates to better response selection (see Appendix A.4 for detailed setup). Figure 3c shows that VRF consistently 
+
+> 9
+
+To obtain a single uncertainty score per user, we average σu ∈ RD across dimensions. 
+
+7Preprint. Under review.  
+
+> (a) Few-shot adaptation (Varying
+
+|C u|)Low Mid High   
+
+> User Uncertainty Group
+> 58%
+> 60%
+> 62%
+> 64%
+> Accuracy (%)
+> Ours
+> VPL
+> PAL
+> LoRe (b) Uncertainty robustness
+> (c) Inference-time alignment (grouped by
+
+|C u|)Backbone Adapt   
+
+> 0
+> 100
+> 200
+> 300
+> Time (ms)
+> 0.6 0.2
+> Ours
+> VPL
+> PAL
+> LoRe
+> PRef (d) Per-user adaptation time (ms)
+
+Figure 3: In-depth analysis of unseen users in PRISM. VRF maintains superior accuracy across all user groups (a–c) while significantly reducing adaptation latency (d). achieves the highest ∆ Win Rate across all user groups. Even with only 3–5 reference pairs, VRF outperforms all baselines. These results suggest that the accuracy gains observed in (a) and (b) translate to tangible improvements in downstream alignment. (d) Adaptation Efficiency. Figure 3d reports per-user adaptation latency. ’Backbone’ denotes the time for LLM forward pass over the reference set, and ’Adapt’ measures the time for estimating user weights. VRF and VPL compute user weights via a single forward pass (0.6ms and 0.2ms, respectively), whereas gradient-based methods (PAL, LoRe, PReF) require 83–114ms. This advantage becomes critical at scale; for 1M users, VRF’s adaptation completes in under 10 minutes, whereas PReF requires over 30 hours. VRF thus enables efficient personalization with negligible adaptation overhead, making it practical for large-scale deployment. Taken together, VRF effectively addresses both the isolated estimation (C1) and unreliable inference (C2) challenges across few-shot scenarios and diverse uncertainty levels. These gains translate to downstream personalized alignment while maintaining practical efficiency. 
+
+5.3 Study of VRF Ablation Study. Table 2 reports the contribution of each component in VRF. (a) Removing 
+
+LVBT (replaced with LBT ) leads to the largest overall accuracy drop on PRISM ( −3.6%), confirming its role in adaptively scaling the gradients under preference uncertainty. (b) Removing LSEP causes the largest drop on PersonalLLM ( −3.6%), indicating that basis separation is critical for capturing distinct preferences. (c) Removing LREG results in smaller but consistent degradation across all datasets. (d) Replacing the mixture-of-Gaussians (MoG) prior with N (0, I) degrades performance on all datasets, highlighting the benefit of regularizing user distributions to lie within the learned preference space. (e) Replacing the product-of-Gaussians (PoG) with mean pooling degrades performance, showing that uncertainty-aware aggregation of user observations yields more reliable estimation. Since preference bases are integral to VRF and cannot be ablated, we analyze sensitivity to the number of bases ( K), along with the regularization strength ( β), in Appendix B.2. 8Preprint. Under review. Table 2: Ablation study on VRF across three datasets. 
+
+Model Variant PersonalLLM ( α=0.001 ) TL;DR ( n=150 ) PRISM 
+
+Seen Unseen Overall Seen Unseen Overall Seen Unseen Overall (a) w/o LVBT 92.7 ±0.3 92.5 ±0.7 92.6 ±0.3 61.4 ±0.5 60.8 ±0.3 61.1 ±0.4 58.3 ±0.2 58.1 ±0.5 58.2 ±0.4 
+
+(b) w/o LSEP 91.9 ±0.3 91.4 ±0.7 91.7 ±0.3 61.5 ±0.6 60.8 ±0.3 61.2 ±0.5 58.2 ±0.1 58.2 ±0.5 58.2 ±0.3 
+
+(c) w/o LREG 93.2 ±0.2 93.5 ±0.3 93.3 ±0.2 61.2 ±0.6 60.3 ±0.4 60.8 ±0.4 60.8 ±0.4 60.8 ±0.9 60.8 ±0.7 
+
+(d) w/o MoG 91.9 ±0.3 91.4 ±0.7 91.7 ±0.2 61.3 ±0.5 60.8 ±0.3 61.1 ±0.4 60.2 ±0.3 60.3 ±0.8 60.2 ±0.6 
+
+(e) w/o PoG 94.8 ±0.2 95.0 ±0.2 94.9 ±0.2 62.7 ±0.2 61.8 ±0.4 62.2 ±0.3 61.7 ±0.5 60.6 ±0.4 61.1 ±0.2 
+
+Full Model 95.6 ±0.4 95.1 ±0.3 95.3 ±0.3 63.3 ±1.1 62.4 ±1.1 62.9 ±1.1 62.1 ±0.6 61.6 ±0.5 61.8 ±0.3 Data Scarcity         
+
+> Preference Diversity
+> User A Confident
+> (n=19, σu=0.24)
+> User B Sparse
+> (n=3, σu=0.75)
+> User C Diverse
+> (n=10, σu=0.56)
+> User D Bi-modal
+> (n=10, σu=0.36)
+
+p1
+
+p2
+
+p3
+
+p4
+
+p5
+
+p6
+
+p7
+
+p8 
+
+> User A
+> User B
+> User C
+> User D
+> (a) User Preference in Reference Set (b) Learned Preference Space
+> p1: Conversational & Natural
+> p2: Thorough & Genuine
+> p3: Nuanced & Impartial
+> p4: Direct & Structured
+> p5: Comprehensive & Balanced
+> p6: Professional & Analytical
+> p7: Factual & Clear
+> p8: Empathetic & Principled
+
+Figure 4: Case studies and the learned preference space on PRISM ( K=8). (a) Four users with varying data scarcity and preference diversity. n is the reference set size. Bars show the preference distribution classified by Claude Sonnet 4.6 (see Appendix D.1 for details). (b) Learned preference space. Stars and shaded regions denote the preference bases. For user ellipses, the center point represents wu, and the size reflects σu.
+
+Case Studies on Learned Preference Space. Figure 4a shows four users across two axes. In terms of data scarcity, both User A ( n=19) and User B ( n=3) exhibit consistent preferences, but the limited observations for User B result in higher uncertainty ( σu=0.75). In terms of preference diversity, User C and User D have the same reference set size ( n=10), yet User C spreads across five bases while User D concentrates on two ( p4, p8), resulting in higher uncertainty for User C ( σu=0.56). Figure 4b shows how these users’ preference distributions are represented in the learned preference space. User A exhibits a tight ellipse near p7, reflecting high confidence from abundant, consistent data. User B, despite concentrating on p4, shows a large ellipse due to data scarcity. User C spans multiple bases, capturing diverse preferences. User D sits between p4 and p8 with moderate uncertainty. This visualization shows that VRF effectively disentangles what a user prefers from how confident the estimate is. 
+
+## 6 Conclusion 
+
+In this paper, we present VRF for uncertainty-aware LLM personalization, addressing two key challenges in reward factorization. For C1 , VRF introduces shared preference bases, al-lowing data-scarce and unseen users to leverage collective preference patterns. For C2 , VRF represents both users and bases as Gaussians for uncertainty-aware distributional matching, further enhanced by variance-attenuated training. Experiments on three benchmarks show consistent improvements over all baselines, robustness to scarcity and uncertainty, and gains in downstream alignment. We believe VRF provides an effective and scalable path for reliable LLM personalization. Future directions include query-adaptive personalization across diverse contexts and temporal adaptation to evolving user preferences. 9Preprint. Under review. 
+
+## References 
+
+Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, et al. Training a helpful and harmless assistant with reinforcement learning from human feedback. arXiv preprint arXiv:2204.05862 , 2022. Michiel Bakker, Martin Chadwick, Hannah Sheahan, Michael Tessler, Lucy Campbell-Gillingham, Jan Balaguer, Nat McAleese, Amelia Glaese, John Aslanides, Matt Botvinick, et al. Fine-tuning language models to find agreement among humans with diverse preferences. Advances in neural information processing systems , 35:38176–38189, 2022. Christopher M. Bishop. Pattern Recognition and Machine Learning . Springer, 2006. Avinandan Bose, Zhihan Xiong, Yuejie Chi, Simon Shaolei Du, Lin Xiao, and Maryam Fazel. LoRe: Personalizing LLMs via low-rank reward modeling. arXiv preprint arXiv:2504.14439 ,2025. Ralph Allan Bradley and Milton E. Terry. Rank analysis of incomplete block designs: I. the method of paired comparisons. Biometrika , 39(3-4):324–345, 1952. Hongru Cai, Yongqi Li, Tiezheng Yu, Fengbin Zhu, Wenjie Wang, Fuli Feng, and Wenjie Li. One adapts to any: Meta reward modeling for personalized LLM alignment. arXiv preprint arXiv:2601.18731 , 2026. Yuanpu Cao, Tianrong Zhang, Bochuan Cao, Ziyi Yin, Lu Lin, Fenglong Ma, and Jinghui Chen. Personalized steering of large language models: Versatile steering vectors through bi-directional preference optimization. Advances in Neural Information Processing Systems ,37:49519–49551, 2024. Stephen Casper, Xander Davies, Claudia Shi, Thomas Krendl Gilbert, J ´er ´emy Scheurer, Javier Rando Ramirez, Rachel Freedman, Tomasz Korbak, David Lindner, Pedro Freire, et al. Open problems and fundamental limitations of reinforcement learning from human feedback. Transactions on Machine Learning Research , 2023. Daiwei Chen, Yi Chen, Aniket Rege, Zhi Wang, and Ramya Korlakai Vinayak. PAL: Sample-efficient personalized reward modeling for pluralistic alignment. In International Confer-ence on Learning Representations , 2025. Youngbin Choi, Seunghyuk Cho, Minjong Lee, MoonJeong Park, Yesong Ko, Jungseul Ok, and Dongwoo Kim. CoPL: Collaborative preference learning for personalizing LLMs. In 
+
+Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , 2025. Paul F. Christiano, Jan Leike, Tom B. Brown, Miljan Martic, Shane Legg, and Dario Amodei. Deep reinforcement learning from human preferences. In Advances in Neural Information Processing Systems , volume 30, 2017. Sunhao Dai, Ninglu Shao, Haiyuan Zhao, Weijie Yu, Zihua Si, Chen Xu, Zhongxiang Sun, Xiao Zhang, and Jun Xu. Uncovering ChatGPT’s capabilities in recommender systems. In 
+
+Proceedings of the 17th ACM conference on recommender systems , pp. 1126–1132, 2023. Sumanth Doddapaneni, Krishna Sayana, Ambarish Jash, Sukhdeep Sodhi, and Dima Kuzmin. User embedding model for personalized language prompting. In Proceed-ings of the 1st Workshop on Personalization of Generative AI Systems (PERSONALIZE 2024) ,pp. 124–131, 2024. Esin Durmus, Karina Nguyen, Thomas Liao, Nicholas Schiefer, Amanda Askell, Anton Bakhtin, Carol Chen, Zac Hatfield-Dodds, Danny Hernandez, Nicholas Joseph, et al. Towards measuring the representation of subjective global opinions in language models. In First Conference on Language Modeling , 2024. Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. ICLR ,2022. 10 Preprint. Under review. Gihoon Kim and Euntai Kim. Swap-guided preference learning for personalized reinforce-ment learning from human feedback. In The Fourteenth International Conference on Learning Representations , 2026. URL https://openreview.net/forum?id=nc28mSbyVG .Diederik P. Kingma and Max Welling. Auto-encoding variational bayes. In Yoshua Bengio and Yann LeCun (eds.), 2nd International Conference on Learning Representations, ICLR 2014, Banff, AB, Canada, April 14-16, 2014, Conference Track Proceedings , 2014. URL http: //arxiv.org/abs/1312.6114 .Hannah Rose Kirk, Bertie Vidgen, Paul R ¨ottger, and Scott A Hale. The benefits, risks and bounds of personalizing the alignment of large language models to individuals. Nature Machine Intelligence , 6(4):383–392, 2024a. Hannah Rose Kirk, Alexander Whitefield, Paul R ¨ottger, Andrew Bean, Katerina Margatina, Juan Ciro, Rafael Mosquera, Max Bartolo, Adina Williams, He He, Bertie Vidgen, and Scott A. Hale. The PRISM alignment project: What participatory, representative and individualised human feedback reveals about the alignment problem. In Advances in Neural Information Processing Systems , volume 37, 2024b. Xinyu Li, Ruiyang Zhou, Zachary C Lipton, and Liu Leqi. Personalized language modeling from personalized human feedback. arXiv preprint arXiv:2402.05133 , 2024. Zhiyu Li, Yanfang Chen, Xuan Zhang, and Xun Liang. BookGPT: A general framework for book recommendation empowered by large language model. Electronics , 12(22):4654, 2023. Jiongnan Liu, Yutao Zhu, Shuting Wang, Xiaochi Wei, Erxue Min, Yu Lu, Shuaiqiang Wang, Dawei Yin, and Zhicheng Dou. LLMs+ persona-plug = personalized LLMs. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 9373–9385, 2025. David JC MacKay. The evidence framework applied to classification networks. Neural computation , 4(5):720–736, 1992. Thomas P. Minka. Expectation propagation for approximate Bayesian inference. In Uncer-tainty in Artificial Intelligence , volume 17, pp. 362–369, 2001. Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Advances in neural information processing systems , 35:27730–27744, 2022. Sriyash Poddar, Yanming Wan, Hamish Ivison, Abhishek Gupta, and Natasha Jaques. Personalizing reinforcement learning from human feedback with variational preference learning. In Advances in Neural Information Processing Systems , volume 37, pp. 52516–52544, 2024. Qwen Team. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D. Manning, Stefano Ermon, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. In Advances in Neural Information Processing Systems , volume 36, 2024. Chris Richardson, Yao Zhang, Kellen Gillespie, Sudipta Kar, Arshdeep Singh, Zeynab Raeesy, Omar Zia Khan, and Abhinav Sethy. Integrating summarization and retrieval for enhanced personalization via large language models. arXiv preprint arXiv:2310.20081 ,2023. Michael J. Ryan, Omar Shaikh, Aditri Bhagirath, Daniel Frees, William Held, and Diyi Yang. SynthesizeMe! inducing persona-guided prompts for personalized reward models in LLMs. In Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Mohammad Taher Pilehvar (eds.), Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 8045–8078, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-251-0. doi: 10.18653/v1/2025.acl-long. 397. URL https://aclanthology.org/2025.acl-long.397/ .11 Preprint. Under review. Alireza Salemi, Sheshera Mysore, Michael Bendersky, and Hamed Zamani. LaMP: When large language models meet personalization. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 7370–7392, 2024. Jingyan Shen, Jiarui Yao, Rui Yang, Yifan Sun, Feng Luo, Rui Pan, Tong Zhang, and Han Zhao. MICRO: Mixture modeling and context-aware routing for personalized preference learning. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pp. 17458–17474, 2025. Idan Shenfeld, Felix Faltings, Pulkit Agrawal, and Aldo Pacchiano. Language model personalization via reward factorization. arXiv preprint arXiv:2503.06358 , 2025. Anand Siththaranjan, Cassidy Laidlaw, and Dylan Hadfield-Menell. Distributional prefer-ence learning: Understanding and accounting for hidden context in RLHF. In Proceedings of the Twelfth International Conference on Learning Representations , 2024. Taylor Sorensen, Jared Moore, Jillian Fisher, Mitchell L Gordon, Niloofar Mireshghallah, Christopher Michael Rytting, Andre Ye, Liwei Jiang, Ximing Lu, Nouha Dziri, et al. Position: A roadmap to pluralistic alignment. In International Conference on Machine Learning , pp. 46280–46302. PMLR, 2024. Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. Learning to summarize with human feedback. Advances in neural information processing systems , 33:3008–3021, 2020. Zhaoxuan Tan, Zheyuan Liu, and Meng Jiang. Personalized pieces: Efficient personalized large language models through collaborative efforts. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pp. 6459–6475, 2024a. Zhaoxuan Tan, Qingkai Zeng, Yijun Tian, Zheyuan Liu, Bing Yin, and Meng Jiang. De-mocratizing large language models via personalized parameter-efficient fine-tuning. In 
+
+Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pp. 6476–6491, 2024b. Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 , 2023. C´ edric Villani. Optimal Transport: Old and New . Springer, 2008. Jinghao Zhang, Yuting Liu, Wenjie Wang, Qiang Liu, Shu Wu, Liang Wang, and Tat-Seng Chua. Personalized text generation with contrastive activation steering. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 7128–7141, 2025. Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. Judging LLM-as-a-judge with MT-Bench and Chatbot Arena. Advances in neural information processing systems , 36: 46595–46623, 2023. Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. Fine-tuning language models from human prefer-ences. arXiv preprint arXiv:1909.08593 , 2019. Thomas P. Zollo, Andrew Wei Tung Siah, Naimeng Ye, Ang Li, and Hongseok Namkoong. PersonalLLM: Tailoring LLMs to individual preferences. arXiv preprint arXiv:2409.20296 ,2024. 12 Preprint. Under review. Table 3: Average dataset statistics per user. For seen users, Cu is sampled from training data per epoch, and the full training set serves as Cu at evaluation. For unseen users, only Cu is provided at inference to estimate user weights. Both settings are evaluated on held-out Du.
+
+Dataset Seen Unseen 
+
+#Users Training Evaluation #Users Evaluation 
+
+|C u| |D u| |C u| |D u| |C u| |D u|
+
+PersonalLLM 1,000 9.0 36.0 45.0 45.0 1,000 9.0 9.0 TL;DR ( n=100) 20 50.0 50.0 100.0 1,449.8 20 50.0 1,146.4 TL;DR ( n=150) 20 50.0 100.0 150.0 1,449.8 20 50.0 1,146.4 PRISM 623 3.0 6.1 9.1 8.6 623 9.6 9.1 
+
+## A Experimental Setup 
+
+A.1 Datasets 
+
+Following state-of-the-art reward factorization work (Chen et al., 2025; Bose et al., 2025; Shenfeld et al., 2025), we evaluate on three benchmarks spanning synthetic and real-world personalized preference data. Detailed statistics are provided in Table 3. • PersonalLLM (Zollo et al., 2024) provides 9,402 prompts, each with 8 candidate responses scored by 10 reward models (i.e., r ∈ R10 ). To construct personalized preference pairs, we synthesize a user preference vector w ∼ Dirichlet (α) ∈ R10 and compute a composite score s = w⊤r. For each prompt, we form a preference pair from the highest- and lowest-scoring responses. We synthesize 2,000 users, equally split into seen and unseen. We evaluate across three diversity levels, α ∈ { 0.001, 0.01, 0.1 }, where a smaller α produces more heterogeneous preferences, making personalization more critical. • TL;DR (Stiennon et al., 2020) contains pairwise human preference data over Reddit post summaries, organized by individual annotators. We retain annotators with at least 50 annotations and randomly select 40, partitioning them into 20 seen and 20 unseen users. Seen users have n ∈ { 100, 150 } triplets for training. • PRISM (Kirk et al., 2024b) collects multi-turn conversations between crowdworkers and LLMs, where annotators score multiple model responses per interaction. We use the demographically balanced subset (623 seen / 623 unseen users) and construct pairwise preference data from each interaction using the highest- and lowest-scored responses. 
+
+A.2 Baselines 
+
+We compare against state-of-the-art personalized reward modeling methods. To ensure a fair comparison, baselines include Cu in the training set for seen users. • Ref (Qwen Team, 2025) is a reference baseline that uses the pretrained LLM’s per-token log-probability as a reward signal (i.e., r(x, y) = 1 
+
+> |y|
+
+∑i log P(yi | x, y<i )), without any training or personalization. • BT (Stiennon et al., 2020; Ouyang et al., 2022) is a standard Bradley–Terry (Bradley & Terry, 1952) reward model fine-tuned on all users’ preference data jointly, without any user-specific personalization. • VPL (Poddar et al., 2024) encodes each user’s preference history into a variational latent variable, which conditions the reward prediction. • PAL (Chen et al., 2025) represents each user as an ideal point in a shared preference latent space to compute personalized rewards. • LoRe (Bose et al., 2025) models individual user preferences as weighted combinations of shared basis reward functions. • PReF (Shenfeld et al., 2025) represents user-specific rewards as a linear combination of basis reward functions with SVD initialization and L2 regularization. 13 Preprint. Under review. Table 4: Best hyperparameter configurations for VRF across all datasets.                                           
+
+> Dataset Epochs Batch size Learning rate Dropout Weight decay K
+> PersonalLLM ( α=0.001) 582e-5 0.0 0.01 8PersonalLLM ( α=0.01) 582e-5 0.0 0.001 8PersonalLLM ( α=0.1) 582e-5 0.0 0.01 8TL;DR ( n=100) 386e-5 0.1 0.001 8TL;DR ( n=150) 386e-5 0.1 0.001 8PRISM 586e-5 0.0 0.01 12
+
+Table 5: Effect of backbone scale on accuracy and efficiency for the PRISM dataset.                          
+
+> Backbone Seen Unseen Overall Training (min) Inference (min)
+> 0.6B 61.31 ±0.57 60.58 ±0.53 60.94 ±0.18 80.8 20.1
+> 1.7B 61.28 ±0.32 60.44 ±0.27 60.86 ±0.21 131.4 33.6 4B 61.72 ±0.51 61.31 ±0.49 61.51 ±0.43 288.1 74.6 8B 62.14 ±0.46 61.15 ±0.46 61.64 ±0.32 446.8 117.3
+
+A.3 Implementation Details 
+
+All experiments are conducted on NVIDIA A40 GPUs and AMD EPYC 7763 CPUs. We optimize with AdamW and cosine learning rate scheduling. We fix the latent dimension 
+
+D=64, temperature hyperparameters τd=τm=1.0, and regularization strength β=0.001 across all datasets, as performance is insensitive to these values. We perform grid search over learning rate ∈ { 2 e−5, 4 e−5, 6 e−5}, dropout ∈ { 0.0, 0.1 }, weight decay ∈ { 0.001, 0.01 },
+
+K ∈ { 4, 8, 12, 16, 20 }. The best hyperparameters per dataset are reported in Table 4. 
+
+A.4 Inference-Time Alignment Setup 
+
+Figure 3c shows the inference-time alignment results via best-of-N sampling on PRISM unseen users. For each user’s test query, we generate N=8 candidate responses using GPT-5 mini as the policy model, each conditioned on a distinct style inferred from the preference basis label (see Figure 4). Following the LLM-as-a-judge framework (Zheng et al., 2023), GPT-5.1 evaluates each method’s selected response against BT’s in a pairwise manner, with the user’s profile (demographics, preferences, and values) as context and randomized response ordering to mitigate position bias. We report the ∆ Win Rate, the win rate over BT normalized by the global minimum. Full prompt templates are provided in Appendix D.2. 
+
+## B Additional Experiments 
+
+B.1 Backbone Scaling 
+
+Table 5 examines the effect of backbone scale by varying Qwen3 from 0.6B to 8B parameters with LoRA (Hu et al., 2022) fine-tuning ( r=16, α=32) under identical hyperparameters. While larger backbones consistently yield higher accuracy, the improvement comes at a significant efficiency cost (5.5× training time and 5.8× inference time for +0.7% accuracy). This accuracy–efficiency trade-off suggests that smaller backbones are a practical choice for VRF, as shared preference bases and uncertainty-aware distributional matching compensate for reduced backbone capacity. 
+
+B.2 Hyperparameter Sensitivity Number of preference bases ( K). Figure 5 (left) shows the effect of varying K ∈{4, 8, 12, 16, 20 } on three datasets. Performance peaks at K=8 on PersonalLLM and TL;DR and at K=12 on PRISM, with marginal declines beyond. These results suggest that too many bases may introduce redundancy or optimization difficulty. In other words, a small number of shared preference bases suffices to capture population-level preference diversity, making VRF scalable as K remains fixed regardless of user population size. 14 Preprint. Under review. 
+
+Figure 5: Hyperparameter sensitivity analysis on three datasets. 
+
+Regularization strength (β). Figure 5 (right) shows the effect of varying β ∈{0.0, 0.001, 0.01, 0.1 }. Across all three datasets, performance peaks at β=0.001 and de-grades at both extremes. Without regularization ( β=0.0), user distributions lack structural guidance from the mixture-of-Gaussians prior, scattering arbitrarily in the latent space. Con-versely, excessive regularization ( β=0.1) over-concentrates user distributions toward the prior, potentially suppressing user-specific information. We adopt β=0.001 as the default. 
+
+B.3 Few-shot, Uncertainty and Efficiency Analysis on Additional Datasets 
+
+Figure 6 extends the few-shot adaptation, uncertainty robustness and adaptation efficiency analysis of Figure 3 to PersonalLLM ( α=0.001) and TL;DR ( n=150). VRF achieves the highest accuracy across few-shot settings and all uncertainty groups while maintaining near-zero adaptation overhead, confirming that the findings on PRISM generalize across datasets. Notably, in few-shot adaptation (Figure 6a), LoRe and PReF show increasing accuracy as 
+
+|C u| grows, whereas VRF achieves the highest accuracy even with |C u|=1, highlighting that the variational user encoder effectively infers the preferences of unseen users. 15 Preprint. Under review. 
+
+(a) Few-shot adaptation (Varying |C u|)Low Mid High 
+
+User Uncertainty Group 
+
+> 78%
+> 84%
+> 90%
+> 96%
+> Accuracy (%)
+
+PersonalLLM ( =0.001) 
+
+> Ours
+> VPL
+> PAL
+> LoRe
+> PReF
+
+Low Mid High 
+
+User Uncertainty Group 
+
+> 55%
+> 58%
+> 61%
+> 64%
+> Accuracy (%)
+
+TL;DR (n=150) 
+
+> Ours
+> VPL
+> PAL
+> LoRe
+> PReF
+
+(b) Uncertainty robustness Backbone Adapt  
+
+> 0
+> 100
+> 200
+> 300
+> Time (ms)
+> 0.6 0.2
+
+PersonalLLM ( =0.001)   
+
+> Ours
+> VPL
+> PAL
+> LoRe
+> PRef Backbone Adapt
+> 0
+> 500
+> 1000
+> 1500
+> Time (ms)
+> 0.6 0.2
+
+TL;DR (n=150) 
+
+> Ours
+> VPL
+> PAL
+> LoRe
+> PRef
+
+(c) Per-user adaptation time (ms) 
+
+Figure 6: In-depth comparison on PersonalLLM ( α=0.001) and TL;DR ( n=150) unseen users. 
+
+B.4 Coverage and Generalization of Preference Bases p1 
+
+> 5.0%
+
+p2
+
+> 15.6%
+
+p311.1% 
+
+p4
+
+> 22.6%
+
+p5
+
+> 10.3%
+
+p6
+
+> 6.9%
+
+p7 12.8% 
+
+p8
+
+> 15.7%
+
+Seen Users 
+
+p1 
+
+> 5.9%
+
+p2
+
+> 15.4%
+
+p3
+
+> 15.2%
+
+p4
+
+> 17.5%
+
+p5
+
+> 9.6%
+
+p6
+
+> 7.1%
+
+p7 12.5% 
+
+p8
+
+> 16.7%
+
+Unseen Users 
+
+Figure 7: Distribution of dominant preference bases for seen and unseen users on PRISM. Figure 7 visualizes the distribu-tion of dominant preference bases across seen and unseen users on PRISM, derived from the learned preference space in Figure 4. Two observations emerge: (1) users are spread across all K preference bases, suggesting that the bases ef-fectively capture diverse user pref-erences. (2) The two distributions exhibit similar trends, indicating that the learned preference bases generalize to unseen users. 16 Preprint. Under review. 
+
+## C Proofs and Derivations 
+
+C.1 Concavity of σ2 
+
+> ∆
+
+with Respect to w u
+
+Proposition 1. σ2 
+
+> ∆
+
+= ∑Kk=1 wu,k(∆ϕk − μ∆)2 is concave with respect to wu.Proof. The Hessian of σ2 
+
+> ∆
+
+with respect to wu is: 
+
+∇2 
+
+> wu
+
+σ2 
+
+> ∆
+
+= −2∆ϕ∆ϕ⊤. (10) For any vector v ∈ RK,
+
+v⊤∇2 
+
+> wu
+
+σ2 
+
+> ∆
+
+v = −2v⊤(∆ϕ∆ϕ⊤)v = −2(v⊤∆ϕ)2 ≤ 0, (11) so the Hessian is negative semi-definite and σ2 
+
+> ∆
+
+is concave. At the vertices of the simplex (one-hot wu), σ2 
+
+> ∆
+
+reduces to zero and increases as wu becomes more diffuse. 
+
+C.2 Proof of Gradient Attenuation in LVBT 
+
+Proposition 2. As σ2 
+
+> ∆
+
+→ ∞, the gradients of LVBT with respect to all parameters ϕk and wu,k
+
+vanish, regardless of the sign of μ∆.Proof. Let s = σ2
+
+> ∆
+
+, c = π 
+
+> 8
+
+, and z = μ∆√1+cs . We first compute the partial derivatives of 
+
+LVBT = − log σ(z) with respect to the intermediate variables μ∆ and s:
+
+∂LVBT 
+
+∂μ ∆
+
+= −(1 − σ(z)) · 1
+
+√1 + cs , (12) 
+
+∂LVBT 
+
+∂s = μ∆c(1 − σ(z)) 
+
+2(1 + cs )3/2 . (13) As s → ∞, 1√1+cs → 0 and 1 
+
+> (1+cs )3/2
+
+→ 0. Since (1 − σ(z)) is bounded by [0, 1 ], both ∂LVBT 
+
+> ∂μ ∆
+
+and ∂LVBT  
+
+> ∂s
+
+converge to zero. 
+
+Gradient with respect to ϕk. By chain rule: 
+
+∂LVBT 
+
+∂ϕ k
+
+= ∂LVBT 
+
+∂μ ∆
+
+· wu,k + ∂LVBT 
+
+∂s · ∂s
+
+∂ϕ k
+
+. (14) 
+
+Gradient with respect to wu,k. By chain rule: 
+
+∂LVBT 
+
+∂wu,k
+
+= ∂LVBT 
+
+∂μ ∆
+
+· ∆ϕk + ∂LVBT 
+
+∂s · (∆ϕk − μ∆)2. (15) Since all terms in Eqs. (14) and (15) involve the vanishing partial derivatives ∂LVBT  
+
+> ∂μ ∆
+
+and ∂LVBT 
+
+> ∂s
+
+multiplied by bounded coefficients, it follows that ∂LVBT  
+
+> ∂ϕ k
+
+→ 0 and ∂LVBT  
+
+> ∂wu,k
+
+→ 0 as s → ∞.
+
+C.3 Monte Carlo Estimation of LREG 
+
+Since DKL (qu∥p(z)) against a MoG prior is intractable in closed form, we decompose it as: 
+
+DKL (qu∥p(z)) = −H (qu) − Equ [log p(z)] , (16) where H(qu) is the entropy of qu. Each term is then estimated separately: 17 Preprint. Under review. 
+
+Entropy term. The entropy of a diagonal Gaussian qu = N (μu, diag (σ2
+
+> u
+
+)) is given by: 
+
+H(qu) = 12
+
+> D
+
+# ∑
+
+> d=1
+
+
+
+1 + log (2π) + log σ2
+
+> u,d
+
+
+
+. (17) 
+
+Cross-entropy term. Equ [log p(z)] is estimated via the reparameterization trick (Kingma & Welling, 2014) with S=5 Monte Carlo samples: 
+
+Equ [log p(z)] ≈ 1
+
+S
+
+> S
+
+# ∑
+
+> s=1
+
+log p(z(s)), z(s) = μu + σu ⊙ ϵ(s), ϵ(s) ∼ N (0, I), (18) where z(s) is a reparameterized sample that allows gradients to flow back to μu and σu. The MoG log-probability is computed as: log p(z) = log 1
+
+K
+
+> K
+
+# ∑
+
+> k=1
+
+N (z; μk, diag (σ2 
+
+> k
+
+)) = logsumexp k
+
+
+
+log N (z; μk, σ2 
+
+> k
+
+)
+
+
+
+− log K, (19) with logsumexp applied for numerical stability. Thus, combining both terms yields a differ-entiable estimate of DKL (qu ∥ p(z)) that can be optimized end-to-end via backpropagation. 
+
+## D Prompts 
+
+D.1 Preference Space Analysis 
+
+To interpret the learned preference space in Figure 4, we label each preference basis and classify user triplets using Claude Sonnet 4.6. 
+
+Preference Basis Labeling. For each preference basis, we sample 10 triplets from the top-5 nearest users and use the following prompt:  
+
+> The following are 10 triplets from users with similar preferences. Describe what drives their preference for the chosen over the rejected responses. [1]
+
+(x, y+, y−) 
+
+> . . . [10]
+
+(x, y+, y−)
+
+The resulting labels (e.g., conversational & natural , direct & structured ) are reported in Figure 4. 
+
+Triplet Classification. Using the K labels, each triplet is classified by prompting:  
+
+> Given a preference triplet
+
+(x, y+, y−), which of the following preference basis labels best explains the user’s choice? [1] Conversational & Natural [2] Thorough & Genuine . . . [8] Empathetic & Principled Answer with only the number. 
+
+D.2 Inference-Time Alignment 
+
+In Figure 3c, we evaluate whether the learned personalized rewards can guide response selection at inference time via best-of-N sampling. 18 Preprint. Under review. 
+
+Response Generation. We generate N=8 candidate responses using GPT-5 mini as a policy model, each conditioned on a distinct preference basis label as a response style.    
+
+> You are a helpful AI assistant. Generate a {style }response to the following query: {query }
+
+LLM-as-a-Judge. We employ GPT-5.1 as an evaluator, comparing each method’s selected response against BT’s, with the user’s profile (e.g., demographics, LLM preferences, personal values) to guide evaluation. Response order is randomized to mitigate position bias.     
+
+> You are an impartial judge. Given the user’s profile, the query, and the two responses, which is more appropriate for this user? [User Profile] {user profile }
+> [Query] {query }
+> [Response A] {response a }
+> [Response B] {response b }
+> Reply with ONLY “A” or “B”.
+
+19

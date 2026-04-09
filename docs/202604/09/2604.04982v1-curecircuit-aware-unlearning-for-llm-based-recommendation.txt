@@ -1,0 +1,613 @@
+Title: CURE:Circuit-Aware Unlearning for LLM-based Recommendation
+
+URL Source: https://arxiv.org/pdf/2604.04982v1
+
+Published Time: Wed, 08 Apr 2026 00:06:21 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# CURE:Circuit-Aware Unlearning for LLM-based Recommendation 
+
+# Ziheng Chen 
+
+albertchen1993pokemon@gmail.com Walmart Global Tech Sunnyvale, CA, USA 
+
+# Jiali Cheng 
+
+jiali_cheng@uml.edu University of Massachusetts Lowell Lowell, MA, USA 
+
+# Zezhong Fan 
+
+zfan2274@gmail.com Walmart Global Tech Sunnyvale, CA, USA 
+
+# Hadi Amiri 
+
+hadi_amiri@uml.edu University of Massachusetts Lowell Lowell, MA, USA 
+
+# Yunzhi Yao 
+
+yyztodd@zju.edu.cn Zhejiang University Hangzhou, China 
+
+# Xiangguo Sun 
+
+xiangguosun@cuhk.edu.hk The Chinese University of Hong Kong Hong Kong, China 
+
+# Yang Zhang 
+
+zhangy@nus.edu.sg National University of Singapore Signapore 
+
+## Abstract 
+
+Recent advances in large language models (LLMs) have opened new opportunities for recommender systems by enabling rich se-mantic understanding and reasoning about user interests and item attributes. However, as privacy regulations tighten, incorporating user data into LLM-based recommendation (LLMRec) introduces significant privacy risks, making unlearning algorithms increas-ingly crucial for practical deployment. Despite growing interest in LLMRec unlearning, most existing approaches formulate un-learning as a weighted combination of forgetting and retaining objectives while updating model parameters in a uniform manner. Such formulations inevitably induce gradient conflicts between the two objectives, leading to unstable optimization and resulting in either ineffective unlearning or severe degradation of model util-ity. Moreover, the unlearning procedure remains largely black-box, undermining its transparency and trustworthiness. To tackle these challenges, we propose CURE, a circuit-aware unlearning framework that disentangles model components into functionally distinct subsets and selectively updates them. Here, a circuit refers to a computational subgraph that is causally re-sponsible for task-specific behaviors. Specifically, we extract the core circuits underlying item recommendation and analyze how individual modules within these circuits contribute to the forget and retain objectives. Based on this analysis, these modules are cat-egorized into forget-specific , retain-specific , and task-shared groups, each subject to function-specific update rules to mitigate gradient conflicts during unlearning. Experiments on real-world datasets show that our approach achieves more effective unlearning than existing baselines. 
+
+## 1 Introduction 
+
+Large language models (LLMs) have recently shown remarkable capability in understanding and generating human-like text, which has spurred growing interest in leveraging them as recommender systems (LLMRec). By exploiting powerful reasoning abilities and rich open-world knowledge, LLMRecs can better model user prefer-ences and item semantics through instruction tuning on historical interactions. However, directly incorporating user behavior data, such as purchase records, raises critical ethical and privacy con-cerns, including information leakage and the risk of malicious data injection. To address these challenges, recommendation unlearn-ing [ 17 , 29 ] has emerged as a promising paradigm that aims to remove the influence of sensitive data from pre-trained LLMRecs, while preserving their overall utility. Existing methods for LLMRec unlearning can be categorized into two types: approximate unlearning and exact unlearning. Ex-act unlearning relies on retraining affected sub-models [ 1], while approximate unlearning typically adopts a teacher–student frame-work to balance data removal and model utility [ 6, 9 , 13 ]. However, most approximate unlearning methods formulate unlearning as a weighted sum of the forget and retain losses, using a static factor to balance the two objectives [ 7 , 13 , 14 ]. Despite its simplicity, this formulation overlooks the fact that optimizing one objective can substantially impede the other. From the optimization point of view, a key cause of this issue lies in conflicting gradients [34 , 35 ], where the gradients of the forget and retain losses at the neuron level point in opposing directions. As a result, updates intended to improve one objective may inadvertently harm the other, leading to either insufficient forgetting or severe degradation of model utility Additionally, existing LLMRec unlearning methods update model parameters in a largely black-box manner, without explicit knowl-edge of which internal modules (e.g., attention heads and MLPs) encode the information to be forgotten [ 4, 5]. As a result, it is unclear whether modules containing critical information are effectively up-dated. This lack of transparency hinders the interpretability of the unlearning process and undermines its trustworthiness. Recent advances in mechanistic interpretability shed light on the internal mechanisms of LLMs by identifying sparse computational subnetworks (“circuits”) responsible for specific model behaviors, offering a reliable way to understand the above challenges at their root. A key finding is that knowledge in LLM is dynamically acti-vated through specific computational circuits, each specializing in different functional roles and jointly contributing to the final deci-sion [ 10 , 12 , 27 ]. Consequently, gradient conflicts arise when the circuits responsible for the forget and retain sets become entangled, particularly when the shared modules are driven toward conflicting 
+
+> arXiv:2604.04982v1 [cs.IR] 4 Apr 2026 Ziheng Chen, Jiali Cheng, Zezhong Fan, Hadi Amiri, Yunzhi Yao, Xiangguo Sun, and Yang Zhang
+
+optimization directions under the two objectives. This insight sug-gests a transparent solution: disentangling the conflicting circuits and optimizing them separately for unlearning. Inspired by this insight, we propose CURE, a circuit-aware frame-work for LLMRec unlearning. Instead of globally optimizing compet-ing objectives, CURE decouples unlearning into two stages: crucial circuit extraction and task-specific parameter updating . In the first stage, CURE employs a gradient-based analysis to localize internal computational pathways that are most responsible for the forget and retain sets. To precisely identify these circuits under long in-put prompts encoding user interaction histories, we leverage the user–item graph to construct slight input perturbations and detect influential modules through contrastive activation analysis. In the second stage, modules along the identified circuits are categorized according to their functional roles and selectively updated, enabling semantically aware control over parameters while effectively miti-gating gradient conflicts during unlearning. We also demonstrate the effectiveness of CURE through a theoretical analysis. Overall, our key contributions are as follows: 
+
+• Motivation: We introduce a circuit-aware perspective for understanding gradient conflicts in LLMRec unlearning, which leads to a transparent unlearning approach via dis-entangling conflicting circuits. 
+
+• Method: We propose a novel circuit-aware framework for LLMRec unlearning that first identifies influential circuits for the forget and retain sets, and then selectively updates the associated modules according to their functional roles. We further provide a theoretical analysis to guarantee its validity. Furthermore, the proposed framework is model-agnostic and can be readily applied to a wide range of LLM backbones for recommendation unlearning. 
+
+• Performance: CURE achieves 18% and 6% improvements over the baseline in unlearning efficiency and model utility, respectively. Moreover, it is 3.5× faster than the baseline. 
+
+## 2 Preliminary 2.1 LLM as Recommender 
+
+We consider the standard collaborative filtering recommendation task. Let U = {𝑢 1, . . . , 𝑢 𝑚 } be a set of 𝑚 users, and I = {𝑖 1, . . . , 𝑖 𝑛 }
+
+be a set of 𝑛 items. The observed user–item interactions are repre-sented by a binary interaction matrix 𝐴 ∈ 0, 1𝑚 ×𝑛 , where 𝐴 𝑢,𝑖 = 1
+
+indicates that user 𝑢 has interacted with item 𝑖 , and 𝐴 𝑢,𝑖 = 0 oth-erwise. We further model the interaction data as user-item graph 
+
+G = (V , E) , where V = U ∪ I and E = {( 𝑢, 𝑖 ) | 𝐴 𝑢,𝑖 = 1} denotes the set of edges corresponding to observed interactions. Based on the user-item graph G, LLMRec, denoted as M𝜃 , refor-mulates collaborative filtering as a prompt-based prediction task. Given a user 𝑢 ∈ U with historical interactions H𝑢 = {𝑖 1, 𝑖 2, · · · , 𝑖 | H 𝑢 | }
+
+and a target item 𝑖 𝑡 ∈ I , we encode them into textual instructions 
+
+x𝑢 using predefined hard prompt templates. Conditioned on x𝑢 ,
+
+M𝜃 predicts whether 𝑢 will interact with 𝑖 𝑡 , which is formulated as a binary classification task with an answer 𝑦 𝑢 ∈ { "YES" , "No" }(As shown in Figure 2 and 4). In order to tailor LLM to recommendation scenarios, a conditional language modeling objective is employed by minimizing the negative log-likelihood of generating 𝑦 𝑢 condi-tioned on input x𝑢 . Formally: 
+
+min L𝑝𝑟𝑒𝑑 = −∑︁   
+
+> (x𝑢 ,𝑦 𝑢 ) ∈ D
+
+log (M 𝜃 (𝑦 𝑢,𝑡 |x𝑢 , 𝑦 𝑢, <𝑡 )) (1) Where 𝑦 𝑢,𝑡 is the t-th token of 𝑦 𝑢 , and 𝑦 𝑢, <𝑡 is the token before 𝑦 𝑢,𝑡 .
+
+M𝜃 (𝑦 𝑢,𝑡 |x𝑢 , 𝑦 𝑢, <𝑡 ) signifies the predictive probability of 𝑦 𝑢,𝑡 .
+
+## 2.2 LLMRec Unlearning 
+
+LLMRec unlearning involves removing certain user-item interac-tions from a trained model M𝜃 without full retraining. Given a dataset D and a subset D𝑓 to be removed, we denote the retained dataset as D𝑟 , where D𝑟 = D\D 𝑓 , with the conditions D𝑓 ∩D 𝑟 = ∅.Requests for LLMRec unlearning can be broadly categorized into two types: (i) user/item-wise deletion , , which removes all inter-actions associated with a given user or item, and (ii) interaction deletion , which removes specific interactions. The objective is to obtain an unlearned model M𝑢𝑛 that elim-inates the influence of D𝑓 while preserving performance on D𝑟 .As retraining on D𝑟 to obtain the optimal model M𝜃 ∗ is often time-consuming, our goal is to approximate M𝜃 ∗ by updating the original model M𝜃 through the unlearning process as follows: 
+
+M𝜃 
+
+> D𝑓
+
+−−−→ M 𝑢𝑛 ≈ M 𝜃 ∗ .
+
+Most existing methods formulate the LLMRec unlearning loss L
+
+as a weighted sum of a forget loss LF and a retain loss LR. More formally, the task of unlearning can be modeled in the following manner: 
+
+M𝑢𝑛 = arg min 
+
+> M
+
+∑︁ (x𝑢 ,𝑦 𝑢 ) ∈ D 𝑓 
+
+𝜔 𝑓 LF (𝑦 𝑢 |x𝑢 ; M) + ∑︁   
+
+> (x𝑢 ,𝑦 𝑢 ) ∈ D 𝑟
+
+𝜔 𝑟 LR (𝑦 𝑢 |x𝑢 ; M) 
+
+(2) In addition, 𝜔 𝑟 + 𝜔 𝑓 = 1 serves as a scaling factor to balance forget and retain. The specific forms of LF and LR are introduced in section 4. Note that user/item-wise deletion can be interpreted as removing all interactions incident involving the corresponding user or item. 
+
+## 3 Motivation 
+
+Despite simplicity, Eq. 2 fails to account for scenarios in which the gradients of the forget and retain losses move in opposing directions during gradient descent optimization [ 25 ], leading to either insufficient forgetting on D𝑓 or performance degradation on D𝑟 .To illustrate this issue, we analyze the gradient structure of the unlearning objective. Specifically, let 𝑔 = ∇L( 𝜃 ) denote the gradient of the weighted unlearning loss with respect to the model parameters 𝜃 , while 𝑔 𝑓 = ∇L 𝐹 (𝜃 ) and 𝑔 𝑟 = ∇L 𝑅 (𝜃 ) denote the gradient of forget loss and retain losses respectively. A small change of 𝜃 in the direction of negative 𝑔 is 𝜃 ← 𝜃 − 𝛼𝑔 with a sufficiently small step size 𝛼 . The effect of this change on the performance of two objective can be measured by: 
+
+ΔL = 𝜔 𝑓 ΔL𝐹 + 𝜔 𝑟 ΔL𝑅 
+
+= 𝜔 𝑓 L𝐹 (𝜃 − 𝛼 g) − 𝜔 𝑓 L𝐹 (𝜃 ) + 𝜔 𝑟 L𝑅 (𝜃 − 𝛼 g) − 𝜔 𝑟 L𝑅 (𝜃 )
+
+= −𝛼𝜔 𝑓 (g · g𝑓 ) − 𝛼𝜔 𝑟 (g · g𝑟 ) + 𝑜 (𝛼 ),
+
+(3) CURE:Circuit-Aware Unlearning for LLM-based Recommendation 0 200 400 600 800 
+
+> Step
+> 2.5
+> 2.0
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Normalized Alignment
+> Gradient Conflict In LLMRec Unlearning
+> Af-E2URec
+> Ar-E2URec
+> Af-CURE
+> Ar-CURE
+
+Figure 1: Normalized Alignment Values of forget and retain losses on MovieLens-1M using Llama-2 (7B) 
+
+where the last equality is obtained by Taylor approximation. No-tably, the update procedure can impede effective forgetting when 
+
+g · g𝑓 < 0, since it increases the forget loss. Similarly, it can degrade model utility when g · g𝑟 < 0.Based on the above analysis, we adopt a normalized alignment metric [ 25 ] and examine the evolution of 𝐴 𝑟 (𝜃 ) and 𝐴 𝑓 (𝜃 ) through-out the unlearning procedure in Figure 1, where 
+
+𝐴 𝑓 (𝜃 ) = g · g𝑓 
+
+|| g𝑓 || 2 , 𝐴 𝑟 (𝜃 ) = g · g𝑟 
+
+|| g𝑟 || 2 (4) We observe that the descent direction switches frequently dur-ing the early training steps of E2URec, a representative LLMRec unlearning baseline, reflecting entangled optimization signals and the presence of gradient conflicts. Although [ 25 ] proposes a hi-erarchical unlearning framework that prioritizes forgetting over retention, such a trade-off is suboptimal for LLMRec unlearning, where both objectives are essential. In contrast, CURE exhibits a more stable optimization behavior, with gradient conflicts largely mitigated. 
+
+## 4 Method 
+
+We introduce CURE, a two-stage circuit-aware framework for LLM-Rec unlearning. The first stage focuses on identifying key compu-tational circuits in the original model . Leveraging the structural information encoded in M𝜃 , we propose two alternatives methods: 
+
+Activation Intervention , which efficiently yields a coarse circuit es-timate, and Activation Patching , a contrastive approach for more precise localization. In the second stage, we selectively update cir-cuit components according to their functional roles in forgetting and utility preservation, thereby mitigating gradient conflicts. 
+
+## 4.1 Locating Circuits in LLMRec 
+
+To find circuits for LLMRec, we must represent the internals of the model as a computational directed acyclic graph 𝐺 𝐿𝑀 in which information flows from the input tokens to the output logits through intermediate neuron activations. Following [ 18 ], we define attention heads and MLP modules as nodes, with directed edges specifying how the output of one node is passed to another. As shown in Figure 2, the input of a node 𝑣 1 is defined as the sum of the outputs of all nodes with edges pointing to 𝑣 1, and each edge 𝑒 = 𝑣 1 → 𝑣 2
+
+represents a direct computational dependency. A circuit is defined as a subgraph that connects the input tokens to the output logits. Given a sample (x𝑢 , 𝑦 𝑢 ) ∈ D , our goal is to extract the influential circuits that are faithful to model prediction. Directly evaluating the importance of individual nodes is often insufficient, as it ignores how information is propagated and combined across modules. In-stead, we assign a strength score to each edge 𝑒 = 𝑣 1 → 𝑣 2 that quantifies its contribution to driving the prompt x𝑢 toward the target outcomes 𝑦 𝑢 . Specifically, we use the change in output prob-ability Δ(x𝑢 ) = M𝜃 (𝑌𝑒𝑠 |x𝑢 ) − M 𝜃 (𝑁𝑜 |x𝑢 ) to measure variations in the model’s prediction. Following [ 27 ], for an edge 𝑒 ∈ 𝐺 𝐿𝑀 , we evaluate its impact to metrics Δ by intervening on the activation input transmitted through this edge: 
+
+𝐼 (𝑒 ) = |Δ(𝑥 𝑢 |do (𝑒 )) − Δ(𝑥 𝑢 )| (5) We adopt the do-notation from causal inference to emphasize that this intervention modifies the information flow along a specific edge. Although existing methods such as ACDC [ 12 , 16 ]can be used to evaluate causal impact, they are computationally inefficient. Moreover, user–item relationships naturally form a graph structure, which can be further exploited to improve both efficiency and localization precision. Based on this observation, we propose two methods. 
+
+4.1.1 Activation Intervention. To quantify 𝐼 (𝑒 ) in Eq. 5, we directly intervene on the information flow along edge 𝑒 = 𝑣 1 → 𝑣 2. Con-cretely, we mask this edge by setting the message passed from 
+
+𝑣 1 to 𝑣 2, denoted as 𝑚 𝑣 1→𝑣 2 = 0, to zero, while keeping all other activations unchanged. However, modern LLMs involve an enor-mous number of edges to evaluate, making exact interventions time-consuming. Hence, we approximate the resulting change in the metric by linearly expanding Δ with respect to the input activa-tion using a first-order Taylor expansion, which yields an efficient estimate of the marginal contribution of a single edge 𝑒 = 𝑣 1 → 𝑣 2
+
+in the computational graph 𝐺 𝐿𝑀 
+
+Δ(𝑥 𝑢 | do (𝑚 𝑣 1→𝑣 2 = 0)) ≈ Δ(𝑥 𝑢 ) − 𝑚 ⊤
+
+> 𝑣 1→𝑣 2
+
+𝜕 Δ(𝑥 𝑢 )
+
+𝜕𝑣 2
+
+. (6) Here, with a slight abuse of notation, we use 𝑣 2 to be the activation input of this node. The term 𝑚 ⊤  
+
+> 𝑣 1→𝑣 2
+> 𝜕 Δ(𝑥 𝑢 )
+> 𝜕𝑣 2
+
+captures the first-order effect of erasing the message of 𝑒 , where the gradient is evaluated at the original (non-intervened) forward pass. According to Eq. 6, com-puting 𝐼 (𝑒 ) for all edges only requires one forward pass to record edge messages and one backward pass to obtain their gradients. 
+
+4.1.2 Activation Patching. Although effective, the Activation Inter-vention tends to over-select modules as the input x𝑢 grows longer, since it captures the contributions of all tokens to 𝑦 𝑢 in a global manner. To localize the responsible circuits, we therefore lever-age activation patching [ 27 , 37 ] to measure module importance through contrasting activations that lead to different prediction outcomes. Following [ 27 ], we construct a corrupt sample x∗ 
+
+> 𝑢
+
+that shares the same task schema as x𝑢 but elicits a distinct output from 
+
+M𝜃 . The importance of an edge is evaluated by replacing its acti-vation 𝑚 𝑣 1→𝑣 2 induced by x𝑢 with that 𝑚 ∗ 
+
+> 𝑣 1→𝑣 2
+
+from x∗ 
+
+> 𝑢
+
+during the forward pass, while keeping all other activations unchanged. A sig-nificant change in the output metric Δ indicates that the edge plays a critical role in driving the prediction. Formally, to quantify Eq. 5, Ziheng Chen, Jiali Cheng, Zezhong Fan, Hadi Amiri, Yunzhi Yao, Xiangguo Sun, and Yang Zhang 
+
+Figure 2: Schematics of CURE: (i) Locating Circuits in LLMREC; (ii)Selective Circuits Updating 
+
+we linearly approximate the importance score 𝐼 (𝑒 ) by expanding Δ
+
+as a Taylor series with respect to the edge activation: 
+
+Δ(x𝑢 | do (𝑚 𝑣 1→𝑣 2 = 𝑚 ∗ 
+
+> 𝑣 1→𝑣 2
+
+)) ≈ Δ(𝑥 𝑢 )+( 𝑚 ∗ 
+
+> 𝑣 1→𝑣 2
+
+−𝑚 𝑣 1→𝑣 2 )⊤ 𝜕 Δ(𝑥 𝑢 )
+
+𝜕𝑣 2
+
+.
+
+(7) The second term on the right-hand side serves as an estimate of 𝐼 (𝑒 ).However, unlike circuit detection in reasoning tasks, constructing the corrupt sample x∗ 
+
+> 𝑢
+
+in LLMRec is non-trivial. Two challenges arise: 1) The input x𝑢 can be substantially longer, as it summarizes a user’s historical interactions. 2) Prior work [ 16 , 27 ] requires x𝑢 
+
+and its corrupt counterpart x∗ 
+
+> 𝑢
+
+to differ minimally at the input level while inducing a significant change in prediction. As a result, it is difficult to pinpoint which tokens in x𝑢 should be modified to construct x∗ 
+
+> 𝑢
+
+. Formally, x∗ 
+
+> 𝑢
+
+should satisfy the following constraints 
+
+x∗ 
+
+> 𝑢
+
+= arg min  
+
+> x
+
+Δ(x) s.t. ∥x − x𝑢 ∥0 ≤ 𝐾 . (8) Here, 𝐾 controls the number of items to be replaced. In our setting, we set 𝐾 = 1, meaning that only a single item is allowed to be replaced in x𝑢 . In addition, we require the inserted item to remain within the user’s interest distribution to avoid introducing out-of-distribution corrupt sample x∗ 
+
+> 𝑢
+
+.The original input x𝑢 consists of the user history H𝑢 and the target item 𝑖 𝑡 , whose relationships can be captured by the user–item graph G. Fortunately, this representation allows us to exploit rich structural information to construct appropriate corrupt samples 
+
+x∗ 
+
+> 𝑢
+
+. To efficiently generate x∗ 
+
+> 𝑢
+
+, we first identify the history item in 
+
+H𝑢 that is most influential to predicting 𝑖 𝑡 within the context of x𝑢 ,and then replace it with a weakly related item. 
+
+Step1: Graph-based Item Scoring . We first leverage Personal-ized PageRank (PPR) [ 21 , 32 ] on G to estimate item proximity with respect to a given user 𝑢 . Let 𝝅 𝑢 ∈ R| V | denote the PPR vector associated with user 𝑢 , where each entry 𝝅 𝑢 [𝑖 ] measures the graph-based proximity of item 𝑖 to 𝑢 . The PPR vector is defined as the stationary solution of the following equation: 
+
+𝝅 𝑢 = 𝛼 𝑃 ⊤𝝅 𝑢 + ( 1 − 𝛼 )𝒑 𝑢 , (9) where 𝑃 denotes the transition matrix of the user–item graph and 
+
+𝛼 ∈ ( 0, 1) is a decay factor. The preference vector 𝒑 𝑢 is a probability distribution that encodes the user’s preference over items. Apart from the algebraic definition, PPR also has an intuitive random-walk interpretation: starting from user 𝑢 , the walk proceeds as follows: at each step, it either (i) moves to a neighboring node on 
+
+G according to the transition matrix 𝑃 with probability 𝛼 , or (ii) jumps to a node sampled from the preference distribution 𝒑 𝑢 . Then 
+
+𝝅 𝑢 is defined as the stationary distribution over V after infinitely many steps. Given the input x𝑢 , we further bias 𝝅 𝑢 toward items 
+
+𝑖 ∈ H 𝑢 that contribute most to the model prediction. Accordingly, we initialize the preference vector 𝒑 𝑢 as: 
+
+𝒑 𝑢 (𝑖 ) =
+
+
+
+exp (𝜏𝑆 (𝑖 )) 
+
+Í𝑗 ∈ H 𝑢 exp (𝜏𝑆 ( 𝑗 )) , 𝑣 ∈ H 𝑢 ,
+
+0, otherwise ,
+
+(10) where 𝑆 (𝑖 ) measures the importance of item 𝑖 to the prediction and 
+
+𝜏 is a temperature parameter. Since an item 𝑣 may correspond to multiple tokens in the input, we approximate its importance by aggregating token-level gradients: 
+
+𝑆 (𝑖 ) =∑︁   
+
+> 𝑡 ∈tokens (𝑖 )
+
+𝜕 Δ(𝑥 𝑢 )
+
+𝜕 e𝑡 
+
+, (11) where e𝑡 denotes the embedding of token 𝑡 .CURE:Circuit-Aware Unlearning for LLM-based Recommendation 
+
+In practice, we precompute approximate PPR vectors for indi-vidual items offline [ 32 , 38 ]. Specifically, we run an approximate PPR algorithm with a one-hot preference vector for each item 𝑖 and obtain the corresponding vector 𝝅 𝑝𝑟𝑒 𝑖 . Given an input x𝑢 , the per-sonalized PPR vector can be efficiently constructed as a weighted sum: 
+
+𝝅 𝑢 =∑︁  
+
+> 𝑖 ∈ H 𝑢
+
+exp (𝜏𝑆 (𝑖 )) 
+
+Í𝑗 ∈ H 𝑢 exp (𝜏𝑆 ( 𝑗 )) 𝝅 𝑝𝑟𝑒 𝑖 , (12) which follows from the linearity of Personalized PageRank [ 32 ]with respect to the preference vector. In this way, personalized item scores can be efficiently obtained without performing any online graph diffusion. 
+
+Step 2: Replacing Items in x𝑢 . As LLMRec may not perfectly align with the underlying graph structure, the solution induced by PPR can be suboptimal for M𝜃 . Moreover, exhaustively search-ing over all possible replacements is computationally prohibitive. We therefore restrict the search space to a small set of candidate substitutions when constructing the corrupt input x∗ 
+
+> 𝑢
+
+.Given an input x𝑢 , we first select the top-3 most influential items from the user history H𝑢 according to the gradient-based impor-tance score 𝑆 (𝑣 ), and construct a preferred item set I𝑢 by selecting the top-50 items ranked by the PPR vector 𝝅 𝑢 . Following [ 32 ], dif-ferences between entries in 𝝅 𝑢 reflect relative proximity under the same source 𝑢 ; thus, for each influential item, we choose the 10 least relevant items from I𝑢 as replacement candidates. Overall, this procedure yields at most 30 candidate corrupt inputs, which are evaluated by the LLM to select the final counterfactual input 
+
+x∗ 
+
+> 𝑢
+
+according to Eq. 8. 
+
+4.1.3 Greedy Circuit Discovery. After scoring edges via Equation 5, we employ the greedy extraction strategy of [ 27 ]. Starting from the logits, we iteratively add the highest-scoring edge whose child node is already in the circuit, constructing a top-down circuit while avoiding childless nodes. This process constructs a complete circuit in a top-down manner. The resulting procedure resembles a maxi-mization variant of Dijkstra’s algorithm, with circuit complexity controlled by the number of iterations. 
+
+## 4.2 Selective Circuits Updating 
+
+For each sample in D𝑓 , we select nearby samples from the remain-ing data to construct a retain buffer of size |D 𝑟 | = 𝑘 |D 𝑓 | (typically 
+
+𝑘 = 6). For each user–item interaction to be removed, we measure structural proximity on the user–item graph G using Personalized PageRank (PPR) with forget nodes as sources. Retain-set edges are ranked by their PPR scores, where higher scores indicate stronger proximity to the forget set. We select the top-𝑘 nearest training samples to form the retain set, enabling unlearning by refining the decision boundary between closely related forget and retain data. Here we borrow ideas from SCRUB [ 19 ] to construct the unlearn-ing loss, and formulate it by enforcing two essential properties. Specifically, for each deleted sample (x𝑢 , 𝑦 𝑢 ) ∈ D :
+
+• Deviating the prediction from the original model M𝜃 on D𝑓 ,where deleted samples are encouraged to produce predic-tions under M𝑢𝑛 that explicitly differ from those of the original model, ensuring that the removed information is no longer preserved. 
+
+L𝐹 = −𝐷 𝐾𝐿 (M 𝜃 (𝑌𝑒𝑠 |x𝑢 )||M 𝑢𝑛 (𝑌𝑒𝑠 |x𝑢 )) .
+
+• Maintaining the prediction of M𝜃 on D𝑟 , where the selected retain samples (x𝑟 , 𝑦 𝑟 ) ∈ D 𝑟 associated with each deleted sample (x𝑢 , 𝑦 𝑢 ) are encouraged to produce similar predic-tions under M𝑢𝑛 as those from the original model M𝜃 ,thereby preserving the model’s utility on retained data. 
+
+L𝑅 = 1  
+
+> | D 𝑟 |
+
+𝐷 𝐾𝐿 (M 𝜃 (𝑌𝑒𝑠 |x𝑟 )||M 𝑢𝑛 (𝑌𝑒𝑠 |x𝑟 )) .Here, 𝐷 KL denotes the KL-divergence between the two distributions. The overall unlearning objective is defined as L = 𝜔 𝑟 L𝑅 + 𝜔 𝑓 L𝐹 ;During optimization, all parameters of the original model M𝜃 are frozen, and only the parameters of the unlearned model M𝑢𝑛 , which is initialized from M𝜃 , are updated. For each sample in D𝑓 and D𝑟 , we apply the method in Sec-tion 4.1 to extract the retain and forget circuits, denoted as C𝑓 and 
+
+C𝑟 , respectively. Based on the detected circuits, we categorize the associated modules into different functional groups according to their roles along the circuits. Neurons within each modules are assigned to the same group and updated using group-specific poli-cies, allowing each group to be optimized for its intented function without interference. The update policies are defined as follows: 
+
+• Forget-Specific Neurons Θ𝑓 : A neuron 𝜃 𝑓 ∈ Θ𝑓 is identified as forget-specific if 𝜃 𝑓 ∈ C 𝑓 ∩ C 𝑐 𝑟 , where C𝑐 𝑟 denotes the the complement of C𝑟 . indicating that it contributes primarily to samples in D𝑓 rather than D𝑟 . Accordingly, these neurons are updated solely with respect to the forget loss to enhance data removal. We define the gradient as g𝐹 𝑓 = ∇𝜃 𝑓 L𝐹 and update 
+
+𝜃 𝑓 ← 𝜃 𝑓 − 𝛼 g𝐹 𝑓 .
+
+• Retain-specific Neurons Θ𝑟 : Similarly, a neuron 𝜃 𝑟 ∈ Θ𝑟 is identified as retain-specific if 𝜃 𝑟 ∈ C 𝑟 ∩C 𝑐 𝑓 . As these neurons are essential for preserving the model utility, we update them only with respect to the retain loss. We define the gradient as g𝑅 𝑟 = ∇𝜃 𝑟 L𝑅 and update: 
+
+𝜃 𝑟 ← 𝜃 𝑟 − 𝛼 g𝑅 𝑟 .
+
+• Function-shared Neurons Θ𝑠ℎ . A neuron 𝜃 𝑠ℎ ∈ Θ𝑠ℎ is iden-tified as function-shared if 𝜃 𝑠ℎ ∈ C 𝑟 ∩ C 𝑓 , indicating that it is involved in high-level functions contributing to both data removal and utility maintenance. To alleviate gradi-ent conflicts during optimization, CURE adopts a simple projection-based strategy [ 26 , 35 ]. Specifically, when the gradients of the two objectives conflict, i.e., (g𝑅 𝑠ℎ )⊤g𝐹 𝑠ℎ < 0,we iteratively select one objective from L𝑟 and L𝑓 and project its gradient onto the other, removing destructive components. When L𝑟 is selected, the update is defined as: 
+
+g𝑠ℎ = 𝜔 𝑅 (g𝑅 𝑠ℎ − (g𝑅 𝑠ℎ )⊤g𝐹 𝑠ℎ 
+
+∥g𝐹 𝑠ℎ ∥2 g𝐹 𝑠ℎ ) + 𝜔 𝐹 (g𝐹 𝑠ℎ − (g𝐹 𝑠ℎ )⊤g𝑅 𝑠ℎ 
+
+∥g𝑅 𝑠ℎ ∥2 ),𝜃 𝑠ℎ ← 𝜃 𝑠ℎ − 𝛼 g𝑠ℎ .
+
+## 5 Theoretical Analysis 
+
+We provide a theoretical analysis of CURE to indicate that a single gradient update on the model parameters of CURE achieves lower loss than normal gradient descent. Let Θ = {𝜽 𝑠ℎ , 𝜽 𝑓 , 𝜽 𝑟 } denote Ziheng Chen, Jiali Cheng, Zezhong Fan, Hadi Amiri, Yunzhi Yao, Xiangguo Sun, and Yang Zhang 
+
+the parameters of components in selected circuits. After applying CURE, the model parameters are ˆΘ = { ˆ𝜽 𝒔𝒉 , ˆ𝜽 𝒇 , ˆ𝜽 𝒓 }. An one step gradient update of ˆΘ is: 
+
+ˆ𝜃 𝑠ℎ = 𝜃 𝑠ℎ − 𝛼 
+
+h
+
+𝜔 𝑟 
+
+
+
+g𝑅 𝑠ℎ − g𝑅 𝑠ℎ · g𝐹 𝑠ℎ 
+
+∥g𝐹 𝑠ℎ ∥2 g𝐹 𝑠ℎ 
+
+
+
++ 𝜔 𝑓 
+
+
+
+g𝐹 𝑠ℎ − g𝐹 𝑠ℎ · g𝑅 𝑠ℎ 
+
+∥g𝑅 𝑠ℎ ∥2 g𝑅 𝑠ℎ 
+
+i 
+
+,
+
+ˆ𝜃 𝑓 = 𝜃 𝑓 − 𝛼 g𝐹 𝑓 , ˆ𝜃 𝑟 = 𝜃 𝑟 − 𝛼 g𝑅 𝑟 .
+
+(13) Without applying CURE, the parameters are ˜Θ = { ˜𝜽 𝒔𝒉 ˜𝜽 𝒇 , ˜𝜽 𝒓 }. An one-step gradient update is given by: 
+
+˜𝜃 𝑖 = 𝜃 𝑖 − 𝛼 (𝜔 𝑟 g𝑅 𝑖 + 𝜔 𝑓 g𝐹 𝑖 ), 𝑖 ∈ { 𝑠ℎ, 𝑓 , 𝑟 } (14) Then, we have the following theorem. 
+
+Theorem 5.1. Assume that the joint loss function is defined as 
+
+𝐿 (Θ) = 𝜔 𝑟 𝐿 𝑅 (Θ) + 𝜔 𝑓 𝐿 𝐹 (Θ) and 𝜔 𝑟 + 𝜔 𝑓 = 1. Then for any suffi-ciently small learning rate 𝛼 > 0, we have 
+
+𝐿 ( ˆΘ) ≤ 𝐿 ( ˜Θ) (15) 
+
+Proof. We iteratively update each parameter group while fixing the others. The loss difference between the conventional update ˜𝜽 
+
+and CURE ˆ𝜽 is analyzed via two components, 𝐴 and 𝐵 :
+
+L( ˜Θ) − L( ˆΘ) ≈ ( ˜𝜽 𝒔𝒉 − ˆ𝜽 𝒔𝒉 )⊤ (g𝑅 𝑠ℎ + g𝐹 𝑠ℎ )+ ( ˜𝜽 𝒇 − ˆ𝜽 𝒇 )⊤g𝐹 𝑓 + ( ˜𝜽 𝒓 − ˆ𝜽 𝒓 )⊤g𝑅 𝑟 
+
+= −
+
+h
+
+g𝑅 𝑠ℎ · g𝐹 𝑠ℎ + ( g𝑅 𝑠ℎ · g𝐹 𝑠ℎ )2   𝜔 𝑟   
+
+> ∥g𝐹 𝑠ℎ ∥2
+
++ 𝜔 𝑓  
+
+> ∥g𝑅 𝑠ℎ ∥2
+
+i| {z }
+
+> 𝐴
+
++ 𝜔 𝑟 (g𝐹 𝑓 − g𝑅 𝑓 )⊤g𝐹 𝑓 + 𝜔 𝑓 (g𝑅 𝑟 − g𝐹 𝑟 )⊤g𝑅 𝑟 
+
+| {z }
+
+> 𝐵
+
+(16) 
+
+For Part A: Let 𝛾 = ∥g𝑅 𝑠ℎ ∥/∥ g𝐹 𝑠ℎ ∥ and 𝜓 be the angle between g𝑅 𝑠ℎ 
+
+and g𝐹 𝑠ℎ . 𝐴 ≥ 0 is guaranteed if and only if the condition holds: 
+
+cos 𝜓 ≥ − 𝛾 𝜔 𝑟 + ( 1 − 𝜔 𝑟 )𝛾 2 (17) When 𝛾 is close to 1, indicating that the two gradients have compa-rable magnitudes, equation 17 holds with high probability. Notably, when 𝛾 = 1, the condition reduces to cos 𝜓 ≥ − 1, which is always satisfied . In practice, we control 𝛾 through gradient normalization, ensuring that the magnitudes of the two gradients remain compa-rable. 
+
+For Part B: We consider neurons in each task-specific component, and denote Δ𝑚 = (𝑚 ∗ 
+
+> 𝑣 1→𝑣 2
+
+− 𝑚 𝑣 1→𝑣 2 ) in equation 7. According to the loss functions L𝐹 and L𝑅 defined in Section 4.2, we observe that both losses are monotonic with respect to Δ(x𝑢 ) = M𝜃 (𝑌𝑒𝑠 |x𝑢 ) − M𝜃 (𝑁𝑜 |x𝑢 ), which is used to detected the forget and retain circuits. which is used to detect forget and retain circuits. Hence, the greedy selection policy in Section 4.1.3 satisfies: 
+
+∥Δ𝑚 g𝐹 𝑓 ∥2 ≥ ∥ Δ𝑚 g𝑅 𝑓 ∥2, ∥Δ𝑚 g𝑅 𝑟 ∥2 ≥ ∥ Δ𝑚 g𝐹 𝑟 ∥2
+
+=⇒ 2∥Δ𝑚 g𝐹 𝑓 ∥2 ≥ ∥ Δ𝑚 g𝐹 𝑓 ∥2 + ∥ Δ𝑚 g𝑅 𝑓 ∥2
+
+≥ ∥ Δ𝑚 ∥2 (g𝐹 𝑓 · g𝑅 𝑓 ) =⇒ ∥g𝐹 𝑓 ∥2 − g𝐹 𝑓 · g𝑅 𝑓 ≥ 0
+
+(18) This leads to ∥g𝐹 𝑓 ∥2 − g𝐹 𝑓 · g𝑅 𝑓 > 0, ensuring the benefit of targeted forgetting. An analogous result can be derived ∥g𝑅 𝑟 ∥2 − g𝐹 𝑟 · g𝑅 𝑟 > 0
+
+## 6 Experiments 
+
+To evaluate the effectiveness of our proposed method, we conduct a series of experiments to address the following research questions: 
+
+• RQ1: How effective is CURE in achieving unlearning while preserving recommendation utility? 
+
+• RQ2: How well does CURE mitigate gradient conflicts dur-ing unlearning? 
+
+• RQ3: How do different components of CURE contribute to its overall effectiveness? 
+
+## 6.1 Experimental Settings 
+
+Datasets We evaluate our proposed method on two widely rec-ognized recommendation benchmarks: MovieLens-1M (ML-1M) 
+
+and GoodReads (GD) . MovieLens-1M (ML-1M) contains movie metadata and user ratings. Following [ 29 ], we transform the orig-inal ratings into binary labels for LLM prompting, where ratings greater than 3 are treated as positive (mapped to “Yes”), and the remaining ratings are mapped to “No”. Similarly, GoodReads (GD) 
+
+comprises book features and user ratings, and we apply the same binarization strategy. 
+
+6.1.1 Implementation Details. All baseline models and our pro-posed framework, CURE , utilize the same backbone architectures: 
+
+GPT-2 [2] and Llama-2 (7B) [28 ]. We follow standard hyperpa-rameter configurations established in recent LLM-based recommen-dation literature. We evaluate two variants, CURE-AI and CURE-AP , which adopt Activation Intervention and Activation Patching for circuit extraction, respectively. CURE-AI identifies coarse-grained circuits, while CURE-AP achieves higher-precision localization by construct-ing corrupt samples based on the original input. For the unlearning experiments, we follow the protocol in [ 29 ]. Both datasets are split into training, validation, and test sets with a ratio of 7:2:1 to obtain the original model, and 20% of the training data are designated as the forget set during unlearning. Regarding the specific hyperparameters for CURE, we set the intervention threshold based on the top-5% of activation weights. For the second stage, we utilize the AdamW optimizer with a learning rate of 
+
+5 × 10 −5. To facilitate efficient training on Llama-2 (7B), we employ Low-Rank Adaptation (LoRA) with rank 𝑟 = 8. All experiments are conducted on NVIDIA A100 GPUs, and hyperparameters are tuned on the validation set to ensure optimal performance. 
+
+6.1.2 Baselines. We compare CURE against several baselines, in-cluding exact unlearning paradigms and model editing techniques: 
+
+(𝑖 ) Retrain , which refers to training from scratch without target forgotten data, (𝑖𝑖 ) SISA [ 1], a partition-based retraining method that aggregates predictions from sub-models trained on separate data shards; (𝑖𝑖𝑖 ) RecEraser [20 ], a recommendation-specific un-learning method that preserves collaborative information through specialized partitioning; (𝑖𝑣 ) E2URec [29 ], an efficient unlearning framework that utilizes a teacher-student architecture to guide the unlearning process; (𝑣 ) ROME [23 ], a model editing method that performs direct parameter updates at early layers; (𝑣𝑖 ) WISE [ 31 ], a baseline that introduces learnable parameters at later layers to incorporate new information or forget data; (𝑣𝑖𝑖 ) PCGrad [35 ], a CURE:Circuit-Aware Unlearning for LLM-based Recommendation 
+
+Figure 3: Unlearning effectivenss and model performance on Movie and Goodreads. 
+
+gradient surgery approach for gradient collicts that projects gradi-ents onto the normal plane of conflicting tasks. 
+
+6.1.3 Evaluation Settings. Our goal is to achieve precise and effi-cient unlearning for LLMRec while preserving recommendation utility. Following standard protocols in recommendation unlearn-ing, we evaluate CURE based on the following three dimensions: 
+
+• Recommendation Performance: To evaluate the recom-mendation performance, we use Area Under the ROC Curve (AUC ↑), Accuracy (ACC ↑), and LogLoss (LL ↓)
+
+on test set. 
+
+• Unlearning Effectiveness: To quantify how closely the unlearned model aligns with the gold-standard Retrain 
+
+model, we compute the Jensen-Shannon Divergence (JSD ↓) between their respective output probability dis-tributions on the forgotten data. Lower JSD values signify a more effective elimination of the target data, indicating that the unlearned model’s behavior successfully mimics a model that never encountered the forgotten samples. 
+
+• Unlearning Efficiency: We measure the unlearning effi-ciency by Unlearning Time ( ↓) measuring the total wall-clock time required for the unlearning process. 
+
+## 6.2 Main Results (RQ1) 
+
+We evaluate unlearning performance on two recommendation bench-marks, MovieLens-1M and GoodReads, using GPT-2 and LLaMA2-7B as backbone models. Following previous section, we assess (i) recommendation utility via AUC and ACC, (ii) unlearning effective-ness via JS-Divergence (JSD) between the unlearned and retrained models on the forgotten data, and (iii) efficiency via unlearning time. Across all settings, results consistently show that: (i) full retrain-ing remains the upper bound in recommendation accuracy but is computationally prohibitive; (ii) CURE-AT achieves the best over-all trade-off, preserving near-retraining utility while attaining the lowest divergence from retrained models with orders-of-magnitude lower cost; (iii) efficiency-oriented methods such as ROME and WISE sacrifice unlearning completeness, as reflected by substan-tially higher JSD; and (iv) these trends remain stable across model scales and datasets, indicating strong robustness of the proposed approach. 
+
+Overall Results Across both backbones and datasets, we observe a clear trade-off between utility preservation and unlearning effective-ness. While approximate unlearning methods reduce computational cost, many incur either significant performance degradation or in-complete forgetting. In contrast, CURE-AT and CURE-AI consis-tently strike a favorable balance, achieving strong recommendation performance with minimal divergence from retraining. Figure 3 reports results on MovieLens-1M using GPT-2 Large as the backbone. Most baseline unlearning methods (E2URec, Re-cEraser, SISA, ROME, WISE,PCGrad) exhibit noticeable drops in AUC and ACC relative to retraining, with JSD values generally ex-ceeding 2.0. In contrast, CURE-AT achieves the lowest divergence (JSD = 1.93) while preserving higher recommendation quality (AUC = 76.93, ACC = 69.3). CURE-AI follows closely, outperforming all other baselines in both unlearning effectiveness and efficiency. Figure 3 summarizes results using LLaMA2-7B. Compared to GPT-2 Large, all methods benefit from increased model capac-ity, yielding higher absolute AUC and ACC. However, the rela-tive ranking of unlearning methods remains consistent. CURE-AT again achieves the strongest performance among non-retraining approaches (AUC = 79.1, ACC = 72.8) while also attaining the lowest divergence (JSD = 1.61). Although RecEraser and SISA partially preserve utility, their substantially longer unlearning times make them impractical for frequent or large-scale unlearning scenarios. Figure 3 presents results on the GoodReads dataset using GPT-2 Large. Compared to MovieLens-1M, GoodReads exhibits a more Ziheng Chen, Jiali Cheng, Zezhong Fan, Hadi Amiri, Yunzhi Yao, Xiangguo Sun, and Yang Zhang 
+
+Table 1: Unlearning time comparison (s) ↓.GoodReads MovieLens-1M 
+
+Method GPT-2 LLaMA-2 GPT-2 LLaMA-2 Retrain 15,800 128,000 29,300 132,300 E2URec 1,900 13,600 3,200 21,800 RecEraser 4,200 32,500 7,100 49,700 SISA 3,700 29,800 6,800 45,300 ROME 600 3,600 1,700 12,100 WISE 800 7,200 1,200 9,800 PCGrad 2,600 16,700 3,600 23,300 CURE-AI (Ours) 600 3,900 1,500 10,200 CURE-AT (Ours) 600 4,100 1,700 11,300 challenging unlearning setting, with larger variance in JSD across methods. While retraining again yields the highest accuracy (AUC = 74.2, ACC = 70.85), CURE-AT achieves near-retraining performance (AUC = 72.9, ACC = 70.6) with the lowest divergence (JSD = 0.98). CURE-AI follows closely (JSD = 1.03), outperforming RecEraser and SISA in both effectiveness and efficiency. Baseline methods such as ROME and WISE show particularly high divergence (JSD > 3.7), indicating severe forgetting failure despite their fast execution. PCGrad improves over several baselines but remains inferior to CURE-based approaches in both utility preservation and unlearning completeness. Figure 3 reports corresponding results using LLaMA2-7B. Similar trends persist at larger model scale: CURE-AT achieves the best trade-off between accuracy (AUC = 75.3, ACC = 72.6) and unlearn-ing effectiveness (JSD = 0.91), substantially narrowing the gap to retraining while maintaining low computational cost. Other meth-ods either exhibit higher divergence or incur significantly longer unlearning times, reinforcing the robustness of CURE-AT across datasets and model sizes. 
+
+Unlearning Time Comparison Table 1 compares the efficiency of different unlearning methods. Overall, methods exhibit large variance in computational efficiency. Retraining is the most time-consuming method, incurring prohibitively expensive cost than other unlearning methods. RecEraser and SISA are consistently the most expensive approaches, requiring up to tens of thousands of seconds on LLaMA2-7B. While these methods partially preserve recommendation utility, their reliance on repeated retraining or multiple model shards makes them impractical for large-scale or frequent unlearning scenarios. In contrast, CURE-AI and CURE-AT consistently achieve strong efficiency across both MovieLens-1M and GoodReads, with unlearning times comparable to or faster than ROME and WISE, while maintaining significantly lower JSD divergence and higher recommendation accuracy. Notably, CURE-AI is 3.5× faster and CURE-AT is 3.3× than E2URec. Although slightly slower than WISE and ROME due to their localized updating strategy, CURE achieves significantly better performance. 
+
+Table 2: Ablation study of 𝜔 𝑟 on GoodRead across differ-ent backbone. Best performance is bold and second best is underlined.                                     
+
+> 𝜔 𝑟
+> Llama-2 GPT-2
+> AUC (↑) ACC (↑) JSD (↓) AUC (↑) ACC (↑) JSD (↓)
+> 0.2 71.3 69.1 0.91 69.1 67.5 0.94
+> 0.4 73.5 71.2 0.90 71.2 69.5 0.98 0.6 75.3 72.1 0.91 72.9 70.6 0.98 0.8 74.9 71.8 0.95 72.9 70.5 1.05
+
+## 6.3 Effectiveness in Mitigating Gradient Conflicts(RQ2) 
+
+CURE greatly reduces the occurence of conflicting gradients 
+
+As shown in Figure 5, we compare the distribution of cos 𝜓 before and after applying CURE on MovieLens-1M (ML-1M) . The results show that CURE substantially suppresses severely conflicting gradi-ent pairs ( cos 𝜓 ∈ [− 1, −0.02 )), reducing their proportion by at least 
+
+55% and up to 76% compared with E2URec. In contrast, PCGrad and ROME yields only marginal reductions, and in some cases even increase the proportion of conflicting gradients. An interesting observation is that WISE also exhibits fewer conflicting gradients, likely due to its restriction to updating later layers, which implicitly avoids interference with shared early representations. 
+
+## 6.4 In-depth Analysis(RQ3) 
+
+6.4.1 Ablation Study. We examine the effect of 𝜔 𝑟 , which balances the retain and forget losses, as shown in Table 2. The results shows the necessity of jointly optimizing LF and LR to achieve a favorable trade-off. When 𝜔 𝑟 ≥ 0.6, performance remains stable; however, for 𝜔 𝑟 ≤ 0.4, AUC drops sharply. Accordingly, we set 𝜔 𝑟 = 0.6 in all experiments. 
+
+6.4.2 Why does Circuit-aware Unlearning work. To validate the of our circuit-aware approach, we compare CURE with two parameter-efficient unlearning baselines, ROME and WISE, by examining the modules they modify. As showen in Figure 4, we observe that WISE primarily edits later layers, while ROME focuses on early layers. However, both methods operate on isolated modules within the LLM and fail to capture several critical components involved in the unlearning procedure. Instead, CURE identifies complete end-to-end circuits spanning all relevant modules, and propagates targeted modifications along the information flow from the input to the logits. Moreover, each module within an identified circuit attends to semantically relevant input tokens. For example, movies sharing the same genre as the target movie (e.g., GoldenEye and Congo ) are primarily attended to by mlp8 , mlp9 , and mlp11 , enabling CURE to forget such interactions in a transparent and interpretable manner. 
+
+## 7 Related Work 7.1 Unlearning for LLM-based Recommendation. 
+
+Traditional recommendation unlearning methods, such as RecEraser [ 4] and AltEraser [ 22 ], focus on partitioning collaborative data CURE:Circuit-Aware Unlearning for LLM-based Recommendation 
+
+Figure 4: Transparent comparison of circuit-aware unlearn-ing with ROME and WISE (1, 0)          
+
+> (0, 0.02)
+> (0.02, 0.04)
+> (0.04, 0.06)
+> (0.06, 0.08)
+> (0.08, 1)
+
+cos          
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> Frequency
+> GPT-2
+> (1, 0)
+> (0, 0.02)
+> (0.02, 0.04)
+> (0.04, 0.06)
+> (0.06, 0.08)
+> (0.08, 1)
+
+cos 
+
+> Llama-2
+> Unlearning Method
+> E2URec
+> PCGrad
+> ROME
+> WISE
+> CURE-AI
+> CURE-AP
+
+Figure 5: The distribution of gradient conflicts ( cos 𝜓 ) on GoodReads. The left and right columns use GPT-2 Large and Lamma-2 7B as backone, respectively 
+
+to safeguard privacy but are ill-suited for the massive parame-ter space of Large Language Models (LLMs). Conversely, general LLM unlearning often relies on approximate methods like gradient ascent [ 33 ] or in-context label flipping, which frequently trigger catastrophic forgetting and degrade recommendation utility. To mitigate these issues, recent LLMRec-specific frameworks have adopted parameter-efficient fine-tuning (PEFT) [ 36 ]. E2URec[ 29 ]introduces a teacher-student architecture to guide the unlearning process via minimal LoRA updates, while the Adapter Partition and Aggregation (APA) framework employs data sharding and adapter retraining to achieve exact unlearning. However, these methods typically treat the model as a black box and apply uniform updates, leading to gradient conflicts between forgetting and retaining ob-jectives. Our framework, CURE , addresses this by moving beyond uniform updates to a more granular, component-specific optimiza-tion strategy. 
+
+## 7.2 Circuit Discovery 
+
+Circuit discovery is the task of identifying sparse, functional sub-graphs within a neural network that are causally responsible for implementing specific capabilities or behaviors [ 12 ]. This paradigm shifts the focus from global parameter analysis to localizing the "essential computation" for a particular task. Early manual investi-gations, such as those by [ 30 ] and [ 15 ], utilized causal mediation analysis and activation patching to uncover circuits for indirect object identification and mathematical reasoning in small-scale models. However, the manual search space grows exponentially with model depth, leading to the development of automated frame-works. ACDC [ 12 ] automates circuit identification by recursively pruning edges based on their contribution to model faithfulness. While effective, its reliance on iterative testing renders it too com-putationally expensive for the scale of modern LLMs. To overcome this, Subnetwork Probing [ 3] treats circuit identification as a mask-learning problem, optimizing for both fidelity and sparsity. More recently, Edge Attribution Patching (EAP) [ 27 ] has emerged as a high-efficiency alternative, leveraging gradient-based importance scores to approximate the effect of interventions with minimal forward and backward passes. While these techniques have pri-marily been applied to linguistic benchmarks, we leverage circuit discovery techniques to extract the core circuits underlying item recommendation in LLM based recommendation. This structural decomposition provides the necessary transparency to disentangle the model into forget-specific and retain-specific modules [ 8, 11 , 14 ], bridging the gap between mechanistic interpretability and trust-worthy unlearning in recommender systems. 
+
+## 7.3 Gradient Conflicts in Unlearning 
+
+The optimization of unlearning objectives often mirrors the chal-lenges of multi-task learning, where a model must simultaneously satisfy competing goals. In the context of unlearning, a funda-mental tension exists between the forgetting objective (erasing specific data) and the retaining objective (maintaining model util-ity) [ 24 ]. Previous studies have identified that these dual goals frequently lead to detrimental gradient interference, where the up-date direction for one task adversely impacts the other [ 35 ]. While PCGrad [ 35 ] introduced a model-agnostic “gradient surgery” ap-proach—projecting conflicting gradients onto their respective nor-mal planes—this method does not account for the unique functional structure of LLMs. Recent analysis in BLUR [ 25 ] shows that these gradient conflicts are even more severe in Large Language Models (LLMs). This complexity requires specialized optimization strate-gies to ensure that forgetting specific data does not accidentally damage the model’s performance on remaining tasks. Our work, 
+
+CURE , builds on these insights by using circuit discovery to physi-cally isolate the parameters where these conflicts occur, allowing for a more targeted resolution than previous gradient-projection methods. 
+
+## 8 Conclusion 
+
+In this paper, we propose CURE, a circuit-aware unlearning frame-work that addresses the challenges of gradient conflicts in LLMRec unlearning. By leveraging mechanistic interpretability to disentan-gle computational circuits into functionally distinct modules, CURE Ziheng Chen, Jiali Cheng, Zezhong Fan, Hadi Amiri, Yunzhi Yao, Xiangguo Sun, and Yang Zhang 
+
+enables precise, task-specific parameter updates that effectively remove sensitive information while preserving model utility. Our evaluation demonstrates that CURE outperforms state-of-the-art baselines with an 18% improvement in unlearning efficiency and a 
+
+6% gain in utility, while achieving a 3.5× speedup. By shifting from black-box updates to transparent, circuit-level interventions, CURE provides a robust and efficient solution for privacy-preserving rec-ommendation. 
+
+## References 
+
+[1] Lucas Bourtoule, Varun Chandrasekaran, Christopher A Choquette-Choo, Hen-grui Jia, Adelin Travers, Baiwu Zhang, David Lie, and Nicolas Papernot. 2021. Machine unlearning. In 2021 IEEE symposium on security and privacy (SP) . IEEE, 141–159. [2] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al . 2020. Language models are few-shot learners. Advances in neural information processing systems 33 (2020), 1877–1901. [3] Steven Cao, Victor Sanh, and Alexander M Rush. 2021. Low-complexity probing via finding subnetworks. arXiv preprint arXiv:2104.03514 (2021). [4] Chong Chen, Fei Sun, Min Zhang, and Bolin Ding. 2022. Recommendation unlearning. In Proceedings of the ACM web conference 2022 . 2768–2777. [5] Chaochao Chen, Jiaming Zhang, Yizhao Zhang, Li Zhang, Lingjuan Lyu, Yuyuan Li, Biao Gong, and Chenggang Yan. 2024. CURE4Rec: A benchmark for recom-mendation unlearning with deeper influence. Advances in Neural Information Processing Systems 37 (2024), 99128–99144. [6] Ziheng Chen, Jiali Cheng, Hadi Amiri, Kaushiki Nag, Lu Lin, Sijia Liu, Gabriele Tolomei, and Xiangguo Sun. 2025. FROG: Fair Removal on Graph. In Proceedings of the 34th ACM International Conference on Information and Knowledge Manage-ment (Seoul, Republic of Korea) (CIKM ’25) . Association for Computing Machin-ery, New York, NY, USA, 415–424. https://doi.org/10.1145/3746252.3761341 [7] Jiali Cheng and Hadi Amiri. 2024. Mu-bench: A multitask multimodal benchmark for machine unlearning. arXiv preprint arXiv:2406.14796 (2024). [8] Jiali Cheng and Hadi Amiri. 2025. MultiDelete for Multimodal Machine Un-learning. In Computer Vision – ECCV 2024 , Aleš Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler, and Gül Varol (Eds.). Springer Nature Switzerland, Cham, 165–184. [9] Jiali Cheng and Hadi Amiri. 2025. Tool unlearning for tool-augmented llms. 
+
+arXiv preprint arXiv:2502.01083 (2025). [10] Jiali Cheng, Ziheng Chen, Chirag Agarwal, and Hadi Amiri. 2026. Toward Understanding Unlearning Difficulty: A Mechanistic Perspective and Circuit-Guided Difficulty Metric. arXiv preprint arXiv:2601.09624 (2026). [11] Jiali Cheng, George Dasoulas, Huan He, Chirag Agarwal, and Marinka Zitnik. 2023. GNNDelete: A General Strategy for Unlearning in Graph Neural Networks. In The Eleventh International Conference on Learning Representations . https: //openreview.net/forum?id=X9yCkmT5Qrl [12] Arthur Conmy, Augustine Mavor-Parker, Aengus Lynch, Stefan Heimersheim, and Adrià Garriga-Alonso. 2023. Towards automated circuit discovery for mech-anistic interpretability. Advances in Neural Information Processing Systems 36 (2023), 16318–16352. [13] Chongyu Fan, Jinghan Jia, Yihua Zhang, Anil Ramakrishna, Mingyi Hong, and Si-jia Liu. 2025. Towards llm unlearning resilient to relearning attacks: A sharpness-aware minimization perspective and beyond. arXiv preprint arXiv:2502.05374 
+
+(2025). [14] Chongyu Fan, Jiancheng Liu, Yihua Zhang, Eric Wong, Dennis Wei, and Sijia Liu. 2023. Salun: Empowering machine unlearning via gradient-based weight saliency in both image classification and generation. arXiv preprint arXiv:2310.12508 
+
+(2023). [15] Michael Hanna, Ollie Liu, and Alexandre Variengien. 2023. How does GPT-2 compute greater-than?: Interpreting mathematical abilities in a pre-trained language model. Advances in Neural Information Processing Systems 36 (2023), 76033–76060. [16] Michael Hanna, Sandro Pezzelle, and Yonatan Belinkov. 2024. Have faith in faithfulness: Going beyond circuit overlap when finding model mechanisms. 
+
+arXiv preprint arXiv:2403.17806 (2024). [17] Zhiyu Hu, Yang Zhang, Minghao Xiao, Wenjie Wang, Fuli Feng, and Xiang-nan He. 2025. Exact and efficient unlearning for large language model-based recommendation. IEEE Transactions on Knowledge and Data Engineering (2025). [18] Farnoush Rezaei Jafari, Oliver Eberle, Ashkan Khakzar, and Neel Nanda. 2025. RelP: Faithful and Efficient Circuit Discovery in Language Models via Relevance Patching. arXiv preprint arXiv:2508.21258 (2025). [19] Meghdad Kurmanji, Peter Triantafillou, Jamie Hayes, and Eleni Triantafillou. 2023. Towards unbounded machine unlearning. Advances in neural information processing systems 36 (2023), 1957–1987. [20] Yuyuan Li, Chaochao Chen, Yizhao Zhang, Weiming Liu, Lingjuan Lyu, Xiaolin Zheng, Dan Meng, and Jun Wang. 2023. Ultrare: Enhancing receraser for recom-mendation unlearning via error decomposition. Advances in Neural Information Processing Systems 36 (2023), 12611–12625. [21] Zihao Li, Dongqi Fu, and Jingrui He. 2023. Everything evolves in personalized pagerank. In Proceedings of the ACM Web Conference 2023 . 3342–3352. [22] Wenyan Liu, Juncheng Wan, Xiaoling Wang, Weinan Zhang, Dell Zhang, and Hang Li. 2022. Forgetting fast in recommender systems. arXiv preprint arXiv:2208.06875 (2022). [23] Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022. Locating and editing factual associations in gpt. Advances in neural information processing systems 35 (2022), 17359–17372. [24] Gaurav Patel and Qiang Qiu. 2025. Learning to unlearn while retaining: Com-bating gradient conflicts in machine unlearning. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 4211–4221. [25] Hadi Reisizadeh, Jinghan Jia, Zhiqi Bu, Bhanukiran Vinzamuri, Anil Ramakr-ishna, Kai-Wei Chang, Volkan Cevher, Sijia Liu, and Mingyi Hong. 2025. BLUR: A Bi-Level Optimization Approach for LLM Unlearning. arXiv preprint arXiv:2506.08164 (2025). [26] Guangyuan Shi, Qimai Li, Wenlong Zhang, Jiaxin Chen, and Xiao-Ming Wu. 2023. Recon: Reducing conflicting gradients from the root for multi-task learning. 
+
+arXiv preprint arXiv:2302.11289 (2023). [27] Aaquib Syed, Can Rager, and Arthur Conmy. 2024. Attribution patching out-performs automated circuit discovery. In Proceedings of the 7th BlackboxNLP Workshop: Analyzing and Interpreting Neural Networks for NLP . 407–416. [28] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yas-mine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhos-ale, et al . 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 (2023). [29] Hangyu Wang, Jianghao Lin, Bo Chen, Yang Yang, Ruiming Tang, Weinan Zhang, and Yong Yu. 2025. Towards efficient and effective unlearning of large language models for recommendation. Frontiers of Computer Science 19, 3 (2025), 193327. [30] Kevin Wang, Alexandre Variengien, Arthur Conmy, Buck Shlegeris, and Jacob Steinhardt. 2022. Interpretability in the wild: a circuit for indirect object identifi-cation in gpt-2 small. arXiv preprint arXiv:2211.00593 (2022). [31] Peng Wang, Zexi Li, Ningyu Zhang, Ziwen Xu, Yunzhi Yao, Yong Jiang, Pengjun Xie, Fei Huang, and Huajun Chen. 2024. Wise: Rethinking the knowledge memory for lifelong model editing of large language models. Advances in Neural Information Processing Systems 37 (2024), 53764–53797. [32] Mingji Yang, Hanzhi Wang, Zhewei Wei, Sibo Wang, and Ji-Rong Wen. 2024. Efficient algorithms for personalized pagerank computation: A survey. IEEE Transactions on Knowledge and Data Engineering 36, 9 (2024), 4582–4602. [33] Yuanshun Yao, Xiaojun Xu, and Yang Liu. 2024. Large language model unlearning. 
+
+Advances in Neural Information Processing Systems 37 (2024), 105425–105475. [34] Biao Yi, Jiahao Li, Baolei Zhang, Lihai Nie, Tong Li, Tiansheng Huang, and Zheli Liu. 2025. Gradient surgery for safe llm fine-tuning. arXiv preprint arXiv:2508.07172 (2025). [35] Tianhe Yu, Saurabh Kumar, Abhishek Gupta, Sergey Levine, Karol Hausman, and Chelsea Finn. 2020. Gradient surgery for multi-task learning. Advances in neural information processing systems 33 (2020), 5824–5836. [36] Dan Zhang, Tao Feng, Lilong Xue, Yuandong Wang, Yuxiao Dong, and Jie Tang. 2025. Parameter-efficient fine-tuning for foundation models. arXiv preprint arXiv:2501.13787 (2025). [37] Fred Zhang and Neel Nanda. 2023. Towards best practices of activation patching in language models: Metrics and methods. arXiv preprint arXiv:2309.16042 (2023). [38] Xingyi Zhang, Zixuan Weng, and Sibo Wang. 2024. Towards deeper understand-ing of ppr-based embedding approaches: a topological perspective. In Proceedings of the ACM Web Conference 2024 . 969–979.

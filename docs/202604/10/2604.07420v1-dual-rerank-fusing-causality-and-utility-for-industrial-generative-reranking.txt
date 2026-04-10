@@ -1,0 +1,872 @@
+Title: Dual-Rerank: Fusing Causality and Utility for Industrial Generative Reranking
+
+URL Source: https://arxiv.org/pdf/2604.07420v1
+
+Published Time: Fri, 10 Apr 2026 00:02:46 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Dual-Rerank: Fusing Sequential Dependencies and Utility for Generative Reranking 
+
+# Chao Zhang ∗
+
+Kuaishou Technology Hangzhou, China zhangchao29@kuaishou.com 
+
+# Shuai Lin ∗
+
+Kuaishou Technology Hangzhou, China linshuai@kuaishou.com 
+
+# Chenglei Dai †
+
+Kuaishou Technology Hangzhou, China daichenglei@kuaishou.com 
+
+# Ye Qian 
+
+Kuaishou Technology Hangzhou, China qianye@kuaishou.com 
+
+# Mingyang Fan 
+
+Kuaishou Technology Beijing, China fanmingyang03@kuaishou.com 
+
+# Yi Zhang 
+
+Kuaishou Technology Beijing, China zhangyi49@kuaishou.com 
+
+# Yi Wang 
+
+Kuaishou Technology Beijing, China wangyi05@kuaishou.com 
+
+# Jingwei Zhuo †
+
+Unaffiliated Beijing, China zhuojw10@gmail.com 
+
+## Abstract 
+
+Kuaishou serves over 400 million daily active users, processing hun-dreds of millions of search queries daily against a repository of tens of billions of short videos. As the final decision layer, the reranking stage determines user experience by optimizing whole-page utility. While traditional score-and-sort methods fail to capture combinato-rial dependencies, Generative Reranking offers a superior paradigm by directly modeling the permutation probability. However, de-ploying Generative Reranking in such a high-stakes environment faces a fundamental dual dilemma: 1) the structural trade-off where Autoregressive (AR) models offer superior Sequential modeling but suffer from prohibitive latency, versus Non-Autoregressive (NAR) models that enable efficiency but lack dependency capturing; 2) the 
+
+optimization gap where Supervised Learning faces challenges in directly optimizing whole-page utility, while Reinforcement Learn-ing (RL) struggles with instability in high-throughput data streams. To resolve this, we propose Dual-Rerank , a unified framework designed for industrial reranking that bridges the structural gap via 
+
+Sequential Knowledge Distillation and addresses the optimization gap using List-wise Decoupled Reranking Optimization (LDRO) for stable online RL. Extensive A/B testing on production traffic demon-strates that Dual-Rerank achieves State-of-the-Art performance, significantly improving User satisfaction and Watch Time while drastically reducing inference latency compared to AR baselines.  
+
+> ∗Both authors contributed equally to this research.
+> †Corresponding Authors Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference acronym ’XX, Woodstock, NY
+> ©2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+## CCS Concepts 
+
+• Information systems → Learning to rank .
+
+## Keywords 
+
+Recommender Systems, Generative Reranking, Knowledge Distilla-tion, Reinforcement Learning 
+
+ACM Reference Format: 
+
+Chao Zhang, Shuai Lin, Chenglei Dai, Ye Qian, Mingyang Fan, Yi Zhang, Yi Wang, and Jingwei Zhuo. 2018. Dual-Rerank: Fusing Sequential De-pendencies and Utility for Generative Reranking. In Proceedings of Make sure to enter the correct conference title from your rights confirmation email (Conference acronym ’XX). ACM, New York, NY, USA, 12 pages. https: //doi.org/XXXXXXX.XXXXXXX 
+
+## 1 Introduction 
+
+In Kuaishou’s short-video search, users initiate queries via a search box to access a dual-column feed [ 24 , 34 ], where the initial view-port typically displays four videos. This compact layout positions the reranking stage as a critical determinant of user satisfaction. Traditional Score-and-Sort paradigms [ 3, 5, 13 , 23 , 29 ] decouple scoring from ordering; while efficient, they fail to capture dynamic inter-item dependencies, often missing optimal permutations that maximize whole-page utility. To bridge this gap, Generative Rerank-ing has emerged as a superior paradigm by directly modeling the joint probability 𝑃 (𝑌 |𝑋 ). Specifically, Autoregressive (AR) mod-els [ 2 , 15 ] explicitly capture sequential dependencies, aligning with the user’s browsing experience, but suffer from prohibitive 𝑂 (𝐿 )
+
+latency. Conversely, Non-Autoregressive (NAR) models offer 𝑂 (1)
+
+parallel generation but are limited by the Conditional Independence Assumption. Prior attempts like NAR4Rec [ 25 ] use inference-time patches (e.g., Contrastive Decoding) but fail to resolve the intrinsic lack of sequential modeling parameters. Instead of relying on extrinsic inference heuristics, we contend that the failure of NAR in open-ended text generation does not nec-essarily apply to reranking. In NLP, the core bottleneck to use NAR model is the “Multi-Modality Problem” [ 11 ], where high entropy           
+
+> arXiv:2604.07420v1 [cs.IR] 8 Apr 2026 Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Chao Zhang et al. 12345678910
+> Token Rank (Candidate Sort)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Probability Density
+> Long Tail
+> (High Entropy)
+> Peaked
+> (Determinate)
+
+(a) Distribution Shape Comparison    
+
+> NLP (Qwen2.5)
+> Reranking (Ours)
+> NLP Task Reranking Task
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Metric Score (0-1)
+> 0.50
+> 0.77
+> 0.23
+> 0.75
+> Branching
+> Factor 6.0
+> Branching
+> Factor 2.0
+
+(b) Entropy-Consistency Gap 
+
+> Top-1 Confidence
+> Seq. Consistency
+
+Figure 1: Comparison of Distribution Characteristics be-tween NLP (Qwen2.5) and Industrial Reranking Tasks. (a) Distribution Shape Analysis: The curves plot the probability of the top-𝑘 tokens at each decoding step, averaged over 100 samples from the Alpaca dataset (NLP) and one day of produc-tion logs (Reranking). Unlike the high-entropy, long-tail dis-tribution observed in NLP (Red), reranking exhibits a sharp Unimodal Concentration (Blue). (b) Quantitative metrics re-veal a significant “Entropy-Consistency Gap,” validating the quasi-deterministic nature of ranking. Detailed explanation of the metrics are showed in Appendix C. 
+
+leads to flat, multi-peaked distributions. Does reranking face the same dilemma? To answer this, we conducted a rigorous compari-son between a general LLM (Qwen2.5-1.5B) and an industrial AR reranker, as visualized in Figure 1. The results reveal a critical Entropy-Consistency Gap: 1) NLP Divergence: Due to linguistic ambiguity, the LLM exhibits a long-tail distribution (Fig. 1a) with a low sequence consistency of 22.6%, indi-cating that the model oscillates between multiple valid expressions. 2) Reranking Convergence: In contrast, constrained by business util-ity, the reranking model demonstrates extreme stability—a sharp Unimodal Concentration with a Top-1 confidence of 0.77 and con-sistency reaching 75.0%. This empirical evidence suggests that the optimal solution space for reranking is highly constrained and peaked. Under such “quasi-deterministic” regimes, the complex conditional probability 𝑃 (𝑦 𝑡 |𝑦 <𝑡 , 𝑥 ) of an AR model mathematically degenerates towards a marginal distribution 𝑃 (𝑦 𝑡 |𝑥 ). This implies that if properly guided, a NAR model can effectively internalize the ordering patterns of an AR teacher without suffering from the multi-modal collapse common in NLP. However, solving the structural efficiency dilemma is only half the battle. Industrial systems also face an Optimization Duality :Supervised Learning (SL) ensures training stability but aligns only with past exposure bias, whereas Reinforcement Learning (RL) optimizes for future ecosystem utility (e.g., retention) but suffers from severe cold-start instability. To reconcile these orthogonal conflicts, we propose Dual-Rerank, a unified framework designed to harmonize both the Structural Duality (AR vs. NAR) and the 
+
+Optimization Duality (Imitation vs. Evolution). The framework unfolds in a progressive evolutionary paradigm. 
+
+In the training phase , we design a two-stage mechanism to re-solve the aforementioned dualities. First, to bridge the Structural Gap , we leverage the Unimodal Concentration Hypothesis and treat the AR model as a "Generative Anchor." Through Sequential Knowl-edge Distillation, the dependency logic of the teacher is transferred into a parallel NAR student, providing a mathematically stable initialization without incurring 𝑂 (𝐿 ) latency. Second, to bridge the Optimization Gap , we introduce List-wise Decoupled Rerank-ing Optimization (LDRO). Moving beyond mere imitation, LDRO optimizes for Whole-Page Utility by employing Vectorized Gumbel-Max for efficient exploration and Streaming Double-Decoupling to neutralize reward drifts in dynamic industrial streams. 
+
+In the inference phase , we capitalize on the computational surplus gained from the NAR architecture. By converting the "saved latency" into "search breadth," we implement a Sample-and-Rank (Best-of-N) strategy. This allows the model to approximate global optimality within strict industrial time constraints ( < 20 ms), effec-tively completing the transition from efficiency to efficacy. Our main contributions are summarized as follows: (1) Theoretical Insight: We propose the Unimodal Concentra-tion Hypothesis and provide the 𝜖 -Bound Ranking Stability Theorem, theoretically justifying the feasibility of transfer-ring sequential knowledge from AR to NAR in constrained reranking tasks. (2) Framework & Algorithm: We introduce Dual-Rerank and the LDRO algorithm. LDRO innovatively resolves the "Re-ward Shift" and "Position Insensitivity" dilemmas inherent in applying on-policy RL to industrial streams via Double-Decoupling and Rank-Decay Modulation. (3) Industrial Impact: Extensive offline and online A/B testing demonstrates that Dual-Rerank significantly improves core business metrics and reduce P99 latency, successfully vali-dating the paradigm shift from discriminative to generative reranking in a large-scale production system. 
+
+## 2 Related Work 2.1 Evolution of Reranking Paradigms 
+
+Reranking serves as the final decision layer in recommender sys-tems, aiming to optimize the permutation of candidate items for maximum user satisfaction [ 6, 20 , 21 , 23 , 35 ]. Early approaches fol-lowed the Discriminative (Score-and-Sort) paradigm. Models like PRM [ 23 ] and DLCM [ 1 ] employ attention mechanisms [ 28 ] or RNNs [ 4, 27 ] to encode feature interactions. Despite incorporating local context, these methods typically assign independent scalar Dual-Rerank: Fusing Sequential Dependencies and Utility for Generative Reranking Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+scores to items and sort them greedily. This approach often fails to capture the combinatorial nature of list utility, ignoring “bun-dle effects” where an item’s value depends heavily on its neigh-bors [2, 31]. To address this, Generative Reranking formulates the task as a sequence generation problem, modeling the joint probability of the permutation to optimize holistic utility (e.g., diversity and cover-age) [ 8, 15 , 25 , 30 , 36 ]. Pioneering works like Seq2Slate [ 2] demon-strated that directly generating target indices outperforms greedy baselines. Subsequent research expanded this into two-stage frame-works (Generator-Evaluator), such as PIER [ 26 ] and PRS [ 6], which sample multiple candidate slates and select the best one based on whole-page metrics. Recent advances have further integrated list-wise optimization strategies, including discrete diffusion pro-cesses [ 14 ] and reinforcement learning (RL) objectives [ 12 , 37 ], to better align generation with long-term user engagement. However, these complex two-stage or iterative methods often incur high com-putational costs, challenging their deployment in latency-sensitive industrial systems. 
+
+## 2.2 Autoregressive vs. Non-Autoregressive Models 
+
+Within the generative landscape [ 7 , 15 , 25 , 33 ], the trade-off between accuracy and latency is dictated by the decoding architecture. 
+
+Autoregressive (AR) Models , adopted by Seq2Slate [ 2] and re-cent LLM-based rerankers [ 9, 19 , 32 , 35 ], strictly follow the probabil-ity chain rule 𝑃 (𝑌 |𝑋 ) = Î 𝑃 (𝑦 𝑡 |𝑦 <𝑡 , 𝑋 ). By explicitly conditioning on previous selections, AR models effectively capture sequential dependencies and causal user behaviors. While achieving high ranking accuracy, their serial decoding nature results in 𝑂 (𝐿 ) la-tency. Even efficient variants like GReF [ 15 ] face bottlenecks under high concurrency. Moreover, AR models trained via teacher forcing may suffer from exposure bias, leading to error propagation during inference [15, 35]. 
+
+Non-Autoregressive (NAR) Models attempt to break this la-tency bottleneck by assuming conditional independence among item positions, allowing for 𝑂 (1) parallel generation [ 16 –18 ]. Works like NAR4Rec [ 25 ] and SetRank [ 22 ] predict item positions or per-mutation matrices simultaneously. While significantly faster, the 
+
+Conditional Independence Assumption often leads to the “multi-modality problem,” resulting in incoherent lists or conflicting rec-ommendations. Although techniques like contrastive decoding [ 25 ]attempt to mitigate this, they lack explicit sequential guidance. Dif-ferent from these approaches, our Dual-Rerank framework bridges this structural gap by distilling sequential dependencies from an AR teacher into a parallel NAR student, unified with a decoupled RL optimization (LDRO) to ensure both structural consistency and business objective alignment. 
+
+## 3 Methodology 
+
+In this section, We propose Dual-Rerank , a unified online frame-work that reconciles the accuracy–latency tension in industrial reranking by jointly updating an AR Teacher and a NAR Student on streaming interactions (Fig. 2, Alg. 1). 
+
+Algorithm 1 Dual-Rerank Online Streaming Training Algorithm 
+
+Require: 
+
+Online Interaction Stream S;Teacher Model 𝜋 𝜃 𝑇 (AR); Student Model 𝜋 𝜃 𝑆 (NAR); Loss Weights 𝜆 𝐾𝐷 , 𝜆 𝑅𝐿 . 
+
+> 1:
+
+Initialize parameters 𝜃 𝑇 and 𝜃 𝑆  
+
+> 2:
+
+Input: Continuous stream of user interaction batches 𝐵 𝑡 =
+
+{( 𝑥, 𝑦 𝑢𝑠𝑒𝑟 , 𝑟 )} 𝑡  
+
+> 3:
+
+while Stream S is active do  
+
+> 4:
+
+Receive latest batch 𝐵 𝑡 immediately after user actions 
+
+// 1. Teacher Learning (AR Path)  
+
+> 5:
+
+Compute AR logits via sequential decoding  
+
+> 6:
+
+L𝑀𝐿𝐸 ← Max Likelihood Estimation on exposure logs  
+
+> 7:
+
+L𝐵𝑃𝑅 ← Pairwise Ranking Loss on feedback  
+
+> 8:
+
+L𝑇 𝑒𝑎𝑐ℎ𝑒𝑟 = L𝑀𝐿𝐸 + L 𝐵𝑃𝑅 
+
+// 2. Sequential Distillation (Bridge)  
+
+> 9:
+
+Compute NAR logits via parallel decoding  
+
+> 10:
+
+L𝐾𝐷 ← 𝐷 𝐾𝐿 (StopGrad (𝜋 𝜃 𝑇 )|| 𝜋 𝜃 𝑆 ) 
+
+> 11:
+
+Note: Teacher serves as a dynamic soft-label generator. 
+
+// 3. Online Exploration (RL Path)  
+
+> 12:
+
+Generate 𝐾 candidates via Gumbel-Max using 𝜋 𝜃 𝑆  
+
+> 13:
+
+Compute Hybrid Rewards 𝑅 & Apply Double-Decoupling  
+
+> 14:
+
+L𝐿𝐷𝑅𝑂 ← Policy Gradient with Rank-Decay Modulation 
+
+// 4. Unified Gradient Update  
+
+> 15:
+
+L𝑇 𝑜𝑡𝑎𝑙 = L𝑇 𝑒𝑎𝑐ℎ𝑒𝑟 + 𝜆 𝐾𝐷 · L 𝐾𝐷 + 𝜆 𝑅𝐿 · L 𝐿𝐷𝑅𝑂  
+
+> 16:
+
+Compute Gradients ∇L 𝑇 𝑜𝑡𝑎𝑙  
+
+> 17:
+
+Update 𝜃 𝑇 and 𝜃 𝑆 simultaneously via optimizer  
+
+> 18:
+
+end while 
+
+## 3.1 Framework Overview 
+
+Problem Formulation. Given context 𝑥 (e.g., user profile, query, recent interactions) and candidate set C, reranking aims to output an ordered slate 𝑌 = [𝑦 1, . . . , 𝑦 𝐿 ] that maximizes the expected 
+
+Whole-Page Utility 𝑅 (𝑌 ):
+
+𝑌 ∗ = arg max  
+
+> 𝑌 ∈ P ( C)
+
+E[𝑅 (𝑌 )| 𝑥 ], (1) where P (C) is the set of all permutations. 
+
+Architecture. Dual-Rerank uses two parallel branches with a shared encoder: (i) an AR Teacher as a sequential anchor 𝑃 𝐴𝑅 (𝑌 |𝑥 )
+
+trained from exposure logs and preference signals, and (ii) a NAR 
+
+Student 𝑃 𝑁 𝐴𝑅 (𝑌 |𝑥 ) initialized via distillation and improved via online RL for whole-page utility. We next detail (A) distillation (Sec. 3.2) and (B) LDRO (Sec. ?? ), followed by inference (Sec. 3.3). 
+
+## 3.2 Sequential Knowledge Distillation 
+
+This component aims to endow the structurally efficient NAR Stu-dent with the sequential dependency modeling capabilities of the AR Teacher. In our joint streaming framework, this process func-tions as a dynamic "bridge," continuously transferring the teacher’s evolving ranking logic to the student. 
+
+3.2.1 The Sequential Anchor: Preference-Aware AR Teacher. We adopt a Pointer Network-based AR Teacher and train it with a hybrid objective that captures both exposure bias and preference. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Chao Zhang et al. 
+
+Figure 2: Overview of Dual-Rerank: joint online updates of an autoregressive Teacher and a non-autoregressive Student via (i) sequential distillation and (ii) online RL optimization (LDRO) under strict latency. 1) Exposure Learning via MLE. Given the exposed sequence 
+
+𝑌 = {𝑦 1, . . . , 𝑦 𝐿 }:
+
+L𝑀𝐿𝐸 = −
+
+> 𝐿
+
+∑︁ 
+
+> 𝑡 =1
+
+log 𝜋 𝜃 𝑇 (𝑦 𝑡 | 𝑦 <𝑡 , 𝑥 ). (2) 
+
+2) Preference Injection via BPR. We define an item utility score from feedback: 
+
+𝑆 (𝑦 ) = 1.0 · I(click ) + 2.0 · I(long_view ) + 0.1 · I(exposure ), (3) and construct D𝑝𝑎𝑖𝑟 = {( 𝑦 𝑖 , 𝑦 𝑗 ) | 𝑆 (𝑦 𝑖 ) − 𝑆 (𝑦 𝑗 ) > 𝛿 𝑠𝑐𝑜𝑟𝑒 }. The BPR loss is: 
+
+L𝐵𝑃𝑅 = −∑︁   
+
+> (𝑦 𝑖 ,𝑦 𝑗 ) ∈ D 𝑝𝑎𝑖𝑟
+
+ln 𝜎  𝑠 𝜃 𝑇 (𝑦 𝑖 |𝑥 ) − 𝑠 𝜃 𝑇 (𝑦 𝑗 |𝑥 ) , (4) where 𝑠 𝜃 𝑇 denotes AR decoder logits. 
+
+3) Total AR Objective. 
+
+L𝑇 𝑒𝑎𝑐ℎ𝑒𝑟 = L𝑀𝐿𝐸 + 𝜆 𝑏𝑝𝑟 L𝐵𝑃𝑅 . (5) 
+
+3.2.2 Distillation and Feasibility. With a robust AR Teacher, the challenge lies in transferring its sequential wisdom to the parallel Student. In open-ended generation tasks (e.g., NLP), NAR models often suffer from the "Multi-Modality Problem", leading to incoher-ent outputs. However, we argue that the Reranking task possesses a unique property that fundamentally distinguishes it from open-ended generation. We formalize this insight as follows: 
+
+Hypothesis 1 (Contextual Determinism). Given a sufficiently expressive encoder context 𝑥 (comprising user profile, interaction his-tory, and item features), the optimal ranking 𝑌 is quasi-deterministic. The conditional entropy 𝐻 (𝑌 |𝑥 ) approaches zero. 
+
+Under Hypothesis 1, knowing the full context 𝑥 provides suffi-cient information to determine the rank of item 𝑦 𝑡 . Mathematically, this implies that the information gain provided by the history 𝑦 <𝑡 is negligible given 𝑥 (i.e., 𝐼 (𝑦 𝑡 ; 𝑦 <𝑡 |𝑥 ) ≈ 0). Consequently, the complex conditional distribution 𝑃 (𝑦 𝑡 |𝑦 <𝑡 , 𝑥 ) degenerates towards the mar-ginal 𝑃 (𝑦 𝑡 |𝑥 ). This justifies the use of Sequence-Level Knowledge Distillation to force the NAR Student 𝜋 𝜃 𝑆 to fit the modes of the AR Teacher: 
+
+L𝐾𝐷 =
+
+> 𝐿
+
+∑︁  
+
+> 𝑡 =1
+
+𝐷 𝐾𝐿 (stop_grad (𝜋 𝜃 𝑇 (·| 𝑦 <𝑡 , 𝑥 )) ∥ 𝜋 𝜃 𝑆 (·| 𝑥 )) (6) where ‘stop_grad’ ensures the Teacher is not destabilized by the Student’s gradients. We further provide a stability bound for ranking flips (proof in Appendix A): 
+
+Theorem 3.1 ( 𝜖 -Bound Ranking Stability). Given an AR Teacher with a robust ranking margin 𝛿 (confidence), and a distillation er-ror 𝜖 (measured by Total Variation Distance), the probability of the NAR Student producing a Ranking Flip (i.e., erroneously predict-ing 𝑃 (𝑦 𝑗 ) > 𝑃 (𝑦 𝑖 ) when the teacher indicates 𝑦 𝑖 ≻ 𝑦 𝑗 ) is strictly upper-bounded by: 
+
+𝑃 (Flip ) ≤ √2𝜖 𝛿 (7) 
+
+where 𝜉 is a slack variable related to the teacher’s uncertainty. 
+
+3.2.3 Empirical Validation: Position-wise Top-1 Agreement Rate. 
+
+We validate the approximation implied by Hypothesis 1 via the 
+
+Position-wise Top-1 Agreement Rate (PTAR) between the Teacher (history-conditioned) and Student (context-only). 
+
+Metric. For context 𝑥 and teacher condition 𝑦 <𝑡 (from ground truth), define: 
+
+ˆ𝑦 𝑇 𝑡 = arg max   
+
+> 𝑣 ∈ V
+
+𝜋 𝜃 𝑇 (𝑣 | 𝑦 <𝑡 , 𝑥 ), ˆ𝑦 𝑆 𝑡 = arg max   
+
+> 𝑣 ∈ V
+
+𝜋 𝜃 𝑆 (𝑣 | 𝑥 ). (8) PTAR averages the position-wise match rate over D:PTAR = 1
+
+|D| · 𝐿 ∑︁ (𝑥,𝑌 ) ∈ D 
+
+> 𝐿
+
+∑︁  
+
+> 𝑡 =1
+
+I( ˆ𝑦 𝑇 𝑡 = ˆ𝑦 𝑆 𝑡 ). (9) 
+
+Rationale for Validation. The AR Teacher makes decisions based on the full information set (Context + History), while the NAR Student relies solely on Context . 1) If the sequential dependency 
+
+𝑦 <𝑡 were strictly indispensable for correctness (i.e., 𝑦 𝑡 changes depending on 𝑦 <𝑡 ), the Context-only Student would theoretically lack the necessary information to match the Teacher’s predictions, Dual-Rerank: Fusing Sequential Dependencies and Utility for Generative Reranking Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 0 5k 10k 15k 20k 
+
+> Training Steps
+> 0.700
+> 0.725
+> 0.750
+> 0.775
+> 0.800
+> 0.825
+> Teacher-Student Agreement Rate
+> Baseline Struggle
+> (Low Fidelity)
+> Distillation Alignment
+> (+9.3% High Fidelity)
+> Pure NAR (Baseline)
+> Distilled NAR (Ours)
+
+Figure 3: Teacher–Student PTAR during training. Distillation improves agreement and stability over a pure NAR baseline. 
+
+leading to a low PTAR. 2) Conversely, a high PTAR empirically proves that the optimal decision ˆ𝑦 𝑡 is effectively determined by 𝑥 
+
+alone. In this case, the complex sequential reasoning of the Teacher collapses into a quasi-deterministic outcome that can be accurately "cloned" by the Student, validating our approximation assumption. 
+
+Result Analysis. Figure 3 compares the training dynamics of a Pure NAR versus our Distilled NAR. Distillation yields higher and smoother PTAR than a non-distilled NAR baseline, supporting that the Student can reliably approximate the Teacher’s position-wise decisions from context alone. Distillation provides a stable structural prior, but optimizing 
+
+Whole-Page Utility requires online learning with delayed, multi-objective, and non-stationary feedback. We therefore optimize the Student with List-wise Decoupled Reranking Optimization (LDRO) .Applying RL in a high-throughput industrial stream presents three specific challenges: (1) Sampling Efficiency Bottleneck: 
+
+On-Policy RL requires extensive online exploration. Traditional AR-based sampling incurs 𝑂 (𝐿 ) latency, creating a severe bottleneck for real-time training throughput. (2) Streaming Distribution Drift: 
+
+Unlike stationary batch training, streaming data suffers from "Re-ward Shift" (e.g., CTR fluctuates between peak and off-peak hours). Standard RL baselines often fail to adapt to these non-stationary baselines, leading to gradient instability. (3) Position Sensitiv-ity Mismatch: Standard RL objectives (maximizing cumulative reward) typically imply a linear contribution of actions. This con-tradicts the Cascading Attention Model in search, where an error at Rank 1 causes exponentially higher utility loss than at Rank 10. To systematically address these issues, LDRO integrates three tailored components. 
+
+3.2.4 Challenge 1 Solution: High-Throughput Parallel Exploration. 
+
+To resolve the sampling bottleneck, we capitalize on the parallel nature of the NAR architecture . By combining NAR with the Vec-torized Gumbel-Max trick, we transform the stochastic sampling process into fully vectorized tensor operations (Addition + Argmax). For a position 𝑡 and item 𝑖 , the sampled action is derived as: 
+
+𝑦 𝑡 = arg max 
+
+> 𝑖
+
+ log 𝜋 𝜃 𝑆 (𝑖 |𝑥 ) + G 𝑖 
+
+𝜏 
+
+
+
+(10) 0 12 24        
+
+> Hour
+> (a) CTR Drift
+> 012 24
+> Hour
+> (b) Long-View Drift
+> 05k 10k 15k 20k 25k
+> Training Steps
+> 0.33
+> 0.34
+> 0.35
+> 0.36
+> Normalized Reward
+
+(c) Stability: LDRO vs. GRPO 
+
+> LDRO
+> GRPO
+
+Figure 4: Stability under streaming drift. (a) & (b): Real-world logs reveal significant drifts in different time. (c): Comparison of Total Reward during training. 
+
+where G ∼ Gumbel (0, 1). Crucially, this allows us to generate 
+
+𝐾 candidate slates {𝑌 (1) , . . . , 𝑌 (𝐾 ) } in 𝑂 (1) time, providing the massive data throughput required for stable On-Policy RL updates. 
+
+3.2.5 Challenge 2 Solution: Online Double-Decoupling. Given 𝐾 
+
+generated slates, the core challenge lies in constructing a stable reward signal from a non-stationary data stream. we conduct a Hybrid Reward and apply a Double-Decoupling Normalization to further stabilize the learning process. 
+
+1. Hybrid Reward Construction. To capture the multidimensional "Whole-Page Utility," we construct a reward vector r ∈ R𝑀 from three sources: (1) Reward Network ( 𝑅 𝑛𝑒𝑡 ): Since online feedback is delayed, we employ a pre-trained multi-task network to esti-mate immediate outcomes and long-term satisfaction. (2) Priori Constraints ( 𝑅 𝑝𝑟𝑖𝑜𝑟 ): To adhere to business layouts, we compute relevance NDCG explicitly for the visible windows (Top-4 and Top-8). (3) Posterior Feedback ( 𝑅 𝑝𝑜𝑠𝑡 ): We utilize real-time user actions (Clicks/Long-Views) as sparse but ground-truth signals to correct the bias of the Reward Network. 
+
+2. Online Double-Decoupling. To address distribution shifts. LDRO applies a two-stage decoupling process: 
+
+Step 1: Group-wise Normalization. For a fixed context 𝑥 ,we sample 𝐾 candidate slates {𝑌 (1) , . . . , 𝑌 (𝐾 ) } from the current policy. We compute a group advantage by normalizing objective-
+
+𝑚 rewards within this 𝐾 -slate set: 
+
+𝐴 ( 𝑗 ) 
+
+> 𝑚
+
+= 𝑟 ( 𝑗 ) 
+
+> 𝑚
+
+− 𝜇 𝑔𝑟𝑜𝑢𝑝,𝑚 
+
+𝜎 𝑔𝑟𝑜𝑢𝑝,𝑚 + 𝜖 (11) 
+
+Step 2: Batch-wise Standardization. While Step 1 handles query-level variance, it cannot handle Global Distribution Drift .As illustrated in Figure 4 (a) and (b), real-world traffic exhibits Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Chao Zhang et al. 
+
+Figure 5: Overview of the Online Serving Phase. The framework leverages One-Step NAR decoding and Vectorized Gumbel-Max sampling to generate parallel candidates, enabling a high-throughput Best-of-N selection strategy. 
+
+significant "Tidal Drifts" (e.g., peaks vs. valleys in CTR and Long-View rates). To prevent gradient explosions caused by these shifts, we apply a second normalization across the current mini-batch B:
+
+ˆ𝐴 ( 𝑗 ) 
+
+> 𝑚
+
+= 𝐴 ( 𝑗 ) 
+
+> 𝑚
+
+− 𝜇 B,𝑚 
+
+𝜎 B,𝑚 + 𝜖 (12) This batch-wise standardization effectively neutralizes the non-stationary nature of the stream. The impact of this stabilization is evident in Figure 4 (c) . Compared to the standard Group Relative Policy Optimization (GRPO) baseline, which suffers from reward volatility (Red Curve) due to the aforementioned drifts, LDRO (Blue Curve) achieves significantly faster convergence and maintains a consistently higher normalized reward throughout the streaming training phase. Finally, the multi-objective advantages are fused: 
+
+𝐴 ( 𝑗 ) 
+
+> 𝑡𝑜𝑡𝑎𝑙
+
+= Í 𝛼 𝑚 ˆ𝐴 ( 𝑗 ) 
+
+> 𝑚
+
+.
+
+3.2.6 Challenge 3 Solution: Rank-Weighted Policy Optimization. To align optimization with user’s Cascading Attention , we introduce 
+
+View-Port Aware Rank Modulation . Acknowledging that atten-tion remains consistently high in the initial "First Screen" before decaying, we apply a generic Piecewise Decay Function :
+
+𝑤 𝑡 =
+
+(1.0, if 1 ≤ 𝑡 ≤ 𝐾 (Prime Visibility Zone)    
+
+> 1log 2(𝑡 −𝐾 +2)
+
+, if 𝑡 > 𝐾 (Tail Zone) (13) where 𝐾 denotes the effective viewport capacity. Given Kuaishou’s typical dual-column layout [ 10 , 24 , 34 ], the first screen typically displays a 2 × 2 grid, which leads us to set 𝐾 = 4. This prioritizes high-impression items in the prime zone while enabling structured exploration in the tail. 
+
+The Unified Objective. Combining the Structural Prior (Distilla-tion) and the Rank-Weighted Exploration (RL), the final objective for the Student is: 
+
+L𝑇 𝑜𝑡𝑎𝑙 =L𝑇 𝑒𝑎𝑐ℎ𝑒𝑟 + 𝜆 𝐾𝐷 · L 𝐾𝐷 
+
+− 𝜆 𝑅𝐿 · 1
+
+𝐺 
+
+> 𝐺
+
+∑︁ 
+
+> 𝑗 =1
+
+𝐴 ( 𝑗 )
+
+> 𝑡𝑜𝑡𝑎𝑙 𝐿
+
+∑︁ 
+
+> 𝑡 =1
+
+𝑤 𝑡 log 𝜋 𝜃 𝑆 (𝑦 ( 𝑗 ) 
+
+> 𝑡
+
+|𝑥 ) (14) This unified formulation allows Dual-Rerank to co-evolve via joint streaming updates. 
+
+## 3.3 Inference: Sample-and-Rank Strategy 
+
+As illustrated in Figure 5, the online inference phase is designed to convert the structural efficiency of the NAR architecture into ranking capacity. Unlike Autoregressive models that suffer from 
+
+𝑂 (𝐿 ) serial decoding latency, Dual-Rerank executes a streamlined 
+
+Sample-and-Rank pipeline: (1) One-Step Decoding: The En-coder first processes the context 𝑥 . Subsequently, the NAR Decoder predicts the item probability distribution 𝜋 𝜃 𝑆 (·| 𝑥 ) for all ranking positions simultaneously via a single forward pass ( 𝑂 (1)). (2) Vec-torized Sampling: To explore the combinatorial solution space, we employ Vectorized Gumbel-Max sampling to generate 𝑁 diverse candidate slates in parallel. (3) Reward Scoring: These candidates are immediately scored by the inference-time Reward System (con-sisting of the Reward Network 𝑅 𝑛𝑒𝑡 and Priori Rules 𝑅 𝑝𝑟𝑖𝑜𝑟 ). Note that Posterior feedback is unavailable during inference, so we rely on the generalized utility learned by 𝑅 𝑛𝑒𝑡 . (4) Best-of-N Selection: 
+
+Finally, the sequence with the highest estimated score is selected as the Best Sequence for exposure. This strategy effectively transforms the computational surplus of NAR (saved from avoiding serial decoding) into a significant gain in Search Breadth. It approximates global optimality within strict industrial latency constraints. 
+
+## 4 Experiments 
+
+To comprehensively evaluate the effectiveness of Dual-Rerank, we conduct experiments to address the following research questions: 
+
+• RQ1 (Overall Effectiveness): Does Dual-Rerank break the accuracy-latency trade-off, outperforming state-of-the-art NAR baselines while achieving parity with computationally expensive AR models? 
+
+• RQ2 (Structural Fidelity): Can the proposed Sequential Knowledge Distillation (Phase 1) effectively transfer the de-pendency logic from AR to NAR, preventing the “Ranking Collapse” often observed in parallel generation? 
+
+• RQ3 (Optimization Stability): Does the LDRO algorithm (Phase 2) effectively handle the non-stationary reward shifts in industrial streaming environments? 
+
+• RQ4 (Industrial Viability): How does the framework per-form in a large-scale production environment in terms of system latency and core business metrics? 
+
+## 4.1 Experimental Setup 
+
+4.1.1 Datasets. We utilize a public benchmark and a massive in-dustrial dataset to ensure reproducibility and practical applicability. 
+
+• Avito Context Ad Clicks 1: A widely used benchmark con-taining over 53 million search sessions, 1.3 million users, and 36 million ads. Following standard protocols [ 15 , 25 ], we  
+
+> 1https://www.kaggle.com/c/avito-context-ad-clicks/data Dual-Rerank: Fusing Sequential Dependencies and Utility for Generative Reranking Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+use data from the first 21 days for training and the subse-quent 7 days for testing. The task involves predicting optimal permutations for lists of length 5 based on context features. 
+
+• Kuaishou Production Dataset : Collected from the Kuaishou App (400M+ DAUs), this dataset validates industrial robust-ness with 1 billion ( 10 9) interaction logs. Each sample in-cludes user profiles, 30 candidate items, and the top-10 ex-posed list. Labels incorporate multi-objective signals (Clicks, Long-Views et al.). 
+
+4.1.2 Baselines. We compare Dual-Rerank against a comprehen-sive set of state-of-the-art baselines, categorized into Discriminative (Pointwise/Listwise) and Generative (AR/NAR) paradigms. 
+
+1. Discriminative Methods These models score items either independently or collectively. (1) DNN [5]: Uses Multi-Layer Per-ceptrons (MLP) to estimate pointwise click-through rates (CTR) independently. (2) DCN [ 29 ]: Enhances DNNs by introducing cross networks to explicitly learn bounded-degree feature interactions. 
+
+(3) PRM [ 23 ]: A listwise approach employing self-attention to cap-ture inter-item correlations and global context for scoring. 
+
+2. Generative Methods (AR & NAR) These methods treat reranking as sequence generation or generative evaluation. (1) Seq2Slate [ 2]: An Autoregressive (AR) baseline using Pointer Net-works for sequential selection, representing the accuracy upper bound for serial decoding. (2) Edge-Rerank [10 ]: A mobile-oriented framework generating sequences via adaptive beam search over pointwise scores. (3) PIER [ 26 ]: A two-stage framework combining hashing-based candidate selection with joint generator-evaluator training. (4) NAR4Rec [25 ]: The SOTA Non-Autoregressive (NAR) model utilizing parallel decoding with unlikelihood training. (5) MG-E [33 ]: Deploys diverse generators with a “list comprehensive-ness” metric to propose complementary lists for evaluation. 
+
+## 4.2 Overall Effectiveness (RQ1) 
+
+We present the comparative results in Table 1. 
+
+Surpassing the NAR Bottleneck. As shown in Table 1, Dual-Rerank significantly outperforms the SOTA NAR baseline, NAR4Rec, by a substantial margin (e.g., +2.6% relative AUC gain on Kuaishou). This result offers strong empirical support for our distillation strategy: by explicitly injecting sequential dependency logic during Phase 1, we successfully overcome the “Conditional Independence” bottleneck that typically constrains parallel decoding models. 
+
+Beating the AR Teacher. Crucially, Dual-Rerank not only matches but exceeds the performance of the strongest AR baseline, GReF (0.7448 vs. 0.7387 on Kuaishou). While AR models are limited to imitating historical ground truth (via MLE), our Phase 2 optimiza-tion (LDRO) allows the student to transcend the teacher by directly optimizing for Whole-Page Utility (Reward). This confirms that properly guided parallel exploration can yield better global optima than greedy serial decoding. 
+
+## 4.3 Structural Fidelity (RQ2) 
+
+To investigate whether the NAR student truly internalizes the se-quential logic of the AR teacher—rather than merely memorizing pointwise scores—we introduce a structural consistency metric: 
+
+Ranking Flip Rate (RFR) .
+
+Table 1: Overall performance comparison on Avito and Kuaishou datasets. The best results are highlighted in bold, and the second-best are underlined . Improvement is calcu-lated relative to the best baseline (GReF). Method Avito (Public) Kuaishou (Industrial) AUC NDCG AUC NDCG 
+
+Discriminative Methods 
+
+DNN [5] 0.6614 0.6920 0.6866 0.7122 DCN [29] 0.6623 0.7004 0.6879 0.7116 PRM [23] 0.6881 0.7380 0.7119 0.7396 Edge-rerank [10] 0.6953 0.7203 0.7143 0.7401 PIER [26] 0.7109 0.7401 0.7191 0.7387 
+
+Generative Methods (NAR) 
+
+NAR4Rec [25] 0.7234 0.7409 0.7254 0.7425 MG-E [33] 0.7323 0.7437 0.7381 0.7453 
+
+Generative Methods (AR) 
+
+Seq2Slate [2] 0.7034 0.7225 0.7165 0.7383 GReF [15] 0.7384 0.7478 0.7387 0.7498 
+
+Dual-Rerank 0.7441 0.7517 0.7448 0.7565 
+
+Improvement +0.77% +0.52% +0.83% +0.89% Metric Definition. Standard metrics like MSE fail to capture the combinatorial nature of ranking. RFR measures the proportion of discordant pairs between the Teacher and Student. Let S𝑇 and 
+
+S𝑆 denote the scoring functions of the Teacher and Student. A “flip” occurs for a pair (𝑖, 𝑗 ) if the Student reverses the Teacher’s preference (i.e., S𝑆 𝑖 < S𝑆 𝑗 given S𝑇 𝑖 > S𝑇 𝑗 ). RFR is defined as: RFR =
+
+Í(𝑖,𝑗 ) ∈ P I(S 𝑆 𝑖 < S𝑆 𝑗 | S 𝑇 𝑖 > S𝑇 𝑗 )|P | (15) Lower RFR indicates higher fidelity to the teacher’s sequential reasoning. 
+
+Analysis of Training Dynamics. Figure 6 visualizes the evolution of RFR. A critical phenomenon, which we term Ranking Collapse ,is observed in the “Pure NAR” baseline (Red Curve). Despite con-verging pointwise loss, its structural alignment with the teacher deteriorates, with RFR escalating significantly. This suggests that without explicit sequential guidance, NAR models struggle to re-solve inter-item dependencies in the tail. In contrast, Dual-Rerank (Blue Curve) maintains a low and stable RFR, validating that Sequen-tial Knowledge Distillation effectively acts as a structural bridge, compressing the teacher’s autoregressive patterns into the student’s parallel parameters. 
+
+Impact of Contextual Depth. We further analyze the necessity of full-sequence modeling in Table 2. The “AR (Hybrid)” strategy, which only models the top-2 items autoregressively, fails to match the performance of the full AR teacher. This indicates that depen-dency chains in short-video feeds cascade beyond the head. Our Distilled NAR model, however, achieves parity with the AR Teacher (0.7391 vs. 0.7387), proving that the student has successfully cap-tured these global dependencies. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Chao Zhang et al. 0 10k 20k 30k 40k 
+
+> Training Steps
+> 0.08
+> 0.09
+> 0.10
+> 0.11
+> 0.12
+> 0.13
+> 0.14
+> 0.15
+> Ranking Flip Rate
+> Ranking Collapse
+> (Diverging Trend)
+> Stable Alignment
+> (Converged)
+> Pure NAR
+> Dual-Rerank
+
+Figure 6: Structural Fidelity Analysis (Ranking Flip Rate). unlike PTAR which measures pointwise memorization, RFR evaluates the pairwise ranking logic. The divergence of the “Pure NAR” baseline reveals a Ranking Collapse phenomenon (loss of global order), while Dual-Rerank maintains struc-tural consistency. Table 2: Impact of Sequential Modeling Strategies (Phase 1). * indicates parity with the AR Teacher. Model Training Inference AUC              
+
+> Pure NAR MLE Parallel 0.7254
+> Autoregressive Teachers
+> AR (Hybrid) AR Top-2 AR + Greedy 0.7325 AR (Full) AR Full AR Decoding 0.7387
+> Distilled NAR Sequential Dist. Parallel (NAR) 0.7391 ∗
+> vs. Pure NAR (+1.89%)
+
+## 4.4 Ablation & Training Stability (RQ3) 
+
+To isolate the contributions of our proposed components, we con-duct an ablation study on the Kuaishou dataset (Table 3). 
+
+Table 3: Ablation study of Dual-Rerank components. Variant AUC Drop Dual-Rerank (Full) 0.7448 -w/ GRPO (Replace LDRO) 0.7395 -0.71% w/o Distillation (Phase 1) 0.7254 -2.60% w/o Double-Decoupling (Phase 2) 0.7402 -0.62% w/o Rank-Weighting 0.7429 -0.26% 
+
+Key Observations. 
+
+(1) Distillation is Foundational: Removing Phase 1 causes the largest drop ( -2.60% ). This confirms that the “Sequential Anchor” provided by the teacher is a prerequisite; without it, the model starts from a chaotic state and fails to converge. (2) Superiority of LDRO: Replacing LDRO with standard GRPO leads to a -0.71% drop. This performance regression is com-parable to disabling (3) Double-Decoupling (-0.62%), validating that generic RL (like GRPO) struggles with industrial “Reward Shift,” which our decoupling strategy effectively neutralizes. (4) Rank-Weighting Aligns Utility: The removal of Rank-Weighting results in a -0.26% drop. While smaller, this helps ensure the model prioritizes correctness in the prime visibil-ity zone (Top-4). 
+
+## 4.5 Efficiency & Online Impact (RQ4) 
+
+System Efficiency Analysis. Dual-Rerank is designed to maximize the Efficiency-Accuracy Pareto Frontier . As shown in Table 4, by shift-ing from serial 𝑂 (𝐿 ) to parallel 𝑂 (1) decoding, we reduce average latency by 43.7% (21.5ms → 12.1ms). This computational surplus is strategic: it allows us to deploy the more expensive “Best-of-N” sampling strategy within the strict online time budget, effectively converting saved latency into expanded search breadth. 
+
+Table 4: System Inference Efficiency Comparison. System Decoding Avg. Latency Speedup 
+
+Production AR Serial 𝑂 (𝐿 ) 21.5 ms 1.0 ×
+
+Dual-Rerank Parallel 𝑂 (1) 12.1 ms 1.8 ×
+
+Online A/B Testing. We deployed Dual-Rerank on the Kuaishou App, conducting a rigorous A/B test on 5% of production traf-fic over a period of one month . The results (Table 5) show statistically significant gains. The +0.373% increase in Long-View Rate indicates that the model is optimizing for deep user engage-ment rather than click-bait. Simultaneously, the -0.709% drop in Query Reformulation Rate suggests a substantial improvement in search relevance and user satisfaction. These metrics confirm that Dual-Rerank successfully translates theoretical advancements into tangible business value. 
+
+Table 5: Online A/B testing results. (* indicates 𝑝 < 0.05 ). Metric Relative Improvement 
+
+User Satisfaction Metrics 
+
+Long-View Rate +1.107% ∗
+
+Whole-Page CTR +0.714% ∗
+
+Query Reformulation Rate ↓ -1.309% ∗
+
+## 5 Conclusion 
+
+We proposed Dual-Rerank to reconcile the tension between ac-curacy and efficiency in industrial reranking. Validating the Uni-modal Concentration Hypothesis , we compressed AR dependen-cies into a parallel NAR student via Sequential Knowledge Dis-tillation . Furthermore, our LDRO algorithm stabilizes streaming RL to optimize whole-page utility beyond imitation. Experiments on billion-scale datasets confirm that Dual-Rerank outperforms both SOTA NAR baselines and AR teachers. Online deployment demonstrates significant gains in user satisfaction with a 40% la-tency reduction. Future work will explore scaling this paradigm to foundation models to exploit emergent list-wise reasoning abilities. Dual-Rerank: Fusing Sequential Dependencies and Utility for Generative Reranking Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+## References 
+
+[1] Qingyao Ai, Keping Bi, Jiafeng Guo, and W. Bruce Croft. 2018. Learning a Deep Listwise Context Model for Ranking Refinement. In Proceedings of the 41st International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . 135–144. [2] Irwan Bello, Sayali Kulkarni, Sagar Jain, Craig Boutilier, Ed Chi, Elad Eban, Xiyang Luo, Alan Mackey, and Ofer Meshi. 2018. Seq2Slate: Re-ranking and Slate Optimization with RNNs. arXiv preprint arXiv:1810.02019 (2018). [3] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra, Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, et al .2016. Wide & Deep Learning for Recommender Systems. In Proceedings of the 1st Workshop on Deep Learning for Recommender Systems (DLRS@RecSys) . 7–10. [4] Junyoung Chung, Caglar Gulcehre, KyungHyun Cho, and Yoshua Bengio. 2014. Empirical evaluation of gated recurrent neural networks on sequence modeling. 
+
+arXiv preprint arXiv:1412.3555 (2014). [5] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep Neural Networks for YouTube Recommendations. In Proceedings of the 10th ACM Conference on Recommender Systems (RecSys) . 191–198. [6] Yufei Feng, Yu Gong, Fei Sun, Junfeng Ge, and Wenwu Ou. 2021. Revisit recom-mender system in the permutation prospective. arXiv preprint arXiv:2102.12057 
+
+(2021). [7] Yufei Feng, Binbin Hu, Yu Gong, Fei Sun, Qingwen Liu, and Wenwu Ou. 2021. GRN: Generative Rerank Network for Context-wise Recommendation. arXiv preprint arXiv:2104.00860 (2021). [8] Jingtong Gao, Bo Chen, Xiangyu Zhao, Weiwen Liu, Xiangyang Li, Yichao Wang, Wanyu Wang, Huifeng Guo, and Ruiming Tang. [n. d.]. LLM4Rerank: LLM-based Auto-Reranking Framework for Recommendations. In THE WEB CONFERENCE 2025 .[9] Jingtong Gao, Bo Chen, Xiangyu Zhao, Weiwen Liu, Xiangyang Li, Yichao Wang, Wanyu Wang, Huifeng Guo, and Ruiming Tang. 2025. LLM4Rerank: LLM-based Auto-Reranking Framework for Recommendations. In Proceedings of the Web Conference 2025 (WWW) .[10] Xudong Gong, Qinlin Feng, Yuan Zhang, Jiangling Qin, Weijie Ding, Biao Li, Peng Jiang, and Kun Gai. 2022. Real-time Short Video Recommendation on Mobile Devices. In Proceedings of the 31st ACM International Conference on Information and Knowledge Management (CIKM) . 3103–3112. [11] Jiatao Gu, James Bradbury, Caiming Xiong, Victor O.K. Li, and Richard Socher. 2018. Non-Autoregressive Neural Machine Translation. In International Confer-ence on Learning Representations . https://openreview.net/forum?id=B1l8BtlCb [12] Eugene Ie, Vihan Jain, Jing Wang, Sanmit Narvekar, Ritesh Agarwal, Rui Wu, Heng-Tze Cheng, Tushar Chandra, and Craig Boutilier. 2019. SlateQ: A Tractable Decomposition for Reinforcement Learning with Recommendation Sets. In Pro-ceedings of the 28th International Joint Conference on Artificial Intelligence (IJCAI) .2592–2599. [13] Ray Jiang, Sven Gowal, Timothy A. Mann, and Danilo J. Rezende. 2018. Be-yond Greedy Ranking: Slate Optimization via List-CVAE. arXiv preprint arXiv:1803.01682 (2018). [14] Xiao Lin, Xiaokai Chen, Chenyang Wang, Hantao Shu, Linfeng Song, Biao Li, and Peng Jiang. 2024. Discrete Conditional Diffusion for Reranking in Rec-ommendation. In Companion Proceedings of the Web Conference 2024 (WWW) .161–169. [15] Zhijie Lin, Zhuofeng Li, Chenglei Dai, Wentian Bao, Songlin Lin, Enjun Yu, Haobo Zhang, and Liang Zhao. 2025. GReF: A Unified Generative Framework for Efficient Reranking via Ordered Multi-Token Prediction. arXiv preprint arXiv:2510.25220 
+
+(2025). [16] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. 2022. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 
+
+(2022). [17] Enshu Liu, Qian Chen, Xuefei Ning, Shengen Yan, Guohao Dai, Zinan Lin, and Yu Wang. 2025. Distilled decoding 2: One-step sampling of image auto-regressive models with conditional score distillation. arXiv preprint arXiv:2510.21003 (2025). [18] Enshu Liu, Xuefei Ning, Yu Wang, and Zinan Lin. 2024. Distilled decoding 1: One-step sampling of image auto-regressive models with flow matching. arXiv preprint arXiv:2412.17153 (2024). [19] Weiwen Liu, Yunjia Xi, Jiarui Qin, Fei Sun, Bo Chen, Weinan Zhang, Rui Zhang, and Ruiming Tang. 2022. Neural Re-ranking in Multi-stage Recommender Sys-tems: A Review. arXiv preprint arXiv:2202.06602 (2022). [20] Xiangyu Liu, Chuan Yu, Zhilin Zhang, Zhenzhe Zheng, Yu Rong, Hongtao Lv, and Fuchun Sun. 2021. Variation Control and Evaluation for Generative Slate Recommendations. In Proceedings of The Web Conference 2021 (WWW) . 436–448. [21] Yue Meng, Cheng Guo, Yi Cao, Tong Liu, and Bo Zheng. 2025. A Generative Re-ranking Model for List-level Multi-objective Optimization at Taobao. In Proceed-ings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval . 4213–4218. [22] Liang Pang, Jun Xu, Qingyao Ai, Yanyan Lan, Xueqi Cheng, and Jirong Wen. 2020. SetRank: Learning a Permutation-Invariant Ranking Model for Informa-tion Retrieval. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval . 499–508. [23] Changhua Pei, Yi Zhang, Yongfeng Zhang, Fei Sun, Xiao Lin, Hanxiao Sun, Jian Wu, Peng Jiang, Junfeng Ge, and Wenwu Ou. 2019. Personalized Re-ranking for Recommendation. In Proceedings of the 13th ACM Conference on Recommender Systems (RecSys) . 3–11. [24] Changle Qu, Sunhao Dai, Ke Guo, Liqin Zhao, Yanan Niu, Xiao Zhang, and Jun Xu. 2025. KuaiLive: A Real-time Interactive Dataset for Live Streaming Recommendation. arXiv preprint arXiv:2508.05633 (2025). [25] Yuxin Ren, Qiya Yang, Yichun Wu, Wei Xu, Yalong Wang, and Zhiqiang Zhang. 2024. Non-autoregressive Generative Models for Reranking Recommendation. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD) . 5625–5634. [26] Xiaowen Shi, Fan Yang, Ze Wang, Xiaoxu Wu, Muzhi Guan, Guogang Liao, Yongkang Wang, Xingxing Wang, and Dong Wang. 2023. PIER: Permutation-Level Interest-Based End-to-End Re-ranking Framework in E-commerce. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD) . 4823–4831. [27] Ilya Sutskever, Oriol Vinyals, and Quoc V Le. 2014. Sequence to sequence learning with neural networks. Advances in neural information processing systems 27 (2014). [28] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. Advances in neural information processing systems 30 (2017). [29] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & Cross Network for Ad Click Predictions. In Proceedings of the ADKDD’17 . 1–7. [30] Shuli Wang, Xue Wei, Senjie Kou, Chi Wang, Wenshuai Chen, Qi Tang, Yinhua Zhu, Xiong Xiao, and Xingxing Wang. 2025. NLGR: Utilizing Neighbor Lists for Generative Rerank in Personalized Recommendation Systems. In Companion Proceedings of the ACM on Web Conference 2025 . 530–537. [31] Yunjia Xi, Weiwen Liu, Xinyi Dai, Ruiming Tang, Weinan Zhang, Qing Liu, Xiuqiang He, and Yong Yu. 2021. Context-aware Reranking with Utility Maxi-mization for Recommendation. arXiv preprint arXiv:2110.09059 (2021). [32] Yang Yan, Yihao Wang, Chi Zhang, Wenyuan Hou, Kang Pan, Xingkai Ren, Zelun Wu, Zhixin Zhai, Enyun Yu, and Wenwu Ou. 2024. LLM4PR: Improving Post-Ranking in Search Engine with Large Language Models. arXiv preprint arXiv:2411.01178 (2024). [33] Hailan Yang, Zhenyu Qi, Shuchang Liu, Xiaoyu Yang, Xiaobei Wang, Xiang Li, Lantao Hu, Han Li, and Kun Gai. 2025. Comprehensive List Generation for Multi-Generator Reranking. In Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval, SIGIR 2025, Padua, Italy, July 13-18, 2025 . 2298–2308. [34] Zhongchao Yi, Kai Feng, Xiaojian Ma, Yalong Wang, Yongqi Liu, Han Li, Zhengyang Zhou, and Yang Wang. 2025. DualGR: Generative Retrieval with Long and Short-Term Interests Modeling. arXiv preprint arXiv:2511.12518 (2025). [35] Haobo Zhang, Qiannan Zhu, and Zhicheng Dou. 2025. Enhancing Reranking for Recommendation with LLMs through User Preference Retrieval. In Proceedings of the 31st International Conference on Computational Linguistics . 658–671. [36] Kaike Zhang, Xiaobei Wang, Shuchang Liu, Hailan Yang, Xiang Li, Lantao Hu, Han Li, Qi Cao, Fei Sun, and Kun Gai. 2025. Goalrank: Group-relative optimization for a large ranking model. arXiv preprint arXiv:2509.22046 (2025). [37] Tao Zhuang, Wenwu Ou, and Zhirong Wang. 2018. Globally Optimized Mutual Influence Aware Ranking in E-commerce Search. arXiv preprint arXiv:1805.08524 
+
+(2018). 
+
+## A Theoretical Analysis 
+
+In this section, we provide the rigorous mathematical proofs for the feasibility and stability of the Dual-Rerank framework proposed in the main text. 
+
+## A.1 Proof of Feasibility: Sequential Linearization 
+
+The core premise of Dual-Rerank is the Sequential Linearization Hy-pothesis , which posits that explicit autoregressive (AR) dependency modeling is redundant given a sufficiently expressive encoder and a deterministic ranking task. We formalize this using Information Theory. 
+
+A.1.1 Problem Formulation. Let 𝑋 denote the input context (com-prising user profile, interaction history, and candidate item features), and 𝑌 = {𝑦 1, . . . , 𝑦 𝐿 } denote the optimal permutation sequence. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Chao Zhang et al. 
+
+• An AR model estimates the joint probability as 𝑃 𝐴𝑅 (𝑌 |𝑋 ) =
+
+Î𝐿 𝑡 =1 𝑃 (𝑦 𝑡 |𝑦 <𝑡 , 𝑋 ).
+
+• A NAR model estimates it as 𝑃 𝑁 𝐴𝑅 (𝑌 |𝑋 ) ≈ Î𝐿 𝑡 =1 𝑃 (𝑦 𝑡 |𝑋 ).The information loss incurred by the NAR approximation is quan-tified by the Conditional Mutual Information (CMI) between the current token 𝑦 𝑡 and the history 𝑦 <𝑡 given context 𝑋 :
+
+𝐼 (𝑦 𝑡 ; 𝑦 <𝑡 |𝑋 ) = 𝐻 (𝑦 𝑡 |𝑋 ) − 𝐻 (𝑦 𝑡 |𝑦 <𝑡 , 𝑋 ) (16) where 𝐻 (·) denotes the entropy. 
+
+A.1.2 Theoretical Justification via DPI. Hypothesis (Unimodal Concentration). In industrial reranking scenarios, the optimal sorting order is quasi-deterministic given the full context (i.e., utility is strictly hierarchical). Consequently, the conditional entropy of the optimal ranking approaches zero: 𝐻 (𝑌 |𝑋 ) → 0.
+
+Theorem A.1 (Vanishing Sequential Dependency). If the encoder 𝑓 𝜃 (𝑋 ) serves as a sufficient statistic for the optimal ranking 𝑌 ,and the target distribution is unimodal, then the conditional mutual information 𝐼 (𝑦 𝑡 ; 𝑦 <𝑡 |𝑋 ) approaches zero. 
+
+Proof. By the chain rule of mutual information, the total de-pendency is the sum of step-wise dependencies: 
+
+𝐼 (𝑌 ; 𝑋 ) =
+
+> 𝐿
+
+∑︁ 
+
+> 𝑡 =1
+
+𝐼 (𝑦 𝑡 ; 𝑋 |𝑦 <𝑡 ) (17) Consider the Data Processing Inequality (DPI) applied to the rerank-ing Markov chain: 𝑌 𝑡𝑟𝑢𝑡ℎ → 𝑋 → Encoder (𝑋 ) → ˆ𝑌 . A powerful Deep Bidirectional Encoder (e.g., BERT-based) is trained to maxi-mize 𝐼 (𝑌 𝑡𝑟𝑢𝑡ℎ ; Encoder (𝑋 )) .Under the Unimodal Concentration assumption, knowing 𝑋 fully determines the label 𝑌 . Thus, the conditional entropy 𝐻 (𝑦 𝑡 |𝑋 ) ≈ 0.Since entropy is non-negative and conditioning cannot increase entropy: 
+
+0 ≤ 𝐻 (𝑦 𝑡 |𝑦 <𝑡 , 𝑋 ) ≤ 𝐻 (𝑦 𝑡 |𝑋 ) (18) Given 𝐻 (𝑦 𝑡 |𝑋 ) ≈ 0, it follows by the Sandwich Theorem that 
+
+𝐻 (𝑦 𝑡 |𝑦 <𝑡 , 𝑋 ) ≈ 0. Substituting this back into Eq. (16): 
+
+𝐼 (𝑦 𝑡 ; 𝑦 <𝑡 |𝑋 ) ≈ 0 − 0 = 0 (19) 
+
+Conclusion: 𝐼 (𝑦 𝑡 ; 𝑦 <𝑡 |𝑋 ) ≈ 0 implies that 𝑦 𝑡 is conditionally in-dependent of 𝑦 <𝑡 given 𝑋 . Therefore, the complex autoregressive probability 𝑃 (𝑦 𝑡 |𝑦 <𝑡 , 𝑋 ) mathematically degenerates to the mar-ginal 𝑃 (𝑦 𝑡 |𝑋 ). This theoretically justifies the use of the NAR archi-tecture for reranking. □
+
+## A.2 Proof of Stability: 𝜖 -Bound Theorem 
+
+Here we provide the proof for the Stability Theorem stated in Sec-tion 3.2, establishing that knowledge distillation provides a safety guarantee for the NAR student against ranking errors. 
+
+Definition A.2 (Probabilistic Ranking Margin). We define the ranking confidence of the Teacher model as the probability gap between a relevant item 𝑦 𝑖 and a less relevant item 𝑦 𝑗 . A robust Teacher satisfies a margin condition 𝛿 > 0:
+
+𝑃 𝑇 (𝑦 𝑖 |𝑋 ) − 𝑃 𝑇 (𝑦 𝑗 |𝑋 ) ≥ 𝛿, ∀( 𝑖, 𝑗 ) ∈ P 𝑜𝑟𝑑𝑒𝑟𝑒𝑑 (20) where P𝑜𝑟𝑑𝑒𝑟𝑒𝑑 is the set of pairs where item 𝑖 is strictly better than item 𝑗 .
+
+Theorem A.3 ( 𝜖 -Bound Ranking Stability). Let 𝑃 𝑇 be a teacher distribution with margin 𝛿 , and 𝑃 𝑆 be a student distribution trained such that the KL-divergence 𝐷 𝐾𝐿 (𝑃 𝑇 || 𝑃 𝑆 ) ≤ 𝜖 . A sufficient condi-tion to prevent a Ranking Flip (i.e., erroneously predicting 𝑃 𝑆 (𝑦 𝑗 ) >
+
+𝑃 𝑆 (𝑦 𝑖 )) is: 
+
+𝛿 > √2𝜖 (21) 
+
+Conversely, the probability of a flip occurring is strictly bounded by the ratio of the error to the margin. 
+
+Proof. Step 1: Relating KL to Total Variation. By Pinsker’s Inequality, the KL divergence bounds the Total Variation Distance (TVD) between the teacher ( 𝑃 𝑇 ) and student ( 𝑃 𝑆 ) distributions: 
+
+𝛿 𝑇𝑉 (𝑃 𝑇 , 𝑃 𝑆 ) = sup 
+
+> 𝐴
+
+|𝑃 𝑇 (𝐴 ) − 𝑃 𝑆 (𝐴 )| ≤ √︂ 12 𝐷 𝐾𝐿 (𝑃 𝑇 || 𝑃 𝑆 ) ≤ √︂ 𝜖 
+
+2
+
+(22) This inequality implies that for any single item outcome 𝑦 , the pointwise probability deviation is bounded by: 
+
+|𝑃 𝑇 (𝑦 ) − 𝑃 𝑆 (𝑦 )| ≤ √︂ 𝜖 
+
+2 (23) 
+
+Step 2: Worst-Case Analysis. A Ranking Flip occurs if the student predicts 𝑃 𝑆 (𝑦 𝑗 ) > 𝑃 𝑆 (𝑦 𝑖 ) despite the teacher’s ground truth 
+
+𝑃 𝑇 (𝑦 𝑖 ) ≥ 𝑃 𝑇 (𝑦 𝑗 ) + 𝛿 . In the worst-case scenario, the student under-estimates the probability of the superior item 𝑦 𝑖 and overestimates the inferior item 𝑦 𝑗 by the maximum possible error margin. Let 
+
+𝑒 =√︁ 𝜖 /2. The condition for a flip is: 
+
+𝑃 𝑆 (𝑦 𝑖 ) < 𝑃 𝑆 (𝑦 𝑗 ) (24) Substituting the error bounds relative to the teacher: 
+
+(𝑃 𝑇 (𝑦 𝑖 ) − 𝑒 ) < (𝑃 𝑇 (𝑦 𝑗 ) + 𝑒 ) (25) Rearranging terms: 
+
+𝑃 𝑇 (𝑦 𝑖 ) − 𝑃 𝑇 (𝑦 𝑗 ) < 2𝑒 = √2𝜖 (26) However, by Definition A.2, we know the teacher imposes a margin 
+
+𝑃 𝑇 (𝑦 𝑖 ) − 𝑃 𝑇 (𝑦 𝑗 ) ≥ 𝛿 . A contradiction (and thus a flip) is physically impossible if the margin exceeds the error bound: 
+
+𝛿 ≥ √2𝜖 =⇒ No Flip (27) 
+
+Conclusion: To strictly guarantee stability, we require 𝜖 < 𝛿 2/2.This proves that minimizing the distillation loss 𝜖 directly expands the stability region, making the Student asymptotically consistent with the Teacher’s ordering logic. □
+
+## B Implementation Details 
+
+To ensure reproducibility, we detail the model architecture, training configuration, and hyperparameters used in our experiments. All models are implemented in TensorFlow and trained on a high-performance computing cluster. 
+
+## B.1 Model Architecture 
+
+We adopt a shared encoder architecture for both the Teacher and the Student to extract representations from user behavior sequences and candidate items. 
+
+• Shared Encoder: The encoder is a Transformer-based ar-chitecture consisting of 𝑁 𝑒𝑛𝑐 = 4 layers. It employs Multi-Head Self-Attention with 𝐻 = 3 heads, a hidden dimension of 𝑑 𝑚𝑜𝑑𝑒𝑙 = 256 , and an inner feed-forward dimension of Dual-Rerank: Fusing Sequential Dependencies and Utility for Generative Reranking Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+𝑑 𝑓 𝑓 𝑛 = 256 . The input sequence length is set to 𝐿 = 30 ,corresponding to the re-ranking candidate list size. 
+
+• Teacher Model: The Teacher employs a Transformer De-coder architecture initialized with 𝑁 𝑡𝑒𝑎𝑐ℎ𝑒𝑟 = 4 layers. It utilizes causal masking to model the generative probability of the optimal sequence. During the distillation phase, the teacher provides soft labels to guide the student. 
+
+• Student Model (Generator): The Student is a lightweight Transformer Decoder consisting of only 𝑁 𝑠𝑡𝑢𝑑𝑒𝑛𝑡 = 1 layer. It incorporates both causal self-attention and cross-attention mechanisms to interact with the encoder outputs efficiently. This shallow architecture significantly reduces inference latency while maintaining representation capability through distillation. 
+
+## B.2 Training Configuration 
+
+The training process integrates Supervised Fine-Tuning (SFT) loss, Distillation loss, and the proposed LDRO reinforcement learning objective. 
+
+• Optimization: We use an Adagrad-based optimizer for sparse embeddings with an initial accumulator value of 3.0. For dense parameters, we utilize a specialized dense optimizer with a learning rate of 9.0 × 10 −6 and decay rates 𝛽 1 =
+
+0.99 , 𝛽 2 = 0.9999 .
+
+• Loss Weights: The total loss is a weighted sum of the expo-sure loss ( L𝑒𝑥𝑝 ), the intra-position BRP loss, the distillation loss ( L𝑑𝑖𝑠𝑡𝑖𝑙𝑙 ), and the RL loss ( L𝐺𝑅𝑃𝑂 ). 
+
+L𝑡𝑜𝑡𝑎𝑙 = L𝑒𝑥𝑝 + 0.5 · L 𝐺𝑅𝑃𝑂 + L 𝑖𝑛𝑡𝑟𝑎 _𝑏𝑟𝑝 + 1.0 · L 𝑑𝑖𝑠𝑡𝑖𝑙𝑙 (28) The distillation temperature is set to 𝜏 = 1.0.
+
+• LDRO Hyperparameters: 
+
+• Mini Batch Size ( B): We set the mini-batch size to B = 1024 
+
+queries per training step. 
+
+• Group Size ( 𝐺 ): We sample 𝐺 = 12 sequences for each input query to estimate the baseline. 
+
+• KL Coefficients: The KL divergence penalty coefficient is set to 𝛽 𝐾𝐿 = 0.02 .
+
+• Entropy Bonus: To encourage exploration, we use an en-tropy coefficient of 𝛽 𝑒𝑛𝑡𝑟𝑜𝑝𝑦 = 0.05 .
+
+• Objective Standardization: We apply decoupled normal-ization to the rewards (CTR, LvTR, etc.) before weighted summation. The weights for the objectives are set uniformly to 1.0.
+
+## B.3 Inference Strategy 
+
+To ensure diversity and enable efficient exploration during infer-ence, we employ a Gumbel-Max Sampling strategy rather than deterministic greedy decoding: 
+
+• Gumbel-Max Sampling: We simulate sampling from the categorical distribution by adding Gumbel noise to the un-normalized log-probabilities (logits). For a given time step 𝑡 ,the next item 𝑦 𝑡 is selected via: 
+
+𝑦 𝑡 = arg max  
+
+> 𝑖 ∈ V
+
+ 𝑧 𝑡,𝑖 
+
+𝜏 + 𝑔 𝑡,𝑖 
+
+
+
+(29) where 𝑧 𝑡,𝑖 is the logit for candidate 𝑖 , 𝜏 is the temperature parameter (set to 0.8), and 𝑔 𝑡,𝑖 ∼ Gumbel (0, 1) is indepen-dent noise drawn from the standard Gumbel distribution. This transforms the sampling process into a deterministic optimization problem given the noise. 
+
+• Vectorized Optimization: To minimize inference latency, we implement a fully vectorized version of the Gumbel-Max trick. Specifically, we pre-compute the Gumbel noise tensors for the entire sequence length and batch size outside the auto-regressive decoding loop. This design avoids expensive random number generation calls within the loop and allows us to use the highly optimized argmax operator instead of the slower multinomial sampling operation, significantly accelerating the step-wise generation. 
+
+Table 6: Hyperparameters used in our experiments. Hyperparameter Value 
+
+Sequence Length ( 𝐿 ) 30 Embedding Dimension ( 𝑑 𝑚𝑜𝑑𝑒𝑙 ) 256 Feed-Forward Dimension ( 𝑑 𝑖𝑛𝑛𝑒𝑟 ) 256 Attention Heads ( 𝐻 ) 3Head Dimension ( 𝑑 𝑘 , 𝑑 𝑣 ) 64 Dropout Rate 0.1 Teacher Layers 4Student Layers 1GRPO Group Size ( 𝐺 ) 12 KL Coefficient ( 𝛽 𝐾𝐿 ) 0.02 Entropy Coefficient ( 𝛽 𝑒𝑛𝑡𝑟𝑜𝑝𝑦 ) 0.05 Distillation Temperature ( 𝜏 ) 1.0 
+
+## C Metrics Definition for Figure 1 
+
+To empirically validate the Unimodal Concentration Hypothesis , we introduced three quantitative metrics in Figure 1 to characterize the distribution differences between open-ended NLP tasks and industrial reranking tasks. The detailed definitions are as follows: 
+
+## C.1 Top-1 Confidence 
+
+This metric measures the certainty of the model’s prediction at each decoding step. It is defined as the probability mass assigned to the highest-ranked token (item) in the vocabulary (candidate set) V:Conf top1 = 1
+
+𝐿 
+
+> 𝐿
+
+∑︁  
+
+> 𝑡 =1
+
+max   
+
+> 𝑣 ∈ V
+
+𝑃 (𝑣 |𝑦 <𝑡 , 𝑥 ) (30) A high Top-1 Confidence indicates that the probability distribu-tion is sharply peaked, suggesting a deterministic decision process, whereas a low value implies high uncertainty or high entropy. 
+
+## C.2 Branching Factor 
+
+The Branching Factor quantifies the effective number of viable next-token choices at each step. It is derived from the exponentiation of Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Chao Zhang et al. 
+
+the entropy (Perplexity-like metric): 
+
+B = 1
+
+𝐿 
+
+> 𝐿
+
+∑︁ 
+
+> 𝑡 =1
+
+2𝐻 (𝑃 𝑡 ) = 1
+
+𝐿 
+
+> 𝐿
+
+∑︁ 
+
+> 𝑡 =1
+
+2− Í𝑣 ∈V 𝑃 (𝑣 ) log 2 𝑃 (𝑣 ) (31) where 𝐻 (𝑃 𝑡 ) is the Shannon entropy of the prediction distribution at step 𝑡 .
+
+• High Branching Factor ( ≈ 6.0 for NLP): Indicates a “one-to-many” mapping where multiple words are equally valid (e.g., creative writing). 
+
+• Low Branching Factor ( ≈ 2.0 for Reranking): Indicates a “quasi-deterministic” mapping where the optimal item is highly constrained by the context. 
+
+## C.3 Sequence Consistency 
+
+This metric evaluates the stability of the generated sequence against the ground truth. Since exact matching is too strict for long se-quences, we employ the Jaccard Similarity coefficient to measure the overlap between the set of tokens in the greedily generated sequence ˆ𝑌 greedy and the ground truth sequence 𝑌 truth :Seq. Consistency = | ˆ𝑌 greedy ∩ 𝑌 truth || ˆ𝑌 greedy ∪ 𝑌 truth | (32) As shown in Figure 1(b), the Reranking task exhibits high con-sistency ( 0.75 ), confirming that given a specific user context, the optimal ranking order is largely unique and reproducible. In con-trast, NLP tasks show low consistency ( 0.23 ) due to the intrinsic linguistic diversity (i.e., multiple valid ways to express the same meaning).

@@ -1,0 +1,1855 @@
+Title: Data-Driven Synthesis of Probabilistic Controlled Invariant Sets for Linear MDPs
+
+URL Source: https://arxiv.org/pdf/2604.02727v1
+
+Published Time: Mon, 06 Apr 2026 00:25:57 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> 1
+
+# Data-Driven Synthesis of Probabilistic Controlled Invariant Sets for Linear MDPs 
+
+Kazumune Hashimoto, Shunki Kimura, Kazunobu Serizawa, Junya Ikemoto, Yulong Gao, Kai Cai 
+
+Abstract —We study data-driven computation of probabilistic controlled invariant sets (PCIS) for safety-critical reinforcement learning under unknown dynamics. Assuming a linear MDP model, we use regularized least squares and self-normalized confidence bounds to construct a conservative estimate of the states from which the system can be kept inside a prescribed safe region over an N -step horizon, together with the corresponding set-valued safe action map. This construction is obtained through a backward recursion and can be interpreted as a conservative approximation of the N -step safety predecessor operator. When the associated conservative-inclusion event holds, a conservative fixed point of the approximate recursion can be certified as an (N, ϵ )-PCIS with confidence at least η. For continuous state spaces, we introduce a lattice abstraction and a Lipschitz-based discretization error bound to obtain a tractable approximation scheme. Finally, we use the resulting conservative fixed-point approximation as a runtime candidate PCIS in a practical shielding architecture with iterative updates, and illustrate the approach on a numerical experiment. 
+
+Index Terms —Safe reinforcement learning, linear MDPs, Con-trolled invariant set, Safe exploration 
+
+I. I NTRODUCTION 
+
+Reinforcement learning (RL) enables an agent to learn a control policy through trial-and-error interactions with its environment. Recent successes in games [1] have spurred growing interest in deploying RL in real-world systems such as robotics, autonomous driving, and industrial control. However, because RL fundamentally relies on exploration, it may select actions that violate safety constraints during learning, potentially leading to severe accidents or system damage. In safety-critical domains, therefore, it is important to ensure safety not only for the final deployed policy but also throughout the learning process. This motivates safe reinforcement learning 
+
+(safe RL), which augments the learning loop with explicit safety considerations [2]–[4]. Despite substantial progress, guaranteeing safety during exploration in unknown environments remains challenging. Some approaches ensure safe learning by assuming additional mechanisms, such as a recovery controller, a reset policy, or an explicit emergency action that can steer the system back to a safe region when safety is at risk [5], [6]. Although theoretically powerful, such assumptions may be unrealistic or undesirable in many physical systems. Other approaches 
+
+Kazumune Hashimoto, Shunki Kimura, Kazunobu Serizawa, Junya Ikemoto are with the Graduate School of Engineering, The University of Osaka, 2-1 Yamadaoka, Suita, Osaka 565-0871, Japan. Yulong Gao is with the Department of Electrical and Electronic Engineering, Imperial College London. Kai Cai is with the Graduate School of Informatics, Osaka Metropolitan University Corresponding author: Kazumune Hashimoto. This work was partially supported by JST ACT-X JPMJAX23CK, and JSPS KAKENHI Grant Numbers 25K07794 and 22KK0155 
+
+address safety through constrained policy optimization, safe exploration with learned constraints, or asymptotic bounds on cumulative violations [7]–[12]. These approaches are highly relevant for safe learning under constraints, but their guarantees are typically expressed in terms of feasible policy updates, expected constraint satisfaction, or cumulative violation bounds, rather than as an external runtime shield defined by an explicit (probabilistic) safe set and updated directly from data under unknown dynamics. A complementary line of work enforces safety online through shielding or safety filtering. Representative examples include temporal-logic shielding, probabilistic shielding, online shielding, and approximate model-based shielding [13]–[16]. In addition, predictive safety filters, reachability-based safety frameworks, Gaussian-process-based safety filters, control barrier function methods, and safe model-based RL provide related runtime intervention mechanisms [17]–[22]. These approaches show that online intervention can be highly effective once an appropriate safe set or safety filter is available. This leaves a central question for safe RL: can such a probabilistic safe set be constructed and enlarged directly from data when the dynamics are unknown? We approach this question through the lens of controlled invariance [23]. Classical controlled invariant sets provide a set-theoretic characterization of safety: if the current state lies in such a set, then there exists a control action that keeps the trajectory inside the set indefinitely [23], [24]. For stochastic dynamics and Markov decision processes (MDPs), we adopt the probabilistic counterpart introduced in [25], namely proba-bilistic controlled invariant sets (PCIS). Informally, a PCIS is a subset of the safety region from which the agent can choose actions so that the trajectory remains safe with high probability over a prescribed horizon. Related reachability- and feasible-set-based perspectives have also recently been explored in RL [9], [26]. When a PCIS is available, it naturally induces a runtime shield: at each step, the RL learner proposes an action, and the shield restricts execution to actions certified safe with respect to the current candidate PCIS. The main challenge is to compute such a probabilistic safe set when the transition kernel is unknown and the state space may be continuous. In this paper, we consider MDPs with unknown dynamics, and adopt the linear MDP framework [27], [28], in which the transition kernel is represented through a known feature map and unknown linear coefficients. Recent safe RL results with linear function approximation have shown that this structure can support regret analysis under several formulations, including unknown safety constraints, instantaneous hard constraints, and cumulative constraints [10], [11], [29], [30].           
+
+> arXiv:2604.02727v1 [eess.SY] 3 Apr 2026 2
+> TABLE I ASSUMPTION -ORIENTED COMPARISON WITH REPRESENTATIVE APPROACHES CLOSEST TO OUR SETTING .Paradigm What must be available a-priori? How is safety enforced during learning? What is synthesized from data? Data-driven invariant-set syn-thesis / verification [32]–[38] State/input constraints together with a model class, geometric set parameterization, excitation/Lipschitz assumptions, or a probabilistic dynamics prior Invariant-type sets are synthesized or certified offline / in batch, often together with a controller or governor Positive / robust / controlled / probabilistic invariant set, often together with a controller or governor Recovery/reset-based safe ex-ploration [5], [6] Recovery policy, reset mechanism, or a learned recovery model Runtime fallback to a recovery action when risk is high Recovery zone, risk predictor, or fallback policy CMDP / constrained policy optimization [7], [8] Constraint costs and a feasible (or approximately feasible) policy-update mechanism Safety is incorporated directly into the RL policy update Policy and value / constraint estimates Safe-region expansion /abstraction-based methods [12], [39] Initial safe seed together with uncertainty-quantification, smoothness, or abstraction assumptions Expand a certified safe region and optimize inside it Certified safe region and sometimes a safety controller Given-model shielding /safety filtering [13]–[17] Safety-relevant model fragment or a given safety filter Runtime blocking or modification of unsafe proposed actions Shield or filter parameters
+> This work Known feature map for an unknown stochastic linear MDP and an initial shield seed set External PCIS-based shield updated from transition data Conservative fixed point of a probabilistic safety operator (certifiable as an (N, ϵ )-PCIS) and a set-valued safe action map
+
+Building on this structure, and using regularized least squares together with self-normalized confidence bounds [31], we derive an η-conservative approximation of the N -step safety predecessor operator for a fixed reference set. We then show that a conservative fixed point satisfying the corresponding conservative-inclusion event is certified as an (N, ϵ )-PCIS, and that the same backward recursion induces a stage-dependent family of set-valued safe action maps. For continuous state spaces, we further introduce a lattice abstraction together with a Lipschitz-based discretization bound to obtain a tractable approximation scheme. Finally, we embed the resulting safe action maps into a practical shielding architecture. Starting from an initial PCIS, the shield filters the executed actions of an arbitrary RL learner, while the current candidate PCIS and the accompanying safe action map are updated from accumulated data. The theoretical results in this paper certify conservative operator evaluation for a fixed set. When the same dataset is reused to search for a conservative fixed point and to repeat shield updates online, the resulting procedure should therefore be interpreted as a practical data-driven shielding template motivated by the theory, unless an additional certification argument is available. 
+
+Related work. Table I compares the approaches most relevant to our setting along three axes: what must be specified a-priori, how safety is enforced during learning, and what safety object is synthesized from data. On the RL side, recovery/reset-based methods guarantee safety during learning by assuming an auxiliary fallback mechanism such as a trusted recovery controller, a reset policy, or a learned recovery model [5], [6]. CMDP/CPO-style approaches instead incorporate safety directly into the policy update and typically target expected or cumulative constraint satisfaction for the learned policy [7], [8]. Safe-region expansion and abstraction-based methods protect exploration by growing a certified safe region or maintaining a safety abstraction under uncertainty [12], [39]. These lines of work are highly relevant, but they typically do not yield an external runtime shield together with an explicit probabilistic invariant-set object recomputed from transition data. A particularly relevant control-theoretic line of work studies data-driven synthesis or verification of invariant sets. [32] computes approximations of maximum positively invariant and maximum controlled invariant sets directly from one-step transitions via convex optimization. For uncertain linear and LPV systems, data-driven robust invariant or robust control invariant sets and associated controllers can be synthesized directly from data, without first identifying a nominal model [33]–[35]. For nonlinear systems, recent works study positive invariant-set synthesis or verification directly from sampled data [36], [37]. Closest in spirit to the probabilistic object considered here is [38], which computes probabilistic controlled invariant sets for nonlinear systems together with feedback controllers. In contrast, we focus on unknown stochastic linear MDPs, where hard invariance guarantee is often too restrictive and an (N, ϵ )-PCIS is the more natural object. The linear-MDP structure lets us estimate the probabilistic predecessor operator directly from transition data using least squares and confidence bounds, and thereby produce not only a conservative fixed-point safety set but also a set-valued safe action map that can serve as an external shield for RL. Shielding and safety-filtering methods are also closely related because they intervene online by blocking or modifying unsafe proposed actions [13]–[17]. In most existing works, however, the shield or filter is either given a-priori or constructed from a safety-relevant model fragment. Our contribution is complementary: starting from an initial PCIS seed, we reconstruct the shield directly from accumulated transition data via a conservative backward recursion. On the statistical-modeling side, several recent safe RL works also exploit linear function approximation or linear-MDP-type structure under unknown constraints or hard safety conditions [10], [11], [29], [30]; their guarantees are usually phrased in terms of regret, 3
+
+cumulative constraint violations, or safe action selection inside the RL update, rather than in terms of an external shield built from an explicit probabilistic invariant-set object. In summary, our main contributions are as follows.  
+
+> •
+
+We derive an η-conservative approximation of the N -step safety (or, predecessor) operator for unknown linear MDPs using regularized least squares and self-normalized confidence bounds.  
+
+> •
+
+We show that a conservative fixed point of this operator, when the corresponding conservative-inclusion event holds, is certified as an (N, ϵ )-PCIS.  
+
+> •
+
+We propose a lattice abstraction for continuous state spaces and incorporate an explicit Lipschitz-based discretization error term, yielding a tractable approximation scheme in continuous-state settings. 
+
+Notation. Let N, N≥0, N>0, and Na:b denote the sets of integers, non-negative integers, positive integers, and integers in the interval [a, b ], respectively. Let R, R≥0, R>0, and Ra:b
+
+denote the sets of real numbers, non-negative real numbers, positive real numbers, and real numbers in the interval [a, b ],respectively. We denote by ∥ · ∥ and ∥ · ∥ ∞ the Euclidean norm and the ∞-norm, respectively. Given Ω ⊂ Rn, let 
+
+1Ω : Rn → { 0, 1} denote the indicator function defined by 
+
+1Ω(x) = 1 if x ∈ Ω and 1Ω(x) = 0 otherwise. Given δx > 0
+
+and x ∈ Rn, let Bδx (x) ⊂ Rn denote the ∞-norm ball centered at x, i.e., 
+
+Bδx (x) = {x′ ∈ Rn : ∥x − x′∥∞ ≤ δx}.
+
+For a signed finite measure μ, ∥μ∥TV denotes its total variation norm. II. P ROBLEM SETUP 
+
+We consider a discrete-time Markov decision process (MDP) 
+
+M = ( X , U, P, XS ), where X ⊆ Rn is a (possibly infinite) Borel state space, U is a finite action set, P(· | x, u ) is an unknown transition kernel on (X , B(X )) , and XS ⊆ X is the safety set. Although the transition kernel is unknown, we assume that it admits a linear representation with respect to a known feature map ϕ [27]. 
+
+Assumption 1 (Linear MDP structure) . There exist a known feature map ϕ : X × U → Rd and unknown signed finite measures ν1, . . . , ν d on (X , B(X )) such that, for every measurable set A ∈ B(X ) and every (x, u ) ∈ X × U ,
+
+P(A | x, u ) = 
+
+> d
+
+X
+
+> ℓ=1
+
+ϕℓ(x, u ) νℓ(A) = ϕ(x, u ), ν (A) , (1) where ν(A) = [ ν1(A), . . . , ν d(A)] ⊤. Moreover, ∥νℓ∥TV ≤ 1
+
+for all ℓ ∈ { 1, . . . , d }, and ∥ϕ(x, u )∥2 ≤ 1 for all (x, u ) ∈X × U . The feature map is Lipschitz continuous in the state variable: there exists Lϕ ≥ 0 such that 
+
+ϕℓ(x, u ) − ϕℓ(x′, u ) ≤ Lϕ∥x − x′∥∞ (2) for all x, x ′ ∈ X , u ∈ U , and ℓ ∈ { 1, . . . , d }.In general, the motivation of employing the linear-MDP in RL is that it provides a finite-dimensional representation of the transition kernel that enables statistically efficient generalization across state-action pairs in large or continuous spaces. This assumption has become a standard tractable non-tabular model in RL: when the feature map is known, optimistic methods (e.g., upper confidence bound (UCB)-based approaches) achieve regret bounds polynomial in the feature dimension and horizon and independent of the cardinality of the state and action spaces [27], [40]. Recent work further shows that the required features can themselves be learned in a provably efficient and practically effective manner [41]. We therefore adopt the linear-MDP model not as a claim that the physical plant is literally linear, but as a compromise between expressivity, sample efficiency, and computational tractability. Compared with black-box assumptions, this structure is strong enough to support finite-sample confidence sets and dynamic-programming-based planning, as we will see in the next section. For a horizon N ∈ N, we consider finite-horizon nonstation-ary deterministic Markov policies 
+
+ΠN = ( μ0, μ 1, . . . , μ N −1),
+
+where each μk : X → U . Starting from x0 ∈ X , the resulting trajectory satisfies 
+
+uk = μk(xk), x k+1 ∼ P(· | xk, u k), k = 0 , . . . , N − 1.
+
+For any Ω ⊆ X S , policy ΠN , and initial state x0 ∈ Ω, define 
+
+pΩΠN (x0) = Pr ( xk ∈ Ω, ∀k = 0 , . . . , N ) . (3) Thus, N -step safety means safety over N transitions, including the terminal state xN .
+
+Definition 1 ((N, ϵ )-PCIS) . A set XPCIS ⊆ X S is an (N, ϵ )-
+
+probabilistic controlled invariant set (PCIS) if, for every x ∈XPCIS , there exists a deterministic Markov policy ΠN such that 
+
+pXPCIS  
+
+> ΠN
+
+(x) ≥ 1 − ϵ. (4) For Ω ⊆ X S , let QNϵ (Ω) denote the exact safety operator 
+
+QNϵ (Ω) = 
+
+n
+
+x ∈ Ω : ∃ΠN s.t. pΩΠN (x) ≥ 1 − ϵ
+
+o
+
+. (5) Starting from Ω0 = XS , define the decreasing sequence 
+
+Ωj+1 = QNϵ (Ω j ), j = 0 , 1, . . . . 
+
+Since Ωj+1 ⊆ Ωj , the maximal (N, ϵ )-PCIS in XS is given by 
+
+X ∗ 
+
+> PCIS
+
+=
+
+> ∞
+
+\
+
+> j=0
+
+Ωj ,
+
+see, e.g., [25]. Thus, if the exact operator were available, one could characterize a PCIS as a fixed point of QNϵ .In the setting considered here, where the transition kernel is unknown, the exact operator QNϵ (Ω) is indeed not directly available and will thus be inferred from data. This motivates taking a fixed point of a conservative approximation as the primary computable object and interpreting it as a candidate 
+
+(N, ϵ )-PCIS. 
+
+Definition 2 (η-conservative approximation of the opera-tor/candidate PCIS) . Fix Ω ⊆ X S . A set 
+
+eQNϵ (Ω) ⊆ Ω4
+
+is called an η-conservative approximation of QNϵ (Ω) if 
+
+Pr 
+
+ eQNϵ (Ω) ⊆ Q Nϵ (Ω) 
+
+
+
+≥ η. (6) Moreover, a set bΩ ⊆ X S
+
+is called a conservative fixed point if 
+
+bΩ = eQNϵ (bΩ) . (7) Such a set is referred to as a candidate (N, ϵ )-PCIS. Let us emphasize that the conservative fixed point bΩ is, at this stage, only a candidate (N, ϵ )-PCIS. The guarantee in (6) is stated for a prescribed reference set Ω and therefore does not automatically apply to the fixed point bΩ returned by the fixed-point search. A separate certification argument is thus needed, and will be provided in the next section. 
+
+Problem 1. Under Assumption 1, given a set Ω ⊆ X S , a horizon N ∈ N, a safety tolerance ϵ ∈ (0 , 1) , a confidence level η ∈ (0 , 1) , and a transition dataset 
+
+DT = {(xt, u t, x t+1 )}T −1 
+
+> t=0
+
+⊆ X S × U × X S ,
+
+construct an η-conservative approximation eQNϵ (Ω) of the exact safety operator QNϵ (Ω) , as well as the associated candidate 
+
+(N, ϵ )-PCIS. III. M AIN RESULTS 
+
+A. Computing η-conservative operator for linear MDPs 
+
+Let us first provide a standard consequence of Assumption 1. 
+
+Lemma 1. Let Assumption 1 hold and let p : X → [0 , 1] 
+
+be measurable. Then there exists θp ∈ Rd such that, for all 
+
+(x, u ) ∈ X × U ,
+
+E[p(x′) | x, u ] = ⟨θp, ϕ (x, u )⟩, (8) where x′ ∼ P(· | x, u ).
+
+Proof. For each ℓ, define θp,ℓ = R 
+
+> X
+
+p(x′) νℓ(dx ′). Since p ∈
+
+[0 , 1] and ∥νℓ∥TV ≤ 1, each integral is finite and |θp,ℓ | ≤ ∥p∥∞∥νℓ∥TV ≤ 1. Let θp = [ θp, 1, . . . , θ p,d ]⊤. Then, using Assumption 1, 
+
+E[p(x′) | x, u ] = 
+
+Z
+
+> X
+
+p(x′) P(dx ′ | x, u )=
+
+> d
+
+X
+
+> ℓ=1
+
+ϕℓ(x, u )
+
+Z
+
+> X
+
+p(x′) νℓ(dx ′)= ⟨θp, ϕ (x, u )⟩. (9) This proves (8). For a fixed Ω ⊆ X S , define the dynamic-programming recursion 
+
+pΩ 
+
+> N
+
+(x) = 1Ω(x),pΩ 
+
+> j
+
+(x) = 1Ω(x) max  
+
+> u∈U
+
+E[pΩ
+
+> j+1
+
+(x′) | x, u ], j = N − 1, . . . , 0.
+
+(10) Then, sup ΠN pΩΠN (x) = pΩ0 (x) (see, e.g., [25]), and therefore 
+
+QNϵ (Ω) = {x ∈ Ω : pΩ0 (x) ≥ 1 − ϵ}. (11) The index j ∈ { 0, . . . , N − 1} refers to the backward stage 
+
+of the recursion (10) . In other words, stage j computes (or estimates) the conditional expectation of the stage-(j + 1) 
+
+continuation value. To avoid the dependence issue caused by reusing the same data across all backward stages, we use stagewise sample splitting in the theoretical guarantee. Towards this end, let 
+
+D(j) = {(x(j) 
+
+> t
+
+, u (j) 
+
+> t
+
+, x (j)
+
+> t+1
+
+)}Tj −1 
+
+> t=0
+
+, j = 0 , . . . , N − 1,
+
+be independent datasets. Here, these datasets are assumed to be obtained from independent data-collection procedures rather than by post hoc partitioning of a single replay buffer; practical procedures to enforce such independence are discussed later in Remark 2. For each j, define 
+
+Dj =
+
+
+
+ϕ(x(j)0 , u (j)0 )⊤
+
+...
+
+ϕ(x(j) 
+
+> Tj−1
+
+, u (j) 
+
+> Tj−1
+
+)⊤
+
+ , V j = D⊤ 
+
+> j
+
+Dj + Id. (12) and 
+
+σj (x, u ) = 
+
+q
+
+ϕ(x, u )⊤V −1 
+
+> j
+
+ϕ(x, u ). (13) The next result is stated as a reduction theorem: any choice of the parameter that makes the lower-confidence events below hold yields a conservative operator. 
+
+Theorem 1 (η-conservative approximation operator guarantee) .
+
+Let Assumption 1 hold and fix Ω ⊆ X S . Let δj ∈ (0 , 1) , j =0, . . . , N − 1, satisfy PN −1 
+
+> j=0
+
+δj ≤ 1 − η. Let ˜pN : X → [0 , 1] 
+
+be given by 
+
+˜pN (x) = 1Ω(x). (14) For j = N − 1, . . . , 0, let 
+
+y(j) 
+
+> t
+
+= ˜ pj+1 (x(j)
+
+> t+1
+
+), ˆθj = V −1 
+
+> j
+
+D⊤ 
+
+> j
+
+y(j), (15) where y(j) = [ y(j)0 , . . . , y (j) 
+
+> Tj−1
+
+]⊤. Assume that βj = βj (δj ) is chosen so that the lower-confidence event 
+
+Ej =
+
+(∀(x, u ) ∈ X × U :
+
+E[˜ pj+1 (x′) | x, u ] ≥ ℓj (x, u )
+
+)
+
+, (16) where ℓj (x, u ) = ˆθ⊤ 
+
+> j
+
+ϕ(x, u ) − βj σj (x, u ), satisfies 1
+
+Pr( Ej | ˜pj+1 ) ≥ 1 − δj . (17) Finally, for j = N − 1, . . . , 0, define 
+
+˜pj (x) = 1Ω(x) max  
+
+> u∈U
+
+min 
+
+n
+
+1, [ℓj (x, u )] +
+
+o
+
+. (18) Then, the induced operator 
+
+eQNϵ (Ω) = {x ∈ Ω : ˜p0(x) ≥ 1 − ϵ} (19) is an η-conservative approximation of QNϵ (Ω) , i.e., 
+
+Pr 
+
+ eQNϵ (Ω) ⊆ Q Nϵ (Ω) 
+
+
+
+≥ η. (20)   
+
+> 1Indeed, the lower-confidence event in (16) is obtained by applying a standard self-normalized concentration bound for regularized least squares with conditionally sub-Gaussian noise; see, e.g., [31]. 5
+
+Proof. For each stage j, since ˜pj+1 is computed from later stages only, it is independent of the dataset D(j). Conditioned on ˜pj+1 , Lemma 1 implies that there exists θj ∈ Rd such that 
+
+E[˜ pj+1 (x′) | x, u ] = θ⊤ 
+
+> j
+
+ϕ(x, u )
+
+for all (x, u ). By backward induction from (14) and (18), 
+
+0 ≤ ˜pj (x) ≤ 1, ∀x ∈ X , ∀j = 0 , . . . , N. (21) Hence, the stage-j regression targets satisfy y(j) 
+
+> t
+
+=˜pj+1 (x(j)
+
+> t+1
+
+) ∈ [0 , 1] for all t. Let E = TN −1 
+
+> j=0
+
+Ej . By (17) and the union bound, 
+
+Pr( E) ≥ 1 − 
+
+> N−1
+
+X
+
+> j=0
+
+δj ≥ η. 
+
+We now prove by backward induction that, on E,
+
+˜pj (x) ≤ pΩ 
+
+> j
+
+(x), ∀x ∈ X , ∀j = 0 , . . . , N. (22) The claim is immediate at j = N since ˜pN = pΩ 
+
+> N
+
+= 1Ω.Assume it holds at stage j + 1 . Then, for any (x, u ),
+
+E[pΩ
+
+> j+1
+
+(x′) | x, u ] ≥ E[˜ pj+1 (x′) | x, u ].
+
+On Ej ,
+
+E[˜ pj+1 (x′) | x, u ] ≥ ˆθ⊤ 
+
+> j
+
+ϕ(x, u ) − βj σj (x, u ).
+
+Therefore, 
+
+E[pΩ
+
+> j+1
+
+(x′) | x, u ] ≥ ˆθ⊤ 
+
+> j
+
+ϕ(x, u ) − βj σj (x, u ).
+
+Taking the maximum over u, multiplying by 1Ω(x), and clipping to [0 , 1] yields pΩ 
+
+> j
+
+(x) ≥ ˜pj (x), which proves (22) .Therefore, on E,
+
+˜p0(x) ≤ pΩ0 (x), ∀x ∈ X .
+
+Consequently, 
+
+eQNϵ (Ω) = {x ∈ Ω : ˜ p0(x) ≥ 1 − ϵ}⊆ { x ∈ Ω : pΩ0 (x) ≥ 1 − ϵ} = QNϵ (Ω) . (23) Since Pr( E) ≥ η, (20) follows. The discussion above guarantees conservative inclusion only for a prescribed fixed reference set Ω. In other words, it does not by itself imply that a data-driven conservative fixed point, selected using the same data, is an (N, ϵ )-PCIS. A natural way to obtain a rigorous high-confidence guarantee is to separate the data used to construct the set from the data used to certify it. 
+
+Corollary 1 (Certification of PCIS by sample splitting) .
+
+Let Dgrow and Dcert be independent transition datasets. Let 
+
+bΩg ⊆ X S be any (N, ϵ )-PCIS candidate set constructed using only Dgrow . Assume that, using only Dcert , construct an η-conservative approximation eQN, cert  
+
+> ϵ
+
+of QNϵ , i.e., for each 
+
+Ω ⊆ X S ,
+
+Pr 
+
+ eQN, cert  
+
+> ϵ
+
+(Ω) ⊆ Q Nϵ (Ω) 
+
+
+
+≥ η. (24) Then, 
+
+Pr 
+
+bΩg ⊆ eQN, cert  
+
+> ϵ
+
+(bΩg ) =⇒ bΩg is an (N, ϵ )-PCIS 
+
+
+
+≥ η. 
+
+(25) 
+
+Proof. For a fixed Dgrow , denote the resulting (N, ϵ )-PCIS candidate set by bΩg ⊆ X S . Notice that, conditioned on Dgrow ,the set bΩg is deterministic. Since Dcert is independent of Dgrow ,the conservative-inclusion guarantee (24) applies to the fixed set bΩg , and hence 
+
+Pr 
+
+ eQN, cert  
+
+> ϵ
+
+(bΩg ) ⊆ Q Nϵ (bΩg ) Dgrow 
+
+≥ η
+
+almost surely. Now, consider the event 
+
+bΩg ⊆ eQN, cert  
+
+> ϵ
+
+(bΩg ).
+
+On the intersection of this event with 
+
+eQN, cert  
+
+> ϵ
+
+(bΩg ) ⊆ Q Nϵ (bΩg ),
+
+we obtain bΩg ⊆ eQN, cert  
+
+> ϵ
+
+(bΩg ) ⊆ Q Nϵ (bΩg ).
+
+On the other hand, by definition of the exact operator, 
+
+QNϵ (bΩg ) ⊆ bΩg . Thus, 
+
+bΩg ⊆ Q Nϵ (bΩg ) ⊆ bΩg ,
+
+which implies bΩg = QNϵ (bΩg ).
+
+By the fixed-point characterization of (N, ϵ )-PCIS, this shows that bΩg is an (N, ϵ )-PCIS. Hence, conditioned on Dgrow , the implication 
+
+bΩg ⊆ eQN, cert  
+
+> ϵ
+
+(bΩg ) =⇒ bΩg is an (N, ϵ )-PCIS holds with probability at least η over Dcert .
+
+B. A tractable lattice abstraction for operator evaluation 
+
+When X is infinite, evaluating (19) over all x ∈ X S is intractable. We therefore discretize the reference set. For δx >
+
+0, define the lattice 
+
+[XS ]δx = {x ∈ X S : xi = aiδx, a i ∈ Z, i = 1 , . . . , n }.
+
+Let qδx : XS → [XS ]δx be a measurable nearest-neighbor quantizer in ∥ · ∥ ∞, i.e., 
+
+qδx (x) ∈ arg min  
+
+> xd∈[XS]δx
+
+∥x − xd∥∞. (26) We assume that [XS ]δx forms a δx-net of XS , so that 
+
+∥x − qδx (x)∥∞ ≤ δx, ∀x ∈ X S . (27) The following result shows that the lattice-based approximation remains conservative after accounting for the discretization error. 
+
+Theorem 2 (Lattice-based conservative operator) . Let Assump-tion 1 hold and fix Ω ⊆ X S . Use the independent datasets D(j)
+
+and the matrices Dj , V j , σ j from (12) – (13) . Let δj ∈ (0 , 1) ,
+
+j = 0 , . . . , N −1, satisfy PN −1 
+
+> j=0
+
+δj ≤ 1−η. For j = N , define 
+
+˜pδx 
+
+> N
+
+(xd) = 1Ω(xd), x d ∈ [XS ]δx , (28) and its lift 
+
+¯pδx 
+
+> N
+
+(x) = 
+
+(
+
+˜pδx 
+
+> N
+
+(qδx (x)) , x ∈ Ω,
+
+0, x / ∈ Ω. (29) 6
+
+For j = N − 1, . . . , 0, define the stage-j regression targets 
+
+y(j),δ x 
+
+> t
+
+= ¯ pδx
+
+> j+1
+
+(x(j)
+
+> t+1
+
+),
+
+ˆθδx 
+
+> j
+
+= V −1 
+
+> j
+
+D⊤ 
+
+> j
+
+y(j),δ x , (30) where y(j),δ x = [ y(j),δ x 
+
+> 0
+
+, . . . , y (j),δ x  
+
+> Tj−1
+
+]⊤. Assume that βj =
+
+βj (δj ) is chosen so that the event 
+
+Eδx 
+
+> j
+
+=
+
+(∀(x, u ) ∈ X × U :
+
+E[¯ pδx
+
+> j+1
+
+(x′) | x, u ] ≥ ℓδx 
+
+> j
+
+(x, u )
+
+)
+
+, (31) where ℓδx 
+
+> j
+
+(xd, u ) = ( ˆθδx 
+
+> j
+
+)⊤ϕ(xd, u ) − dL ϕδx − βj σj (xd, u ),satisfies 
+
+Pr( Eδx 
+
+> j
+
+| ¯pδx
+
+> j+1
+
+) ≥ 1 − δj . (32) Then define, for xd ∈ [XS ]δx ,
+
+˜pδx 
+
+> j
+
+(xd) = 1Ω(xd) max  
+
+> u∈U
+
+min 
+
+
+
+1,
+
+h
+
+ℓδx 
+
+> j
+
+(xd, u )
+
+i
+
+> +
+
+
+
+, (33) and its lift 
+
+¯pδx 
+
+> j
+
+(x) = 
+
+(
+
+˜pδx 
+
+> j
+
+(qδx (x)) , x ∈ Ω,
+
+0, x / ∈ Ω. (34) Finally, define 
+
+eQNδx,ϵ (Ω) = {x ∈ Ω : ¯ pδx 
+
+> 0
+
+(x) ≥ 1 − ϵ}. (35) Then 
+
+Pr 
+
+ eQNδx,ϵ (Ω) ⊆ Q Nϵ (Ω) 
+
+
+
+≥ η. (36) For the proof, see Appendix. 
+
+C. Set-valued safe action maps 
+
+For a fixed Ω, the conservative backward recursion can naturally induce a stage-dependent family of set-valued safe action maps. When N > 1, this object should be viewed as a set-valued map on the augmented state (j, x ), rather than as a single stationary policy. For a given Ω ⊆ X S , let ˜pj be computed as in Theorem 1. For each stage j = 0 , . . . , N − 1 and x ∈ Ω, define 
+
+μSj (x; Ω) = u ∈ U : ℓj (x, u ) ≥ 1 − ϵ . (37) Equivalently, we may regard the set-valued safe action map as the augmented-state map 
+
+μS (j, x ; Ω) = μSj (x; Ω) , (j, x ) ∈ { 0, . . . , N − 1} × Ω.
+
+Similarly, in the lattice-based case, for each stage j =0, . . . , N − 1, x ∈ Ω, and xd = qδx (x), define 
+
+μS,δ x 
+
+> j
+
+(x; Ω) = u ∈ U : ℓδx 
+
+> j
+
+(xd, u ) ≥ 1 − ϵ . (38) 
+
+Corollary 2 (Safe actions for a fixed reference set) . On the confidence event of Theorem 1, every action u ∈ μSj (x; Ω) 
+
+satisfies 
+
+E[pΩ
+
+> j+1
+
+(x′) | x, u ] ≥ 1 − ϵ. (39) Define the stage-j conservative predecessor set by 
+
+eQN,j ϵ (Ω) := {x ∈ Ω : ˜ pj (x) ≥ 1 − ϵ}, j = 0 , . . . , N − 1.
+
+Then, if x ∈ eQN,j ϵ (Ω) , we have μSj (x; Ω) ̸ = ∅. In particular, 
+
+eQN, 0 
+
+> ϵ
+
+(Ω) = eQNϵ (Ω) ,
+
+so x ∈ eQNϵ (Ω) implies μS 
+
+> 0
+
+(x; Ω) ̸ = ∅. The same statement holds for the lattice-based action sets in (38) under the event of Theorem 2. 
+
+Proof. If u ∈ μSj (x; Ω) , then by definition 
+
+ˆθ⊤ 
+
+> j
+
+ϕ(x, u ) − βj σj (x, u ) ≥ 1 − ϵ. 
+
+On the confidence event of Theorem 1, 
+
+E[˜ pj+1 (x′) | x, u ] ≥ ˆθ⊤ 
+
+> j
+
+ϕ(x, u ) − βj σj (x, u ) ≥ 1 − ϵ. 
+
+Since ˜pj+1 ≤ pΩ 
+
+> j+1
+
+on the same event, (39) follows. Now, let 
+
+x ∈ eQN,j ϵ (Ω) , so that ˜pj (x) ≥ 1 − ϵ. By definition of ˜pj ,
+
+˜pj (x) = max  
+
+> u∈U
+
+min 
+
+n
+
+1, [ℓj (x, u )] +
+
+o
+
+,
+
+hence at least one action attains a value no smaller than 1 − ϵ,and therefore μSj (x; Ω) ̸ = ∅. The lattice-based case is identical, with ˜pj+1 replaced by ¯pδx 
+
+> j+1
+
+and Theorem 2 used in place of Theorem 1. 
+
+Remark 1 (Interpretation for N > 1). For N = 1 , the set-valued map μS 
+
+> 0
+
+(·; Ω) can be used directly as a one-step safe shield. For N > 1, the family {μSj (·; Ω) }N −1 
+
+> j=0
+
+is stage-dependent and should be interpreted on the augmented state 
+
+(j, x ). Membership u ∈ μSj (x; Ω) certifies that taking action u
+
+at stage j is safe relative to the continuation value pΩ
+
+> j+1
+
+, i.e., relative to the existence of a compatible continuation over the remaining N − j − 1 stages. Accordingly, for general N > 1,the family {μSj }N −1 
+
+> j=0
+
+should be used together with a stage index and a compatible continuation selector extracted from the backward recursion, for example 
+
+u⋆j (x) ∈ arg max 
+
+> u∈U
+
+min 
+
+n
+
+1, [ℓj (x, u )] +
+
+o
+
+.
+
+The present corollary does not by itself imply that arbitrary independent selectors from the thresholded sets μSj (·; Ω) can be freely composed across stages while preserving the same 
+
+N -step guarantee. IV. A PPLICATION TO SAFE REINFORCEMENT LEARNING VIA SHIELDING 
+
+We now use the safe action maps induced by conservative backward recursions as a runtime shield around an arbitrary RL learner (e.g., [13]). The overview of the shielding mechanism is illustrated in Fig. 1. The shield is external to the RL update rule: it filters the action generated by the RL learner, while the underlying learning algorithm can be chosen freely. Let 
+
+μRL denote the proposal policy produced by the RL learner. Because the executed action is filtered by the shield, the relevant performance objective is the discounted return of the resulting shielded closed loop: 
+
+Jsh (μRL ) = E
+
+" ∞X
+
+> t=0
+
+γtrt
+
+#
+
+, (40) 7 
+
+> Fig. 1. Overview of safe RL via PCIS-based shielding with a grow/certify split.
+
+where γ ∈ (0 , 1) and the expectation is taken under the shielded execution policy and the environment dynamics. For notational simplicity, the online shielding algorithms below are written for the case N = 1 . For general N > 1, the stage-dependent safe action maps {μSj (·; Ω) }N −1 
+
+> j=0
+
+are applied in a receding-horizon manner, exactly as discussed in Remark 1. 
+
+Assumption 2 (Initial shield set) . There exists a nonempty initial shield set bΩ0 ⊆ X S together with a corresponding initial set-valued safe action map μS 
+
+> 0
+
+(·; bΩ0) such that, whenever xt ∈
+
+bΩ0 and ut ∈ μS 
+
+> 0
+
+(xt; bΩ0), the next state satisfies xt+1 ∈ bΩ0
+
+with probability at least 1 − ϵ.At shielding update i, let 
+
+Si(x) = μSi (x), x ∈ bΩi,
+
+where (bΩi, μ Si ) denotes the current accepted shield . Given a proposal action uRL  
+
+> t
+
+, the executed action is defined by 
+
+ut =
+
+(uRL  
+
+> t
+
+, if uRL  
+
+> t
+
+∈ Si(xt),
+
+backup (xt, S i(xt)) , otherwise , (41) where backup (x, S ) ∈ S is any selector. For discrete action spaces, a natural choice is 
+
+backup (x, S ) ∈ arg max 
+
+> u∈S
+
+Qθ (x, u ),
+
+where Qθ is the current action-value estimate of the RL learner. If U ⊆ Rm, one may alternatively use a nearest-safe-action projection. In continuous-state environments, both membership in bΩi and the safe action set Si(x) are evaluated via the lattice representation and the quantizer qδx . The filter (41) is applied only when xt ∈ bΩi; if xt /∈ bΩi, the rollout is terminated or reset according to the task specification. To align the online shielding procedure with the sample-splitting certification result of the previous section, we distinguish between two types of data at each shield update i: 
+
+> •
+
+a grow dataset Dgrow , used to construct a tentative conservative fixed point, and  
+
+> •
+
+a fresh certification dataset Dcert  
+
+> i
+
+, used only to certify that tentative set. More precisely, the grow phase produces a tentative set 
+
+Ωtent  
+
+> i
+
+⊆ XS by running the fixed-point search CON INV 
+
+on Dgrow . This tentative set is not deployed immediately. 
+
+Algorithm 1 Safe RL via PCIS-based shielding with grow/certify splitting (generic template) 
+
+Input: Initial shield (bΩ0, μ S 
+
+> 0
+
+), grow rollout length Tgrow , certification rollout length Tcert , safe set XS , certification data-collection protocol βcert , backward-recursion parameters, and RL hyperpa-rameters. 
+
+Output: Learned RL parameters and current accepted shield (bΩ, μ S ). 
+
+> 1:
+
+Initialize RL parameters and accumulated grow dataset Dgrow ←
+
+∅ 
+
+> 2:
+
+Set bΩi ← bΩ0, μSi ← μS 
+
+> 0
+
+, i ← 0 
+
+> 3:
+
+repeat  
+
+> 4:
+
+Start from the current environment state (or reset if the task is episodic)  
+
+> 5:
+
+for t = 0 to Tgrow − 1 do  
+
+> 6:
+
+Propose uRL  
+
+> t
+
+using the current RL learner  
+
+> 7:
+
+Execute the shielded action ut via (41)  
+
+> 8:
+
+Observe xt+1 and reward rt 
+
+> 9:
+
+Append (xt, u t, x t+1 ) to Dgrow  
+
+> 10:
+
+Update the RL parameters using the chosen RL algorithm  
+
+> 11:
+
+xt ← xt+1  
+
+> 12:
+
+end for  
+
+> 13:
+
+(Ω tent  
+
+> i
+
+, μ S, grow  
+
+> i
+
+) ← CON INV (Dgrow , XS ) 
+
+> 14:
+
+Collect a fresh certification dataset Dcert  
+
+> i
+
+of length Tcert using the certification protocol Scert from fresh resets  
+
+> 15:
+
+Do not use Dcert  
+
+> i
+
+for RL updates or for the grow-phase fixed-point search  
+
+> 16:
+
+(ai, μ S, cert  
+
+> i
+
+) ← CERTIFY SHIELD (Dcert  
+
+> i
+
+, Ωtent  
+
+> i
+
+) 
+
+> 17:
+
+if ai = 1 and bΩi ⊆ Ωtent  
+
+> i
+
+then  
+
+> 18:
+
+bΩi+1 ← Ωtent  
+
+> i
+> 19:
+
+μSi+1 ← μS, cert  
+
+> i
+> 20:
+
+else  
+
+> 21:
+
+bΩi+1 ← bΩi 
+
+> 22:
+
+μSi+1 ← μSi 
+
+> 23:
+
+end if  
+
+> 24:
+
+i ← i + 1  
+
+> 25:
+
+until stopping criterion is met 
+
+Instead, a separate certification step evaluates the conservative operator only once on the fixed reference set Ωtent  
+
+> i
+
+using 
+
+Dcert  
+
+> i
+
+. If the certification inclusion test succeeds, then Ωtent 
+
+> i
+
+is accepted as the next shield set. In that case, the safe action map actually deployed online is the one extracted from the certification recursion. Algorithm 1 summarizes this learner-agnostic wrapper. Algorithm 2 instantiates Algorithm 1 with DQN. The proposal action is chosen by ε-greedy exploration with respect to the online network Qθ , while the replay buffer stores the 
+
+executed shielded transitions. Hence, the Q-network is trained on the behavior actually induced by the current accepted shield. The certification data are kept separate from the replay buffer and are never used for Q-learning updates. Algorithm 3 details the grow-phase subroutine CON INV .Starting from XS , it repeatedly applies the conservative operator approximation until a fixed point is reached. The resulting fixed point is used only as a tentative shield set. In the continuous-state case, the operator is evaluated on the lattice abstraction from Theorem 2, and the grow-phase safe action map returned at termination is extracted from the final backward recursion. Algorithm 4 describes the certification step. Unlike CON INV ,this routine does not run a fixed-point search. Instead, it evaluates the conservative operator only once on the fixed tentative reference set Ωtent using the certification data. If 8
+
+Algorithm 2 Safe RL via PCIS-based shielding with grow/certify splitting (DQN-style example) 
+
+Input: Initial shield (bΩ0, μ S 
+
+> 0
+
+), grow rollout length Tgrow , certification rollout length Tcert , certification data-collection policy βcert , safe set XS , replay-buffer capacity M , minibatch size B, discount γ,target-network update interval K, and exploration schedule ε(·).
+
+Output: Learned proposal policy μRL and current accepted shield 
+
+(bΩ, μ S ). 
+
+> 1:
+
+Initialize online network Qθ , target network Q¯θ ← Qθ 
+
+> 2:
+
+Initialize replay buffer B ← ∅ 
+
+> 3:
+
+Initialize accumulated grow dataset Dgrow ← ∅ 
+
+> 4:
+
+Set bΩi ← bΩ0, μSi ← μS 
+
+> 0
+
+, i ← 0 
+
+> 5:
+
+repeat  
+
+> 6:
+
+for t = 0 to Tgrow − 1 do  
+
+> 7:
+
+Choose uRL  
+
+> t
+
+from Qθ using ε(t)-greedy exploration  
+
+> 8:
+
+Execute the shielded action ut via (41)  
+
+> 9:
+
+Observe xt+1 , reward rt, and terminal flag dt ∈ { 0, 1} 
+
+> 10:
+
+Store (xt, u t, r t, x t+1 , d t) in B 
+
+> 11:
+
+Append (xt, u t, x t+1 ) to Dgrow  
+
+> 12:
+
+if |B| ≥ B then  
+
+> 13:
+
+Sample a minibatch from B 
+
+> 14:
+
+Perform one DQN update step  
+
+> 15:
+
+Every K steps, update the target network Q¯θ 
+
+> 16:
+
+end if  
+
+> 17:
+
+xt ← xt+1  
+
+> 18:
+
+end for  
+
+> 19:
+
+(Ω tent  
+
+> i
+
+, μ S, grow  
+
+> i
+
+) ← CON INV (Dgrow , XS ) 
+
+> 20:
+
+Collect a fresh certification dataset Dcert  
+
+> i
+
+of length Tcert using the fixed certification policy Scert from fresh resets  
+
+> 21:
+
+Do not insert Dcert  
+
+> i
+
+into B, and do not update Qθ with these samples  
+
+> 22:
+
+(ai, μ S, cert  
+
+> i
+
+) ← CERTIFY SHIELD (Dcert  
+
+> i
+
+, Ωtent  
+
+> i
+
+) 
+
+> 23:
+
+if ai = 1 and bΩi ⊆ Ωtent  
+
+> i
+
+then  
+
+> 24:
+
+bΩi+1 ← Ωtent  
+
+> i
+> 25:
+
+μSi+1 ← μS, cert  
+
+> i
+> 26:
+
+else  
+
+> 27:
+
+bΩi+1 ← bΩi 
+
+> 28:
+
+μSi+1 ← μSi 
+
+> 29:
+
+end if  
+
+> 30:
+
+i ← i + 1  
+
+> 31:
+
+until stopping criterion is met 
+
+the inclusion test Ωtent ⊆ eQN, cert  
+
+> ϵ
+
+(Ω tent ) passes, then, by the sample-splitting certification result of the previous section, the tentative set is an (N, ϵ )-PCIS with confidence at least η. The safe action map deployed after acceptance is the one extracted from this certification recursion. 
+
+Remark 2 (How to enforce independence in practice) . For the sample-splitting certification argument to apply literally, the grow and certification datasets should be generated by independent data-collection procedures. This can be imple-mented either sequentially or in parallel. In particular, it is acceptable to run a separate certification episode (or a separate certification worker) in parallel with the grow rollout, provided that the certification stream is generated from an independent environment instance, with fresh resets and an independent random seed, under a fixed certification policy Scert . The resulting certification data must not be used for RL updates or for the grow-phase fixed-point search. What matters is probabilistic separation rather than temporal separation. Thus, simply labeling one of two interacting rollouts as “certification” is not sufficient if the certification policy is adapted using grow-phase quantities (such as the current learner policy, current 
+
+Algorithm 3 CON INV (Dgrow , XS ): tentative shield construc-tion 
+
+Input: Accumulated grow dataset Dgrow , safe set XS
+
+Output: Tentative shield set Ωtent and grow-phase safe action map 
+
+μS, grow  
+
+> 1:
+
+If X is continuous, choose δx, construct the lattice [XS ]δx , and evaluate the backward recursion on the lattice; see Theorem 2  
+
+> 2:
+
+Initialize Ω(0) ← X S 
+
+> 3:
+
+repeat  
+
+> 4:
+
+Compute a conservative operator approximation eQNϵ (Ω (ℓ))
+
+(or eQNδx,ϵ (Ω (ℓ)) in the lattice case) from Dgrow using the backward recursion of Theorems 1 and 2  
+
+> 5:
+
+Update Ω(ℓ+1) ← eQNϵ (Ω (ℓ)) (or its lattice counterpart)  
+
+> 6:
+
+until Ω(ℓ+1) = Ω (ℓ) 
+
+> 7:
+
+Define Ωtent ← Ω(ℓ) 
+
+> 8:
+
+Extract the accompanying grow-phase safe action map μS, grow 
+
+from the final backward recursion  
+
+> 9:
+
+Return (Ω tent , μ S, grow )
+
+Algorithm 4 CERTIFY SHIELD (Dcert , Ωtent ): hold-out certifi-cation of a tentative shield 
+
+Input: Certification dataset Dcert , tentative shield set Ωtent ⊆ X S
+
+Output: Acceptance flag a ∈ { 0, 1} and certification safe action map μS, cert  
+
+> 1:
+
+If X is continuous, choose δx, construct the lattice representation of Ωtent , and evaluate the backward recursion on the correspond-ing lattice  
+
+> 2:
+
+Compute the certification operator evaluation 
+
+Ωcert ← eQN, cert  
+
+> ϵ
+
+(Ω tent )
+
+(or its lattice counterpart) from Dcert using the backward recursion of Theorems 1 and 2 with the fixed reference set Ωtent  
+
+> 3:
+
+Extract the accompanying certification safe action map μS, cert 
+
+from the same backward recursion  
+
+> 4:
+
+if Ωtent ⊆ Ωcert then  
+
+> 5:
+
+Set a ← 1 
+
+> 6:
+
+else  
+
+> 7:
+
+Set a ← 0 
+
+> 8:
+
+end if  
+
+> 9:
+
+Return (a, μ S, cert )
+
+shield, or replay buffer contents) during data collection. In that case, the simple independence argument no longer applies directly. If certification is repeated at multiple shield updates, one should use either a fresh certification batch at each update or a family of pre-allocated disjoint hold-out batches. Repeated reuse of the same certification data across adaptively selected tentative shields would require an additional multiple-testing or uniform-certification argument. 
+
+Remark 3 (Monotone shield update) . The inclusion test 
+
+bΩi ⊆ Ωtent 
+
+> i
+
+in Algorithms 1 and 2 is an optional pragmatic safeguard that prevents the accepted shield from shrinking because of transient estimation noise. If such monotonicity is not desired, one may update the current shield to (Ω tent  
+
+> i
+
+, μ S, cert  
+
+> i
+
+) whenever the certification step accepts. V. E XPERIMENTS 
+
+We present a proof-of-concept study on a modified Moun-tainCar benchmark. The objective of this section is to evaluate 9
+
+whether the proposed PCIS-based shield can suppress unsafe exploration while preserving learning performance. 
+
+A. Simulation settings 
+
+We consider a modified MountainCar environment with continuous state s = ( x, v ) ∈ R2, where x and v denote position and velocity, and discrete action set U = {0, 1, 2}
+
+corresponding to left thrust, no thrust, and right thrust. The dynamics are 
+
+vt+1 = vt + 10 −3(ut − 1) − 2.5 × 10 −3 cos(3 xt),xt+1 = xt + vt+1 . (42) Unlike the standard clipped MountainCar benchmark, the usual environment-side boundary clipping/reset is disabled here so that safety violations are directly observable as excursions outside the prescribed safe set. In other words, (42) should be interpreted as the dynamics of an unclipped MountainCar variant rather than those of the standard benchmark. The goal region is reached when xt ≥ 0.5 and vt ≥ 0, and the reward is rt = −1 at non-goal states and rt = 0 at the goal. The safe set is defined as 
+
+XS = [ −1.5, 0.6] × [−0.07 , 0.07] . (43) The initial state distribution follows the standard MountainCar initialization, x0 ∼ U ([ −0.6, −0.4]) with v0 = 0 , although the subsequent dynamics are those of the modified unclipped variant described above. We discretize XS using a Cartesian grid with 200 position points and 30 velocity points. Hence, the lattice spacings are approximately ∆x = 2 .1/199 ≈ 1.06 ×
+
+10 −2 and ∆v = 0 .14 /29 ≈ 4.83 × 10 −3. Define 
+
+¯x = x + 1 .52.1 , ¯v = v + 0 .07 0.14 , (44) and let ¯s = [¯ x, ¯v]⊤. With C = {0, 1, 2, 3, 4, 5}2, the state-only Fourier feature is 
+
+ψ(s) = cos( π c⊤ ¯s) 
+
+> c∈C
+
+∈ R|C| . (45) Fourier features are a standard choice for linear function approximation in reinforcement learning (see, e.g., [42]). Let 
+
+eu ∈ { 0, 1}|U| denote the one-hot vector corresponding to action u ∈ U . The state-action feature used in the PCIS computation is then defined by 
+
+ϕ(s, u ) = eu ⊗ ψ(s) ∈ R|U||C| , (46) where ⊗ denotes the Kronecker product. Equivalently, for each action a ∈ U and Fourier index c ∈ C ,
+
+ϕa, c(s, u ) = 1{a = u} cos( π c⊤ ¯s). (47) Thus, only the block corresponding to the executed action is populated by the Fourier basis values, while the other action blocks are zero. In the present setting, |U| = 3 and |C| =62 = 36 , so the resulting state-action feature dimension is 
+
+3 × 36 = 108 .For DQN, the proposal policy is represented by an MLP with architecture 2–128 –128 –3, ReLU activations, Adam with learning rate 10 −4, discount factor γ = 0 .99 , replay size 10 5,                       
+
+> TABLE II DQN HYPERPARAMETERS USED FOR THE SHIELD ON /OFF COMPARISON
+> Q-network MLP 2–128 –128 –3
+> Activation ReLU Optimizer Adam Learning rate 10 −4
+> Discount factor γ= 0 .99
+> Replay size 10 5
+> Mini-batch size B= 64
+> Target update every K= 10 steps
+> ε-greedy εmax = 1 .0,εmin = 0 .01
+> Decay scale τ= 1000
+> Update-interval length 150 steps DQN step budget 10 ,000
+
+mini-batch size 64 , and target-network synchronization every 10 
+
+steps. Exploration follows the exponentially decaying schedule 
+
+ε(t) = εmin + ( εmax − εmin )e−t/τ ,εmax = 1 .0, ε min = 0 .01 , τ = 1000 . (48) To isolate the effect of shielding, the DQN comparison uses the same backbone and the same exploration schedule with the shield in (41) either enabled or disabled. In the DQN experiments, one update interval consists of 150 steps, and the total number of environment steps is 10 ,000 .We also tested a shielded SARSA agent using the same PCIS module and the same shielding mechanism. Its proposal policy is a linear true-online SARSA( λ) agent with α = 10 −3,
+
+γ = 0.99 , λ = 0.9, and a linearly decaying exploration parameter from 0.5 to 0.01 . In the shielded SARSA exper-iments, one update interval consists of 300 executed steps and the maximum number of update intervals is 100 . Here, αη
+
+denotes the implementation-level tuning parameter used in the confidence term of the PCIS update; it is distinct from the theoretical confidence levels η and {δj }.
+
+B. Simulation results 
+
+Figures 2 and 3 show selected representative state-space trajectories for SARSA and DQN, respectively. In each panel, the red dashed rectangle indicates the prescribed safe set XS ,the green region indicates the current candidate PCIS displayed for the current update interval when shielding is active, the bold blue curve denotes the trajectory portion generated in the current update interval, and the thin gray curves denote trajectory portions accumulated in earlier update intervals. The unshielded panels exhibit excursions outside XS , whereas the shielded panels remain visually concentrated within the current candidate PCIS once shielding becomes active. Because runs terminate upon reaching the goal, the number of displayed update intervals differs across methods. Moreover, the DQN and SARSA update intervals have different lengths, so the absolute values of update-interval returns are not directly comparable across the two algorithms. These trajectory plots should therefore be interpreted as qualitative illustrations of the closed-loop behavior rather than as statistical evidence. Figures 4 and 5 report the returns accumulated over update intervals as mean ± standard deviation over 30 random seeds. For both DQN and SARSA, the shielded and unshielded return curves remain on the same qualitative scale over much 10  
+
+> Fig. 2. Representative state-space trajectories for unshielded SARSA and shielded SARSA. The bold blue curve denotes the trajectory portion generated in the current update interval, the thin gray curves denote earlier update intervals, the red dashed rectangle indicates the safe set, and the green region indicates the current candidate PCIS when shielding is active.
+
+of the displayed horizon, suggesting that shielding does not dramatically degrade learning performance in this proof-of-concept setting. At the same time, the variability across seeds is non-negligible, and the later portions of the curves should be interpreted with care because different runs terminate after different numbers of update intervals, so fewer seeds may contribute there. For SARSA, the shielded curve appears somewhat more conservative in parts of the horizon, but it remains broadly comparable to the unshielded curve in overall scale. These return plots should therefore be interpreted primarily as qualitative evidence that the shield does not induce a large performance deterioration, rather than as a fine-grained statistical comparison of learning efficiency. Figure 6 summarizes two run-level metrics over 30 random seeds: the fully safe run rate and the goal-reaching seed rate. A run is counted as fully safe if it incurs zero unsafe steps over the entire 4000-step training trajectory, and a seed is counted as goal-reaching if the agent reaches the goal at least once during that training budget. Under the fully safe run metric, DQN improves from 9/30 (30 .0% ) fully safe runs without shielding to 30 /30 (100% ) with shielding, while the goal-reaching seed rate increases from 23 /30 (76 .7% )to 28 /30 (93 .3% ). For SARSA, shielding likewise improves the fully safe run rate from 9/30 (30 .0% ) to 30 /30 (100% ), whereas the goal-reaching seed rate changes from 23 /30 
+
+(76 .7% ) without shielding to 20 /30 (66 .7% ) with shielding. This modest reduction for SARSA is consistent with the more conservative safety-priority shield: in MountainCar, reaching the goal requires sufficiently aggressive momentum-building motion, and restricting actions near the boundary of the candidate safe region can make such trajectories less likely. These results indicate that, on this modified MountainCar benchmark, the PCIS-based shield can substantially improve safety under a fair comparison between the shielded and unshielded settings. For DQN, this safety improvement is accompanied by a higher goal-reaching seed rate, whereas for SARSA the safety-priority shield yields a modest reduction in goal-reaching frequency. VI. C ONCLUSION AND FUTURE DIRECTIONS 
+
+The main contribution of this paper is to show that proba-bilistic controlled invariance can be synthesized directly from data for unknown linear MDPs, yielding an η-conservative safe set and an accompanying set-valued shield. The present formulation intentionally focuses on the regime in which such guarantees are currently tractable: finite actions and either discrete states or low-dimensional continuous states equipped with a lattice abstraction. Within this regime, the method provides a transparent pipeline from transition data to a deployable runtime safety filter, which can be coupled with standard RL learners without modifying their internal update rules. Several extensions appear promising. First, the scalability issue of the lattice abstraction is not unique to our setting; rather, it reflects the usual state-explosion phenomenon in abstraction-based synthesis. A natural next step is therefore to combine 11 Position                
+
+> 0.100
+> 0.075
+> 0.050
+> 0.025
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> Segment 1
+> Position
+> Segment 4
+> Position
+> unsafe steps: 43
+> x range [-3.28, -1.52]
+> Segment 11
+> unsafe visited
+> 1.5 1.0 0.5 0.0 0.5
+> Position
+> 0.100
+> 0.075
+> 0.050
+> 0.025
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> Segment 1
+> 1.5 1.0 0.5 0.0 0.5
+> Position
+> Segment 4
+> 1.5 1.0 0.5 0.0 0.5
+> Position
+> Segment 13
+> Velocity
+> DQN
+> Unshielded
+> DQN
+> Shielded
+> Past segments Current segment Out-of-bounds portion Learned CIS
+
+Fig. 3. Representative state-space trajectories for unshielded DQN and shielded DQN. The bold blue curve denotes the trajectory portion generated in the current update interval, the thin gray curves denote earlier update intervals, the red dashed rectangle indicates the safe set, and the green region indicates the current candidate PCIS when shielding is active. 
+
+Fig. 4. Mean ± standard deviation of returns accumulated over update intervals for DQN with and without shielding, over 30 random seeds. 
+
+the present PCIS recursion with compositional or subsystem-based abstractions, so that local certificates are computed on lower-dimensional components and then assembled into a global safety certificate [43]. Likewise, adaptive or nonuniform discretizations could concentrate computation near the boundary of the safe set or in regions where the feature map varies rapidly, thereby reducing unnecessary refinement elsewhere. Second, the dependence on a global Lipschitz constant Lϕ
+
+should be viewed as a conservative but convenient first step rather than as a fundamental obstacle. In practice, one may expect tighter implementations based on local Lipschitz esti-mates, data-dependent abstraction errors, or learned state-space metrics, which could reduce conservatism while preserving 
+
+Fig. 5. Mean ± standard deviation of returns accumulated over update intervals for SARSA with and without shielding, over 30 random seeds. 
+
+the same conservative-inclusion logic. Third, the finite-action assumption mainly enters through the maximization and safe-action selection steps. This suggests a concrete path toward large or continuous action spaces: exhaustive enumeration could be replaced by an optimization oracle over a compact action set, or by adaptive candidate sets constructed from coverings, local linearization, or feature-space maximization. This direction is consistent with existing results on linear bandits with possibly infinite action sets [31], recent work on linear MDPs with large action spaces [44], and continuous-action extensions for low-rank MDPs under additional smoothness assumptions [45]. Overall, we view the present method as a certifiable baseline rather than an endpoint: it isolates a practically meaningful 12 DQN SARSA      
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Fully safe run rate
+> 9/30 9/30
+> 30/30 30/30
+> DQN SARSA
+> Goal-reaching seed rate
+> 23/30 23/30
+> 28/30
+> 20/30
+> Unsafe PCIS-shielded
+
+Fig. 6. Comparison of fully safe run rates (left) and goal-reaching seed rates (right) over 30 random seeds on the modified MountainCar environment. A run is counted as fully safe if it incurs zero unsafe steps over the entire 4000-step training trajectory, and a seed is counted as goal-reaching if the agent reaches the goal at least once during that training budget. The shielded results correspond to the final safety-priority configurations for DQN and SARSA under the same backbone hyperparameters and the same ε-greedy base policy as in the corresponding unshielded runs. 
+
+setting in which data-driven PCIS synthesis and shielding can be established cleanly, while also indicating concrete routes toward higher-dimensional systems and richer action spaces. Future work will pursue these directions together with sharper confidence accounting for repeated online shield updates. REFERENCES [1] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Veness, M. G. Bellemare, A. Graves, M. Riedmiller, A. K. Fidjeland, G. Ostrovski, S. Petersen, C. Beattie, A. Sadik, I. Antonoglou, H. King, D. Kumaran, D. Wierstra, S. Legg, and D. Hassabis, “Human-level control through deep reinforcement learning,” Nature , vol. 518, no. 7540, pp. 529–533, Feb. 2015. [2] J. Garc ´ıa and F. Fern ´andez, “A comprehensive survey on safe reinforce-ment learning,” Journal of Machine Learning Research , vol. 16, pp. 1437–1480, 2015. [3] S. Gu, L. Yang, Y. Du, G. Chen, F. Walter, J. Wang, Y. Yang, and A. C. Knoll, “A review of safe reinforcement learning: Methods, theory and applications,” CoRR , vol. abs/2205.10330, 2022. [4] L. Brunke, M. Greeff, A. W. Hall, Z. Yuan, S. Zhou, J. Panerati, and A. P. Schoellig, “Safe learning in robotics: From learning-based control to safe reinforcement learning,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 5, pp. 411–444, 2022. [5] T. M. Moldovan and P. Abbeel, “Safe exploration in markov decision processes,” in Proceedings of the 29th International Conference on Machine Learning (ICML) , 2012. [6] B. Thananjeyan, A. Balakrishna, S. Nair, M. Luo, K. Srinivasan, M. Hwang, J. E. Gonzalez, J. Ibarz, C. Finn, and K. Goldberg, “Recovery rl: Safe reinforcement learning with learned recovery zones,” IEEE Robotics and Automation Letters , vol. 6, no. 3, pp. 4915–4922, 2021. [7] J. Achiam, D. Held, A. Tamar, and P. Abbeel, “Constrained policy optimization,” in Proceedings of the 34th International Conference on Machine Learning (ICML) , ser. Proceedings of Machine Learning Research, vol. 70. PMLR, 2017, pp. 22–31. [8] Y. Chow, O. Nachum, E. A. Du ´e ˜nez-Guzm ´an, and M. Ghavamzadeh, “A lyapunov-based approach to safe reinforcement learning,” in Advances in Neural Information Processing Systems 31 (NeurIPS) , 2018, pp. 8103– 8112. [9] A. Wachi and Y. Sui, “Safe reinforcement learning in constrained markov decision processes,” in Proceedings of the 37th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 119. PMLR, 2020, pp. 9797–9806. [10] A. Ghosh, X. Zhou, and N. B. Shroff, “Provably efficient model-free constrained rl with linear function approximation,” in Advances in Neural Information Processing Systems 35 (NeurIPS 2022) , 2022. [11] H. Wei, X. Liu, and L. Ying, “Safe reinforcement learning with instanta-neous constraints: The role of aggressive exploration,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 19, 2024, pp. 21 708–21 716. [12] A. Wachi, W. Hashimoto, X. Shen, and K. Hashimoto, “Safe exploration in reinforcement learning: A generalized formulation and algorithms,” in 
+
+Advances in Neural Information Processing Systems 36 (NeurIPS) , 2023. [13] M. Alshiekh, R. Bloem, R. Ehlers, B. K ¨onighofer, S. Niekum, and U. Topcu, “Safe reinforcement learning via shielding,” in Proceedings of the Thirty-Second AAAI Conference on Artificial Intelligence (AAAI-18) ,2018, pp. 2669–2678. [14] N. Jansen, B. K ¨onighofer, S. Junges, A. Serban, and R. Bloem, “Safe reinforcement learning using probabilistic shields (invited paper),” in 
+
+31st International Conference on Concurrency Theory (CONCUR 2020) ,2020, pp. 3:1–3:16. [15] B. K ¨onighofer, J. Rudolf, A. Palmisano, M. Tappler, and R. Bloem, “Online shielding for reinforcement learning,” Innovations in Systems and Software Engineering , vol. 19, no. 4, pp. 379–394, 2023. [16] A. W. Goodall and F. Belardinelli, “Approximate model-based shielding for safe reinforcement learning,” in 26th European Conference on Artificial Intelligence (ECAI 2023) , 2023, pp. 883–890. [17] K. P. Wabersich and M. N. Zeilinger, “A predictive safety filter for learning-based control of constrained nonlinear dynamical systems,” 
+
+Automatica , vol. 129, p. 109597, 2021. [18] K.-C. Hsu, H. Hu, and J. F. Fisac, “The safety filter: A unified view of safety-critical control in autonomous systems,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 7, pp. 47–72, 2024. [19] J. F. Fisac, A. K. Akametalu, M. N. Zeilinger, S. Kaynama, J. Gillula, and C. J. Tomlin, “A general safety framework for learning-based control in uncertain robotic systems,” IEEE Transactions on Automatic Control ,vol. 64, no. 7, pp. 2737–2752, 2019. [20] P. Jagtap, G. J. Pappas, and M. Zamani, “Control barrier functions for unknown nonlinear systems using gaussian processes,” in Proceedings of the IEEE 59th Conference on Decision and Control (IEEE CDC) , 2020. [21] A. J. Taylor, A. Singletary, Y. Yue, and A. D. Ames, “Learning for safety-critical control with control barrier functions,” in Proceedings of the 2nd Conference on Learning for Dynamics and Control , ser. Proceedings of Machine Learning Research, vol. 120. PMLR, 2020, pp. 708–717. [22] F. Berkenkamp, M. Turchetta, A.P.Schoellig, and A. Krause, “Safe model-based reinforcement learning with stability guarantees,” in Proceedings of the Advances in Neural Information Processing Systems (NIPS) , 2017. [23] F. Blanchini, “Set invariance in control,” Automatica , vol. 35, no. 11, pp. 1747–1767, 1999. [24] E. G. Gilbert and K. T. Tan, “Linear systems with state and control constraints: The theory and application of maximal output admissible sets,” 
+
+IEEE Transactions on Automatic Control , vol. 36, no. 9, pp. 1008–1020, 1991. [25] Y. Gao, K. H. Johansson, and L. Xie, “Computing probabilistic controlled invariant sets,” IEEE Transactions on Automatic Control , vol. 66, no. 7, pp. 3138–3151, 2021. [26] D. Yu, H. Ma, S. Li, and J. Chen, “Reachability constrained reinforcement learning,” in Proceedings of the 39th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 162. PMLR, 2022, pp. 25 636–25 655. [27] C. Jin, Z. Yang, Z. Wang, and M. I. Jordan, “Provably efficient rein-forcement learning with linear function approximation,” in Proceedings of Thirty Third Conference on Learning Theory , ser. Proceedings of Machine Learning Research, J. Abernethy and S. Agarwal, Eds., vol. 125. PMLR, 09–12 Jul 2020, pp. 2137–2143. [28] M. Papini, A. Tirinzoni, A. Pacchiano, M. Restelli, A. Lazaric, and M. Pirotta, “Reinforcement learning in linear MDPs: Constant regret and representation selection,” in Advances in Neural Information Processing Systems 34 (NeurIPS) , 2021, pp. 16 371–16 383. [29] S. Amani, C. Thrampoulidis, and L. Yang, “Safe reinforcement learning with linear function approximation,” in Proceedings of the 38th Interna-tional Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 139. PMLR, 2021, pp. 243–253. [30] M. Shi, Y. Liang, and N. B. Shroff, “A near-optimal algorithm for safe reinforcement learning under instantaneous hard constraints,” in 
+
+Proceedings of the 40th International Conference on Machine Learning ,ser. Proceedings of Machine Learning Research, vol. 202. PMLR, 2023, pp. 31 243–31 268. [31] Y. Abbasi-Yadkori, D. P ´al, and C. Szepesv ´ari, “Improved algorithms for linear stochastic bandits,” in Advances in Neural Information Processing Systems 24 , 2011, pp. 2312–2320. [32] M. Korda, “Computing controlled invariant sets from data using convex optimization,” SIAM Journal on Control and Optimization , vol. 58, no. 5, pp. 2871–2899, 2020. [33] Y. Chen, H. Peng, J. W. Grizzle, and N. Ozay, “Data-driven computation of minimal robust control invariant set,” in 2018 IEEE Conference on Decision and Control (CDC) , 2018, pp. 4052–4058. [34] S. K. Mulagaleti, A. Bemporad, and M. Zanon, “Data-driven synthesis of robust invariant sets and controllers,” IEEE Control Systems Letters ,vol. 6, pp. 1676–1681, 2022. 13 
+
+[35] M. Mejari, A. Gupta, and D. Piga, “Data-driven computation of robust invariant sets and gain-scheduled controllers for linear parameter-varying systems,” IEEE Control Systems Letters , vol. 7, pp. 3355–3360, 2023. [36] A. A. A. Kashani and C. Danielson, “Data-driven invariant set for nonlinear systems with application to command governors,” Automatica ,vol. 172, p. 112010, 2025. [37] A. K. Strong and L. J. Bridgeman, “Data driven verification of positive invariant sets for discrete, nonlinear systems,” in Proceedings of the 6th Annual Learning for Dynamics & Control Conference , ser. Proceedings of Machine Learning Research, vol. 242, 2024, pp. 1477–1488. [Online]. Available: https://proceedings.mlr.press/v242/strong24a.html [38] P. Griffioen, B. Zhong, M. Arcak, M. Zamani, and M. Caccamo, “Data-driven controlled invariant sets for gaussian process state space models,” 2024. [39] K. Hashimoto, A. Saoud, M. Kishida, T. Ushio, and D. V. Dimarogonas, “Learning-based symbolic abstractions for nonlinear control systems,” 
+
+Automatica , vol. 146, p. 110646, 2022. [40] D. Zhou, Q. Gu, and C. Szepesv ´ari, “Nearly minimax optimal re-inforcement learning for linear mixture markov decision processes,” in Proceedings of Thirty Fourth Conference on Learning Theory , ser. Proceedings of Machine Learning Research, M. Belkin and S. Kpotufe, Eds., vol. 134. PMLR, 15–19 Aug 2021, pp. 4532–4576. [41] T. Zhang, T. Ren, M. Yang, J. Gonzalez, D. Schuurmans, and B. Dai, “Making linear MDPs practical via contrastive representation learning,” in 
+
+Proceedings of the 39th International Conference on Machine Learning ,ser. Proceedings of Machine Learning Research, K. Chaudhuri, S. Jegelka, L. Song, C. Szepesvari, G. Niu, and S. Sabato, Eds., vol. 162. PMLR, 17–23 Jul 2022, pp. 26 447–26 466. [42] L. N. Alegre, T. Ziemke, and A. L. C. Bazzan, “Using reinforcement learning to control traffic signals in a real-world scenario: An approach based on linear function approximation,” IEEE Transactions on Intelligent Transportation Systems , vol. 23, no. 7, pp. 9126–9135, 2022. [43] A. Lavaei, S. Soudjani, and M. Zamani, “Compositional abstraction-based synthesis for networks of stochastic switched systems,” Automatica , vol. 114, p. 108827, 2020. [44] Z. Xu, Z. Song, and A. Shrivastava, “A tale of two efficient value iteration algorithms for solving linear mdps with large action space,” in Proceed-ings of The 26th International Conference on Artificial Intelligence and Statistics , ser. Proceedings of Machine Learning Research, vol. 206, 2023, pp. 788–836. [45] M. Oprescu, A. Bennett, and N. Kallus, “Low-rank MDPs with continuous action spaces,” in Proceedings of The 27th International Conference on Artificial Intelligence and Statistics , ser. Proceedings of Machine Learning Research, vol. 238, 2024, pp. 4069–4077. 
+
+APPENDIX 
+
+Proof. For each j, because ¯pδx 
+
+> j+1
+
+is computed from later stages only, it is independent of the dataset D(j). By backward induction from (28), (33), (29), and (34), 
+
+0 ≤ ˜pδx 
+
+> j
+
+(xd) ≤ 1, 0 ≤ ¯pδx 
+
+> j
+
+(x) ≤ 1 (49) for all xd ∈ [XS ]δx , x ∈ X , and j = 0 , . . . , N . Conditioned on ¯pδx
+
+> j+1
+
+, Lemma 1 implies that there exists θδx 
+
+> j
+
+∈ Rd such that 
+
+E[¯ pδx
+
+> j+1
+
+(x′) | x, u ] = ( θδx 
+
+> j
+
+)⊤ϕ(x, u )
+
+for all (x, u ). Moreover, ∥θδx 
+
+> j
+
+∥∞ ≤ 1, hence ∥θδx 
+
+> j
+
+∥1 ≤ d. Let 
+
+Eδx = TN −1 
+
+> j=0
+
+Eδx 
+
+> j
+
+. By (32) and the union bound, 
+
+Pr( Eδx ) ≥ 1 − 
+
+> N−1
+
+X
+
+> j=0
+
+δj ≥ η. 
+
+We now prove by backward induction that, on Eδx ,
+
+¯pδx 
+
+> j
+
+(x) ≤ pΩ 
+
+> j
+
+(x), ∀x ∈ X , ∀j = 0 , . . . , N. (50) The claim is immediate at j = N . Indeed, if x / ∈ Ω, then 
+
+¯pδx 
+
+> N
+
+(x) = 0 = pΩ 
+
+> N
+
+(x), while for x ∈ Ω,
+
+¯pδx 
+
+> N
+
+(x) = 1Ω(qδx (x)) ≤ 1 = pΩ 
+
+> N
+
+(x).
+
+Assume (50) holds at stage j + 1 . Fix x ∈ X . If x / ∈ Ω, then 
+
+¯pδx 
+
+> j
+
+(x) = 0 = pΩ 
+
+> j
+
+(x). Now let x ∈ Ω and set xd = qδx (x).Using (2), (27), and ∥θδx 
+
+> j
+
+∥1 ≤ d,
+
+(θδx 
+
+> j
+
+)⊤ϕ(x, u ) − (θδx 
+
+> j
+
+)⊤ϕ(xd, u ) ≤ dL ϕδx.
+
+On Eδx 
+
+> j
+
+,
+
+(θδx 
+
+> j
+
+)⊤ϕ(xd, u ) ≥ (ˆθδx 
+
+> j
+
+)⊤ϕ(xd, u ) − βj σj (xd, u ).
+
+Hence, for any u ∈ U ,
+
+E[¯ pδx
+
+> j+1
+
+(x′) | x, u ] = ( θδx 
+
+> j
+
+)⊤ϕ(x, u )
+
+≥ (ˆθδx 
+
+> j
+
+)⊤ϕ(xd, u ) − dL ϕδx − βj σj (xd, u )= ℓδx 
+
+> j
+
+(xd, u ). (51) By the induction hypothesis, 
+
+E[pΩ
+
+> j+1
+
+(x′) | x, u ] ≥ E[¯ pδx
+
+> j+1
+
+(x′) | x, u ] ≥ ℓδx 
+
+> j
+
+(xd, u ).
+
+Therefore, 
+
+pΩ 
+
+> j
+
+(x) = max  
+
+> u∈U
+
+E[pΩ
+
+> j+1
+
+(x′) | x, u ]
+
+≥ max  
+
+> u∈U
+
+min 
+
+
+
+1,
+
+h
+
+ℓδx 
+
+> j
+
+(xd, u )
+
+i
+
+> +
+
+
+
+. (52) If xd /∈ Ω, then ˜pδx 
+
+> j
+
+(xd) = 0 . Otherwise, 
+
+˜pδx 
+
+> j
+
+(xd) = max  
+
+> u∈U
+
+min 
+
+
+
+1,
+
+h
+
+ℓδx 
+
+> j
+
+(xd, u )
+
+i
+
+> +
+
+
+
+≤ pΩ 
+
+> j
+
+(x).
+
+In either case, 
+
+¯pδx 
+
+> j
+
+(x) = ˜ pδx 
+
+> j
+
+(xd) ≤ pΩ 
+
+> j
+
+(x),
+
+which proves (50). Consequently, on Eδx ,
+
+eQNδx,ϵ (Ω) = {x ∈ Ω : ¯ pδx 
+
+> 0
+
+(x) ≥ 1 − ϵ}⊆ { x ∈ Ω : pΩ0 (x) ≥ 1 − ϵ}
+
+= QNϵ (Ω) . (53) Since Pr( Eδx ) ≥ η, (36) follows.

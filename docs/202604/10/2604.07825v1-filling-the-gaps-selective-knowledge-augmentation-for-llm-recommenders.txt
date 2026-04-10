@@ -1,0 +1,472 @@
+Title: Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders
+
+URL Source: https://arxiv.org/pdf/2604.07825v1
+
+Published Time: Fri, 10 Apr 2026 00:35:21 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders 
+
+# Jaehyun Lee 
+
+Pohang University of Science and Technology Pohang, South Korea jminy8@postech.ac.kr 
+
+# Sanghwan Jang 
+
+Pohang University of Science and Technology Pohang, South Korea s.jang@postech.ac.kr 
+
+# SeongKu Kang ∗
+
+Korea University Seoul, South Korea seongkukang@korea.ac.kr 
+
+# Hwanjo Yu ∗
+
+Pohang University of Science and Technology Pohang, South Korea hwanjoyu@postech.ac.kr 
+
+## Abstract 
+
+Large language models (LLMs) have recently emerged as powerful training-free recommenders. However, their knowledge of individ-ual items is inevitably uneven due to imbalanced information expo-sure during pretraining, a phenomenon we refer to as knowledge gap problem. To address this, most prior methods have employed a naive uniform augmentation that appends external information for every item in the input prompt. However, this approach not only wastes limited context budget on redundant augmentation for well-known items but can also hinder the model’s effective reasoning. To this end, we propose KnowSA CKP (Knowledge-aware 
+
+Selective Augmentation with Comparative Knowledge Probing) to mitigate the knowledge gap problem. KnowSA CKP estimates the LLM’s internal knowledge by evaluating its capability to capture collaborative relationships and selectively injects additional infor-mation only where it is most needed. By avoiding unnecessary augmentation for well-known items, KnowSA CKP focuses on items that benefit most from knowledge supplementation, thereby mak-ing more effective use of the context budget. KnowSA CKP requires no fine-tuning step, and consistently improves both recommenda-tion accuracy and context efficiency across four real-world datasets. Our code will be made publicly available upon publication. 
+
+## CCS Concepts 
+
+• Information systems → Recommender systems .
+
+## Keywords 
+
+Recommender System, Large Language Models, Knowledge Gap 
+
+ACM Reference Format: 
+
+Jaehyun Lee, Sanghwan Jang, SeongKu Kang, and Hwanjo Yu. 2018. Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders. In Proceedings of (Conference ’25). ACM, New York, NY, USA, 11 pages. https://doi.org/.  
+
+> ∗Corresponding authors. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference ’25, Woodstock, NY
+> ©2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/.
+
+## 1 Introduction 
+
+Recommender systems play a crucial role in helping users navigate the ever-growing landscape of digital content and products. Clas-sical approaches such as matrix factorization [ 43 ] rely heavily on historical interaction data to infer user preferences. However, these methods struggle in cold-start scenarios involving users or items with limited or no historical interactions, which severely restricts the system’s ability to generalize. To overcome these challenges, re-cent studies have explored the use of large language models (LLMs) as knowledge-rich recommenders [ 18 , 27 , 30 , 37 , 42 ]. Pretrained on vast corpora, LLMs possess broad semantic understanding and factual knowledge about a wide range of entities and domains. This allows them to serve as powerful training-free recommenders without additional costly fine-tuning steps [18, 29, 53]. Despite their potential, one critical challenge in using LLMs for recommendation is the imbalance in their parametric knowledge, a phenomenon we refer to as the knowledge gap . As LLMs are pretrained using texts from the web, the amount of information they acquire about each item is inherently biased toward popular items with higher visibility online [ 23 , 38 , 52 ], leaving the model with insufficient knowledge of long-tail items. However, in the recommendation context, popularity alone serves as an imperfect indicator for this knowledge gap. This is because an effective rec-ommendation requires more than merely knowing details about individual items; it demands capturing their collaborative patterns ,such as co-consumption behaviors in user histories and item-item relationships. Even among items with similar popularity, the extent to which an LLM acquire their relational context can differ substan-tially—one item might be associated with rich interaction patterns, while another exists in isolation. Due to this uneven knowledge, LLMs often over-rely on knowledge-rich items and fail to provide personalized recommendations. Despite its critical impact, little effort has been made to directly quantify and resolve this knowl-edge gap. While existing studies have not explicitly addressed this knowl-edge gap, many efforts can be seen as indirect attempts to allevi-ate it. One straightforward approach is model-level adaptation ,where the LLM is fine-tuned using user-item interaction data to directly learn collaborative patterns [ 7, 17 , 30 , 55 , 56 ]. However, this approach incurs substantial computational costs and risks de-grading the model’s general capabilities, such as instruction fol-lowing and explainability [ 19 , 49 ]. Consequently, recent research has increasingly focused on prompt-level augmentation , which enriches input prompts with item metadata or external knowledge in a training-free manner [ 26 , 28 , 32 , 57 ]. However, there remains  
+
+> arXiv:2604.07825v1 [cs.IR] 9 Apr 2026 Conference ’25, June 03–05, 2018, Woodstock, NY Lee et al., Jaehyun Lee, Sanghwan Jang, SeongKu Kang, and Hwanjo Yu
+
+substantial room for improvement in this direction. Most exist-ing methods adopt uniform augmentation , indiscriminately adding information for all items in the input prompt, regardless of how much the model already knows about each item. This approach is suboptimal; it not only wastes the limited context budget by adding redundant information for known items, while simultaneously in-creasing the risk of performance degradation as LLMs struggle to interpret essential signals within excessively long contexts [35]. To resolve this inefficiency, one might consider adopting adap-tive retrieval strategies from the general NLP domain [ 22 , 45 ], which dynamically determine when to retrieve external information. However, directly applying these techniques to recommendation presents critical challenges. Existing adaptive methods monitor queries sequentially during generation to detect knowledge defi-ciency. Such an inference-time approach is ill-suited for recommen-dation scenarios, where minimizing inference latency. Moreover, LLMs struggle to accurately discriminate knowledge gaps for mul-tiple items simultaneously within a complex prompt. To overcome these limitations, we propose a selective augmentation framework grounded in offline knowledge estimation . By pre-computing the knowledge necessity for each item, we can efficiently inject external information only where it is needed without incurring inference overhead. This naturally raises the question of how to quantify the degree of knowledge that an LLM possesses for each item. We begin by analyzing various knowledge proxies used to approximate the model’s knowledge, ranging from heuristics like item popularity [ 46 ] to advanced signals such as generation like-lihood [ 44 ] and consistency metric [ 34 , 51 ]. However, directly ap-plying these general-purpose methods to recommendations yields suboptimal results. As detailed in our analysis §3.2.2, these proxies correlate poorly with recommendation accuracy because they pri-marily assess only semantic familiarity (e.g., knowing what an item is). They do not effectively capture the collaborative relationship between the user’s history and the target item (e.g., co-consumption pattern), which is essential for recommendation. These observa-tions highlight the need for a recommendation-tailored knowledge scoring strategy that accounts for both semantic and collaborative aspects, enabling more targeted and effective prompt augmentation. In this work, we propose KnowSA CKP (Know ledge-aware Selective 
+
+Augmentation with Comparative Knowledge Probing), a training-free framework designed to mitigate item-level knowledge gaps in LLM-based recommendation. KnowSA CKP is designed to (1) esti-mate the LLM’s knowledge for each item, and (2) selectively inject additional information only where it is most needed. To this end, we introduce a new knowledge scoring strategy, called CKP, which quantifies the model’s capability to comparatively rank items based on collaborative patterns. Guided by this score, we employ a person-alized augmentation strategy that selectively enriches knowledge-poor items with relevant reference anchors to bridge the semantic gap, effectively activating latent knowledge already encoded in the model. Unlike prior methods that uniformly augment all items, KnowSA CKP makes more efficient use of the context budget by focusing on items that benefit most from supplementation. The paper makes the following key contributions: 
+
+• Problem. We formally present the necessity and difficulty of resolving the knowledge gap problem in LLM-based recommen-dation, which remains less explored in the previous literature. 
+
+• Analysis. We provide a comprehensive analysis of various knowl-edge proxies for estimating an LLM’s knowledge in recommenda-tion tasks, shedding light on the design of an effective solution. 
+
+• Algorithm. We propose KnowSA CKP , which is equipped with new knowledge scoring and augmentation strategies tailored to recommendation tasks. As a plug-and-play framework, it can be flexibly applied to various LLMs. 
+
+• Experiments. Extensive experiments show that KnowSA CKP 
+
+consistently improves recommendation quality in both accuracy and diversity, with negligible additional latency. 
+
+## 2 Preliminaries 
+
+Notations. Let the dataset be represented as D = (U , I, T , H ) ,where U, I, T , and H represent the sets of users, items, item attribute texts, and user interaction histories, respectively. For each user 𝑢 ∈ U , the interaction sequence is denoted as 𝐻 𝑢 =
+
+(𝑖 𝑢  
+
+> 1
+
+, 𝑖 𝑢  
+
+> 2
+
+, . . . , 𝑖 𝑢   
+
+> |𝐻 𝑢 |
+
+) ∈ H , where |𝐻 𝑢 | is the length of user 𝑢 ’s interac-tion sequence, and 𝑖 𝑢 𝑘 ∈ I is the 𝑘 -th item user 𝑢 interacted with chronologically. Each item 𝑖 ∈ I is associated with textual features, represented as (𝑡 𝑖 , 𝑎 𝑖 ) ∈ T , where 𝑡 𝑖 is the item’s title and 𝑎 𝑖 are additional textual attributes (e.g., genre, developer, and description). 
+
+Recommendation with an LLM ranker. We adopt the standard two-stage recommendation [ 11 , 25 ], consisting of candidate genera-tion followed by ranking . In the first stage, a small set of candidate items 𝐶 𝑢 = {𝑖 𝑢  
+
+> 1
+
+, 𝑖 𝑢  
+
+> 2
+
+, . . . , 𝑖 𝑢 𝑚 } is retrieved from the full item set I us-ing lightweight models, where 𝑚 ≪ |I| . In the second stage, we employ LLMs as training-free rankers [ 18 , 47 ], which orders the candidate items based on its parametric knowledge and the input prompt. The prompt is constructed using the user’s history 𝐻 𝑢 , the candidate set 𝐶 𝑢 , and their associated features from T .
+
+Problem Definition. We follow the two-stage recommendation, where the LLM is leveraged as a training-free ranker. Each item is represented by its title as the simplest form of input, and can be further augmented using additional attributes [ 31 , 32 ]. Our goal is to develop a plug-and-play framework that mitigates the knowledge gap problem by selectively augmenting input prompts. We seek to estimate the LLM’s internal knowledge for each item and selectively inject additional information only where it is most needed. By avoiding redundant augmentation for well-known items, the framework can utilize the context budget more effectively by allocating it to items that benefit most from knowledge supplement. 
+
+Figure 1: Recommendation performance change with uni-form augmentation for all items. Indiscriminate augmenta-tion for all items can rather hurt performance. Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders Conference ’25, June 03–05, 2018, Woodstock, NY 
+
+(a) Spearman correlation (b) Performance Alignment across Knowledge Levels Figure 2: Alignment between knowledge scores and recommendation quality on the A-Beauty dataset. (a) Spearman correlation between Recall@1 and knowledge scores obtained from five methods. (b) Average Recall@1 across four quantile bins grouped by knowledge scores at the item (left) and user (right) levels. Group 1 represents the lowest knowledge score bin, and Group 4 is the highest. The proposed knowledge scoring method consistently aligns with recommendation performance across all perspectives. 
+
+## 3 Analysis: Knowledge Scoring for LLM-based Recommendation 
+
+Before presenting our framework, we empirically investigate the nature of the knowledge gap in LLM-based recommendation. Specif-ically, we address two fundamental questions: (1) Does simply in-jecting external information for all items resolve the knowledge deficit? (2) If selective augmentation is needed, can we rely on existing knowledge proxies to diagnose what the model knows? 
+
+## 3.1 The Paradox of Uniform Augmentation 
+
+We examine the impact of uniform augmentation, where full item attributes are indiscriminately added for every item in the input prompt. Figure 1 illustrates the performance difference between uniform augmentation and no augmentation (i.e., each item is rep-resented by its title, the simplest input form) across four datasets. Despite the richer input, we observe notable performance drops on three datasets, suggesting that uniform augmentation is not univer-sally beneficial and may even degrade recommendation accuracy. Since uniform augmentation indiscriminately appends information even for items the model already knows, it leads to two critical issues. First, LLMs face known difficulties in interpreting informa-tion within extended contexts [ 18 , 35 ]. Consequently, augmented knowledge is often overlooked, making it difficult for the model to effectively utilize the provided information even for less-known items. Second, the excessive prompt length substantially increases inference costs (e.g., API fees) and latency. These observations underscore the necessity of selective augmentation: injecting infor-mation only where the model’s internal knowledge is insufficient. 
+
+## 3.2 The Misalignment of Existing Proxies 
+
+To implement selective augmentation, it is essential to estimate the degree of knowledge that an LLM possesses for each item, a process we refer to as knowledge scoring . We begin by evalu-ating whether existing proxies, ranging from simple heuristics to advanced adaptive RAG metrics, can serve as reliable indicators for this purpose. 
+
+3.2.1 Existing Proxies . We consider four categories of proxies: 
+
+• Popularity refers to the item frequency in the interaction dataset. This is a common heuristic for item exposure, similar to Wikipedia pageviews used in general domains [38, 46]. 
+
+• Pre-training Data Detection estimates whether an item was present in the LLM’s pre-training corpus [ 9, 44 , 54 ]. We adopt 
+
+Min-K% [44 ], which computes the average log-probability over the bottom 𝑘 % of tokens in the generated item title, conditioned on the target domain (e.g., In the movie domain, the title is:). 
+
+• Uncertainty measures the model’s internal confidence in LLM predictions [ 12 – 14 , 34 , 48 ]. We utilize EigValLaplacian [34 ], which computes the sum of Laplacian eigenvalues from a weighted graph constructed based on the semantic similarity of multiple sampled responses (e.g., descriptions generated for the movie "Titanic"). 
+
+• Adaptive Retrieval Score represents the self-awareness of the LLM regarding its need for external information in Adaptive RAG research [ 21 , 22 , 45 , 51 ]. We employ the scoring strategy from 
+
+SeaKR [51 ], which measures the consistency of internal states across multiple responses generated from a query requesting an item description, where a lower score reflects a higher need for retrieval. 
+
+3.2.2 Empirical Observations . To serve as a reliable indicator of LLM’s competence for recommendation, the proxy should be closely correlated with the recommendation performance. We report the result with Qwen-2.5-7B with no prompt augmentation (i.e., each item is represented by its title, the simplest input form). Similar tendencies are observed with other models. Our findings reveal two key observations: 
+
+O1. Existing proxies correlate weakly with ranking perfor-mance. We first evaluate whether the proxies align with actual recommendation quality by computing the Spearman correlation between each proxy score and the model’s recall (Recall@1). For a comprehensive analysis, we analyze the correlations at both item-and user-levels. 1 The results are presented in Figure 2(a). Interest-ingly, we observe that the simplest heuristic, popularity, exhibits the highest correlation, whereas sophisticated, recent techniques yield weak correlations.  
+
+> 1For item-level, we compute the correlation across all test items. For user-level, we compute the average proxy score over the items in each user’s history and correlate it across all users. Conference ’25, June 03–05, 2018, Woodstock, NY Lee et al., Jaehyun Lee, Sanghwan Jang, SeongKu Kang, and Hwanjo Yu
+
+• Popularity: As a heuristic derived solely from dataset statistics, popularity acts as an external signal that does not necessarily align with the LLM’s actual exposure during pretraining. There-fore, it cannot capture the full complexity of the model’s internal knowledge, underscoring the need for a model-centric estimation that directly reflects the LLM’s prediction behaviors. 
+
+• Min-K%: Since this method relies on token-level likelihoods of item titles, it is highly susceptible to surface-level biases. Item titles are typically short and lack sufficient context [ 29 ], which leads to two major biases: (i) Lexical Bias , where high likeli-hood may merely reflect familiarity with common words (e.g., "New York") rather than genuine understanding of the item, and (ii) Length Bias , where longer titles tend to receive lower to-tal likelihoods due to the greater accumulation of negative log-probabilities, thereby penalizing those items regardless of the model’s knowledge. 
+
+• EigValLaplacian and SeaKR: Since these methods rely on gen-erating item descriptions, they are inherently sensitive to prompt design. Furthermore, the excessive length of generated descrip-tions incurs prohibitive computational costs, limiting scalability across large item catalogs. Most critically, LLMs frequently ex-hibit unwarranted confidence by producing fluent descriptions even for completely unknown concepts [ 5], which yields unre-liable signals as the model fails to distinguish between genuine knowledge and hallucinated familiarity. Critically, all of these proxies focus on measuring item-specific knowledge in isolation. Consequently, this approach fails to capture 
+
+collaborative patterns such as co-consumption behaviors that are critical for recommendation. Furthermore, given that the target domain knowledge represents a tiny fraction of the LLM’s vast open-world knowledge, querying it without sufficient context often fails to activate the relevant information .
+
+O2. Existing proxies fail to reflect group-level differences in model competence. For a more in-depth understanding, we group target items and users into four quantile bins based on their knowl-edge scores and compute the average Recall@1 within each group. A reliable proxy should exhibit a monotonic increase in performance across groups (i.e., higher knowledge scores → higher recall). As shown in Figure 2(b), the existing proxies yield inconsistent per-formance across bins, failing to reveal a meaningful relationship between knowledge and performance. In contrast, our proposed method (CKP) demonstrates a clear monotonic increase, confirming its effectiveness as a reliable knowledge indicator. 
+
+Summary. Our analysis shows that (1) uniform augmentation is suboptimal for mitigating the knowledge gap and improving recommendation quality, and (2) existing proxies used in other domains are not suitable for knowledge scoring in recommendation tasks. 
+
+## 4 Methodology 
+
+We introduce KnowSA CKP , a selective augmentation framework with comparative knowledge probing. It consists of two main stages: (1) knowledge scoring that estimates the LLM’s knowledge on each item for recommendation (§4.1), and (2) selective augmenta-tion that enriches the knowledge for lesser-known items (§4.2). 
+
+## 4.1 Knowledge Scoring for Recommendation 
+
+Our goal is to develop a knowledge scoring strategy tailored to LLM-based recommendations. We adopt a likelihood-based approach, inferring the LLM’s knowledge based on the likelihood it assigns to an item given interaction contexts. 
+
+4.1.1 Overview . For each item 𝑡 , we construct its interaction context windows W𝑡 from interaction histories H . Each window 
+
+𝑤 ∈ W 𝑡 is a sequence of items preceding 𝑡 , providing its con-texts. Ideally, the knowledge score should be aggregated over the entire set W𝑡 to fully capture the item’s contextual patterns. How-ever, as this entails excessive computational costs, we employ a 
+
+popularity-stratified sampling strategy to obtain a representative subset fW𝑡 ⊂ W 𝑡 . Specifically, we partition W𝑡 into three quan-tile bins based on the average popularity of items in each window, and then uniformly sample from each bin. This strategy ensures computational efficiency while preserving a balanced coverage of diverse interaction patterns. For each window, we build a prompt 
+
+P𝑤 and measure the LLM’s generation preference as a conditional probability, 𝑃 LLM (𝑡 | P 𝑤 ). The item-level knowledge score 𝐾 (𝑡 )
+
+is defined as the average of these probabilities over all sampled windows: 
+
+𝐾 (𝑡 ) := 1
+
+| gW𝑡 |∑︁ 𝑤 ∈ gW𝑡 
+
+𝑃 LLM (𝑡 | P 𝑤 ) (1) The key challenges lie in the design of: (i) the prompt P𝑤 , including both instruction formulation and output structure, and (ii) the like-lihood function 𝑃 LLM (𝑡 | P 𝑤 ), particularly how to extract a reliable knowledge proxy from the generated output. Our design is guided by three desiderata for recommendation-tailored scoring: (1) Interaction-based contextualization: The scoring should re-flect the LLM’s behavior conditioned on specific interaction con-texts, rather than on the coarse-grained conditions (e.g., domain). (2) Ranking-oriented scoring: As recommendation is inherently a ranking task that orders probable items, the scoring should capture the LLM’s ability to assign appropriate ranks. (3) Robustness to surface-level bias: The scoring should be ro-bust against the inherent generation biases of LLMs (e.g., lexical preference, output length), as discussed in §3.2.2. Guided by these desiderata, we introduce two knowledge scoring methods: a baseline Direct Knowledge Probe (DKP), and a more advanced Comparative Knowledge Probe (CKP). 
+
+4.1.2 Naive Approach: Direct Knowledge Probe (DKP) . As the simplest instantiation, DKP estimates the generation probability of the item title, given its interaction window. The prompt PDKP 
+
+> 𝑤
+
+includes a window 𝑤 and an instruction for next item prediction, e.g., “Given {𝑤 }, the next item is:”. The likelihood is obtained by ag-gregating the token probabilities of the item title 𝑦 = (𝑦 1, . . . , 𝑦 𝐿 ):
+
+𝑃 LLM (𝑡 | P DKP  
+
+> 𝑤
+
+) = exp 
+
+> 𝐿
+
+∑︁ 
+
+> 𝑗 =1
+
+log 𝑃 (𝑦 𝑗 | P DKP  
+
+> 𝑤
+
+, 𝑦 <𝑗 )
+
+!
+
+(2) Substituting 𝑃 LLM into Eq. 1 yields the item-level knowledge score for DKP. While DKP satisfies the first desideratum by leveraging user interaction context, it fails the others: it considers each item separately, making it less aligned with the ranking-oriented nature of recommendation. Also, it remains susceptible to surface-level biases, which can inflate scores for item titles containing verbose Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders Conference ’25, June 03–05, 2018, Woodstock, NY 
+
+or frequently occurring tokens. To overcome these limitations, we introduce our proposed method, CKP. 
+
+4.1.3 Comparative Knowledge Probe (CKP) . Our key idea to meet the remaining two desiderata is to reframe the scoring task as a relative comparison problem based on content-neutral identifiers .
+
+Fine-grained comparison set. For each item 𝑡 , we construct a 
+
+comparison set 𝐶 (𝑡 ), consisting of 𝑡 and several distractor items. The LLM will be instructed to rank this set given the interaction window 𝑤 . Compared to querying each item independently, this approach is better aligned with the ranking nature of recommenda-tion. To achieve this, we employ a hybrid sampling strategy that combines random and semantic distractors. First, we include 𝑛 random distractors (Crand ), sampled uniformly from the item set I. These serve as easy cases , providing item di-versity to ensure the model maintains the capability to discriminate the target from irrelevant noise. 
+
+Crand (𝑡 ) ∼ UniformSample  I \ ({ 𝑡 } ∪ 𝑤 ), 𝑛  (3) Second, we include 𝑚 semantic distractors (Csem )—items that are semantically similar to 𝑡 but not valid for the current context. These serve as hard negatives designed to mitigate the model’s tendency to overestimate its knowledge. By providing these plausible alter-natives , we force the model to demonstrate fine-grained reasoning: it allows the model to concentrate probability on the target only when it possesses sufficient discriminative knowledge to reject these semantically similar but contextually incorrect items. They are se-lected based on the cosine similarity of text embeddings e, derived from item titles and attributes: 2
+
+Csem (𝑡 ) = Top −𝑚 𝑗 ∈ I\( { 𝑡 }∪ 𝑤 )
+
+ cos (e𝑡 , e𝑗 ) (4) The final set is 𝐶 (𝑡 ) = {𝑡 } ∪ C rand (𝑡 ) ∪ C sem (𝑡 ). This hybrid design balances item diversity and ranking difficulty, providing comparison sets that are comprehensive and challenging. 
+
+Identifier-based top - 1 estimation. Given the comparison set, a standard scoring method is to instruct the LLM to generate a ranked list of item titles provided in the prompt. The probability of placing the target item 𝑡 (i.e., the true next item) near the top of the list can then serve as its knowledge score. However, such an approach has two limitations. First, as discussed earlier, it is susceptible to surface-level biases arising from the token composition of item titles. Second, the ranking process itself suffers from a structural flaw due to the autoregressive nature of generation: items ranked later in the list are selected from a smaller remaining pool, leading to inflated probabilities simply because fewer alternatives remain. 3
+
+We propose a simple yet effective solution by re-designing both the prompting scheme—the instruction and output structure—and the likelihood function. Specifically, we randomly shuffled the ele-ments in 𝐶 (𝑡 )4 and assign content-neutral identifiers (e.g., [A], [B]) to each item. These identifiers are decoupled from the original item titles, effectively removing surface-level biases while remaining computationally efficient. Then, we instruct the LLM to pinpoint the single most preferred item from 𝐶 (𝑡 ), instead of generating a full   
+
+> 2As the simplest choice, we use Sentence-BERT [41].
+> 3For instance, in a set of three items, the probability of the last-ranked item is calculated from a pool of only one remaining option, artificially inflating its score
+> 4This randomization mitigates positional bias [ 18 ], ensuring that the model’s selection is driven by content rather than the order of presentation.
+
+Table 1: An example prompt used for calculating knowledge scores. All prompts are prefixed with a domain-specific sys-tem instruction (e.g., "You are a helpful assistant for [DOMAIN] 
+
+recommendations.").                   
+
+> Metric Input Template DKP The user’s interaction history is as follows: [HISTORY (Item Titles] The next item is: [TARGET (Item Title)]
+> CKP Your task is to recommend the top-1 item from the candidate set based on the user’s purchase history. You must only respond with the single identifier of the recommended item. PURCHASED ITEMS: [HISTORY (Item Titles)] CANDIDATE ITEMS: [COMPARISON SET (ID, Item Titles)] Candidate [
+
+ranking. The likelihood is computed based on the top-1 selection probability, thereby avoiding the spurious artifacts of full ranking. The prompt P𝐶𝐾𝑃 𝑤 includes a window 𝑤 , the comparison set 𝐶 (𝑡 ),and an instruction such as ”Choose a single identifier of the most preferred item”. The LLM output for this prompt would be an index (e.g.,[A]) for an item in 𝐶 (𝑡 ). Then, with the output logit values 
+
+𝑧 𝑖 ∈ R for each 𝑖 ∈ 𝐶 (𝑡 ), we define the top-1 selection likelihood from the 𝐶 (𝑡 ) based on the list-wise ranking model [8]: 
+
+𝑃 LLM (𝑡 | P 𝐶𝐾𝑃 𝑤 ) = 𝜙 (𝑧 𝑡 )
+
+𝜙 (𝑧 𝑡 ) + Í𝑗 ∈𝐶 (𝑡 )\{ 𝑡 } 𝜙 (𝑧 𝑗 ) (5) where 𝜙 (·) is an increasing function, we adopt the exponential function. CKP effectively measures recommendation-tailored knowledge by explicitly prompting for top-1 selection. It also satisfies all three desiderata: conditioning on 𝑤 for contextualization, selecting the top-1 from 𝐶 (𝑡 ) for ranking alignment, and using context-neutral identifiers for robustness against surface-level biases. Replacing 
+
+𝑃 LLM in Eq.1 derives the knowledge score of CKP. 
+
+## 4.2 Knowledge-aware Selective Augmentation 
+
+We now enhance the LLM-based recommenders via selective knowl-edge augmentation. Given the task setup (§2), our focus lies in answering two key questions: what to augment (§4.2.1) and with which information (§4.2.2), to maximize recommendation accuracy. The final prompting process is provided in §4.2.3. 
+
+4.2.1 What to augment: Augmentation Priority Score . While our knowledge score effectively reveals the LLM’s competence, we note that other factors should also be considered when prioritiz-ing which items to augment. In recommendation tasks, it is well known that an item’s importance varies with factors such as its recency in the user history and its popularity [ 3 , 24 , 40 ]; lacking knowledge about such items can have a greater negative impact on recommendation accuracy. By consolidating these factors, we define the Augmentation Priority Score (APS) for each item 𝑖 as: 
+
+APS (𝑖 ) = (1 − 𝑘 (𝑖 )) · 𝑓 (𝑖 ) · 𝑟 (𝑖 ) (6) Conference ’25, June 03–05, 2018, Woodstock, NY Lee et al., Jaehyun Lee, Sanghwan Jang, SeongKu Kang, and Hwanjo Yu 
+
+This score consists of three components. 5 The first term (1 − 𝑘 (𝑖 )) 
+
+represents the LLM’s knowledge deficiency, where 𝑘 (𝑖 ) is the nor-malized value of 𝐾 (𝑖 ). The second term 𝑓 (𝑖 ) represents the interac-tion frequency, prioritizing statistically prominent items. Finally, the recency score 𝑟 (𝑖 ) = exp (− 𝜆 · pos (𝑖 )) assigns higher weights to more recent interactions, where 𝑝𝑜𝑠 (𝑖 ) is the item’s reverse chrono-logical position (i.e., the most recent item has 𝑝𝑜𝑠 (𝑖 ) = 0) and 𝜆 
+
+is a decay parameter. This APS will be used to decide items to be augmented, which will be further explained in §4.2.3. 
+
+4.2.2 With which information: Reference Matching Score .
+
+After deciding the augmentation targets, we need to enrich each with information most beneficial for recommendation. A natural starting point is the textual attributes of each item in T . Moreover, we note that items can be better understood in relation to others. Specifically, semantically or behaviorally related items may provide valuable signals that complement the target item’s standalone in-formation. We refer to such items as reference items and incorporate their information for augmentation as well. The reference items are obtained via Reference Matching Score (RMS) , which quantifies the suitability of each item 𝑟 ∈ I \ ({ 𝑡 } ∪ 
+
+𝐻 𝑢 ∪ 𝐶 𝑢 ) as a knowledge-supporting reference for a target item 𝑡 :
+
+RMS (𝑡, 𝑟 ) = 𝑘 (𝑟 ) · 𝑠 (𝑡, 𝑟 ) · 𝑐 (𝑡, 𝑟 ) (7) This score also consists of three components, each properly nor-malized. First, the normalized knowledge score 𝑘 (𝑟 ) prioritizes items that are well understood by the LLM. Second, the seman-tic similarity 𝑠 (𝑡, 𝑟 ) is measured as the cosine similarity between their text embeddings, as used in Eq. 4. Third, the co-consumption score 𝑐 (𝑡, 𝑟 ) captures behavioral proximity, computed as the co-occurrence frequency in the interaction histories. 6 Our RMS design ensures that the reference items are semantically and behaviorally related to the target item, while also being well understood by the LLM. Note that we do not augment the full details of these refer-ence items. Instead, we guide the LLM by providing minimal cues through their titles. Since the LLM already possesses sufficient knowledge about them, this can activate the relevant information from its parameters, allowing the LLM to naturally reference it without consuming much input context budget. 
+
+Context-aware Variant. We acknowledge that the proposed RMS is inherently context-agnostic ; it produces the same set of references for a given target item 𝑡 , regardless of the user’s specific history. However, since items possess multifaceted attributes, the ideal refer-ence may vary depending on the user’s specific context. To address this, we explore a context-aware variant that personalizes the refer-ence selection process by incorporating the user’s sequential inter-action patterns. Specifically, we modulate the RMS score using the user-item similarity from the sequential retriever (e.g., SASRec [ 24 ]) already employed for candidate generation. This approach leverages existing latent representations without requiring a separate encoder. Formally, the score is adjusted as RMS ctx = RMS (𝑡, 𝑟 ) · cos (h𝑢 , e𝑟 ),where h𝑢 and e𝑟 are the embeddings from the retrieval model.           
+
+> 5Each component is log-transformed and min-max normalized to match the scale.
+> 6𝑐 (𝑡, 𝑟 )=freq (𝑡,𝑟 )
+> √freq (𝑡 ) · √freq (𝑟 ), where freq (t,r) is the co-occurrence count within a sliding window of size 2, and freq(i) is the total number of windows containing item 𝑖 .
+
+Algorithm 1: Selective Knowledge Augmentation 
+
+Input: Original prompt with 𝐻 𝑢 and 𝐶 𝑢 , item textual attributes {𝑎 𝑖 }, normalized knowledge scores 𝑘 (𝑖 )
+
+Output: Augmented prompt  
+
+> 1
+
+Compute APS (𝑖 ) for each item 𝑖 ∈ 𝐻 𝑢 ∪ 𝐶 𝑢 (Eq.6)  
+
+> 2
+
+Select top-𝐾 aug items with highest APS as targets I𝑎𝑢𝑔  
+
+> 3
+
+foreach 𝑡 ∈ I 𝑎𝑢𝑔 do  
+
+> 4
+
+Add textual attributes {𝑎 𝑡 } to the prompt  
+
+> 5
+
+Identify top-𝐾 ref reference items using RMS (𝑡, 𝑟 ) (Eq.7)  
+
+> 6
+
+Add titles of reference items to the prompt 
+
+4.2.3 Final Prompt Construction . The detailed augmentation process is presented in Algorithm 1. The number of augmentation targets ( 𝐾 aug ) is empirically set, considering resource constraints such as GPU memory and the LLM’s context budget. For reference items, we find that a small number ( 𝐾 ref ≤ 3) is typically sufficient. A conceptual example of the augmentation is provided below:   
+
+> USER HISTORY : ["The Witcher 3", "Elden Ring", ..., "Salt and Sanctuary"]
+> CANDIDATE ITEMS : ["Dark Souls", ..., "Hollow Knight"]
+> AUGMENTATION TARGET : "Salt and Sanctuary"
+> AUGMENTED INFORMATION :-Textual Attributes : "A 2D action role-playing game that combines fast, brutal combat with richly developed RPG mechanics." -Reference Items : ["Blasphemous", "Dead Cells"]
+
+In sum, based on the knowledge scores, KnowSA CKP selectively injects additional information—item attributes and related reference items—where it is most needed. This enables the LLM to utilize its context budget more effectively by allocating more capacity to those that benefit most from knowledge supplementation. 
+
+Remarks: inference efficiency of KnowSA CKP . Although KnowSA CKP incorporates multiple factors such as knowledge scores and co-consumption score, these values are precomputed and stored offline . Thus, they can be accessed via simple lookup operations without introducing meaningful runtime overhead. In practice, KnowSA CKP incurs negligible additional inference latency. Notably, compared to uniform augmentation, it reduces the total infer-ence latency by avoiding unnecessary input tokens (§5.3.4). 
+
+## 5 Experiments 5.1 Experimental Setup 
+
+Datasets. We use four public datasets: Amazon-Beauty (A-Beauty) [39 ], Amazon-Gift Cards (A-Gift) [ 39 ], ML-1M [ 16 ], and Steam [ 24 ]. For all datasets, we filter out users and items with fewer than five interactions, and items with missing textual features. The interac-tions are sorted chronologically to form historical sequences. The statistics for each preprocessed dataset are summarized in Table 3. 
+
+Baselines. We compare various augmentation strategies, catego-rized into three groups. (a) No Augment denotes the default setup, where each item is represented by its title. (b) Uniform Aug-mentation indiscriminately enriches all items, the most widely used approach in the literature. Specifically, we test two variants: Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders Conference ’25, June 03–05, 2018, Woodstock, NY 
+
+Table 2: Overall performance (Recall@1). Each subcolumn shows results with Random (R) and SASRec (S) candidates. Red color indicates no improvement over No Augment. The best and second-best results are marked in bold and underlined , respectively.                                                                                                                                                                                                                                                                                                                                                                                                  
+
+> Dataset LLM No Augment Uniform-Meta Uniform-Wiki Selective Acc Selective Pop Selective MinK Selective EigV Selective SeaKR Selective Self KnowSA CKP Improv. (%)
+> RSRSRSRSRSRSRSRSRSRSRS
+> A-Beauty
+> Llama-8B 0.141 0.075 0.181 0.070 0.093 0.073 0.174 0.221 0.161 0.212 0.191 0.199 0.182 0.207 0.166 0.191 0.098 0.110 0.233 0.246 22.0 11.3 Mistral-7B 0.098 0.084 0.074 0.069 0.074 0.068 0.065 0.074 0.072 0.097 0.075 0.100 0.102 0.079 0.060 0.071 0.044 0.038 0.113 0.119 10.8 19.0 Qwen-7B 0.170 0.111 0.207 0.099 0.179 0.133 0.209 0.140 0.216 0.138 0.199 0.141 0.206 0.146 0.201 0.150 0.128 0.091 0.267 0.166 23.6 10.7 Qwen-32B 0.295 0.218 0.293 0.213 0.348 0.237 0.351 0.226 0.329 0.218 0.361 0.221 0.349 0.217 0.339 0.226 0.271 0.216 0.407 0.257 12.7 8.4
+> A-Gift
+> Llama-8B 0.062 0.044 0.063 0.048 0.050 0.040 0.156 0.085 0.129 0.085 0.157 0.100 0.145 0.078 0.147 0.077 0.074 0.046 0.167 0.110 6.4 10.0 Mistral-7B 0.084 0.049 0.101 0.037 0.058 0.051 0.096 0.048 0.081 0.042 0.077 0.039 0.058 0.049 0.058 0.050 0.031 0.022 0.114 0.059 12.9 18.0 Qwen-7B 0.095 0.056 0.077 0.058 0.090 0.051 0.096 0.063 0.098 0.054 0.088 0.070 0.090 0.070 0.091 0.069 0.099 0.061 0.112 0.083 13.1 18.6 Qwen-32B 0.165 0.090 0.155 0.082 0.149 0.057 0.156 0.106 0.153 0.102 0.155 0.104 0.157 0.094 0.153 0.103 0.138 0.093 0.175 0.119 6.1 14.4
+> ML-1M
+> Llama-8B 0.133 0.067 0.104 0.051 0.049 0.055 0.125 0.058 0.136 0.061 0.095 0.071 0.134 0.053 0.105 0.049 0.110 0.053 0.152 0.088 11.8 23.9 Mistral-7B 0.089 0.038 0.109 0.033 0.048 0.053 0.047 0.043 0.101 0.045 0.117 0.052 0.113 0.045 0.103 0.038 0.034 0.022 0.125 0.065 6.8 22.6 Qwen-7B 0.139 0.039 0.132 0.065 0.073 0.065 0.154 0.021 0.149 0.054 0.140 0.058 0.128 0.032 0.153 0.018 0.143 0.021 0.168 0.070 9.1 7.7 Qwen-32B 0.181 0.037 0.129 0.049 0.125 0.040 0.164 0.029 0.172 0.031 0.163 0.031 0.169 0.035 0.167 0.031 0.173 0.043 0.201 0.054 11.0 10.2
+> Steam
+> Llama-8B 0.078 0.042 0.063 0.041 0.086 0.039 0.111 0.029 0.122 0.054 0.095 0.066 0.111 0.030 0.141 0.032 0.097 0.048 0.152 0.072 7.8 9.1 Mistral-7B 0.059 0.033 0.051 0.030 0.057 0.046 0.056 0.041 0.071 0.055 0.057 0.044 0.073 0.027 0.068 0.019 0.028 0.023 0.077 0.067 5.5 21.8 Qwen-7B 0.108 0.043 0.059 0.050 0.061 0.046 0.133 0.034 0.127 0.043 0.112 0.057 0.119 0.035 0.119 0.030 0.119 0.028 0.148 0.063 11.3 10.5 Qwen-32B 0.121 0.035 0.073 0.044 0.114 0.044 0.117 0.045 0.123 0.042 0.126 0.043 0.120 0.047 0.117 0.042 0.101 0.045 0.150 0.053 19.0 12.8
+
+Table 3: Statistics of the datasets used in our experiments. Avg. Len denotes the average sequence length of users. Dataset #Users #Items #Inter. Avg. Len Attributes A-Beauty 4884 3948 16973 3.50 title, brand 
+
+A-Gift 3392 834 13503 4.01 title, brand, category 
+
+ML-1M 6040 3416 999611 161.85 title, genre 
+
+Steam 25859 4038 327097 12.93 title, genre, developer, specs 
+
+Uniform-Meta (Attributes) and Uniform-Wiki (Wikipedia de-scriptions). (c) Selective Augmentation prioritizes augmenta-tion for certain items. For fair comparison, all methods augment target items with item attributes and reference item titles. We implement baselines corresponding to the proxies analyzed in §3.2.1: Selective Pop (Popularity), Selective MinK (Pre-training De-tection via Min-K% [ 44 ]), Selective EigV (Uncertainty via EigVal-Laplacian [ 34 ]), and Selective SeaKR (Adaptive RAG via SeaKR [ 51 ]). We also include Selective Acc , which uses Recall @1 from the candi-date generation stage. 7 Additionally, we introduce Selective Self , a prompting-based baseline that operates via a two-stage inference without offline scoring, explicitly asking the LLM to identify unfa-miliar items in the input prompt to apply selective augmentation. Lastly, KnowSA CKP denotes the proposed frameworks, utilizing CKP. 
+
+Evaluation setup. We adopt the standard leave - one -out protocol [ 18 , 24 ], where the last item in each user sequence serves as the ground -truth item. The evaluation task is to rank a candidate set of 20 items (1 ground-truth with 19 negatives) under two different settings: (i) Random (R) , with negatives from uniform sampling over unseen items [ 27 , 46 ], and (ii) SASRec (S) , with negatives from the top-19 predictions of a SASRec trained on each dataset [ 18 ]. Following [ 27 ], we report Recall @1 of the ranking list from LLMs. 
+
+Implementation details. We evaluate our framework on Llama-3.1-8B [ 15 ], Mistral-7B-v0.3 [ 1], Qwen2.5-7,32B [ 2] and GPT-4o [ 20 ]. We follow the prompting scheme from [ 42 ]. An example prompt is provided in Table 4. For fair comparison, we fix the history, candi-dates, and prompt template across all methods; only the content of the auxiliary information varies by augmentation strategy. 
+
+> 7
+
+In the two-stage recommendation (§2), the accuracy of the first-stage model can serve as a natural proxy. In this work, we use item-level Recall@1 of SASRec [24]. 
+
+For each dataset, we randomly sample 1,500 users for testing. The remaining data is split into training and validation sets (9:1) for SASRec training, knowledge scoring, and hyperparameter tun-ing. User histories are truncated to the recent 50 interactions. For hyperparameters, we tune the model in certain ranges as follows: (1) For SASRec, embedding dimension ∈ { 64 , 128 } and batch size 
+
+∈ { 64 , 128 , 256 }. (2) For CKP, random ( 𝑛 ) and semantic ( 𝑚 ) dis-tractors ∈ { 0, 1, 2}. (3) For APS, recency decay 𝜆 ∈ { 0.7, 0.4, 0.1}
+
+and augmentation targets 𝐾 aug ∈ { 2, 3, 5, 10 , 20 , 40 }. (4) For RMS, reference items 𝐾 ref ∈ { 1, 2, 3}.
+
+Table 4: Structure of the recommendation prompt. 
+
+INSTRUCTION : Your task is to recommend 20 games to a specific user from a candidate item set. 
+
+PURCHASED ITEMS : ["The Witcher 3", "Elden Ring", ..., "Salt and Sanctu-ary"] 
+
+CANDIDATE ITEMS : ["A": "Dark Souls", ..., "T": "Hollow Knight"] 
+
+AUXILIARY INFORMATION : [{"title": "Salt and Sanctuary", "description": "A 2D action role-playing game ...", "title of similar game": "Blasphemous"}] 
+
+OUTPUT : ["A", "C", ..., "T"] 
+
+## 5.2 Overall Performance 
+
+Table 2 shows performance across four datasets. KnowSA CKP con-sistently outperforms all baselines across all datasets and LLMs. First, uniform augmentation does not guarantee performance im-provement. They often fails to outperform the ’No Augment’ (red in table), likely because indiscriminately adding all metadata can exceed the LLM’s effective context budget, leading to information overload that obscures critical information. Also, naive selective augmentation strategies relying on heuris-tics show inconsistent results across datasets and models, indicating that single-view proxies are not robust. This again supports the necessity of a tailored augmentation strategy for recommendation. Finally, KnowSA CKP achieves robust and superior performance in all settings. By leveraging CKP for accurate knowledge estimation and guiding augmentation via APS and RMS, it provides targeted, effective enhancements beyond simple heuristics. 
+
+Performance by knowledge levels. We further analyze perfor-mance across users with varying levels of knowledge. We group test users into four quantile groups based on the average CKP scores of items in the interaction history, with Group 1 representing the most Conference ’25, June 03–05, 2018, Woodstock, NY Lee et al., Jaehyun Lee, Sanghwan Jang, SeongKu Kang, and Hwanjo Yu 
+
+Figure 3: Average Recall@1 across four quantile bins grouped by knowledge score (CKP) on A-Beauty dataset. Results of Qwen-7B with random candidates. Table 5: Performance comparison on A-Beauty dataset. We investigate whether a stronger LLM can effectively perform selective augmentation via self-asking. Improv. denotes the relative improvement in Recall compared to the No Augment baseline. Model Method R S Improv. GPT-4o 
+
+No Augment 0.316 0.265 -Uniform-Meta 0.349 0.269 +10.4% Selective Self 0.300 0.251 -5.1% 
+
+Qwen-32B 
+
+No Augment 0.295 0.218 -Uniform-Meta 0.293 0.213 -0.7% 
+
+KnowSA CKP (Ours) 0.407 0.257 +38.0% 
+
+knowledge-poor users. Figure 3 shows that KnowSA CKP consis-tently achieves the highest accuracy across all groups. Notably, the performance gap between KnowSA CKP and uniform augmentation is most pronounced in Groups 1–2. This suggests that KnowSA CKP 
+
+more effectively bridges the knowledge gap through selective aug-mentation guided by knowledge scores. Further, it confirms that our targeted augmentation is highly effective in supplementing knowledge for users where LLMs have limited competence. 
+
+## 5.3 Study of KnowSA CKP 
+
+5.3.1 Comparison with Frontier Models . One might attribute the poor performance of the Selective Self baseline to the limited reasoning capabilities of open-source models. To investigate this, we conducted a comparative experiment using a frontier model, GPT-4o. As shown in Table 5, remarkably, even for GPT-4o, the self-asking strategy resulted in a performance drop compared to the No Augment baseline, whereas Qwen-32B equipped with KnowSA CKP 
+
+achieved the highest performance. This suggests that accurately diagnosing knowledge gaps for numerous distinct items (up to 70 items, including 50 history and 20 candidate items) within a single prompt is an inherently difficult task, even for advanced LLMs. These findings underscore the importance of a scoring strategy designed to diagnose knowledge gaps in the context of recommen-dation. 
+
+5.3.2 Ablation Study . Table 6 presents the results of various ab-lations. First, we analyze CKP, our knowledge scoring strategy. Re-moving relative comparison, which replaces CKP with DKP, largely degrades performance, and removing semantic distractors leads to a slight drop—validating our comparative probing design. Next, we 
+
+Table 6: Ablation study on the components of the proposed method using Qwen-7B with random candidates. Method Variant A-Beauty A-Gift ML-1M KnowSA CKP (ours) 0.267 0.112 0.168 Ablations on CKP                                       
+
+> w/o Relative Comparison 0.214 0.081 0.139
+> w/o Semantic Distractors 0.219 0.110 0.151
+> Ablations on APS
+> w/o APS (Uniform Aug. w/ ref. items) 0.194 0.072 0.087
+> w/o Knowledge Score 0.213 0.095 0.151
+> w/o Interaction Frequency 0.216 0.109 0.153
+> w/o Recency Score 0.225 0.110 0.160
+> Ablations on RMS
+> w/o RMS (Textual attributes only) 0.223 0.087 0.123
+> w/o RMS (Wikipedia description only) 0.079 0.032 0.063
+> w/o Knowledge Score 0.188 0.095 0.146
+> w/o Semantic Similarity 0.215 0.107 0.149
+> w/o Co-consumption Score 0.169 0.109 0.135
+> w/o SASRec Contextualization 0.233 0.114 0.167
+
+assess our augmentation mechanisms. For both APS and RMS, re-moving each proposed component results in performance degrada-tion, with a particularly severe drop observed when the knowledge score is excluded, which supports the validity of our design. The necessity of APS is particularly evident on ML-1M, a dataset with long historical interactions. The severe performance drop of ‘w/o APS’ highlights its critical role; prioritizing augmentations is essential in long contexts to ensure effective knowledge injection and to mitigate potential misinterpretations by LLMs [ 35 ]. For RMS, removing reference items entirely (‘w/o RMS’) degrades perfor-mance. Notably, co-consumption score proves to be vital, showing the importance of reflecting behavioral collaborative patterns. 
+
+5.3.3 Analysis on Long-tail Coverage and Bias . To assess how our framework mitigates the knowledge gap for less-known items, we examine the coverage of long-tail items. As a metric, we em-ploy Long-tail Coverage (LTC@K) [4], which measures the av-erage fraction of long-tail items—defined as those in the bottom 80% of popularity—appearing in a user’s top-𝐾 recommendation list. 8 A higher LTC@K value indicates better coverage of long-tail items. Figure 4 shows that selective augmentation generally improves long-tail coverage compared to uniform augmentation. While KnowSA CKP yields a slight gain in LTC@K over other selec-tive baselines, it achieves significantly higher recommendation ac-curacy in Table 2. This shows that KnowSA CKP achieves a superior balance, enhancing recommendation diversity without sacrificing accuracy. Furthermore, we investigate whether this improvement stems from an artificial bias, where the LLM over-recommends aug-mented items simply because they are enriched with extra knowl-edge. We analyze the Top-1 prediction frequency of the augmenta-tion targets (I𝑎𝑢𝑔 ) within the candidate set. Interestingly, compared to ’No Augment’, KnowSA CKP reducing this frequency from 393 to 375 on A-Beauty using Qwen-7B. This indicates that our augmenta-tion provides clarifying knowledge, enhancing the model’s ability to discern and reject inappropriate candidates, rather than simply boosting their ranks.               
+
+> 8LTC@K =1
+> |𝑈 test |
+> Í𝑢 ∈𝑈 test |𝑅 𝐾 𝑢 ∩𝐼 𝐿𝑇 |/ 𝐾 , where 𝐼 𝐿𝑇 is the long-tail item set, and
+> 𝑅 𝐾 𝑢 is the top-𝐾 list for user 𝑢 .Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders Conference ’25, June 03–05, 2018, Woodstock, NY
+
+Figure 4: Long-tail Coverage (LTC@10) on A-Beauty (left) and Steam (right), using Qwen-7B with random candidates. 
+
+5.3.4 Efficiency Analysis . We analyze the computational effi-ciency of KnowSA CKP from both offline preparation and online inference perspectives. First, we address the scalability of the of-fline precomputation phase. While calculating knowledge scores, CKP, for all item windows appears computationally intensive, our popularity-stratified sampling strategy (§4.1) drastically reduces this cost. 9 As shown in Table 7, our strategy consistently accel-erates the scoring process across all datasets. This computational efficiency ensures that precomputing knowledge scores is practi-cally feasible, allowing them to be stored offline. Second, regarding online inference, we evaluate the average number of input tokens per user history and the corresponding inference latency. Since the augmentation factors are precomputed, they can be accessed with negligible runtime overhead. Table 8 shows that the ’Uniform-Meta.’ strategy incurs substantial overhead; indiscriminately adding all attributes significantly increases both token count and latency. 10 
+
+In contrast, KnowSA CKP greatly reduces this overhead while still achieving the highest accuracy, as shown in Table 2. 
+
+5.3.5 Hyperparameter Analysis . We provide analysis to guide the hyperparameter selection: the number of augmented items (𝐾 aug ) and the number of reference items ( 𝐾 ref ). Both hyperparame-ters should be chosen with consideration for resource constraints, such as GPU memory and the LLM’s context budget. In our experi-ments, the number of augmented items used is approximately 10 on average across datasets. Figure 5 reports the results for Qwen-7B on Steam, with similar trends observed across other settings. We observe that performance improves as 𝐾 aug increases, but saturates beyond a certain point. This indicates that while providing sup-plementary information is beneficial, excessive augmentation can exceed the LLM’s effective context budget. For 𝐾 ref , a small number is generally sufficient, with the best performance achieved at 2.
+
+## 6 Related Work 
+
+LLM-based Recommendation. To improve the LLM-based rec-ommendation [ 18 , 27 , 37 ], two major strategies have emerged. The first is model-level adaptation, which fine-tunes LLMs using in-teraction data. [ 6, 7, 10 , 33 , 55 , 56 ] incorporate recommendation-specific objectives into the fine-tuning process. [ 27 ] combines light-weight adapters with frozen LLMs, significantly reducing training costs. Some methods [ 26 , 36 ] use auxiliary data such as reviews to enhance personalization. However, fine-tuning LLMs remains resource-intensive compared to conventional recommenders. Also, interaction data for fine-tuning is sparse and skewed toward popu-lar items, limiting the model’s generalization. 
+
+> 9For instance, on the ML-1M dataset, the number of sampled windows accounts for only 1% of the total windows.
+> 10 Note that latency does not increase linearly with input tokens; inference time is dominated by output decoding, while input processing is parallelized on GPUs [50].
+
+Figure 5: Effect of 𝐾 aug (left) and 𝐾 ref (right) in KnowSA CKP .Table 7: Computational cost of CKP scoring. We compare the processing time (seconds) between full vs. sampled windows. Mem denotes GPU memory usage. Dataset Time Full (s) Time Sampled (s) Speedup Mem (GB) 
+
+A-Beauty 903 395 2.3× 17.7 
+
+A-Gift 711 124 5.7× 17.8 
+
+ML-1M 61,362 602 101 .9× 17.8 
+
+Steam 18,442 927 19 .9× 19.2 
+
+Table 8: Efficiency comparison of different augmentation strategies on Qwen-7B. Overhead denotes the percentage increase in tokens and latency compared to ’No Augment’. Uniform-Meta KnowSA CKP                  
+
+> Dataset Tokens Overhead (%) Latency Overhead (%) Tokens Overhead (%) Latency Overhead (%) A-Beauty +33.0% +7.8% +19.0% +5.6% A-Gift +87.4% +6.9% +54.1% +5.7% ML-1M +85.6% +11.6% +29.3% +5.5% Steam +414.3% +14.2% +99.0% +4.1%
+
+Another emerging direction is prompt-level adaptation, which enriches input prompts with additional information [ 26 , 32 , 46 , 57 ]. For example, [ 26 ] utilizes review summaries to provide rich infor-mation for users and items, while [ 46 ] uses knowledge graphs to supplement missing knowledge. These approaches allow LLMs to supplement incomplete knowledge without fine-tuning. However, most existing methods adopt uniform augmentation—applying in-formation to all items indiscriminately, which overlooks the inher-ent knowledge gaps in LLMs. We propose an effective strategy to improve training-free LLM recommenders by selectively enriching items lacking sufficient knowledge. 
+
+Knowledge Probing for LLMs. A core of our framework is to accurately estimate how much an LLM knows about each item. We categorize existing approaches relevant to this goal into three groups. First, Pre-training Data Detection (PDD) aims to determine if a text was seen during pre-training [ 9, 44 , 54 , 58 ]. PDD meth-ods typically rely on generation likelihood, assuming that pre-seen texts will yield higher probabilities [ 44 , 54 , 58 ]. Second, Uncertainty Estimation (UE) focuses on quantifying the confidence in model prediction [ 34 , 48 ]. UE methods range from latent information-based metrics (e.g., entropy) [ 12 , 14 ] to consistency-based measures [ 13 , 34 ]; for instance, [ 34 ] computes the eigenvalues of a Lapla-cian graph constructed from the semantic similarity of sampled responses. Third, Adaptive Retrieval approaches [ 21 , 22 , 45 , 51 ] dy-namically decide when to retrieve external documents. Approaches include monitoring generation probabilities [ 22 , 45 ], leveraging internal model states [ 51 ], or employing external classifiers [ 21 ] to predict retrieval needs. While these approaches have proven their efficacy in general NLP tasks, they are suboptimal for recommendation. The core issue is that they assess item-specific knowledge in isolation, thereby Conference ’25, June 03–05, 2018, Woodstock, NY Lee et al., Jaehyun Lee, Sanghwan Jang, SeongKu Kang, and Hwanjo Yu 
+
+overlooking the collaborative patterns —the relationship between the user’s history and the target item—essential for recommendation, as detailed in our analysis (§3.2.2). To address this, we propose CKP, a new knowledge scoring method that evaluates the LLM’s knowledge in a comparative setting conditioned on user interaction contexts. This approach effectively mitigates surface-level biases and enables a more recommendation-aligned estimation of the model’s actual knowledge. 
+
+## 7 Conclusion 
+
+We first provide in-depth analysis showing the necessity and chal-lenges of addressing the knowledge gap in LLM-based recom-mendation. Motivated by the analysis, we introduce KnowSA CKP ,which mitigates the gap through selective knowledge augmentation. KnowSA CKP comprises two main components: (1) Comparative Knowledge Probing, which estimates the LLM’s knowledge of each item, and (2) Selective Augmentation, which enriches knowledge for lesser-known items. Extensive experiments show that KnowSA CKP 
+
+consistently improves both recommendation accuracy and long-tail coverage, while also reducing the input context consumption of LLMs. Future work may explore leveraging external sources such as knowledge graphs to further enhance augmentation. 
+
+## Acknowledgments 
+
+This work was supported by the NRF grant funded by the MSIT (No. RS-2024-00335873), the IITP grant funded by the MSIT (No.RS-2019-II191906, Artificial Intelligence Graduate School Program(POSTECH)), Korea Innovation Foundation (INNOPOLIS) grant funded by the Korea government (MSIT) (No. RS-2025-25449754). This work was also supported by ICT Creative Consilience Program through the IITP grant funded by the MSIT (IITP-2026-RS-2020-II201819) and Basic Science Research Program through the NRF funded by the Ministry of Education (NRF-2021R1A6A1A03045425). 
+
+## References 
+
+[1] 2023. Mistral 7B. ArXiv abs/2310.06825 (2023). https://api.semanticscholar.org/ CorpusID:263830494 [2] 2024. Qwen2.5 Technical Report. ArXiv abs/2412.15115 (2024). https://api. semanticscholar.org/CorpusID:274859421 [3] Davide Abbattista, Vito Walter Anelli, Tommaso Di Noia, Craig Macdonald, and Aleksandr Vladimirovich Petrov. 2024. Enhancing sequential music recommen-dation with personalized popularity awareness. In Proceedings of the 18th ACM Conference on Recommender Systems . 1168–1173. [4] Himan Abdollahpouri, Robin Burke, and Bamshad Mobasher. 2019. Managing popularity bias in recommender systems with personalized re-ranking. arXiv preprint arXiv:1901.07555 (2019). [5] Alfonso Amayuelas, Kyle Wong, Liangming Pan, Wenhu Chen, and William Wang. 2023. Knowledge of knowledge: Exploring known-unknowns uncertainty with large language models. arXiv preprint arXiv:2305.13712 (2023). [6] Keqin Bao, Jizhi Zhang, Wenjie Wang, Yang Zhang, Zhengyi Yang, Yanchen Luo, Chong Chen, Fuli Feng, and Qi Tian. 2025. A bi-step grounding paradigm for large language models in recommendation systems. ACM Transactions on Recommender Systems 3, 4 (2025), 1–27. [7] Keqin Bao, Jizhi Zhang, Yang Zhang, Wenjie Wang, Fuli Feng, and Xiangnan He. 2023. Tallrec: An effective and efficient tuning framework to align large language model with recommendation. In Proceedings of the 17th ACM Conference on Recommender Systems . 1007–1014. [8] Zhe Cao, Tao Qin, Tie-Yan Liu, Ming-Feng Tsai, and Hang Li. 2007. Learning to rank: from pairwise approach to listwise approach. In Proceedings of the 24th international conference on Machine learning . 129–136. [9] Nicholas Carlini, Florian Tramer, Eric Wallace, Matthew Jagielski, Ariel Herbert-Voss, Katherine Lee, Adam Roberts, Tom Brown, Dawn Song, Ulfar Erlingsson, et al . 2021. Extracting training data from large language models. In 30th USENIX security symposium (USENIX Security 21) . 2633–2650. [10] Jiaju Chen, Chongming Gao, Shuai Yuan, Shuchang Liu, Qingpeng Cai, and Peng Jiang. 2025. Dlcrec: A novel approach for managing diversity in llm-based recommender systems. In Proceedings of the Eighteenth ACM International Conference on Web Search and Data Mining . 857–865. [11] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks for youtube recommendations. In Proceedings of the 10th ACM conference on recommender systems . 191–198. [12] Jinhao Duan, Hao Cheng, Shiqi Wang, Alex Zavalny, Chenan Wang, Renjing Xu, Bhavya Kailkhura, and Kaidi Xu. 2024. Shifting attention to relevance: Towards the predictive uncertainty quantification of free-form large language models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 5050–5063. [13] Ekaterina Fadeeva, Aleksandr Rubashevskii, Artem Shelmanov, Sergey Petrakov, Haonan Li, Hamdy Mubarak, Evgenii Tsymbalov, Gleb Kuzmin, Alexander Panchenko, Timothy Baldwin, et al . 2024. Fact-checking the output of large language models via token-level uncertainty quantification. arXiv preprint arXiv:2403.04696 (2024). [14] Marina Fomicheva, Shuo Sun, Lisa Yankovskaya, Frédéric Blain, Francisco Guzmán, Mark Fishel, Nikolaos Aletras, Vishrav Chaudhary, and Lucia Specia. 2020. Unsupervised quality estimation for neural machine translation. Transac-tions of the Association for Computational Linguistics 8 (2020), 539–555. [15] Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al . 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 
+
+(2024). [16] F Maxwell Harper and Joseph A Konstan. 2015. The movielens datasets: History and context. Acm transactions on interactive intelligent systems (tiis) 5, 4 (2015), 1–19. [17] Jesse Harte, Wouter Zorgdrager, Panos Louridas, Asterios Katsifodimos, Diet-mar Jannach, and Marios Fragkoulis. 2023. Leveraging large language models for sequential recommendation. In Proceedings of the 17th ACM Conference on Recommender Systems . 1096–1102. [18] Yupeng Hou, Junjie Zhang, Zihan Lin, Hongyu Lu, Ruobing Xie, Julian McAuley, and Wayne Xin Zhao. 2024. Large language models are zero-shot rankers for recommender systems. In European Conference on Information Retrieval . Springer, 364–381. [19] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al . 2022. Lora: Low-rank adaptation of large language models. ICLR 1, 2 (2022), 3. [20] Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, et al . 2024. Gpt-4o system card. arXiv preprint arXiv:2410.21276 (2024). [21] Soyeong Jeong, Jinheon Baek, Sukmin Cho, Sung Ju Hwang, and Jong Park. 2024. Adaptive-RAG: Learning to Adapt Retrieval-Augmented Large Language Models through Question Complexity. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , Kevin Duh, Helena Gomez, and Steven Bethard (Eds.). Association for Computational Linguistics, 7036–7050. doi:10.18653/v1/2024.naacl-long.389 [22] Zhengbao Jiang, Frank F Xu, Luyu Gao, Zhiqing Sun, Qian Liu, Jane Dwivedi-Yu, Yiming Yang, Jamie Callan, and Graham Neubig. 2023. Active retrieval augmented generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing . 7969–7992. [23] Cheongwoong Kang and Jaesik Choi. 2023. Impact of co-occurrence on factual knowledge of large language models. arXiv preprint arXiv:2310.08256 (2023). [24] Wang-Cheng Kang and Julian McAuley. 2018. Self-attentive sequential recom-mendation. In 2018 IEEE international conference on data mining (ICDM) . IEEE, 197–206. [25] Wang-Cheng Kang and Julian McAuley. 2019. Candidate generation with binary codes for large-scale top-n recommendation. In Proceedings of the 28th ACM international conference on information and knowledge management . 1523–1532. [26] Jieyong Kim, Hyunseo Kim, Hyunjin Cho, SeongKu Kang, Buru Chang, Jinyoung Yeo, and Dongha Lee. [n. d.]. Review-driven personalized preference reasoning with large language models for recommendation. CoRR, abs/2408.06276, 2024. doi: 10.48550. arXiv preprint ARXIV.2408.06276 ([n. d.]). [27] Sein Kim, Hongseok Kang, Seungyoon Choi, Donghyun Kim, Minchul Yang, and Chanyoung Park. 2024. Large language models meet collaborative filtering: An efficient all-round llm-based recommender system. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 1395–1406. [28] Sunwoo Kim, Geon Lee, Kyungho Kim, Jaemin Yoo, and Kijung Shin. 2025. Item-RAG: Item-Based Retrieval-Augmented Generation for LLM-Based Recommen-dation. arXiv preprint arXiv:2511.15141 (2025). [29] Yueqing Liang, Liangwei Yang, Chen Wang, Xiongxiao Xu, Philip S Yu, and Kai Shu. 2024. Taxonomy-Guided Zero-Shot Recommendations with LLMs. arXiv preprint arXiv:2406.14043 (2024). [30] Jiayi Liao, Sihang Li, Zhengyi Yang, Jiancan Wu, Yancheng Yuan, and Xiang Wang. 2023. Llara: Aligning large language models with sequential recommenders. CoRR 
+
+(2023). Filling the Gaps: Selective Knowledge Augmentation for LLM Recommenders Conference ’25, June 03–05, 2018, Woodstock, NY 
+
+[31] Jianghao Lin, Rong Shan, Chenxu Zhu, Kounianhua Du, Bo Chen, Shigang Quan, Ruiming Tang, Yong Yu, and Weinan Zhang. 2024. Rella: Retrieval-enhanced large language models for lifelong sequential behavior comprehension in recom-mendation. In Proceedings of the ACM Web Conference 2024 . 3497–3508. [32] Xinyu Lin, Wenjie Wang, Yongqi Li, Fuli Feng, See-Kiong Ng, and Tat-Seng Chua. 2024. Bridging items and language: A transition paradigm for large language model-based recommendation. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 1816–1826. [33] Xinyu Lin, Wenjie Wang, Yongqi Li, Shuo Yang, Fuli Feng, Yinwei Wei, and Tat-Seng Chua. 2024. Data-efficient Fine-tuning for LLM-based Recommendation. In Proceedings of the 47th international ACM SIGIR conference on research and development in information retrieval . 365–374. [34] Zhen Lin, Shubhendu Trivedi, and Jimeng Sun. 2024. Generating with Confi-dence: Uncertainty Quantification for Black-box Large Language Models. Trans-actions on Machine Learning Research (2024). https://openreview.net/forum?id= DWkJCSxKU5 [35] Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2023. Lost in the middle: How language models use long contexts. arXiv preprint arXiv:2307.03172 (2023). [36] Qidong Liu, Xian Wu, Yejing Wang, Zijian Zhang, Feng Tian, Yefeng Zheng, and Xiangyu Zhao. 2024. Llm-esr: Large language models enhancement for long-tailed sequential recommendation. Advances in Neural Information Processing Systems 37 (2024), 26701–26727. [37] Sichun Luo, Bowei He, Haohan Zhao, Wei Shao, Yanlin Qi, Yinya Huang, Aojun Zhou, Yuxuan Yao, Zongpeng Li, Yuanzhang Xiao, et al . 2024. Recranker: Instruc-tion tuning large language model as ranker for top-k recommendation. ACM Transactions on Information Systems (2024). [38] Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Daniel Khashabi, and Hannaneh Hajishirzi. 2022. When not to trust language models: Investigat-ing effectiveness of parametric and non-parametric memories. arXiv preprint arXiv:2212.10511 (2022). [39] Jianmo Ni, Jiacheng Li, and Julian McAuley. 2019. Justifying recommendations using distantly-labeled reviews and fine-grained aspects. In Proceedings of the 2019 conference on empirical methods in natural language processing and the 9th international joint conference on natural language processing (EMNLP-IJCNLP) .188–197. [40] Aleksandr Petrov and Craig Macdonald. 2024. RSS: effective and efficient training for sequential recommendation using recency sampling. ACM Transactions on Recommender Systems 3, 1 (2024), 1–32. [41] Nils Reimers and Iryna Gurevych. 2019. Sentence-bert: Sentence embeddings using siamese bert-networks. arXiv preprint arXiv:1908.10084 (2019). [42] Xubin Ren, Wei Wei, Lianghao Xia, Lixin Su, Suqi Cheng, Junfeng Wang, Dawei Yin, and Chao Huang. 2024. Representation learning with large language models for recommendation. In Proceedings of the ACM Web Conference 2024 . 3464–3475. [43] Steffen Rendle, Christoph Freudenthaler, Zeno Gantner, and Lars Schmidt-Thieme. 2012. BPR: Bayesian personalized ranking from implicit feedback. arXiv preprint arXiv:1205.2618 (2012). [44] Weijia Shi, Anirudh Ajith, Mengzhou Xia, Yangsibo Huang, Daogao Liu, Terra Blevins, Danqi Chen, and Luke Zettlemoyer. 2023. Detecting pretraining data from large language models. arXiv preprint arXiv:2310.16789 (2023). [45] Weihang Su, Yichen Tang, Qingyao Ai, Zhijing Wu, and Yiqun Liu. 2024. DRAGIN: Dynamic Retrieval Augmented Generation based on the Real-time Information Needs of Large Language Models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , Lun-Wei Ku, Andre Martins, and Vivek Srikumar (Eds.). Association for Computational Linguistics, 12991–13013. doi:10.18653/v1/2024.acl-long.702 [46] Shijie Wang, Wenqi Fan, Yue Feng, Xinyu Ma, Shuaiqiang Wang, and Dawei Yin. 2025. Knowledge Graph Retrieval-Augmented Generation for LLM-based Recommendation. arXiv preprint arXiv:2501.02226 (2025). [47] Jason Wei, Maarten Bosma, Vincent Y Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. 2021. Finetuned language models are zero-shot learners. arXiv preprint arXiv:2109.01652 (2021). [48] Zhiqiu Xia, Jinxuan Xu, Yuqian Zhang, and Hang Liu. 2025. A survey of uncertainty estimation methods on large language models. arXiv preprint arXiv:2503.00172 (2025). [49] Haoran Yang, Yumeng Zhang, Jiaqi Xu, Hongyuan Lu, Pheng Ann Heng, and Wai Lam. 2024. Unveiling the generalization power of fine-tuned large language models. arXiv preprint arXiv:2403.09162 (2024). [50] Yuqing Yang, Lei Jiao, and Yuedong Xu. 2024. A queueing theoretic perspective on low-latency llm inference with variable token length. In 2024 22nd Interna-tional Symposium on Modeling and Optimization in Mobile, Ad Hoc, and Wireless Networks (WiOpt) . IEEE, 273–280. [51] Zijun Yao, Weijian Qi, Liangming Pan, Shulin Cao, Linmei Hu, Liu Weichuan, Lei Hou, and Juanzi Li. 2025. SeaKR: Self-aware Knowledge Retrieval for Adaptive Retrieval Augmented Generation. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, Vienna, Austria, 27022–27043. doi:10.18653/v1/ 2025.acl-long.1312 [52] Qinan Yu, Jack Merullo, and Ellie Pavlick. 2023. Characterizing mechanisms for factual recall in language models. arXiv preprint arXiv:2310.15910 (2023). [53] Zhenrui Yue, Sara Rabhi, Gabriel de Souza Pereira Moreira, Dong Wang, and Even Oldridge. 2023. Llamarec: Two-stage recommendation using large language models for ranking. arXiv preprint arXiv:2311.02089 (2023). [54] Weichao Zhang, Ruqing Zhang, Jiafeng Guo, Maarten de Rijke, Yixing Fan, and Xueqi Cheng. 2024. Pretraining data detection for large language models: A divergence-based calibration method. arXiv preprint arXiv:2409.14781 (2024). [55] Yang Zhang, Keqin Bao, Ming Yan, Wenjie Wang, Fuli Feng, and Xiangnan He. 2024. Text-like encoding of collaborative information in large language models for recommendation. arXiv preprint arXiv:2406.03210 (2024). [56] Yang Zhang, Fuli Feng, Jizhi Zhang, Keqin Bao, Qifan Wang, and Xiangnan He. 2025. Collm: Integrating collaborative embeddings into large language models for recommendation. IEEE Transactions on Knowledge and Data Engineering (2025). [57] Zhi Zheng, Wenshuo Chao, Zhaopeng Qiu, Hengshu Zhu, and Hui Xiong. 2024. Harnessing large language models for text-rich sequential recommendation. In 
+
+Proceedings of the ACM Web Conference 2024 . 3207–3216. [58] Baohang Zhou, Zezhong Wang, Lingzhi Wang, Hongru Wang, Ying Zhang, Kehui Song, Xuhui Sui, and Kam-Fai Wong. 2024. DPDLLM: A Black-box Framework for Detecting Pre-training Data from Large Language Models. In Findings of the Association for Computational Linguistics ACL 2024 . 644–653.

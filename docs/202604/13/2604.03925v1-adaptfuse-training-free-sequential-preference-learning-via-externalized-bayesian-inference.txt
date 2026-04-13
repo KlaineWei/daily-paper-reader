@@ -1,0 +1,913 @@
+Title: AdaptFuse: Training-Free Sequential Preference Learning via Externalized Bayesian Inference
+
+URL Source: https://arxiv.org/pdf/2604.03925v1
+
+Published Time: Tue, 07 Apr 2026 00:50:09 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+Preprint. Under review. 
+
+# AdaptFuse: Training-Free Sequential Preference Learning via Externalized Bayesian Inference 
+
+Fangzhou Lin a,b,c Peiran Li a Shuo Xing a Siyuan Yang a Qianwen Ge d
+
+Kazunori Yamada c Ziming Zhang b Haichong Zhang b Zhengzhong Tu aaTexas A&M University bWorcester Polytechnic Institute 
+
+> c
+
+Tohoku University dGeorgia Institute of Technology 
+
+## Abstract 
+
+Large language models struggle to accumulate evidence across multiple rounds of user interaction, failing to update their beliefs in a manner con-sistent with Bayesian inference. Existing solutions require fine-tuning on sensitive user interaction data, limiting their applicability in privacy-conscious settings. We propose A DAPT FUSE , a training-free framework that externalizes probabilistic computation entirely from the LLM: a symbolic module maintains a Bayesian posterior over a discrete hypothesis set, while a frozen LLM contributes semantic reasoning via multi-sample Dirichlet aggregation. The two signals are combined through entropy-adaptive fu-sion, which automatically weights each source by its predictive confidence, shifting reliance from the LLM to the symbolic posterior as evidence ac-cumulates. We evaluate across three domains: flight recommendation, hotel recommendation, and web shopping; on Gemma 2 9B, Llama 3 8B, and Qwen 2.5 7B. A DAPT FUSE consistently outperforms both prompting baselines and fine-tuned Bayesian Teaching models on all tasks, with ac-curacy improving monotonically over interaction rounds. These results demonstrate that principled inference-time algorithms can substitute for fine-tuning in personalized recommendation, without storing or training on sensitive user data. All the code and materials will be open-sourced. 
+
+## 1 Introduction 
+
+Personalizing AI systems to individual user preferences is a fundamental challenge in interactive recommendation, dialogue systems, and e-commerce Murtaza et al. (2022); Lindgren (2025); Jiang et al. (2025a); Cai et al. (2025); Lin et al. (2026); Jiang et al. (2025b); Li et al. (2026c); Huang et al. (2026). A natural formulation is sequential preference learning :over a series of interactions, an agent observes which items a user chooses, updates its belief about the user’s latent preferences, and uses that belief to make progressively better recommendations Gao et al. (2024); Milani et al. (2025); Li et al. (2026b). The central difficulty is that user preferences are never directly observed; they must be inferred from a stream of noisy, indirect signals. Large language models (LLMs) are appealing agents for this task: they possess broad se-mantic knowledge about items and can reason over natural language descriptions Cheng et al. (2024); Dai et al. (2025); Huang et al. (2025); Li et al. (2026a). However, Qiu et al. (2026) recently showed that off-the-shelf LLMs fundamentally fail at sequential belief updating: They often plateau after a single round of feedback, failing to accumulate evidence across interactions in the way an optimal Bayesian agent would. Their proposed solution, Bayesian Teaching, achieves strong performance by fine-tuning LLMs on demonstrations from an ideal Bayesian assistant. Yet fine-tuning introduces a practical tension: user interaction logs contain sensitive personal preference data, and training on such data raises significant pri-vacy concerns Gan et al. (2024); Yao et al. (2024); He et al. (2025). Moreover, fine-tuning may need to be repeated whenever the deployment domain changes, a substantial cost barrier 1
+
+> arXiv:2604.03925v1 [cs.CL] 5 Apr 2026
+
+Preprint. Under review. for real-world personalization systems. Furthermore, deploying large proprietary models (e.g., GPT series Achiam et al. (2023); Hurst et al. (2024)) via API introduces additional privacy risks, as user interaction data must be transmitted to external servers; lightweight open-source models that can be deployed locally offer a more privacy-preserving alternative. In this work, we ask: can we match or exceed the performance of fine-tuned Bayesian reasoning in LLMs without modifying any model weights? We answer affirmatively and propose A DAPT -FUSE , a training-free framework that requires no gradient computation, no access to model weights, and no storage of sensitive user data beyond what is observed at inference time. ADAPT FUSE is built on a key insight: the bottleneck identified by Qiu et al. (2026), that LLMs struggle to verbalize and execute probabilistic belief updates, which can be circumvented entirely by externalizing the probabilistic computation. A DAPT FUSE maintains an explicit symbolic posterior over a discrete hypothesis set, updated exactly via Bayes’ rule after each interaction. The LLM’s role is changed to what it does well: semantic reasoning over natural language item descriptions, elicited through N diverse samples per round and aggregated via a Dirichlet-Multinomial model Minka (2000); Madsen et al. (2005); Elkan (2006); Mimno & McCallum (2012); Holmes et al. (2012). The two signals are then combined through an entropy-adaptive fusion mechanism that automatically weights each source by its predictive confidence, allocating more influence to the LLM in early rounds when the symbolic posterior is diffuse, and progressively down-weighting it as evidence accumulates and the symbolic signal becomes more confident. We evaluate A DAPT FUSE on three sequential preference learning tasks: flight recommen-dation (Lin et al., 2022), hotel recommendation (Qiu et al., 2026), and web shopping (Yao et al., 2022); across three open-source base models: Gemma 2 9B (Team et al., 2024), Llama 3 8B (Grattafiori et al., 2024), and Qwen 2.5 7B (Hui et al., 2024). We find that A DAPT FUSE 
+
+consistently outperforms both prompting baselines and fine-tuned Bayesian Teaching mod-els Qiu et al. (2026) on all tasks and all base models, despite requiring no weight updates, training, or fine-tuning. Accuracy improves monotonically with the number of interaction rounds: a direct consequence of Bayesian posterior concentration, whereas prompting base-lines plateau after the first round. A single instantiation of A DAPT FUSE generalizes across all three domains without domain-specific tuning, and the symbolic module contributes negligible latency, with the per-round cost dominated by the N LLM calls. These results establish that externalizing probabilistic computation is not merely a theoretical workaround but a practically superior strategy: A DAPT FUSE achieves stronger personalization, incurs no training cost, and never requires storing or training on sensitive user interaction data. The paper is organized as follows. We describe the A DAPT FUSE framework and its theo-retical properties in Section 3. Experimental setup, baselines, and results are presented in Section 4. We survey related work in Section 2 and conclude in Section 5. 
+
+## 2 Related Work 
+
+Internal Probabilistic Reasoning in LLMs. In-context learning (ICL) capability of large language models (LLMs) enables them to perform tasks by conditioning on provided input examples, eliminating the need for explicit parameter updates Brown et al. (2020); Min et al. (2022); Xie et al. (2021); Dai et al. (2022); Kojima et al. (2022); Wang et al. (2022); Yao et al. (2023); Wei et al. (2022). Despite these advances, probabilistic reasoning remain challenging for LLMs, prompting a growing body of work to investigate whether large language models can perform probabilistic reasoning natively Nafar et al. (2023); Kadavath et al. (2022); Pournemat et al. (2025). Gupta et al. (2025) suggests that LLMs can approximate Bayesian updating when provided with sufficient coin flip observations, despite a biased prior in simple tasks. More directly related to our setting, Qiu et al. (2026) finds that LLMs fail to update their beliefs about user preferences in multi-round interactions in a manner consistent with the Bayesian framework. Our work takes a complementary route: rather than introducing Bayesian reasoning capabilities through fine-tuning, we externalize the probabilistic computation entirely. 2Preprint. Under review. 
+
+External Probabilistic Reasoning in LLMs. The dominant training-free strategy in the literature keeps LLM weights frozen while offloading probabilistic inference to an external module, BIRD (Feng et al., 2024) uses the LLM’s abductive capabilities to generate intermedi-ate factors, which are then passed to a learnable Bayesian network for deductive probability estimation. BRANCH (Zheng et al., 2025) factorizes joint distributions into a Bayesian network whose individual factors are estimated via LLM prompting. GRAIL (Rahimirad et al., 2025) externalizes belief tracking to a probabilistic graphical model for social deduc-tion games while keeping the LLM frozen. MACLA (Forouzandeh et al., 2025) maintains a frozen 7B LLM augmented with Beta-posterior-based Bayesian action selection in an external hierarchical memory. In all of these approaches, the LLM functions as a feature extractor or abductive reasoner while the Bayesian computation happens outside it. Our method differs from this paradigm in two respects: the symbolic module is zero-parameter 
+
+(the hypothesis set is read directly from data, with no learning required), and it supports multi-round sequential updating, which BIRD and BRANCH do not address. 
+
+LLMs as Probabilistic Reasoning Bridges. A related cluster of work uses frozen LLMs as 
+
+code generators that produce probabilistic programs, which are then executed by an external inference engine. Domke (2025) generates Stan programs Carpenter et al. (2017) from informal problem descriptions, runs MCMC inference on each, and combines posteriors via Bayesian model averaging weighted by marginal likelihood. REFINESTAT Kanda et al. (2025) automates the full Bayesian modeling workflow, including LLM-generated program pruning via convergence diagnostics. These approaches are training-free but treat the LLM purely as a compiler; the LLM itself performs no probabilistic inference. Our setting is distinct: the LLM must reason about a user’s latent preferences from conversational evidence, a task that does not naturally decompose into a standalone probabilistic program. 
+
+## 3 Methods 
+
+We propose A DAPT FUSE , a training-free inference framework for sequential preference learning that operates on a frozen base LLM without any weight updates. A DAPT FUSE 
+
+maintains an explicit symbolic Bayesian posterior over a discrete hypothesis set and com-bines it with LLM-derived distributional estimates via entropy-adaptive fusion. The core design principle is a strict separation of roles: the symbolic module handles all probabilistic computation with mathematical guarantees, while the frozen LLM contributes semantic reasoning about item descriptions. 
+
+Notation. [K] ≜ {1, . . . , K} denotes the option index set. H = {hm}Mm=1 is the hypothesis set of M candidate preference vectors. bt ∈ ∆M−1 is the belief vector after observing the user’s choice at round t, with bt,m ≜ P(hm | Dt), where Dt collects all observed (option set, user choice) pairs through round t. We write b0 for the prior (before any observation). At round t, the agent predicts using bt−1, observes yt, and updates to bt. π ∈ ∆K−1 denotes a probability vector over options. All logarithms are natural. 
+
+3.1 Task: Sequential Preference Learning 
+
+We consider a general sequential preference learning setting. An agent interacts with a user over T rounds. At each round t, the agent receives a set of K items described in natural language, predicts which item the user prefers, and observes the true choice yt ∈ [K]. The user’s latent preference is assumed fixed throughout the interaction. After round T, the belief is frozen and used to predict the user’s preferred item from held-out sets ˜X not seen during interaction; held-out accuracy is our primary evaluation metric, as it measures generalization of the inferred preference rather than adaptation to specific seen items. We instantiate this setting across three task domains: flight recommendation (Lin et al., 2022), hotel recommendation (Qiu et al., 2026), and web shopping (Yao et al., 2022); each with domain-specific item attributes described in Section 4. 3Preprint. Under review. 
+
+Feature representation. Each item arrives as a natural language string. A deterministic parser extracts d scalar attributes and normalizes each to [0, 1 ], yielding x ∈ [0, 1 ]d. If any attribute fails to parse, the method falls back to a uniform prediction over options. The feature dimensionality d and attribute ranges are domain-specific and detailed in Section 4. 
+
+Preference model. The user’s latent preference is modeled as a linear utility function: 
+
+Uh(x) ≜ h⊤ x, h ∈ Rd, (1) where h is the latent preference weight vector. 
+
+Hypothesis set. Rather than inferring h continuously, we discretize them. The hypothesis set H = {h1, . . . , hM} is constructed by extracting all unique ground-truth preference vectors from the training split of the interaction dataset. This yields M plausible user types as a fixed read-only lookup table, requiring no learning. Discretization is the key step that makes exact Bayesian inference tractable without MCMC or variational approximation Fayyad et al. (1993); Zaiser et al. (2023). A brief discussion of this approximation is provided in Section A.3. We note that this construction guarantees h∗ ∈ H for every evaluation user only when the train/test split ensures full coverage of all preference types. In our experimental setup this holds by construction; however, the framework degrades gracefully when this assumption is violated (see Section A.3). 
+
+Choice likelihood. Given option set X = {xi}Ki=1 and hypothesis h, the probability of the user choosing option i follows the Luce choice model (Luce et al., 1959; Luce, 1977): 
+
+P(y = i | X, h) = exp (β · Uh(xi)) 
+
+∑Kj=1 exp (β · Uh(xj)) (2) where β > 0 is the inverse temperature (default β = 6.0). 
+
+3.2 ADAPT FUSE 
+
+ADAPT FUSE operates in three stages at each decision point: (i) symbolic Bayesian belief tracking, (ii) LLM multi-sample aggregation, and (iii) entropy-adaptive fusion. Algorithm 1 presents the complete procedure. 
+
+3.2.1 Stage 1: Symbolic Bayesian Belief Tracking 
+
+Prior and posterior update. The belief is initialized uniformly: b0, m = 1 /M for all m. At round t, after observing choice yt, the belief is updated as: 
+
+bt,m ∝ bt−1, m · ℓt,m, ℓt,m ≜ max  ε, P(yt | Xt, hm), (3) with floor ε = 10 −8 preventing any hypothesis from being irreversibly eliminated by a single atypical observation, and the vector renormalized after each update. Unrolling over t
+
+rounds under the uniform prior gives the closed-form posterior: 
+
+bt,m = ∏t 
+
+> τ=1
+
+ℓτ,m
+
+∑Mm′ =1 ∏t 
+
+> τ=1
+
+ℓτ,m′
+
+. (4) 
+
+Symbolic predictive distribution. At round t, the symbolic prediction over options is computed from the pre-update belief bt−1 as the posterior-weighted mixture: 
+
+πsym  
+
+> i
+
+≜
+
+> M
+
+# ∑
+
+> m=1
+
+bt−1, m · P(i | Xt, hm), (5) an exact marginalization requiring no sampling. 4Preprint. Under review. 
+
+3.2.2 Stage 2: LLM Multi-Sample Aggregation 
+
+The frozen LLM is queried N = 5 times per decision point. To encourage output diversity, each sample s ∈ [N] uses a temperature drawn cyclically from {0.2, 0.7, 1.0 } and a reasoning hint from a fixed pool (see Section D for the full prompt template). Each valid sample s
+
+yields a predicted option bys ∈ [K] and a confidence score cs ∈ [0, 1 ]; samples that fail to parse are silently skipped. 
+
+Dirichlet aggregation. Samples are aggregated via a Dirichlet-Multinomial model Madsen et al. (2005); Elkan (2006). Starting from αi = α0 = 1.0, each valid sample s contributes confidence-weighted pseudo-counts: 
+
+αi ← αi + ws,i, ws,i ≜
+
+(cs i = bys,
+
+(1 − cs)/(K − 1) otherwise. (6) The aggregated LLM distribution is the Dirichlet posterior mean: 
+
+πllm raw, t = α / ∥α∥1. (7) 
+
+Lemma 1 (Dirichlet Aggregation as Posterior Mean) . Let θ ∼ Dir (α01K ) be a prior over the categorical parameter. Treating the confidence-weighted vectors {ws,i} as fractional pseudo-count observations: a standard extension of Dirichlet-Multinomial conjugacy (Elkan, 2006; Minka, 2000); the posterior is: θ | { ws,i} ∼ Dir (α), and πllm raw, t = E[θ | { ws,i}].Proof. See Section A.1. Unlike majority vote, Dirichlet aggregation weights confident samples more heavily and retains positive mass on all options via the α0 prior. When all samples fail to parse, the raw aggregate πllm raw, t reduces to the uniform distribution. 
+
+Temporal momentum smoothing. Per-round LLM aggregates exhibit high variance due to small N. A DAPT FUSE maintains a running memory mem (initialized to null ) and applies exponential smoothing: 
+
+πllm  
+
+> t
+
+=
+
+(πllm raw, t mem = null ,normalize  m · mem + ( 1−m) · πllm raw, t
+
+ otherwise, (8) with momentum coefficient m = 0.65, giving an asymptotic effective sample count 
+
+Neff = N/(1 − m) ≈ 14 (the finite-horizon effective count is smaller in early rounds but approaches this value within approximately 5 rounds). The memory is updated to πllm 
+
+> t
+
+only on interaction rounds; during held-out evaluation the memory is read but not written, preventing held-out noise from contaminating the running average. 
+
+3.2.3 Stage 3: Entropy-Adaptive Fusion 
+
+ADAPT FUSE weights each source by its predictive confidence, measured via normalized entropy. For any π ∈ ∆K−1:˜H(π) ≜ − ∑Ki=1 πi log πi
+
+log K ∈ [0, 1 ]. (9) The source weights are: 
+
+wllm ≜ max  εw, 1 − ˜H(πllm  
+
+> t
+
+), wsym ≜ max  εw, 1 − ˜H(πsym ), (10) with εw = 10 −3. The fused prediction distribution is: 
+
+π∗(i) ∝ wllm · πllm  
+
+> i
+
++ wsym · πsym  
+
+> i
+
+, (11) 5Preprint. Under review. and the predicted option is i∗ = argmax i π∗(i).The entropy-adaptive weighting implements an automatic information schedule. At any round t, the LLM’s share of the fused prediction is bounded above by 1 /(1 + wsym  
+
+> t
+
+), which decreases monotonically as wsym  
+
+> t
+
+grows (Proposition 1 in Section A.2). In early rounds, the symbolic posterior is diffuse, both sources carry comparable weight, and the LLM’s semantic understanding of item descriptions contributes meaningfully. As evidence accumulates and the symbolic posterior concentrates, ˜H(πsym ) decreases, wsym increases, and the LLM signal is progressively down-weighted; without any manually tuned schedule. We verify this behavior empirically in Section 4. 
+
+3.2.4 Sequential Update 
+
+After prediction i∗ 
+
+> t
+
+and observation of yt, the belief is updated via Equation (3) uncondition-ally at every interaction round, regardless of prediction correctness. Held-out evaluations do not trigger a belief update. 
+
+Algorithm 1 ADAPT FUSE 
+
+Require: H, rounds {(Xt, yt)}Tt=1, held-out sets { ˜Xs}, frozen LLM 
+
+Ensure: {i∗ 
+
+> t
+
+}Tt=1, {˜i∗ 
+
+> s
+
+} 
+
+> 1:
+
+b ← 1M/M; mem ← null  
+
+> 2:
+
+for t = 1, . . . , T do  
+
+> 3:
+
+// Stage 1: predict using pre-update belief  
+
+> 4:
+
+πsym ← ∑m bm · P(i | Xt, hm)Ki=1 // Eq. (5)  
+
+> 5:
+
+// Stage 2  
+
+> 6:
+
+{(bys, cs)}Ns=1 ← SAMPLE LLM (Xt, history ) 
+
+> 7:
+
+α ← α01K; ∀ valid s: update αi via Eq. (6)  
+
+> 8:
+
+πllm raw ← α/∥α∥1 
+
+> 9:
+
+if mem ̸ = null then  
+
+> 10:
+
+πllm ← normalize (m · mem + ( 1−m) · πllm raw ) // Eq. (8)  
+
+> 11:
+
+else πllm ← πllm raw  
+
+> 12:
+
+end if  
+
+> 13:
+
+mem ← πllm ▷ write only on interaction rounds  
+
+> 14:
+
+// Stage 3  
+
+> 15:
+
+wllm , wsym via Eq. (10)  
+
+> 16:
+
+π∗ ← normalize (wllm πllm + wsym πsym ) 
+
+> 17:
+
+i∗ 
+
+> t
+
+← argmax i π∗ 
+
+> i
+> 18:
+
+// Update belief after observing y t 
+
+> 19:
+
+bm ← bm · max (ε, P(yt|Xt, hm)) ∀m; b ← b/∥b∥1 // Eq. (3)  
+
+> 20:
+
+end for  
+
+> 21:
+
+for each held-out ˜ Xs do  
+
+> 22:
+
+Compute π∗ with frozen b, read-only mem ( no update ) 
+
+> 23:
+
+˜i∗ 
+
+> s
+
+← argmax i π∗ 
+
+> i
+> 24:
+
+end for 
+
+## 4 Experiments 
+
+4.1 Tasks 
+
+We evaluate A DAPT FUSE on three sequential preference learning tasks of increasing diffi-culty. Full task descriptions are provided in Section B. 
+
+Flight Recommendation (Lin et al., 2022). The agent interacts with a user over T = 5rounds; at each round three flight options are presented, each described by four attributes (departure time, duration, stops, price). 6Preprint. Under review. 
+
+Method Gemma Llama Qwen 
+
+1st Round Final 1st Round Final 1st Round Final Direct Prompting 31.3 33.5 30.2 34.6 31.2 34.1 CoT 36.2 38.4 35.1 39.1 34.5 38.6 Self-consistency 40.4 44.7 38.1 43.8 37.2 41.5 Oracle Learning 48.6 59.1 45.1 58.3 40.6 51.7 Bayesian Teaching 54.1 73.4 55.5 74.3 52.5 65.2 
+
+ADAPT FUSE (Ours) 53.1 76.2 52.1 76.3 50.4 67.3 
+
+Table 1: Flight recommendation accuracy (%). Results are reported for both the 1st and final (5th) round. Best final-round results are in bold .0 1 2 3 4 5             
+
+> # Interactions
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Accuracy (%)
+> Gemma
+> 012345
+> # Interactions
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Llama
+> 012345
+> # Interactions
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Qwen
+> Original LLM Oracle LLM Bayesian LLM Ours
+
+Figure 1: Accuracy over interaction rounds on the flight task. We show accuracy from the first through the final (fifth) round across different methods, including original LLMs, models fine-tuned with Oracle Learning and Bayesian Teaching (Qiu et al., 2026), and our training-free A DAPT FUSE .
+
+Hotel Recommendation (Qiu et al., 2026). Identical interaction protocol to the flight task, with hotels described by four attributes: distance to downtown, price, rating, and amenities. This task tests domain generalization while keeping the interaction structure fixed. 
+
+Web Shopping (Yao et al., 2022). Items are real-world products described by free-form titles and descriptions; user goals are expressed as natural language queries. This task is substantially harder than the previous two due to open-ended item representations and noisier preference signals. 
+
+4.2 Models and Baselines 
+
+A key practical advantage of training-free methods is that they can be paired with lightweight open-source models deployed entirely on-premise, eliminating the need to transmit sensitive user interaction data to external API providers. We therefore evaluate on three lightweight open-source base models: Gemma 2 9B (Team et al., 2024), Llama 3 8B (Grattafiori et al., 2024), and Qwen 2.5 7B (Hui et al., 2024). A DAPT FUSE is applied to each base model without any weight modification. We compare against five baselines: Direct prompting : the base LLM prompted with in-teraction history. CoT (Wei et al., 2022): step-by-step reasoning before recommendation. 
+
+Self-consistency (Wang et al., 2022): majority vote over N = 5 CoT samples. Oracle Learning (Qiu et al., 2026): LLMs fine-tuned on ground-truth demonstrations. Bayesian Teaching (Qiu et al., 2026): LLMs fine-tuned on Bayesian teacher demonstrations; the strongest existing baseline, requiring task-specific training data. 7Preprint. Under review. 2 3 4 5 6 7 8                
+
+> Number of Features
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Final-round Accuracy (%)
+> Generalization to Different Numbers of Features
+> Gemma
+> 2345678
+> Number of Features
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Llama
+> Original LLM Oracle LLM Bayesian LLM Ours Random
+> 2345678
+> Number of Features
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Qwen
+
+Figure 2: Varying task complexity. Final-round accuracy across methods as the number of item attributes d varies from 2 to 8. 
+
+4.3 Results and Analysis Flight recommendation (main result). Table 1 presents held-out accuracy on the flight task across all three base models. The original LLMs and prompting add-ons (CoT and Self-consistency) perform considerably worse than A DAPT FUSE : even the best prompting method (Self-consistency) reaches only 44.7% on Gemma in the final round, compared to 76.2% for A DAPT FUSE . Fine-tuned Oracle Learning narrows the gap but still lags behind by a substantial margin (59.1% vs. 76.2% on Gemma). Bayesian Teaching, the strongest existing baseline, achieves 73.4% on Gemma and 74.3% on Llama after fine-tuning on task-specific Bayesian teacher demonstrations. A DAPT FUSE surpasses Bayesian Teaching on all three models (+2.8 on Gemma, +2.0 on Llama, +2.1 on Qwen) despite requiring no training or fine-tuning, demonstrating that externalizing probabilistic computation is not only a viable but a superior strategy. 
+
+Accuracy over interaction rounds. Figure 1 traces held-out accuracy as a function of completed interaction rounds (1 through 5). Two distinct patterns emerge. Prompting baselines (Direct, CoT, Self-consistency) show minimal improvement beyond the first round, confirming the finding of Qiu et al. (2026) that LLMs struggle to accumulate evidence through in-context reasoning alone. In contrast, A DAPT FUSE improves monotonically after first rounds: as the symbolic Bayesian posterior concentrates, the entropy-adaptive weighting progressively down-weights LLM noise (Proposition 1 in Section A.2), yielding steady accuracy gains. Fine-tuned Bayesian Teaching also improves across rounds but at a slower rate, and A DAPT FUSE overtakes it after first round. 
+
+Generalization to varying feature dimensionality. Figure 2 evaluates performance as the number of item attributes d varies from 2 to 8, serving as a proxy for task complexity. ADAPT FUSE matches or outperforms fine-tuned baselines across all values of d. Performance degrades gracefully with increasing d for all methods, suggesting that this reflects inherent task difficulty (more attributes lead to a larger hypothesis space) rather than a limitation specific to any particular approach. 
+
+Generalization to new domains. Figure 3 presents results on hotel recommendation and WebShopping. ADAPT FUSE achieves the highest accuracy on both tasks, though absolute margins over Bayesian Teaching are smaller than on the flight task, reflecting the increased difficulty of these domains. Notably, A DAPT FUSE outperforms Bayesian Teaching even on WebShopping, where the fine-tuned models are trained on domain-specific demonstrations. This validates our core claim: a single training-free algorithm generalizes across domains without domain-specific optimization, avoiding the privacy and data-collection costs associated with fine-tuning on user interaction logs. 
+
+Inference time. Table 2 reports average inference time per interaction round. The A DAPT -FUSE overhead relative to direct prompting is due mostly to the N = 5 LLM sampling calls. This overhead is linear in N and can be reduced by decreasing the sample count with graceful accuracy degradation, whereas fine-tuning costs are incurred once per domain and cannot be amortized across deployment targets. 8Preprint. Under review. Gemma 
+
+> Original
+> Gemma
+> Oracle
+> Gemma
+> Bayesian
+> Gemma
+> Ours
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Final-round Accuracy (%)
+
+a. Generalization to Hotel Recommendation    
+
+> 35
+> 50
+> 63 65
+> Llama
+> Original
+> Llama
+> Oracle
+> Llama
+> Bayesian
+> Llama
+> Ours
+> 38
+> 53
+> 62 64
+> Random
+> Qwen
+> Original
+> Qwen
+> Oracle
+> Qwen
+> Bayesian
+> Qwen
+> Ours
+> 34
+> 45
+> 56 58
+> Gemma
+> Original
+> Gemma
+> Oracle
+> Gemma
+> Bayesian
+> Gemma
+> Ours
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Final-round Accuracy (%)
+
+b. Generalization to Web Shopping     
+
+> 51
+> 58
+> 70 72
+> Llama
+> Original
+> Llama
+> Oracle
+> Llama
+> Bayesian
+> Llama
+> Ours
+> 56
+> 60
+> 67 69
+> Random
+> Qwen
+> Original
+> Qwen
+> Oracle
+> Qwen
+> Bayesian
+> Qwen
+> Ours
+> 40
+> 63 66 68
+
+Figure 3: Generalization to new domains. (a) Final-round accuracy on the hotel recommen-dation task. (b) Final-round accuracy on the web shopping task. Error bars denote standard error over three random seeds. 
+
+Method Gemma Llama Qwen Calls 
+
+Direct prompting 0.52s 0.74s 0.63s 1CoT 2.15s 2.87s 2.42s 1Self-consistency 3.67s 3.79s 3.68s 5Bayesian Teaching 1.42s 1.34s 1.05s 1
+
+ADAPT FUSE 4.35s 4.63s 4.51s 5
+
+Table 2: Inference time per round (single A100 GPU, flight recommendation task). A DAPT -FUSE overhead is due to N = 5 LLM calls; the symbolic module adds negligible latency. 9Preprint. Under review.               
+
+> Component Variant 1st Rnd Final
+> Fusion Fixed ( λ=0.5) 52.4 72.7 Aggregation Majority vote 50.6 73.1 Dirichlet (no EMA) 52.3 74.0
+> ADAPT FUSE (full) 53.1 76.2
+
+Table 3: Ablation study (Flight recommendation task, Gemma 2 9B). Each row modifies one component while keeping the rest intact. 
+
+4.4 Ablation Study 
+
+We ablate the key design choices of A DAPT FUSE on the flight task (Gemma 2 9B, Table 3). We focus on the fusion mechanism and aggregation. Replacing entropy-adaptive weighting with a fixed 50/50 blend costs 3.5 final-round points, because the static weight continues to give equal influence to the LLM even after the symbolic posterior has concentrated. For LLM aggregation, Dirichlet weighting outperforms majority vote by 3.1 points (confidence-weighted pseudo-counts produce a more calibrated distribution), and adding temporal momentum contributes a further 2.2 points by smoothing the high per-round variance from only N=5 samples. Detailed analysis is in Section F. 
+
+## 5 Conclusion 
+
+We presented A DAPT FUSE , a training-free framework for sequential preference learning that combines symbolic Bayesian belief tracking with frozen LLM semantic reasoning via entropy-adaptive fusion. Across three domains and three base models, A DAPT FUSE 
+
+consistently outperforms both prompting baselines and fine-tuned methods without any weight updates, demonstrating that externalizing probabilistic computation is a viable and effective alternative to fine-tuning for personalized recommendation. Operating entirely at inference time on frozen lightweight open-source models that can be served on-premise, ADAPT FUSE requires no transmission, collection, or storage of sensitive user interaction data, offering a practical path toward fully privacy-preserving personalization. 
+
+## References 
+
+Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. Advances in neural information processing systems ,33:1877–1901, 2020. Shihao Cai, Jizhi Zhang, Keqin Bao, Chongming Gao, Qifan Wang, Fuli Feng, and Xiangnan He. Agentic feedback loop modeling improves recommendation and user simulation. In 
+
+Proceedings of the 48th International ACM SIGIR conference on Research and Development in Information Retrieval , pp. 2235–2244, 2025. Bob Carpenter, Andrew Gelman, Matthew D Hoffman, Daniel Lee, Ben Goodrich, Michael Betancourt, Marcus Brubaker, Jiqiang Guo, Peter Li, and Allen Riddell. Stan: A proba-bilistic programming language. Journal of statistical software , 76:1–32, 2017. Yuheng Cheng, Ceyao Zhang, Zhengwen Zhang, Xiangrui Meng, Sirui Hong, Wenhao Li, Zihao Wang, Zekai Wang, Feng Yin, Junhua Zhao, et al. Exploring large language model based intelligent agents: Definitions, methods, and prospects. arXiv preprint arXiv:2401.03428 , 2024. 10 Preprint. Under review. Damai Dai, Yutao Sun, Li Dong, Yaru Hao, Shuming Ma, Zhifang Sui, and Furu Wei. Why can gpt learn in-context? language models implicitly perform gradient descent as meta-optimizers. arXiv preprint arXiv:2212.10559 , 2022. Zilin Dai, Lehong Wang, Fangzhou Lin, Yidong Wang, Zhigang Li, Kazunori D Yamada, Ziming Zhang, and Wang Lu. A language anchor-guided method for robust noisy domain generalization. arXiv preprint arXiv:2503.17211 , 2025. Justin Domke. Large language bayes. arXiv preprint arXiv:2504.14025 , 2025. Joseph L Doob. Heuristic approach to the kolmogorov-smirnov theorems. The Annals of Mathematical Statistics , pp. 393–403, 1949. Charles Elkan. Clustering documents with an exponential-family approximation of the dirichlet compound multinomial distribution. In Proceedings of the 23rd international conference on Machine learning , pp. 289–296, 2006. Usama M Fayyad, Keki B Irani, et al. Multi-interval discretization of continuous-valued attributes for classification learning. In Ijcai , volume 93, pp. 1022–1029, 1993. Yu Feng, Ben Zhou, Weidong Lin, and Dan Roth. Bird: A trustworthy bayesian inference framework for large language models. arXiv preprint arXiv:2404.12494 , 2024. Saman Forouzandeh, Wei Peng, Parham Moradi, Xinghuo Yu, and Mahdi Jalili. Learning hierarchical procedural memory for llm agents through bayesian selection and contrastive refinement. arXiv preprint arXiv:2512.18950 , 2025. Yuyou Gan, Yong Yang, Zhe Ma, Ping He, Rui Zeng, Yiming Wang, Qingming Li, Chunyi Zhou, Songze Li, Ting Wang, et al. Navigating the risks: A survey of security, privacy, and ethics threats in llm-based agents. arXiv preprint arXiv:2411.09523 , 2024. Ge Gao, Alexey Taymanov, Eduardo Salinas, Paul Mineiro, and Dipendra Misra. Aligning llm agents by learning latent preference from user edits. Advances in neural information processing systems , 37:136873–136896, 2024. Subhashis Ghosal. A review of consistency and convergence of posterior distribution. In 
+
+Varanashi Symposium in Bayesian Inference, Banaras Hindu University , 1997. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. Ritwik Gupta, Rodolfo Corona, Jiaxin Ge, Eric Wang, Dan Klein, Trevor Darrell, and David M Chan. Enough coin flips can make llms act bayesian. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 7634– 7655, 2025. Lars Peter Hansen and Thomas J Sargent. Acknowledging misspecification in macroeco-nomic theory. Review of Economic Dynamics , 4(3):519–535, 2001. Feng He, Tianqing Zhu, Dayong Ye, Bo Liu, Wanlei Zhou, and Philip S Yu. The emerged security and privacy of llm agent: A survey with case studies. ACM Computing Surveys ,58(6):1–36, 2025. Ian Holmes, Keith Harris, and Christopher Quince. Dirichlet multinomial mixtures: genera-tive models for microbial metagenomics. PloS one , 7(2):e30126, 2012. Jiani Huang, Shijie Wang, Liangbo Ning, Wenqi Fan, Shuaiqiang Wang, Dawei Yin, and Qing Li. Towards next-generation recommender systems: A benchmark for personalized recommendation assistant with llms. In Proceedings of the Nineteenth ACM International Conference on Web Search and Data Mining , pp. 217–226, 2026. Xu Huang, Jianxun Lian, Yuxuan Lei, Jing Yao, Defu Lian, and Xing Xie. Recommender ai agent: Integrating large language models for interactive recommendations. ACM Transactions on Information Systems , 43(4):1–33, 2025. 11 Preprint. Under review. Binyuan Hui, Jian Yang, Zeyu Cui, Jiaxi Yang, Dayiheng Liu, Lei Zhang, Tianyu Liu, Jiajun Zhang, Bowen Yu, Keming Lu, et al. Qwen2. 5-coder technical report. arXiv preprint arXiv:2409.12186 , 2024. Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card. arXiv preprint arXiv:2410.21276 , 2024. Lingyu Jiang, Yuping Wang, Yao Su, Shuo Xing, Wenjing Chen, Xin Zhang, Zhengzhong Tu, Ziming Zhang, Fangzhou Lin, Michael Zielewski, et al. Kanmixer: Can kan serve as a new modeling core for long-term time series forecasting? arXiv preprint arXiv:2508.01575 ,2025a. Lingyu Jiang, Lingyu Xu, Peiran Li, Qianwen Ge, Dingyi Zhuang, Shuo Xing, Wenjing Chen, Xiangbo Gao, Ting-Hsuan Chen, Xueying Zhan, et al. Timepre: Bridging accuracy, effi-ciency, and stability in probabilistic time-series forecasting. arXiv preprint arXiv:2511.18539 ,2025b. Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, et al. Language models (mostly) know what they know. arXiv preprint arXiv:2207.05221 , 2022. Madhav Kanda, Shubham Ugare, and Sasa Misailovic. Refinestat: Efficient exploration for probabilistic program synthesis. arXiv preprint arXiv:2509.01082 , 2025. Bas JK Kleijn and Aad W Van der Vaart. The bernstein-von-mises theorem under misspecifi-cation. 2012. Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. Advances in neural information processing systems , 35:22199–22213, 2022. Peiran Li, Fangzhou Lin, Shuo Xing, Jiashuo Sun, Dylan Zhang, Siyuan Yang, Chaoqun Ni, and Zhengzhong Tu. Let the abyss stare back adaptive falsification for autonomous scientific discovery. arXiv preprint arXiv:2603.29045 , 2026a. Peiran Li, Fangzhou Lin, Shuo Xing, Xiang Zheng, Xi Hong, Siyuan Yang, Jiashuo Sun, Zhengzhong Tu, and Chaoqun Ni. Bibagent: An agentic framework for traceable miscita-tion detection in scientific literature. arXiv preprint arXiv:2601.16993 , 2026b. Peiran Li, Jiashuo Sun, Fangzhou Lin, Shuo Xing, Tianfu Fu, Suofei Feng, Chaoqun Ni, and Zhengzhong Tu. Traversal-as-policy: Log-distilled gated behavior trees as externalized, verifiable policies for safe, robust, and efficient agents. arXiv preprint arXiv:2603.05517 ,2026c. Fangzhou Lin, Qianwen Ge, Lingyu Xu, Peiran Li, Xiangbo Gao, Shuo Xing, Kazunori Yamada, Ziming Zhang, Haichong Zhang, and Zhengzhong Tu. Position: Human-centric ai requires a minimum viable level of human understanding. arXiv preprint arXiv:2602.00854 , 2026. Jessy Lin, Daniel Fried, Dan Klein, and Anca Dragan. Inferring rewards from language in context. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 8546–8560, 2022. Helena Lindgren. Emerging roles and relationships among humans and interactive ai systems. International Journal of Human–Computer Interaction , 41(17):10595–10617, 2025. Dennis Victor Lindley. Bayesian statistics: A review . SIAM, 1972. R Duncan Luce. The choice axiom after twenty years. Journal of mathematical psychology , 15 (3):215–233, 1977. R Duncan Luce et al. Individual choice behavior , volume 4. Wiley New York, 1959. 12 Preprint. Under review. Rasmus E Madsen, David Kauchak, and Charles Elkan. Modeling word burstiness using the dirichlet distribution. In Proceedings of the 22nd international conference on Machine learning ,pp. 545–552, 2005. Stephanie Milani, Zhicheng Zhang, Nicholay Topin, Lirong Xia, and Fei Fang. Aligning agent policies with preferences: Human-centered interpretable reinforcement learning. In 
+
+Proceedings of the AAAI/ACM Conference on AI, Ethics, and Society , volume 8, pp. 1711–1723, 2025. David Mimno and Andrew McCallum. Topic models conditioned on arbitrary features with dirichlet-multinomial regression. arXiv preprint arXiv:1206.3278 , 2012. Sewon Min, Xinxi Lyu, Ari Holtzman, Mikel Artetxe, Mike Lewis, Hannaneh Hajishirzi, and Luke Zettlemoyer. Rethinking the role of demonstrations: What makes in-context learning work? arXiv preprint arXiv:2202.12837 , 2022. Thomas Minka. Estimating a dirichlet distribution, 2000. Mir Murtaza, Yamna Ahmed, Jawwad Ahmed Shamsi, Fahad Sherwani, and Mariam Usman. Ai-based personalized e-learning systems: Issues, challenges, and solutions. IEEE access ,10:81323–81342, 2022. Aliakbar Nafar, Kristen Brent Venable, and Parisa Kordjamshidi. Teaching probabilistic logical reasoning to transformers. arXiv preprint arXiv:2305.13179 , 2023. Fernando Pérez-Cruz. Kullback-leibler divergence estimation of continuous distributions. In 2008 IEEE international symposium on information theory , pp. 1666–1670. IEEE, 2008. Mobina Pournemat, Keivan Rezaei, Gaurang Sriramanan, Arman Zarei, Jiaxiang Fu, Yang Wang, Hamid Eghbalzadeh, and Soheil Feizi. Reasoning under uncertainty: Exploring probabilistic reasoning capabilities of llms. arXiv preprint arXiv:2509.10739 , 2025. Linlu Qiu, Fei Sha, Kelsey Allen, Yoon Kim, Tal Linzen, and Sjoerd van Steenkiste. Bayesian teaching enables probabilistic reasoning in large language models. Nature Communications ,2026. Shahab Rahimirad, Guven Gergerli, Lucia Romero, Angela Qian, Matthew Lyle Olson, Simon Stepputtis, and Joseph Campbell. Bayesian social deduction with graph-informed language models. arXiv preprint arXiv:2506.17788 , 2025. Gemma Team, Morgane Riviere, Shreya Pathak, Pier Giuseppe Sessa, Cassidy Hardin, Surya Bhupatiraju, Léonard Hussenot, Thomas Mesnard, Bobak Shahriari, Alexandre Ramé, et al. Gemma 2: Improving open language models at a practical size, 2024. URL https://arxiv. org/abs/2408.00118 , 1(3), 2024. Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. arXiv preprint arXiv:2203.11171 , 2022. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems , 35:24824–24837, 2022. Sang Michael Xie, Aditi Raghunathan, Percy Liang, and Tengyu Ma. An explanation of in-context learning as implicit bayesian inference. arXiv preprint arXiv:2111.02080 , 2021. Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable real-world web interaction with grounded language agents. Advances in Neural Information Processing Systems , 35:20744–20757, 2022. Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. 
+
+Advances in neural information processing systems , 36:11809–11822, 2023. 13 Preprint. Under review. Yifan Yao, Jinhao Duan, Kaidi Xu, Yuanfang Cai, Zhibo Sun, and Yue Zhang. A survey on large language model (llm) security and privacy: The good, the bad, and the ugly. 
+
+High-Confidence Computing , 4(2):100211, 2024. Yun Yue, Fangzhou Lin, Guanyi Mou, and Ziming Zhang. Understanding hyperbolic metric learning through hard negative sampling. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pp. 1891–1903, 2024. Fabian Zaiser, Andrzej Murawski, and Chih-Hao Luke Ong. Exact bayesian inference on discrete models via probability generating functions: a probabilistic programming approach. Advances in Neural Information Processing Systems , 36:2427–2462, 2023. Yufeng Zhang, Jialu Pan, Li Ken Li, Wanwei Liu, Zhenbang Chen, Xinwang Liu, and Ji Wang. On the properties of kullback-leibler divergence between multivariate gaussian distributions. Advances in neural information processing systems , 36:58152–58165, 2023. Ziming Zhang, Yuping Shao, Yiqing Zhang, Fangzhou Lin, Haichong Zhang, and Elke Rundensteiner. Deep loss convexification for learning iterative models. IEEE Transactions on Pattern Analysis and Machine Intelligence , 47(3):1501–1513, 2024. Ziming Zhang, Fangzhou Lin, Haotian Liu, Jose Morales, Haichong Zhang, Kazunori Yamada, Vijaya B Kolachalama, and Venkatesh Saligrama. Gps: A probabilistic distribu-tional similarity with gumbel priors for set-to-set matching. In The Thirteenth International Conference on Learning Representations , 2025. Jonathan Zheng, Sauvik Das, Alan Ritter, and Wei Xu. Probabilistic reasoning with llms for k-anonymity estimation. arXiv preprint arXiv:2503.09674 , 2025. 
+
+## A Proofs 
+
+A.1 Proof of Lemma 1 
+
+Proof. Step 1: validity of pseudo-counts. For each sample s and option i, ws,i ≥ 0 since cs ∈ [0, 1 ].The weights sum to one: 
+
+> K
+
+# ∑
+
+> i=1
+
+ws,i = cs + ( K − 1) · 1 − cs
+
+K − 1 = 1. Hence {ws,i}Ki=1 is a valid probability vector for each s. Treating it as a fractional pseudo-count observation is a standard extension of the Dirichlet-Multinomial model that preserves the conjugate update structure (Minka, 2000; Elkan, 2006). 
+
+Step 2: conjugate posterior. Let θ ∈ ∆K−1 be the unknown categorical parameter with prior 
+
+θ ∼ Dir (α01K ). Accumulating pseudo-count vectors {ws,i} over valid samples yields the posterior: 
+
+θ | { ws,i} ∼ Dir (α), αi = α0 + ∑s ws,i,by conjugacy of the Dirichlet family with respect to (fractional) count observations. The posterior mean is: 
+
+E[θi | { ws,i}] = αi
+
+∑j αj
+
+= πllm raw, i.
+
+A.2 Adaptive Fusion Schedule Proposition 1 (Fusion Bound) . At any round t, the LLM’s share of the fused prediction satisfies: wllm 
+
+> t
+
+wllm  
+
+> t
+
++ wsym 
+
+> t
+
+≤ 11 + wsym 
+
+> t
+
+. (12) 
+
+This bound is monotonically decreasing in w sym  
+
+> t
+
+. In particular: 
+
+14 Preprint. Under review. 
+
+1. When the symbolic posterior is diffuse ( ˜H(πsym ) ≈ 1, i.e., wsym  
+
+> t
+
+≈ εw), the bound approaches 1/ (1 + εw) ≈ 1, and the two sources contribute roughly equally. 2. When the symbolic posterior is confident ( ˜H(πsym ) ≈ 0, i.e., wsym  
+
+> t
+
+≈ 1), the bound becomes 
+
+1 / 2, guaranteeing that the symbolic signal receives at least half the total weight. If the LLM is simultaneously uncertain (w llm  
+
+> t
+
+≈ εw), the ratio further shrinks to εw/(εw + 1) ≈ 0.Proof. Since wllm  
+
+> t
+
+∈ [εw, 1 ] by definition (normalized entropy is in [0, 1 ], so 1 − ˜H ∈ [0, 1 ],and the max with εw ensures positivity): 
+
+wllm 
+
+> t
+
+wllm  
+
+> t
+
++ wsym 
+
+> t
+
+≤ 11 + wsym 
+
+> t
+
+,where the inequality uses wllm  
+
+> t
+
+≤ 1. The right-hand side is monotonically decreasing in 
+
+wsym  
+
+> t
+
+since wsym  
+
+> t
+
+> 0. For item 1: when the symbolic posterior is nearly uniform, ˜H(πsym ) ≈ 1 and wsym  
+
+> t
+
+=
+
+max (εw, 1 − ˜H) ≈ εw, giving 1/ (1 + εw) ≈ 1. For item 2: when the symbolic posterior concentrates on a single option, ˜H(πsym ) ≈ 0 and 
+
+wsym  
+
+> t
+
+≈ 1, giving an upper bound of 1 /(1 + 1) = 1 / 2. For the tighter statement, substituting 
+
+wllm  
+
+> t
+
+= εw directly: εw
+
+εw + 1 ≈ 10 −3.
+
+Remark 1 (Connection to posterior concentration) . As the number of interaction rounds grows, the Bayesian posterior bt concentrates on the true hypothesis h∗ (assuming h∗ ∈ H ; see Section A.3). This drives πsym  
+
+> t
+
+→ P(· | X, h∗) and ˜H(πsym  
+
+> t
+
+) → H∗ 
+
+> X
+
+≜ ˜H(P(· | X, h∗)) . For finite β, H∗
+
+> X
+
+is a positive constant determined by β and the utility gaps among options; the limiting symbolic weight is wsym → max (εw, 1 − H∗ 
+
+> X
+
+). With the default β = 6.0 , we empirically observe that H∗
+
+> X
+
+is typically small across our evaluation domains, so wsym approaches a value close to 1 within the T = 5 interaction rounds used in our experiments (see Section 4). 
+
+A.3 Validity of the Discrete Hypothesis Approximation 
+
+The use of a finite hypothesis set H raises the question of whether Bayesian inference over 
+
+H faithfully approximates inference over the continuous space Rd. We discuss the two relevant cases below; the arguments are intended as intuitive justifications rather than formal theorems. 
+
+Well-specified case: h∗ ∈ H . If the user’s true preference h∗ is an element of H, then by standard Bayesian posterior consistency arguments (Doob, 1949; Ghosal, 1997): the posterior concentrates on the true data-generating parameter almost surely as t → ∞, provided that the true parameter lies in the support of the prior; we have bt,m∗ → 1 where m∗ satisfies 
+
+hm∗ = h∗. In our experimental setup, H is constructed from the ground-truth preference vectors of all users in the training split. The train/test split in each of our three datasets is organized so that every evaluation user’s preference type appears in the training set; therefore h∗ ∈ H holds by construction, and the uniform prior b0, m = 1 /M assigns positive mass to every hypothesis, satisfying the support condition. 
+
+Misspecified case: h∗ /∈ H . If h∗ does not belong to H (e.g., at test time in a new domain), the posterior does not concentrate on the true parameter but instead on the hypothesis that best explains the observed choices. Under standard misspecification theory (Kleijn & Van der Vaart, 2012; Lindley, 1972; Hansen & Sargent, 2001), the posterior concentrates on the hypothesis 
+
+hm∗ = argmin hm ∈H KL  Ptrue (·) ∥ P(· | · , hm),i.e., the hm whose induced choice distribution is closest to the true choice distribution in the Kullback–Leibler sense Pérez-Cruz (2008); Zhang et al. (2023; 2024); Yue et al. 15 Preprint. Under review. (2024); Zhang et al. (2025). Note that this is not generally the Euclidean nearest neigh-bor argmin m ∥hm − h∗∥2; the relevant metric is determined by the observation model (here, the softmax likelihood). Prediction quality degrades gracefully with the KL approximation error, suggesting that denser hypothesis sets (larger M) yield better approximations when the test distribution shifts, at the cost of a modest increase in computation. 
+
+## B Task Details 
+
+B.1 Flight Recommendation 
+
+The flight recommendation task is derived from Lin et al. (2022). The agent interacts with a user over T = 5 rounds. At each round, three flight options are presented to both the user and the agent; each flight is characterized by four attributes: departure time, duration, number of stops, and price. Each user is associated with a fixed latent preference vector over these attributes. For each attribute, a user may exhibit a strong or weak preference for either high or low values (e.g., preferring shorter flights or lower prices), or no preference on that attribute. After each interaction round, the agent’s held-out prediction accuracy is evaluated on 50 new sets of three flights drawn from the same distribution but not shown during interaction. This held-out evaluation is our primary metric: it measures how well the agent has generalized the user’s latent preference to unseen items, rather than merely adapting to the specific options encountered during interaction. Each flight option is presented to the agent as a short natural language string deterministi-cally generated from its attribute values, following the template: 
+
+> Flight i: Departure time: HH:MM AM/PM, Duration: Xhr Ymin, Number of stops: Z, Price: $W
+
+Feature normalization maps departure time from [06 : 00, 22 : 00 ], duration from [30 min , 20 hr ],stops from [0, 2 ], and price from [$100, $1000 ], each to [0, 1 ].
+
+B.2 Hotel Recommendation 
+
+The hotel recommendation task follows the same sequential interaction protocol as the flight task (Qiu et al., 2026). Each hotel is described by four attributes: distance to downtown (in km), price per night (in USD), star rating (1–5), and number of amenities (integer count). As in the flight task, each hotel is presented as a short natural language string deterministically generated from its attribute values: 
+
+> Hotel i: Distance to downtown: X km, Price: $Y/night, Rating: Z stars, Amenities: W
+
+Feature normalization maps distance from [0.5, 20 ] km, price from [$ 50, $ 500 ], rating from 
+
+[1, 5 ], and amenities from [0, 10 ], each to [0, 1 ].User preferences over hotel attributes are sampled from the same preference model as the flight task, allowing direct comparison of performance across domains with different attribute semantics. The hypothesis set H is constructed separately for each domain from the corresponding training split. 
+
+B.3 Web Shopping 
+
+The WebShopping task uses real-world product data from the simulated e-commerce envi-ronment of Yao et al. (2022). Each user is defined by a randomly sampled goal specifying desired product characteristics, such as “a machine-washable cotton shirt in size XL under $30”. At each interaction round, the agent is presented with a set of products randomly sampled from a fixed category (e.g., shirts) and must recommend the most suitable product. Each 16 Preprint. Under review. 
+
+Field Content 
+
+Title Men’s Classic Fit Short-Sleeve Crewneck T-Shirt Description 100% cotton. Machine wash cold. Available in sizes S, M, L, XL, XXL. Relaxed fit. Imported. $24.99. User goal Looking for a cotton shirt, machine-washable, size XL, under $30. 
+
+Table 4: Example product representation in the WebShopping task. 
+
+Symbol Parameter Value Role Eq. 
+
+β Softmax inverse temp. 6.0 Likelihood sharpness (2) 
+
+α0 Dirichlet prior 1.0 Laplace smoothing (6) 
+
+m EMA momentum 0.65 LLM variance reduction (8) 
+
+N LLM samples/round 5 Aggregation sample count (6) 
+
+εw Fusion weight floor 10 −3 Prevents zero weights (10) 
+
+ε Likelihood floor 10 −8 Numerical stability (3) 
+
+Table 5: A DAPT FUSE hyperparameters. No parameter was tuned on held-out data. product is represented by a short title concatenated with a detailed free-text description. An example product representation is shown in Table 4. After each round, the user provides binary feedback (correct/incorrect). The preferred product is defined as the one with the highest reward score following the formulation of Yao et al. (2022), which aggregates attribute match, price, and rating into a scalar reward. This task differs from the flight and hotel tasks in two key respects. First, item descrip-tions are open-ended natural language rather than structured attribute strings, making deterministic feature extraction approximate. Second, user goals are expressed as free-form text queries rather than numerical preference vectors, introducing additional ambiguity in preference modeling. These factors make WebShopping substantially harder and are reflected in the lower absolute accuracy of all methods on this task (Figure 3). 
+
+## C Implementation Details 
+
+Table 5 lists all hyperparameters of A DAPT FUSE . β = 6.0 was set to match the empirical sharpness of user choices in the dataset: lower values produce likelihoods too flat to discriminate between hypotheses after one round; higher values risk premature posterior collapse. m = 0.65 yields an effective LLM sample count of Neff = N/(1 − m) ≈ 14, substantially reducing per-round sampling variance. No hyperparameter was tuned on held-out data. 
+
+## D Prompt Details 
+
+Example: Two-round Flight Recommendation Interaction 
+
+User. Help me select the best flights for my trips. I have specific preferences for what I like and dislike in a flight, and these preferences remain the same. You need to figure out my preferences and select the best flights for me. Use your best judgment if you are unsure. Do not say you need more information. 
+
+Round 1: Initial Selection. Flight Options: 
+
+Flight 1: departure time: 02:00 PM, duration: 2 hr 30 min, number of stops: 1, price: $370 Flight 2: departure time: 10:00 PM, duration: 4 hr 24 min, number of stops: 0, price: $730 Flight 3: departure time: 03:36 PM, duration: 16 hr 6 min, number of stops: 0, price: $900 
+
+Model Response: The best option is Flight 1. 
+
+17 Preprint. Under review. 
+
+Round 2: Feedback and Adaptation. User Feedback: Your option Flight 1 is incorrect. I prefer Flight 2. 
+
+New Flight Options: 
+
+Flight 1: departure time: 04:00 PM, duration: 18 hr 3 min, number of stops: 2, price: $280 Flight 2: departure time: 10:48 AM, duration: 6 hr 21 min, number of stops: 1, price: $370 Flight 3: departure time: 06:48 PM, duration: 10 hr 5 min, number of stops: 1, price: $810 
+
+Final Result. Model Response: The best option is Flight 2. 
+
+User Status: Your option Flight 2 is correct. 
+
+Example: Hotel Recommendation Task Interaction 
+
+User. Help me select the best hotels for my trips. I have specific preferences for what I like and dislike in a hotel, and these preferences remain the same. You need to figure out my preferences and select the best hotels for me. Use your best judgment if you are unsure. Do not say you need more information. 
+
+Round 1: Hotel Selection. Hotel Options: 
+
+Hotel 1: distance to downtown: 4 miles, price: $550, rating: 3 stars, amenities: free parking and free breakfast Hotel 2: distance to downtown: 3 miles, price: $820, rating: 2 stars, amenities: free parking, free breakfast, and pool Hotel 3: distance to downtown: 2.3 miles, price: $370, rating: 1 stars, amenities: free parking 
+
+Model Response. The best option is Hotel 3. 
+
+User Feedback. Your option Hotel 3 is incorrect. I prefer Hotel 2. 
+
+Example: Web Shopping Task Interaction 
+
+User. Help me select the best product. I have specific preferences for what I like and dislike in a product, and these preferences remain the same. You need to figure out my preferences and select the best products for me. Use your best judgment if you are unsure. Do not say you need more information. 
+
+Product Options. Product 1: 
+
+Title: Chic D Independence Day Table Runner 72 Inches Long, Gnome Cotton Linen Spring Table Cloth Runners... 
+
+Description: 14x72inch Dining Table Runner Size; High Quality Cotton Linen; Perfect for holidays, catering, BBQ’s, etc. 
+
+Color: black white Size: 13x108inch 
+
+Product 2: 
+
+Title: Ambesonne Orange Mandala Coffee Table, Pastel Colored Flourishes and Dark Toned Details... 
+
+Description: 24" Long x 18" Wide x 15" High; High Quality Beech Wooden Frame and Acrylic Glass Table Top; Easy to assembly. 
+
+Color: blue purple Size: large 
+
+Product 3: 
+
+Title: White Round Dining Table and 4 Chairs, Mid-Century Modern Coffee Table Round Kitchen Table... 
+
+Description: Table size 35.4*35.4*29.5 inch; Clear glass top with solid wood metal legs; Chairs made of velvet. 
+
+Size: round table with wood legs 
+
+Model Response. The best option is Product 3. 
+
+User Feedback. Your option Product 3 is incorrect. I prefer Product 2. 
+
+## E More results 
+
+Flight recommendation. Figure 4 shows held-out accuracy on the flight task across all models and baselines. A DAPT FUSE achieves the highest accuracy on all three base models, 18 Preprint. Under review. Gemma      
+
+> Original
+> Gemma
+> Oracle
+> Gemma
+> Bayesian
+> Gemma
+> Ours
+> Llama
+> Original
+> Llama
+> Oracle
+> Llama
+> Bayesian
+> Llama
+> Ours
+> Qwen
+> Original
+> Qwen
+> Oracle
+> Qwen
+> Bayesian
+> Qwen
+> Ours
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> 31
+> 48
+> 54 53
+> 30
+> 45
+> 55
+> 52
+> 31
+> 40
+> 52 50
+> 33
+> 59
+> 73 76
+> 34
+> 58
+> 74 76
+> 34
+> 51
+> 65 67
+> After 1st Round
+> Final Round
+> Random
+
+Figure 4: Interactive preference inference on flight recommendation task. We show accuracy after the first and final (fifth) rounds across different assistants, including original LLMs, models fine-tuned with the Bayesian Assistant, and models fine-tuned with an oracle that provides correct answers (models provided by the Qiu et al. (2026)). Both fine-tuning approaches improve performance, and our method achieves the best overall results. Error bars denote the standard error over three random seeds. outperforming direct prompting, CoT, and self-consistency by substantial margins, and surpassing fine-tuned Bayesian Teaching models despite requiring no weight updates. ADAPT FUSE ’s LLM integration provides a consistent improvement. 
+
+## F Ablation Study Details 
+
+All ablation experiments are conducted on the flight recommendation task using Gemma 2 9B. Results are summarized in Table 3; we provide detailed descriptions and analysis below. The symbolic belief tracking module’s contribution is demonstrated by the main results (Table 1): Self-consistency uses the same N=5 LLM calls but lacks a symbolic posterior, reaching only 44.7% versus 76.2% for A DAPT FUSE : a 31.5-point gap that isolates the value of exact Bayesian belief tracking. The ablation therefore focuses on the remaining design choices. 
+
+F.1 Fusion Mechanism Fixed fusion ( λ = 0.5 ). This variant replaces the entropy-adaptive weighting (Equa-tion (10)) with a fixed equal-weight blend: π∗(i) ∝ 0.5 · πllm  
+
+> i
+
++ 0.5 · πsym  
+
+> i
+
+. The first-round accuracy (52.4%) is close to the full system (53.1%), which is expected: in early rounds the symbolic posterior is still diffuse, so the adaptive weights are themselves close to 50/50. The gap widens in later rounds (72.7% vs. 76.2%), because fixed fusion continues to give the LLM half the total weight even after the symbolic posterior has concentrated and the LLM signal is primarily adding noise. 
+
+F.2 LLM Aggregation Strategy Majority vote. Simple majority vote over N = 5 samples replaces Dirichlet aggregation; confidence scores cs are ignored and unchosen options receive zero mass. The 3.1-point drop (73.1% vs. 76.2%) arises because majority vote discards confidence information and produces a spikier distribution that interacts poorly with entropy-adaptive weighting (a spiky but noisy LLM signal can receive unduly high fusion weight). 
+
+Dirichlet without EMA ( m = 0). Each round’s LLM distribution is computed solely from the N = 5 samples collected at that round, with no temporal smoothing. The 2.2-point drop (74.0% vs. 76.2%) shows that momentum smoothing reduces per-round variance and 19 Preprint. Under review. stabilizes the fusion weights, with the effect most pronounced in middle rounds where the system still relies partially on the LLM signal. 20

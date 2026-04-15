@@ -1,0 +1,821 @@
+Title: UniRec: Bridging the Expressive Gap between Generative and Discriminative Recommendation via Chain-of-Attribute
+
+URL Source: https://arxiv.org/pdf/2604.12234v1
+
+Published Time: Wed, 15 Apr 2026 00:26:44 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# UniRec: Bridging the Expressive Gap between Generative and Discriminative Recommendation via Chain-of-Attribute 
+
+# Ziliang Wang † Gaoyun Lin † Xuesi Wang Shaoqiang Liang Liam Huang Jason Bian ∗
+
+## Abstract 
+
+Generative Recommendation (GR) reframes retrieval and ranking as autoregressive decoding over Semantic IDs (SIDs), unifying the multi-stage pipeline into a single model. Yet a fundamental expres-sive gap persists: discriminative models score items with direct feature access, enabling explicit user–item crossing, whereas GR decodes over compact SID tokens without item-side signal. We formalize this via Bayes’ theorem, showing ranking by 𝑝 (𝑦 | f, 𝑢 )
+
+is equivalent to ranking by 𝑝 (f | 𝑦, 𝑢 ), which factorizes autore-gressively over item features. This establishes that a generative model with full feature access is as expressive as its discriminative counterpart; any practical gap stems solely from incomplete feature coverage. We propose UniRec with Chain-of-Attribute (CoA) as its core mechanism. CoA prefixes each SID sequence with structured at-tribute tokens—category, seller, brand—before decoding the SID itself, recovering the item-side feature crossing that discriminative models exploit. Because items sharing identical attributes cluster in adjacent SID regions, attribute conditioning yields a measurable per-step entropy reduction 𝐻 (𝑠 𝑘 | 𝑠 <𝑘 , a) < 𝐻 (𝑠 𝑘 | 𝑠 <𝑘 ), narrow-ing the search space and stabilizing beam search trajectories. We further address two deployment challenges: Capacity-constrained SID introduces exposure-weighted capacity penalties into residual quantization to suppress token collapse and the Matthew effect across SID layers; Conditional Decoding Context (CDC) combines Task-Conditioned BOS with hash-based Content Summaries, in-jecting scenario-conditioned signals at each decoding step. A joint RFT and DPO framework aligns the model with business objectives beyond distribution matching. Experiments show UniRec outperforms the strongest baseline by +22.6% HR@50 overall and +15.5% on high-value orders, with online A/B tests confirming significant business metric gains. 
+
+## CCS Concepts 
+
+• Information systems → Recommender systems .  
+
+> †Equal contribution. ∗Corresponding author. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than ACM must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference ’26, Location
+> ©2026 ACM. ACM ISBN 978-1-4503-XXXX-X/26/06 https://doi.org/10.1145/XXXXXX.XXXXXX
+
+## Keywords 
+
+Generative Recommendation, Semantic ID, E-commerce Recom-mendation 
+
+ACM Reference Format: 
+
+Ziliang Wang †, Gaoyun Lin †, Xuesi Wang, Shaoqiang Liang, Liam Huang, and Jason Bian ∗. 2026. UniRec: Bridging the Expressive Gap between Gen-erative and Discriminative Recommendation via Chain-of-Attribute. In 
+
+Proceedings of Conference ’26. ACM, New York, NY, USA, 10 pages. https: //doi.org/10.1145/XXXXXX.XXXXXX 
+
+## 1 Introduction 
+
+Current recommendation systems employ a multi-stage discrimina-tive pipeline—Retrieval → Pre-ranking → Ranking → Reranking— that suffers from three well-known limitations: inconsistent objec-tives across stages, sample selection bias where ranking models trained on the exposed space fail to generalize to the full candidate set, and compounding error propagation through the funnel with-out possibility of downstream correction. Inspired by the success of large language models [ 3 , 10 , 15 ], Generative Recommendation (GR) reframes this as autoregressive decoding over Semantic IDs (SIDs), unifying retrieval and ranking into a single model and eliminating inter-stage misalignment [4, 13]. Despite this architectural advantage, a fundamental expres-sive gap separates the two paradigms. Discriminative models esti-mate 𝑝 (𝑦 | f, 𝑢 ) with direct access to item feature vectors f, enabling explicit user–item feature crossing. Generative models, by contrast, decode over compact SID tokens without conditioning on any item-side signal—the model must commit to a generation path before it has seen any item feature. This is not merely an engineering limitation; it reflects a structural asymmetry in the information available at decoding time. Furthermore, recommendation inher-ently involves one-to-many mappings: unlike language modeling where a given context largely determines the next token, a single user behavior sequence may correspond to multiple valid target items, amplifying generation uncertainty and training conflicts that discriminative models resolve through explicit feature interaction. This raises a fundamental question: can generative recommendation match the expressive power of its discriminative counterpart, and if so, under what conditions? 
+
+We answer this question affirmatively through a Bayesian anal-ysis. By Bayes’ theorem, ranking items by the discriminative score 
+
+𝑝 (𝑦 | f, 𝑢 ) is equivalent to ranking by the generative posterior 
+
+𝑝 (f | 𝑦, 𝑢 ), which factorizes autoregressively over item features. This equivalence establishes a theoretical upper bound : a generative model with full feature access is as expressive as its discriminative counterpart; any practical gap arises from feature coverage rather than a fundamental modeling asymmetry. The key insight is that  
+
+> arXiv:2604.12234v1 [cs.IR] 14 Apr 2026 Conference ’26, Month 2026, Location Ziliang Wang †, Gaoyun Lin †, Xuesi Wang, Shaoqiang Liang, Liam Huang, and Jason Bian ∗
+
+SID codes, by compressing rich item semantics into compact dis-crete tokens, inevitably discard structured item properties—such as taxonomy, seller, and brand identifiers—that discriminative models exploit through explicit feature crossing. Recovering these lost sig-nals within the generative trajectory is both necessary and sufficient to close the expressive gap. This insight motivates Chain-of-Attribute (CoA) , the core mechanism of our proposed framework UniRec . CoA prefixes each SID sequence with coarse-grained attribute tokens, yielding a speculate-then-refine generation paradigm: the model first predicts structured item attributes (category, seller, brand), then condition-ally generates the SID given these attributes. Since items sharing identical attributes occupy adjacent regions in the SID semantic space, attribute conditioning yields a measurable per-step condi-tional entropy reduction—formally, 𝐻 (𝑠 𝑘 | 𝑠 <𝑘 , a) < 𝐻 (𝑠 𝑘 | 𝑠 <𝑘 )—whose cumulative effect narrows the effective search space, stabi-lizes beam search trajectories, and attenuates end-to-end decoding errors. This mechanism bridges the expressive gap by recovering, within the generative decoding trajectory, the item-side feature crossing that was previously exclusive to discriminative models. Beyond CoA, deployment at scale introduces two further chal-lenges. First, item popularity follows a long-tail distribution: even with equal item counts per cluster, a small fraction of high-traffic items dominates the exposure load of their assigned codebook entries. In our production data, the top 10% of (𝑠 0, 𝑠 1) combina-tions capture 87.9% of total exposure—a 2.6 × amplification of mild item-count imbalance into extreme traffic concentration. Capacity-constrained SID addresses this by introducing exposure-weighted capacity penalties into residual quantization, directly controlling traffic load per codebook entry and suppressing the hereditary Matthew effect across SID layers. Second, a unified model serving multiple recommendation scenarios without explicit task condition-ing suffers from conflicting behavioral distributions that destabilize generation and cause errors to compound across the autoregres-sive chain. Conditional Decoding Context (CDC) addresses this by combining a scenario-conditioned Task-Conditioned BOS with hash-based Content Summaries, injecting task-specific and combi-natorial signals at each decoding step. To further align UniRec with business objectives beyond distribution matching, we adopt Direct Preference Optimization (DPO) [ 12 ] combined with Reward-Driven Fine-tuning (RFT) that reweights training samples by continuous business value estimates. Our main contributions are as follows: 
+
+• Theoretical Characterization of the Expressive Gap : We provide the first information-theoretic analysis showing that the expressive gap between generative and discriminative recommendation arises from feature coverage, not modeling asymmetry. Via Bayes’ theorem, we establish a theoretical upper bound and prove that a generative model with full feature access matches the discriminative ranking. 
+
+• Chain-of-Attribute (CoA) : Motivated by the theoretical analysis, we propose CoA as a principled mechanism to bridge the expressive gap. By pre-generating structured item attributes before SID decoding, CoA recovers item-side fea-ture crossing within the generative trajectory, yielding mea-surable per-step entropy reduction 𝐻 (𝑠 𝑘 | 𝑠 <𝑘 , a) < 𝐻 (𝑠 𝑘 |
+
+𝑠 <𝑘 ) and end-to-end error attenuation. 
+
+• Capacity-constrained SID and CDC : We address SID distribution collapse through exposure-weighted residual quantization, and multi-scenario error accumulation through Task-Conditioned BOS and combinatorial Content Summaries— two system-level contributions essential for large-scale de-ployment. 
+
+• Comprehensive Empirical Validation : Extensive offline experiments show that UniRec outperforms the strongest baseline by +22.6% relative HR@50 on all samples and +15.5% on high-value order samples. Online A/B tests on a large-scale e-commerce platform further confirm significant busi-ness metric improvements. 
+
+## 2 Related Work 
+
+Industrial-Scale Discriminative Recommendation. Traditional rec-ommendation systems adopt a multi-stage discriminative pipeline— retrieval, pre-ranking, ranking, and reranking—where each stage optimizes a local objective. While effective at scale, this architecture suffers from objective misalignment across stages, sample selection bias, and error propagation through the funnel. To raise the perfor-mance ceiling within this paradigm, HSTU [ 17 ] proposes sparse se-quence transduction for high-throughput sequential modeling, and RankMixer [ 18 ] improves model flops utilization through architec-tural redesign. MTGR [ 6] combines generative sequence modeling with traditional feature-interaction modules for industrial-grade op-timization. However, because the underlying multi-stage structure is preserved, issues of misalignment and bias remain fundamentally unresolved. 
+
+Generative Recommendation and Semantic IDs. GR reframes can-didate generation as autoregressive decoding over discrete item representations, unifying retrieval and ranking into a single model. TIGER [ 13 ] pioneered this direction by mapping items to hierarchi-cal semantic tokens via RQ-VAE and predicting token sequences autoregressively. Subsequent work has extended this foundation in multiple directions: OneRec [4] unifies the multi-stage pipeline into an end-to-end generative framework with iterative preference alignment; OneMall [ 19 ] applies a similar paradigm to e-commerce; OneSearch [ 2] and OneSearch-V2 [ 1] extend generative retrieval to e-commerce search with latent reasoning and DPO-based align-ment. On the tokenization side, COINS [ 20 ] and FORGE [ 5 ] study the quality and collision properties of semantic ID construction, establishing that token usage collapse and invalid combinations directly affect decoding availability. GRACE [ 9] introduces Chain-of-Thought tokenization that prepends explicit product knowledge graph attributes before semantic tokens during decoding, empirically demonstrating that attribute condi-tioning improves generation quality. While GRACE and our CoA share the high-level intuition of prefixing attributes before SID tokens, they differ in both motivation and scope. GRACE treats attribute prepending as an empirical design choice for enriching token-level reasoning without theoretical justification. CoA, by contrast, is grounded in a formal information-theoretic analysis UniRec: Bridging the Expressive Gap between Generative and Discriminative Recommendation via Chain-of-Attribute Conference ’26, Month 2026, Location 
+
+that establishes a theoretical upper bound between generative and discriminative recommendation via Bayes’ theorem, and proves that attribute conditioning yields a measurable per-step entropy reduction—providing the first theoretical characterization of why attribute prefixing narrows the expressive gap in GR. 
+
+Preference Alignment for Recommendation. Aligning GR models with business objectives beyond NTP has emerged as a critical challenge for deployment at scale. DPO [ 12 ] simplifies preference alignment by directly optimizing a contrastive objective without a separate reward model, and has been applied to recommendation to bridge the gap between generative training and user preference sig-nals [ 2, 4 ]. OneSearch-V2 [ 1] further demonstrates that DPO-based alignment outperforms reward model-based approaches in both flexibility and alignment quality for generative retrieval, providing empirical evidence that direct preference optimization is more effec-tive than two-stage reward-then-policy pipelines. Reward-weighted regression approaches [ 11 ] reweight training samples by estimated business value, providing a lightweight alternative to full reinforce-ment learning. UniRec combines both paradigms in a unified frame-work: following the DPO-first principle validated by OneSearch-V2, we adopt DPO to inject discrete behavioral preference signals con-structed directly from online traffic without human annotation, while RFT reformulates the NTP objective with continuous busi-ness value reweighting to capture complementary reward signals. 
+
+## 3 Method 3.1 Overview 
+
+UniRec integrates candidate generation and ranking into a uni-fied autoregressive decoding framework over hierarchical token sequences, where each item is represented by multi-layer semantic tokens. To mitigate the hereditary Matthew effect in hierarchical representations, we propose Capacity-constrained SID (section 3.2) that enforces balanced token distribution across layers. To enhance generation quality, we introduce CoA (section 3.3) that speculatively generates item attributes before SID tokens, and CDC (section 3.4) that injects task conditioning and combinatorial feature interactions into the decoding process. Our model adopts a Decoder-Only ar-chitecture with Cross-Attention to user behavior sequences, where per-step Rank Heads generate token distributions (section 3.5), fol-lowed by RFT and DPO (section 3.6) that align the model with business objectives through value-based sample reweighting. The overall pipeline is illustrated in Figure 1. 
+
+## 3.2 Capacity-constrained Semantic ID 
+
+Based on the hierarchical SID framework, we map items to dis-crete token sequences via residual quantization [ 13 ]. Prior work on balanced quantization [ 4] enforces uniform item-count constraints during clustering. However, item popularity in recommendation follows a long-tail distribution: even with equal item counts per cluster, a small fraction of high-traffic items can dominate the expo-sure load of their assigned codebook entries, leaving most tokens severely underutilized in practice. This exposure imbalance gives rise to a hereditary Matthew effect : high-traffic token combinations accumulate disproportionate exposure in training data, causing the model to repeatedly generate the same narrow set of token paths during beam search while the vast majority of codebook entries remain marginalized. To quantify this phenomenon, we analyze the exposure distribu-tion using production traffic data. For the first layer 𝑠 0, we count how many times each token appears in user impressions, rank tokens by exposure volume, and compute the fraction of total im-pressions captured by the top-𝑘 % tokens. For deeper layers, we measure exposure at the joint-combination level: for 𝑠 1, we treat each (𝑠 0, 𝑠 1) pair as a unique combination and compute the cumula-tive exposure share of the top-𝑘 % combinations globally; similarly for 𝑠 2, using (𝑠 0, 𝑠 1, 𝑠 2) triplets. As shown in Figure 2, the top 10% of 
+
+𝑠 0 tokens account for 33.24% of total exposure—a moderate skew. In stark contrast, the top 10% of (𝑠 0, 𝑠 1) combinations capture 87.90% of exposure, and the top 10% of (𝑠 0, 𝑠 1, 𝑠 2) combinations capture 89.62%. This 2.6× amplification from 𝑠 0 to 𝑠 1 confirms that mild item-count imbalance is transformed into extreme exposure con-centration at the combination level, where only a narrow set of high-frequency token paths dominates nearly all traffic. Capacity-constrained SID addresses hereditary concentration by enforcing balanced load distribution in residual quantization clustering. Let the clustering samples at layer 𝑙 be {𝑥 𝑖 }𝑁 𝑖 =1, where 
+
+𝑁 is the number of items, each with exposure weight 𝑤 𝑖 > 0 (e.g., historical impression count). We denote by 𝑧 𝑖 ∈ { 1, . . . , 𝐾 } the cluster assignment of sample 𝑖 , and by 𝝁 𝑘 ∈ R𝑑 emb the center of the 
+
+𝑘 -th cluster. Define the exposure load (volume) of the 𝑘 -th cluster as: 
+
+𝑉 𝑘 =∑︁  
+
+> 𝑖 :𝑧 𝑖 =𝑘
+
+𝑤 𝑖 . (1) Given capacity cap 𝐶 𝑐𝑎𝑝 > 0 and tolerance 𝜏 ≥ 1, the constrained clustering problem is: 
+
+min   
+
+> {𝑧 𝑖 },{𝝁 𝑘 }
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+∥𝑥 𝑖 − 𝝁 𝑧 𝑖 ∥22,
+
+s.t. 𝑉 𝑘 ≤ 𝜏𝐶 𝑐𝑎𝑝 , ∀𝑘 ∈ { 1, . . . , 𝐾 },
+
+(2) where 𝝁 𝑧 𝑖 denotes the center of the cluster to which sample 𝑖 is assigned. The capacity reference is set to 𝐶 𝑐𝑎𝑝 = 1
+
+> 𝐾
+
+Í𝑁 𝑖 =1 𝑤 𝑖 , i.e., the mean exposure load per cluster. This hard-constrained prob-lem is NP-hard in general. We adopt a two-phase greedy strategy: first assign each sample to its nearest cluster center to minimize reconstruction error, then repair overloaded clusters by reassigning excess samples to the nearest under-capacity cluster. Algorithm 1 summarizes the full procedure. 
+
+## 3.3 Chain-of-Attribute 
+
+From Discriminative to Generative: A Theoretical Upper Bound. Acommon concern about GR is that, without direct access to target-side item features during generation, the model’s expressive ceiling is fundamentally lower than that of discriminative ranking models, which score items by 𝑝 (𝑦 | f, 𝑢 ) with direct access to item features f,whereas generative models factorize over a compact SID sequence 
+
+Î𝐿 −1 
+
+> 𝑙 =0
+
+𝑝 (𝑠 𝑙 | 𝑠 <𝑙 , 𝑢 ) without explicit feature conditioning. We argue this gap is not a fundamental modeling asymmetry, but rather a consequence of feature coverage. Let f = (𝑓 1, . . . , 𝑓 𝑛 ) denote the feature representation of an item, 𝑢 the user context, and 𝑦 the Conference ’26, Month 2026, Location Ziliang Wang †, Gaoyun Lin †, Xuesi Wang, Shaoqiang Liang, Liam Huang, and Jason Bian ∗Multimodal-Embedding 
+
+# Tokenization: Capacity-constrained Semantic ID 
+
+Multimodal 
+
+Embedding 
+
+1 2 n3 ... 1 2 3 n... 1 2 3 n... 
+
+RQ-Kmeans  
+
+> i4
+> w1
+> w2
+> w3 w4
+> w5
+> i1
+> i2
+> i3
+> i5
+> overload
+
+Repair   
+
+> i3
+> i1 i2
+> w1 w2
+> w3
+
+# UniRec: Architecture 
+
+codebook0 codebook1 codebook2 
+
+> User Sequence SID Sequence
+
+RMSNorm 
+
+Q
+
+K & V Gated-CrossAttn 
+
+RMSNorm 
+
+MMoE-FFN 
+
+attn output 
+
+prefix emb 
+
+Content 
+
+summary 
+
+aggregated 
+
+repensensation 
+
+> rank head
+
+Hierarchical Rank Head Content summary 
+
+s0 s1 
+
+hash0 
+
+hash1 
+
+hash2 
+
+(s0, s1) 
+
+> shared table
+
+Multimodal-Embedding Alignment NTP Loss 
+
+Prefrence Pair 
+
+Reweight 
+
+layer-wise Stop 
+
+Gradient 
+
+RFT Loss 
+
+DPO Loss  
+
+> w1
+> i1
+> i3
+> i1 i2
+> w1
+> w2
+> w3
+> ...  ...
+> Static Profile
+
+... 
+
+> concatenation
+
+... ...   
+
+> pooling pooling
+> Behavior Sequence SID-Level Multimodal
+
+Figure 1: Overview of UniRec architecture. 0 20 40 60 80 100             
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Cumulative Exposure (%)
+> Top 10% sid0
+> 33.2% exposure
+> Top 10% sid1
+> 87.9% exposure
+> Top 10% sid2
+> 89.62% exposure
+> Lorenz Curve - Exposure Concentration
+> sid0
+> sid0-1
+> sid0-1-2
+> 0-1 1-3 3-5 5-10 10-20 20-50
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> Incremental Exposure (%)
+> 6.9 8.1 6.2
+> 12.1
+> 17.1
+> 29.7
+> 49.1
+> 19.9
+> 8.8 10.1
+> 7.0 4.4
+> 57.3
+> 17.3
+> 7.1 7.9 5.5 3.9
+> Interval Exposure Distribution
+> sid0
+> sid0-1
+> sid0-1-2
+
+Figure 2: Exposure concentration across SID layers under standard RQ-𝐾 Means [4]. 
+
+engagement label. By Bayes’ theorem, 
+
+𝑝 (𝑦 | f, 𝑢 ) ∝ 𝑝 (f | 𝑦, 𝑢 ) 𝑝 (𝑦 | 𝑢 ), (3) and since 𝑝 (𝑦 | 𝑢 ) is independent of f, ranking by the discriminative score is equivalent to ranking by the generative posterior 𝑝 (f | 𝑦, 𝑢 ).Expanding via the chain rule, 
+
+𝑝 (f | 𝑦, 𝑢 ) =
+
+𝑛 Ö
+
+𝑘 =1
+
+𝑝 (𝑓 𝑘 | 𝑓 <𝑘 , 𝑦, 𝑢 ), (4) which corresponds precisely to autoregressive decoding over item features. This establishes a theoretical upper bound : a generative model with full access to item features f is expressively equiva-lent to its discriminative counterpart. Any practical gap therefore 
+
+Algorithm 1 Capacity-Constrained Residual Quantization 
+
+Require: Item embeddings {e(𝑥 𝑖 )} 𝑁 𝑖 =1, exposure weights {𝑤 𝑖 }, lay-ers 𝐿 , clusters 𝐾 , tolerance 𝜏 
+
+Ensure: Semantic IDs {𝑠 0 (𝑥 𝑖 ), . . . , 𝑠 𝐿 −1 (𝑥 𝑖 )} 𝑁 𝑖 =1
+
+1: for 𝑙 = 0 to 𝐿 − 1 do 
+
+2: r𝑖 ← e(𝑥 𝑖 ) − Í𝑗 <𝑙 𝝁 𝑗,𝑠 𝑗 (𝑥 𝑖 ) ⊲ Compute residual; r𝑖 = e(𝑥 𝑖 )
+
+if 𝑙 = 0
+
+3: Initialize {𝝁 𝑘 }𝐾 𝑘 =1 via 𝐾 -Means++; set 𝐶 𝑐𝑎𝑝 ← 1
+
+𝐾 
+
+Í𝑁 𝑖 =1 𝑤 𝑖 
+
+4: repeat 
+
+5: 𝑧 𝑖 ← arg min 𝑘 ∥r𝑖 − 𝝁 𝑘 ∥2 for all 𝑖 ; compute 𝑉 𝑘 ←
+
+Í𝑖 :𝑧 𝑖 =𝑘 𝑤 𝑖 
+
+6: for 𝑘 with 𝑉 𝑘 > 𝜏𝐶 𝑐𝑎𝑝 do ⊲ Repair overloaded clusters 
+
+7: for 𝑖 with 𝑧 𝑖 = 𝑘 do 
+
+8: 𝑧 𝑖 ← arg min 𝑘 ′:𝑉 𝑘 ′ +𝑤 𝑖 ≤𝜏𝐶 𝑐𝑎𝑝 ∥r𝑖 − 𝝁 𝑘 ′ ∥2
+
+9: Update 𝑉 𝑘 ← 𝑉 𝑘 − 𝑤 𝑖 ; 𝑉 𝑘 ′ ← 𝑉 𝑘 ′ + 𝑤 𝑖 
+
+10: end for 
+
+11: end for 
+
+12: 𝝁 𝑘 ← mean {r𝑖 : 𝑧 𝑖 = 𝑘 }; J ← 1
+
+𝑁 
+
+Í𝑖 ∥r𝑖 − 𝝁 𝑧 𝑖 ∥2
+
+13: until |ΔJ | < 𝜖 
+
+14: 𝑠 𝑙 (𝑥 𝑖 ) ← 𝑧 𝑖 , 𝝁 𝑙,𝑘 ← 𝝁 𝑘 
+
+15: end for 
+
+arises from approximation capacity or feature coverage , not from a fundamental modeling asymmetry. 
+
+Chain-of-Attribute as Explicit Feature Compensation. Fully se-quential decoding over all item features is latency-prohibitive at UniRec: Bridging the Expressive Gap between Generative and Discriminative Recommendation via Chain-of-Attribute Conference ’26, Month 2026, Location 
+
+recommendation scale. GR systems therefore employ hierarchical SID tokens to compress rich item semantics into a compact code, re-placing the full factorization of eq. (4) with Î𝐿 −1 
+
+> 𝑙 =0
+
+𝑝 (𝑠 𝑙 | 𝑠 <𝑙 , 𝑢 ). This compression is inherently lossy : structured item properties that dis-criminative models exploit through explicit feature crossing—e.g., taxonomy, seller, and brand identifiers—are folded into the SID code and become latent during decoding, causing the generative model to fall short of the discriminative feature coverage upper bound established above. 
+
+UniRec addresses this through the CoA mechanism, which pre-fixes the SID sequence with 𝑚 coarse-grained attribute tokens 
+
+a = [attr 1, . . . , attr 𝑚 ], yielding the factorization: 
+
+𝑝 (s | 𝑢 ) = 𝑝 (a | 𝑢 ) · 
+
+> 𝐿 −1
+
+Ö
+
+> 𝑙 =0
+
+𝑝 (𝑠 𝑙 | a, 𝑠 <𝑙 , 𝑢 ). (5) We emphasize that CoA is a practical approximation to the theoreti-cal upper bound of eq. (4): rather than decoding over the full item feature vector, it selectively recovers the coarse-grained attributes most discarded by SID compression, subject to a fixed latency over-head of 𝑚 additional autoregressive steps. The degree to which this approximation narrows the feature coverage gap is quantified by the mutual information 𝐼 (a; 𝑠 𝑙 | 𝑠 <𝑙 , 𝑢 ) between the generated attributes and SID tokens—a larger mutual information implies a greater reduction in decoding uncertainty. This design yields two complementary benefits. First, CoA pro-vides a measurable reduction in generation uncertainty: the entropy difference at layer 𝑙 ,
+
+Δ𝐻 𝑙 = 𝐻 (𝑠 𝑙 | 𝑠 <𝑙 , 𝑢 ) − 𝐻 (𝑠 𝑙 | a, 𝑠 <𝑙 , 𝑢 ) = 𝐼 (a; 𝑠 𝑙 | 𝑠 <𝑙 , 𝑢 ) ≥ 0, (6) is strictly positive whenever a and 𝑠 𝑙 are not conditionally independent— a condition that holds in practice because items sharing the same category occupy adjacent regions in the SID semantic space, so their token sequences are structurally correlated with coarse-grained attributes by construction. The cumulative reduction Í𝑙 Δ𝐻 𝑙 stabi-lizes the beam search trajectory; furthermore, since conditioning on a reduces each layer’s token error rate from 𝜖 𝑙 to 𝜖 ′ 
+
+> 𝑙
+
+< 𝜖 𝑙 , the cascading failure probability satisfies 𝑃 ′ (error ) = 1 − Î𝑙 (1 − 𝜖 ′ 
+
+> 𝑙
+
+) <
+
+1 − Î𝑙 (1 − 𝜖 𝑙 ) = 𝑃 (error ), yielding end-to-end error attenuation whenever attributes are strongly correlated with items. Second, CoA is complementary to the cross-attention module (section 3.5.2): whereas cross-attention captures user–item interactions at the rep-resentation level by encoding user preference context into the de-coder’s hidden states, CoA operates at the decoding level by pro-viding explicit item-side semantic context at each generation step. Together, they inject who the user is and what kind of item is being generated into the same generative trajectory, enabling UniRec 
+
+to jointly leverage user preference structure and item attribute structure within a single framework. In summary, CoA provides the first information-theoretic char-acterization of decoding uncertainty in GR. Grounded in the the-oretical upper bound relating discriminative and generative rec-ommendation, it operationalizes a principled and latency-aware approximation: selectively recovering the item-side feature sig-nals most discarded by SID compression, with the degree of gap reduction governed by 𝐼 (a; 𝑠 𝑙 | 𝑠 <𝑙 , 𝑢 ) and validated empirically through measurable per-step entropy reduction and end-to-end error attenuation. 
+
+## 3.4 Conditional Decoding Context 
+
+CDC augments the decoding process with two complementary mechanisms: Task-Conditioned BOS tells the model what task it is solving, while Content Summary provides compact combinatorial interaction features of previously decoded tokens. 
+
+Task-Conditioned BOS. A unified GR model typically needs to handle multiple objectives simultaneously—different recommenda-tion scenarios may require optimizing for distinct user behaviors or business goals. For instance, click prediction prioritizes immedi-ate engagement while purchase prediction focuses on conversion intent; a main feed scenario emphasizes broad interest exploration while a search scenario requires query-conditioned relevance; simi-larly, domestic markets may emphasize local brands whereas inter-national markets require cross-border product discovery. Training separate models for each scenario is prohibitively expensive, while naively sharing parameters without explicit conditioning leads to objective interference, manifesting as unstable predictions and degraded performance. Task-Conditioned BOS addresses this by replacing the fixed BOS token with a learnable embedding condi-tioned on task context 𝑐 task , which jointly encodes the behavioral objective and recommendation scene: 
+
+𝑐 task ∈ { click , purchase , cart , cross-border , . . . }
+
+| {z }
+
+> behavioral objective
+
+× { main feed , search , similar items , flash sale , . . . }
+
+| {z }
+
+> recommendation scene
+
+This allows the model to learn distinct generation distributions for different conditions without altering the decoding architecture. By injecting task-specific signals at the initial state, Task-Conditioned BOS steers the entire generation trajectory: it biases token distri-butions toward contextually relevant semantic regions, maintains consistent intent throughout the decoding chain, and enables the model to dynamically adapt its generation strategy based on the recommendation scenario. 
+
+Content Summary. In hierarchical decoding, the model has ac-cess to the autoregressive prefix, but individual token embeddings fail to capture their joint combinatorial semantics . The relationship between tokens in the decoding path is not one-to-one: the same SID token may carry different semantic meanings when paired with different attributes or parent tokens, and meaningful item patterns often emerge from specific combinations rather than in-dividual tokens. Recent work on SIDs [ 14 ] has demonstrated that subword-based decomposition of token sequences—grouping codes into n-grams or learnable subpieces—significantly improves rank-ing model generalization. Meanwhile, existing GR methods rely on self-attention mechanisms to implicitly learn token interactions during training, which suffers from limited expressiveness for cap-turing explicit combinatorial patterns. To address this, we explicitly model Cartesian product interac-tions along the decoding path. However, explicitly storing all token pair combinations leads to parameter explosion (e.g., 4000 2 ≈ 16 Mentries for two 4000-vocabulary layers). We instead employ a Bloom filter-inspired hash projection with multiple hash functions sharing a single embedding table. For the 𝑡 -th decoding step, we compute Conference ’26, Month 2026, Location Ziliang Wang †, Gaoyun Lin †, Xuesi Wang, Shaoqiang Liang, Liam Huang, and Jason Bian ∗
+
+the content summary c𝑡 as: 
+
+c𝑡 =
+
+> 𝑀
+
+Ê
+
+> 𝑖 =1
+
+Ehash 
+
+
+
+𝐻 𝑖 (path <𝑡 ) mod 𝑆 
+
+
+
+, (7) where É denotes concatenation, path <𝑡 denotes all tokens decoded before step 𝑡 , {𝐻 𝑖 }𝑀 𝑖 =1 are 𝑀 hash functions with different combi-nation strategies, Ehash ∈ R𝑆 ×𝑑 hash is a shared embedding table, and 𝑆 is the hash table size determined by 𝑆 = ⌊( Î𝑛 𝑖 =1 𝑉 𝑖 )2/( 𝑛 +1) ⌋
+
+for an 𝑛 -way Cartesian product with vocabularies {𝑉 𝑖 }. By using multiple hash functions with different combination strategies on a shared embedding table, items with similar attribute-SID patterns naturally produce overlapping hash signatures, enabling the model to generalize across related item combinations. This formulation efficiently injects layer-specific combinatorial context with man-ageable parameters ( 𝑀 × 𝑆 × 𝑑 hash ) while preserving the semantic structure essential for generalization. 
+
+## 3.5 Generation Model and Training 
+
+UniRec uses a Decoder-Only backbone with Cross-Attention to the user behavior sequence and per-step Rank Heads, as illustrated in Figure 1. 
+
+3.5.1 Input Feature Modeling. The model input comprises three parts: user static profile, behavior sequence, and SID-level multi-modal features. 
+
+Static Profile Features. Sparse fields (user ID, demographics, con-text features) are embedded and processed: 
+
+hstatic = RMSNorm ([ euid ⊕ ectx ⊕ · · · ]) ∈ R𝑑 static . (8) 
+
+Behavior Sequence Features. User click behaviors are organized chronologically. Each behavior’s item-side attributes (item, shop, category, etc.) are processed as: 
+
+h𝑖 = Linear (RMSNorm ([ eitem 𝑖 ⊕ eshop 𝑖 ⊕ ecate 𝑖 ⊕ · · · ])) ∈ R𝑑 model ,
+
+(9) forming the behavior sequence Hseq = {h1, . . . , h𝑇 } ∈ R𝑇 ×𝑑 model .
+
+SID-Level Multimodal Features. Multi-layer SIDs {𝑠 0, 𝑠 1, 𝑠 2 } de-rived from multimodal content alignment are embedded and fused with their corresponding item embeddings before projection to ensure temporal alignment with the behavior sequence: 
+
+Hmm = {hmm 1 , . . . , hmm  
+
+> 𝐿 mm
+
+} ∈ R𝐿 mm ×𝑑 model , (10) where each hmm  
+
+> 𝑗
+
+= RMSNorm (Linear ([ e(0) 
+
+> 𝑗
+
+⊕ e(1) 
+
+> 𝑗
+
+⊕ e(2) 
+
+> 𝑗
+
+])) . These are appended to the sequence: Hseq ← [ Hseq ; Hmm ] ∈ R(𝑇 +𝐿 mm ) × 𝑑 model .
+
+Aggregated Representation. The static profile and pooled behav-ior features are combined: 
+
+hagg = RMSNorm ([ hstatic ⊕ Pool (Hseq )]) ∈ R𝑑 agg . (11) 
+
+3.5.2 Cross-Attention Conditioning. Cross-Attention decouples the user behavior context from the token decoding process. In this mod-ule, the behavior sequence Hseq serves as the static Key-Value pairs, while the decoding-side sequence—comprising the task prompt, attributes, and SID tokens—acts as the Query. Specifically, let eBOS be the Task-Conditioned BOS embedding (dependent on 𝑐 task ), eattr the embeddings of the CoA tokens [𝑎 1, . . . , 𝑎 𝑚 ],and {e0, e1, e2 } the embeddings of the hierarchical SID tokens. The query sequence Q is constructed by concatenating these embed-dings with positional encodings: 
+
+Q(0) = PosEncoding ([ eBOS ⊕ eattr ⊕ e0 ⊕ e1 ⊕ e2]) ∈ R(1+𝑚 +𝐿 ) × 𝑑 model ,
+
+(12) where the total query length 1 + 𝑚 + 𝐿 corresponds to the full decoding path. The Key and Value matrices are derived from the unified behavior sequence Hseq , also augmented with positional information: 
+
+K = V = PosEncoding (Hseq ) ∈ R(𝑇 +𝐿 mm ) × 𝑑 model . (13) The query sequence is processed through 𝐷 successive cross-attention layers. To maintain stable gradients and effective informa-tion flow, each layer 𝑑 employs Pre-Norm and residual connections. The operations for layer 𝑑 are formulated as: 
+
+Q(𝑑 ) 
+
+> mid
+
+= Q(𝑑 −1) + GatedCrossAttn (RMSNorm (Q(𝑑 −1) ), K, V), (14) 
+
+Q(𝑑 ) = Q(𝑑 ) 
+
+> mid
+
++ MMoE-FFN (RMSNorm (Q(𝑑 )
+
+> mid
+
+)) , (15) where GatedCrossAttn utilizes a learnable gating parameter 𝛾 to modulate the contribution of the behavior context: GatedCrossAttn (Q, K, V) = 𝛾 · Softmax 
+
+ QK ⊤
+
+√𝑑 model 
+
+
+
+V. (16) Each expert within the MMoE-FFN utilizes SwiGLU activations to capture complex task-specific patterns. After 𝐷 layers of refinement, the final output sequence is normalized: 
+
+Qout = RMSNorm (Q(𝐷 ) ) ∈ R(1+𝑚 +𝐿 ) × 𝑑 model . (17) 
+
+3.5.3 Hierarchical Rank Head. UniRec employs a dedicated Rank Head for each decoding step 𝑡 ∈ { 1, . . . , 𝑚 + 𝐿 }. The input x𝑡 com-bines: (1) cross-attention output q𝑡 = Qout [𝑡, :], (2) prefix embed-dings eprefix of tokens decoded before step 𝑡 , (3) Content Summary 
+
+c𝑡 from eq. (7), and (4) aggregated representation hagg .The Rank Head processes x𝑡 = [q𝑡 ⊕ eprefix ⊕ c𝑡 ⊕ hagg ] through SENet [7] and MaskNet [16] to produce: 
+
+𝑝 (𝑠 𝑡 | 𝑠 <𝑡 , 𝑢, 𝑐 task ) = Softmax (𝑔 (𝑡 ) (x𝑡 )) , (18) where 𝑔 (𝑡 ) (·) denotes the Rank Head at step 𝑡 . The output vocab-ulary is task-specific: attribute domains for 𝑡 ≤ 𝑚 , and SID layer 
+
+V𝑡 −𝑚 −1 for 𝑡 > 𝑚 .
+
+3.5.4 Training Objectives. The generation module is trained via NTP with teacher forcing. The target item is represented as s★ =
+
+(𝑎 ★ 
+
+> 1
+
+, . . . , 𝑎 ★
+
+> 𝑚
+
+, 𝑠 ★ 
+
+> 0
+
+, . . . , 𝑠 ★
+
+> 𝐿 −1
+
+) comprising 𝑚 attribute tokens and 𝐿 SID tokens. The training loss is: 
+
+LNTP = −
+
+> 𝑚 +𝐿
+
+∑︁  
+
+> 𝑡 =1
+
+𝛼 𝑖 · log 𝑝 𝜃 (𝑠 ★ 
+
+> 𝑡
+
+| s★<𝑡 , 𝑢, 𝑐 task ), (19) where 𝛼 𝑖 weights samples by engagement (e.g., click, conversion), and 𝑝 𝜃 is produced by Rank Head 𝑔 (𝑡 ) from eq. (18). AdamW is employed as the optimizer to minimize the objective function. 
+
+## 3.6 Business Objective and User Preference Alignment 
+
+NTP trains UniRec to model the exposure distribution, but opti-mizes for distribution matching rather than business objectives. To bridge this gap, we introduce a unified alignment framework: RFT reformulates the NTP objective by reweighting training samples UniRec: Bridging the Expressive Gap between Generative and Discriminative Recommendation via Chain-of-Attribute Conference ’26, Month 2026, Location 
+
+according to continuous business value estimates (e.g., GMV, watch time); DPO further injects discrete behavioral preference signals (purchase, click, exposure) via contrastive pair optimization. The two are jointly optimized in a single training step: 
+
+L = LRFT + 𝜆 DPO LDPO , (20) where LRFT is the business-value-reweighted NTP objective (eq. (24)) and 𝜆 DPO controls the relative contribution of the preference signal. 
+
+3.6.1 Reward-Driven Fine-tuning. RFT reformulates NTP by up-weighting samples whose interacted items carry higher estimated business value. For each training sample (𝑢 𝑖 , 𝑥 𝑖 ), we define a com-posite reward: 
+
+𝑅 (𝑢 𝑖 , 𝑥 𝑖 ) = F ({ ˆ𝑦 𝑘 (𝑢 𝑖 , 𝑥 𝑖 )} 𝑁 obj  
+
+> 𝑘 =1
+
+), (21) where { ˆ𝑦 𝑘 } denote predicted engagement metrics (e.g., watch time, conversion probability) and F aggregates them according to busi-ness priorities. We normalize sample advantages within each batch 
+
+B to stabilize gradients across varying reward scales: 
+
+𝐴 𝑖 = 𝑅 (𝑢 𝑖 , 𝑥 𝑖 ) − 1
+
+|B| ∑︁ 𝑗 ∈ B 
+
+𝑅 (𝑢 𝑗 , 𝑥 𝑗 ), (22) 
+
+ˆ𝐴 𝑖 = 𝐴 𝑖 
+
+𝜎 𝐴 + 𝜖 , ˜𝐴 𝑖 = clip ( ˆ𝐴 𝑖 , −𝑐 clip , 𝑐 clip ), (23) where 𝜎 𝐴 =√︃ 1
+
+> | B |
+
+Í𝑗 ∈ B 𝐴 2 
+
+> 𝑗
+
+is the batch root mean square, 𝜖 pre-vents division by zero, and 𝑐 clip suppresses outliers. The reweighted training objective is: 
+
+LRFT = −∑︁  
+
+> 𝑖 ∈ B
+> 𝑚 +𝐿
+
+∑︁ 
+
+> 𝑡 =1
+
+(1 + 𝜆 ˜𝐴 𝑖 ) · 𝛼 𝑖 · log 𝑝 𝜃 (𝑠 ★ 
+
+> 𝑖,𝑡
+
+| s★ 
+
+> 𝑖, <𝑡
+
+, 𝑢 𝑖 , 𝑐 task ), (24) where 𝜆 > 0 controls reweighting strength, and 𝛼 𝑖 is proportional to the GMV value of the interacted item, such that high-value transactions contribute more strongly to the training signal. When 
+
+˜𝐴 𝑖 > 0 the model amplifies learning from high-reward samples; when ˜𝐴 𝑖 < 0 it suppresses low-performing patterns. 
+
+3.6.2 Preference Alignment via Direct Preference Optimization. DPO complements RFT by directly contrasting item pairs according to ob-served behavioral outcomes. For each item 𝑥 exposed under request context 𝑢 , we define a behavioral preference level: 
+
+R ( 𝑥 ) =
+
+
+
+2 if 𝑥 is purchased 
+
+1 if 𝑥 is clicked 
+
+0 if 𝑥 is exposed only (25) Items are ordered as 𝑥 𝑖 ≻ 𝑥 𝑗 if R ( 𝑥 𝑖 ) > R ( 𝑥 𝑗 ), or by exposure rank when behaviors are equal. Preference pairs are organized by request: within each batch, all items exposed under the same request context 𝑢 are grouped, and pairs (𝑥 𝑖 , 𝑥 𝑗 ) satisfying 𝑥 𝑖 ≻ 𝑥 𝑗 
+
+are sampled from each group to construct: 
+
+D = {( 𝑢, 𝑥 𝑖 , 𝑥 𝑗 ) | 𝑥 𝑖 ≻ 𝑥 𝑗 , 𝑥 𝑖 , 𝑥 𝑗 ∈ E 𝑢 }, (26) where E𝑢 denotes the set of items exposed under request 𝑢 . The DPO objective is: 
+
+LDPO = −E(𝑢, 𝑦 𝑤 , 𝑦 𝑙 )∼D 
+
+
+
+log 𝜎 
+
+
+
+𝛽 
+
+
+
+log 𝜋 𝜃 (𝑦 𝑤 | 𝑢 )
+
+𝜋 ref (𝑦 𝑤 | 𝑢 ) − log 𝜋 𝜃 (𝑦 𝑙 | 𝑢 )
+
+𝜋 ref (𝑦 𝑙 | 𝑢 )
+
+ 
+
+,
+
+(27) where 𝜋 ref is the reference model and 𝛽 = 0.1 controls preference margin sharpness. 
+
+Layer-wise Stop Gradient. To preserve the stability of prefix pre-dictions that serve as conditioning context for subsequent genera-tion, we apply stop-gradient to all decoding steps except the final SID layer, whose gradients are allowed to flow. Formally: 
+
+log 𝜋 𝜃 (𝑦 | 𝑢 ) =
+
+> 𝐿 −1
+
+∑︁ 
+
+> 𝑡 =1
+
+sg log 𝑝 𝜃 
+
+ 𝑠 ★ 
+
+> 𝑡
+
+| 𝑠 ★<𝑡 , 𝑢  | {z }
+
+> frozen prefix
+
++ log 𝑝 𝜃 
+
+ 𝑠 ★ 
+
+> 𝐿
+
+| 𝑠 ★<𝐿 , 𝑢 | {z }
+
+> DPO target layer
+
+,
+
+(28) where sg [·] denotes the stop-gradient operator. This ensures DPO exclusively updates the final-layer Rank Head while leaving all prefix predictions intact. 
+
+## 4 Experiments 
+
+We conduct extensive offline and online experiments to validate the effectiveness of UniRec . Our offline evaluation demonstrates improvements in token prediction accuracy and retrieval quality across multiple metrics, while online A/B testing confirms signifi-cant gains in business objectives including GMV and user engage-ment. 
+
+## 4.1 Offline Evaluation 
+
+4.1.1 Experimental Setup. 
+
+Dataset. We conduct offline experiments on a large-scale e-commerce platform. The dataset is constructed from real production logs over 9 consecutive days in the platform’s main feed recommendation sce-nario, where users browse a continuous vertical scroll of products. The dataset contains billions of user interaction records, covering diverse behaviors including impressions, clicks, add-to-cart actions, and purchase conversions. 
+
+Evaluation Metrics. We evaluate model performance using the following metrics: 
+
+• Token Hit Ratio@3 : During teacher-forcing training, we mea-sure the fraction of ground-truth tokens that appear in the model’s top-3 predictions at each decoding step. This metric reflects how well the model learns the token distribution. 
+
+• BS Hit Ratio@K : At inference time, we perform beam search and measure whether the target item appears in the top-𝐾 gener-ated candidates. We report Hit Ratio at 𝐾 ∈ { 50 , 100 , 200 }. Given that purchase conversions are the most valuable interactions for e-commerce, we additionally report BS Hit Ratio@ 𝐾 specifi-cally on order samples (the subset of samples corresponding to successful purchases). 
+
+Model Configuration. For Capacity-constrained SIDs, we use a 3-layer hierarchy with codebook size 𝐾 = 4000 per layer and tolerance 
+
+𝜏 = 1.05 . For CoA, we decode the item’s category hierarchy (L2 
+
+→ L3) 1 before SID tokens. Content Summary employs hash-based feature crossing with 𝑀 = 3 hash functions over feature index pairs 
+
+(𝑥, 𝑦 ): 𝐻 1 (𝑥, 𝑦 ) = 𝑥 + 𝑦 , 𝐻 2 (𝑥, 𝑦 ) = 𝑥 · 𝑦 , and 𝐻 3 (𝑥, 𝑦 ) = 𝑝 1𝑥 + 𝑝 2𝑦      
+
+> 1Categories are organized hierarchically as L1 (top-level) ⊃L2 (mid-level) ⊃L3 (fine-grained), where each level provides progressively finer item categorization. Conference ’26, Month 2026, Location Ziliang Wang †, Gaoyun Lin †, Xuesi Wang, Shaoqiang Liang, Liam Huang, and Jason Bian ∗
+
+where 𝑝 1, 𝑝 2 are prime numbers. The hash embedding dimension is 𝑑 hash = 64 , and Cartesian products include: (L2, 𝑠 0), (L2, 𝑠 1), (L3, 
+
+𝑠 0), (L3, 𝑠 1), and ( 𝑠 0, 𝑠 1). The model dimension is 𝑑 model = 256 , with behavior sequence length 𝑇 = 200 and multimodal SID sequence length 𝐿 mm = 100 . The cross-attention module uses 3 layers with 8 attention heads per layer. The MMoE-FFN employs 4 experts with SwiGLU activation and hidden dimension 4𝑑 model . For Business Objective Alignment, we use GMV as the business reward signal for RFT, with loss weights 𝜆 RFT : 𝜆 DPO = 20 : 3 ; DPO is configured with 𝛽 = 0.1 and preference pairs are constructed by grouping exposed items per request and sampling within each group. The model is trained with the AdamW optimizer using a learning rate of 3 × 10 −4.
+
+4.1.2 Baseline Comparison. We compare UniRec against the fol-lowing methods: 
+
+• SASRec [8]: A self-attention based sequential recommendation model that serves as a strong discriminative retrieval baseline. We adapt SASRec to our SID-based evaluation by using its learned representations for nearest-neighbor retrieval over the SID code-book. 
+
+• TIGER [13 ]: An Encoder-Decoder generative retrieval architec-ture where the encoder processes user behavior sequences and the decoder autoregressively generates item identifiers. 
+
+• OneRec-V2 [4 , 21 ]: A Decoder-Only generative retrieval archi-tecture with cross-attention to user behavior sequences for au-toregressive item generation. Table 1 presents the performance comparison on all samples. 
+
+UniRec achieves substantial improvements across all metrics, out-performing the strongest generative baseline (OneRec-V2) by +9.9 percentage points at HR@50 (+22.6% relative gain), +9.5 points at HR@100 (+18.2% relative gain), and +10.1 points at HR@200 (+17.2% relative gain). These gains demonstrate the effectiveness of our unified framework design. 
+
+Performance on Order Samples. Given the critical importance of purchase conversions in e-commerce, we separately evaluate Hit Ratio on order samples (Table 1, right half). UniRec demon-strates even stronger performance on this high-value subset, out-performing OneRec-V2 by +9.0 points at HR@50, +10.3 points at HR@100, and +11.5 points at HR@200. This amplified performance on purchase conversions stems from UniRec ’s ability to jointly model multiple user actions inherent to e-commerce scenarios. Our Task-Conditioned BOS mechanism enables the model to distinguish between diverse behavioral objectives—click, add-to-cart, purchase, and cross-border transactions—while RFT reweights samples based on actual business value (GMV). 
+
+4.1.3 Ablation Studies. We ablate three core components of UniRec :Capacity-Constrained SID construction, and the two CDC compo-nents (Task-Conditioned BOS and Content Summary). All variants are compared against the Full Model reference in Table 3. 
+
+Capacity-Constrained SID. Replacing Capacity-Constrained SIDs with standard RQ-KMeans leads to consistent degradation across all metrics (Table 3(a)), with HR@50 dropping from 0.537 to 0.481 and HR@100 from 0.618 to 0.558. Beyond retrieval accuracy, we examine the codebook utilization of the two approaches to under-stand the underlying cause. Figure 3 plots the fraction of total item exposures captured by the top-1%, top-5%, and top-10% most-used tokens at each level of the SID hierarchy (sid0, sid0-1, and sid0-1-2). The imbalanced distribution in RQ-KMeans forces the decoder to disproportionately allocate its probability mass to a small set of over-represented codes, degrading generalization to less com-mon items. Capacity-Constrained SIDs enforce a near-uniform load across the codebook through the occupancy tolerance 𝜏 , produc-ing a more faithful discrete representation for the long-tail item distribution prevalent in e-commerce. sid0 sid0-1 sid0-1-2          
+
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> Top 1% Exposure (%)
+> 6.89%
+> 49.14%
+> 57.33%
+> 4.81%
+> 24.60% 26.04%
+> RQ-Kmeans
+> Capacity-constrained
+> sid0 sid0-1 sid0-1-2
+> 0
+> 20
+> 40
+> 60
+> 80
+> Top 5% Exposure (%)
+> 21.16%
+> 77.83% 81.73%
+> 18.25%
+> 62.12% 62.55%
+> RQ-Kmeans
+> Capacity-constrained
+> sid0 sid0-1 sid0-1-2
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Top 10% Exposure (%)
+> 33.24%
+> 87.90% 89.62%
+> 30.50%
+> 78.49% 77.77%
+> RQ-Kmeans
+> Capacity-constrained
+
+Figure 3: Matthew-effect analysis of SID token exposure con-centration. Lower values indicate more balanced codebook utilization. At the full three-level hierarchy (sid0-1-2), the top-1% tokens under RQ-KMeans capture 57.33% of all ex-posures, whereas Capacity-Constrained SIDs reduce this to 26.04%. 
+
+Task-Conditioned BOS. Removing Task-Conditioned BOS leads to a relative drop of 7.8% at HR@100 (Table 3(b)), as the model loses the ability to distinguish between task-specific objectives. To further validate the benefit of Task-Conditioned BOS in a 
+
+multi-scene setting, we train on the joint sample pool of three pro-duction scenarios and compare three conditions (Table 4): (1) Single-scene: independent model trained and evaluated per scene. (2) Multi-scene: one model trained on all scenes jointly, without scene-differentiating prompts. (3) Multi-scene + Task-Cond. BOS: joint training with scene-specific task-conditioned BOS embeddings. Joint training with multi-scene data already improves over per-scene models (+0.9/+1.6/+3.0 points at HR@50/100/200), demon-strating the benefit of cross-scene knowledge transfer. Introducing Task-Conditioned BOS provides a further consistent gain at all cut-offs, confirming that scene-specific conditioning is necessary to resolve conflicts between heterogeneous behavioral distributions when training on mixed data. 
+
+Content Summary. Removing Content Summary causes a larger relative degradation of 8.6% at HR@100 (Table 3(b)), indicating that explicitly modeling Cartesian-product feature interactions along the decoding path is critical for capturing combinatorial signals that sequence modeling alone cannot efficiently represent. Each hash function 𝐻 𝑖 maps a feature index pair (𝑥, 𝑦 ) to a shared embedding table, enabling the model to encode cross-feature correlations (e.g., category × SID token) as a lightweight inductive bias injected at the UniRec: Bridging the Expressive Gap between Generative and Discriminative Recommendation via Chain-of-Attribute Conference ’26, Month 2026, Location 
+
+Table 1: Hit Ratio on all samples and order (purchase) samples. All Samples Order Samples Method HR@50 HR@100 HR@200 HR@50 HR@100 HR@200 
+
+SASRec 0.421 0.489 0.556 0.548 0.631 0.709 TIGER (0.05B) 0.437 0.508 0.578 0.567 0.652 0.731 OneRec-V2 (0.05B) 0.438 0.523 0.587 0.582 0.671 0.752 
+
+UniRec (0.05B) 0.537 0.618 0.688 0.672 0.774 0.867 Table 2: Ablation of CoA configurations. Attribute Chain L1@3 L2@3 L3@3 𝑠 0@3 𝑠 1@3 𝑠 2@3 HR@50 HR@100 HR@200 
+
+Direct SID (no attributes) — — — 0.314 0.752 0.952 0.458 0.532 0.595 L1 → SID 0.899 — — 0.488 0.776 0.961 0.471 0.569 0.622 L2 → SID — 0.755 — 0.591 0.789 0.963 0.515 0.597 0.664 L3 → SID — — 0.694 0.654 0.801 0.967 0.517 0.601 0.670 L2 → L3 → SID — 0.757 0.962 0.682 0.821 0.971 0.537 0.618 0.688 Table 3: Ablation and scaling results. UniRec (Full Model) is the shared reference for all sub-tables. (a) SID construc-tion ablation. (b) CDC component ablation. (c) Model scaling (𝑑 model ); †denotes the default setting, identical to Full Model. Configuration HR@50 HR@100 HR@200 
+
+UniRec (Full Model) 0.537 0.618 0.688 
+
+(a) SID Construction 
+
+RQ-KMeans 0.481 0.558 0.627 
+
+(b) Conditional Decoding Context 
+
+w/o Task-Cond. BOS 0.493 0.570 0.638 w/o Content Summary 0.485 0.565 0.637 
+
+(c) Model Scaling ( 𝑑 model )
+
+64 0.397 0.459 0.514 128 0.477 0.551 0.615 256 † 0.537 0.618 0.688 512 0.557 0.639 0.712 
+
+Table 4: Multi-scene effectiveness of Task-Conditioned BOS. Configuration HR@50 HR@100 HR@200 
+
+Single-scene 0.386 0.470 0.540 Multi-scene 0.395 0.486 0.570 Multi-scene + Task-Cond. BOS 0.400 0.510 0.590 
+
+prompt layer. The full model combining both Task-Conditioned BOS and Content Summary achieves the best performance, confirming that task conditioning and combinatorial feature crossing address orthogonal challenges. 
+
+4.1.4 Model Scaling Analysis. We investigate how model capacity affects performance by scaling 𝑑 model while fixing all other hyper-parameters. Table 3(c) shows that HR@50, HR@100, and HR@200 improve consistently as 𝑑 model increases from 64 to 512. The scal-ing trend suggests that UniRec benefits from additional capacity, leaving room for further improvements with larger architectures. 
+
+## 4.2 Online A/B Testing 
+
+We deploy UniRec in production on a large-scale e-commerce rec-ommendation platform, serving tens of millions of users daily. 
+
+Experimental Setup. We conduct A/B experiments covering both main feed and landing page scenarios. The control groups use the baseline discriminative multi-stage recommender system, while treatment groups deploy UniRec . Experiments are conducted with 20% user traffic allocation per bucket to ensure statistical signifi-cance. 
+
+Experiment Results. Table 5 presents the results across both sce-narios. Overall, UniRec achieves substantial improvements across all key metrics: +5.37% PVCTR, +4.76% orders, +5.60% GMV. The main feed segment shows consistent gains with +5.37% PVCTR, +4.27% orders, and +5.42% GMV. The landing page segment delivers +5.78% orders and +6.19% GMV. 
+
+Table 5: Online A/B test results.             
+
+> Metric Overall Feed Landing
+> Total Orders +4.76% +4.27% +5.78% GMV +5.60% +5.42% +6.19% Page-view CTR +5.37% +5.37% —
+
+Key Observations. Across all experiments, several consistent pat-terns emerge: (1) UniRec delivers stronger relative gains in PVCTR Conference ’26, Month 2026, Location Ziliang Wang †, Gaoyun Lin †, Xuesi Wang, Shaoqiang Liang, Liam Huang, and Jason Bian ∗
+
+and engagement metrics compared to conversion metrics, indicat-ing improved content relevance and user satisfaction. (2) The system maintains competitive latency (110ms end-to-end) comparable to a single ranking model, while the traditional pipeline requires 266ms, demonstrating the efficiency gains from end-to-end optimization. 
+
+## 5 Conclusion 
+
+In this paper, we present UniRec , a GR framework that addresses the fundamental structural gap between generative and discrimina-tive recommendation. We first establish a theoretical foundation via Bayes’ theorem, proving that the long-assumed performance gap between the two paradigms arises from feature coverage rather than a fundamental modeling asymmetry. This motivates CoA, a speculate-then-refine paradigm that recovers item-side feature sig-nals within the generative trajectory and yields provable per-step entropy reduction and end-to-end error attenuation. Beyond CoA, Capacity-constrained SID suppresses the hereditary Matthew ef-fect in SID token distributions through exposure-weighted residual quantization, and CDC stabilizes multi-scenario decoding through Task-Conditioned BOS and combinatorial Content Summaries. A joint RFT and DPO framework further aligns the model with hetero-geneous business objectives. Extensive offline experiments show that UniRec outperforms the strongest baseline by +22.6% rela-tive HR@50 on all samples and +15.5% on high-value order sam-ples. Deployed on a large-scale e-commerce platform, online A/B tests further confirm significant gains in PVCTR (+5.37%), orders (+4.76%), and GMV (+5.60%), validating its effectiveness in complex real-world settings. 
+
+## References 
+
+[1] Ben Chen et al . 2026. OneSearch-V2: The Latent Reasoning Enhanced Self-distillation Generative Search Framework. arXiv preprint arXiv:2603.24422 (2026). https://arxiv.org/abs/2603.24422 [2] Ben Chen, Xian Guo, Siyuan Wang, Zihan Liang, Yue Lv, Yufei Ma, Xinlong Xiao, Bowen Xue, Xuxin Zhang, Ying Yang, Huangyu Dai, Xing Xu, Tong Zhao, Mingcan Peng, Xiaoyang Zheng, Cong Zhang, Qihang Zhao, Yuqing Ding, Chenyi Lei, Wenwu Ou, and Han Li. 2025. OneSearch: A Preliminary Exploration of the Unified End-to-End Generative Framework for E-commerce Search. arXiv preprint arXiv:2509.03236 (Sep 2025). https://arxiv.org/abs/2509.03236 [3] DeepSeek-AI. 2024. DeepSeek-V3 Technical Report. arXiv preprint arXiv:2412.19437 (Dec 2024). https://arxiv.org/abs/2412.19437 [4] Jiaxin Deng, Shiyao Wang, Kuo Cai, Lejian Ren, Qigen Hu, Weifeng Ding, Qiang Luo, and Guorui Zhou. 2025. OneRec: Unifying Retrieve and Rank with Generative Recommender and Iterative Preference Alignment. arXiv preprint arXiv:2502.18965 (Feb 2025). https://arxiv.org/abs/2502.18965 [5] Kairui Fu, Tao Zhang, Shuwen Xiao, Ziyang Wang, Xinming Zhang, Chenchi Zhang, Yuliang Yan, Junjun Zheng, Yu Li, Zhihong Chen, Jian Wu, Xiangheng Kong, Shengyu Zhang, Kun Kuang, Yuning Jiang, and Bo Zheng. 2025. FORGE: Forming Semantic Identifiers for Generative Retrieval in Industrial Datasets. 
+
+arXiv preprint arXiv:2509.20904 (Sep 2025). https://arxiv.org/abs/2509.20904 [6] Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma, Mincong Huang, Xiaoguang Li, Chunzhen Jing, Yueming Han, Menglei Zhou, Lei Yu, Chuan Liu, and Wei Lin. 2025. MTGR: Industrial-Scale Generative Recom-mendation Framework in Meituan. arXiv preprint arXiv:2505.18654 (May 2025). https://arxiv.org/abs/2505.18654 [7] Jie Hu, Li Shen, and Gang Sun. 2018. Squeeze-and-Excitation Networks. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) . 7132–7141. doi:10.1109/CVPR.2018.00745 [8] Wang-Cheng Kang and Julian McAuley. 2018. Self-Attentive Sequential Rec-ommendation. In Proceedings of the 2018 IEEE International Conference on Data Mining (ICDM) . 197–206. doi:10.1109/ICDM.2018.00035 [9] Luyi Ma, Wanjia Zhang, Kai Zhao, Abhishek Kulkarni, Lalitesh Morishetti, Anjana Ganesh, Ashish Ranjan, Aashika Padmanabhan, Jianpeng Xu, Jason H.D. Cho, Praveen Kumar Kanumala, Kaushiki Nag, Sumit Dutta, Kamiya Motwani, Malay Patel, Evren Korpeoglu, Sushant Kumar, and Kannan Achan. 2025. GRACE: Generative Recommendation via Journey-Aware Sparse Attention on Chain-of-Thought Tokenization. arXiv preprint arXiv:2507.14758 (Jul 2025). https: //arxiv.org/abs/2507.14758 [10] OpenAI. 2023. GPT-4 Technical Report. arXiv preprint arXiv:2303.08774 (Mar 2023). https://arxiv.org/abs/2303.08774 [11] Jan Peters and Stefan Schaal. 2007. Reinforcement Learning by Reward-Weighted Regression for Operational Space Control. In Proceedings of the 24th International Conference on Machine Learning (ICML) . 745–750. doi:10.1145/1273496.1273590 [12] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D. Manning, Stefano Ermon, and Chelsea Finn. 2023. Direct Preference Optimization: Your Language Model is Secretly a Reward Model. In Advances in Neural Information Processing Systems 36 (NeurIPS 2023) . https://arxiv.org/abs/2305.18290 [13] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan H. Keshavan, Trung Vu, Lukasz Heldt, Lichan Hong, Yi Tay, Vinh Q. Tran, Jonah Samost, Maciej Kula, Ed H. Chi, and Maheswaran Sathiamoorthy. 2023. Recommender Systems with Generative Retrieval. Advances in Neural Information Processing Systems 36 (2023). https://arxiv.org/abs/2305.05065 [14] Anima Singh, Trung Vu, Nikhil Mehta, Raghunandan Keshavan, Maheswaran Sathiamoorthy, Yilin Zheng, Lichan Hong, Lukasz Heldt, Li Wei, Devansh Tandon, Ed H. Chi, and Xinyang Yi. 2024. Better Generalization with Semantic IDs: A Case Study in Ranking for Recommendations. In Proceedings of the 18th ACM Conference on Recommender Systems (RecSys ’24) . 112–121. doi:10.1145/3640457. 3688190 [15] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lam-ple. 2023. LLaMA: Open and Efficient Foundation Language Models. arXiv preprint arXiv:2302.13971 (Feb 2023). https://arxiv.org/abs/2302.13971 [16] Zhiqiang Wang, Qingyun She, and Junlin Zhang. 2021. MaskNet: Introducing Feature-Wise Multiplication to CTR Ranking Models by Instance-Guided Mask. 
+
+arXiv preprint arXiv:2102.07619 (Feb 2021). https://arxiv.org/abs/2102.07619 [17] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhaojie Gong, Fangda Gu, Michael He, Yinghai Lu, and Yu Shi. 2024. Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Gener-ative Recommendations. In Proceedings of the 41st International Conference on Machine Learning (ICML) . https://arxiv.org/abs/2402.17152 [18] Kun Zhang et al . 2025. RankMixer: Scaling Up Ranking Models in Industrial Recommenders. arXiv preprint arXiv:2507.15551 (Jul 2025). https://arxiv.org/abs/ 2507.15551 [19] Kun Zhang, Jingming Zhang, Wei Cheng, Yansong Cheng, Jiaqi Zhang, Hao Lu, Xu Zhang, Haixiang Gan, Jiangxia Cao, Tenglong Wang, Ximing Zhang, Boyang Xia, Kuo Cai, Shiyao Wang, Hongjian Dou, Jinkai Yu, Mingxing Wen, Qiang Luo, Dongxu Liang, Chenyi Lei, Jun Wang, Runan Liu, Zhaojie Liu, Ruiming Tang, Tingting Gao, Shaoguo Liu, Yuqing Ding, Hui Kong, Han Li, Guorui Zhou, Wenwu Ou, and Kun Gai. 2026. OneMall: One Architecture, More Scenarios – End-to-End Generative Recommender Family at Kuaishou E-Commerce. arXiv preprint arXiv:2601.21770 (Jan 2026). https://arxiv.org/abs/2601.21770 [20] Qihang Zhao, Zhongbo Sun, Xiaoyang Zheng, Xian Guo, Siyuan Wang, Zihan Liang, Mingcan Peng, Ben Chen, and Chenyi Lei. 2025. COINS: Semantic IDs Enhanced Cold Item Representation for Click-through Rate Prediction in E-commerce Search. arXiv preprint arXiv:2510.12604 (Oct 2025). https://arxiv.org/ abs/2510.12604 [21] Guorui Zhou et al . 2025. OneRec-V2 Technical Report . Technical Report arXiv:2508.20900. arXiv. https://arxiv.org/abs/2508.20900

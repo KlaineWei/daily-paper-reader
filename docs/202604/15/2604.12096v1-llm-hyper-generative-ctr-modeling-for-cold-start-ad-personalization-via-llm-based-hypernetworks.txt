@@ -1,0 +1,620 @@
+Title: LLM-HYPER: Generative CTR Modeling for Cold-Start Ad Personalization via LLM-Based Hypernetworks
+
+URL Source: https://arxiv.org/pdf/2604.12096v1
+
+Published Time: Wed, 15 Apr 2026 00:14:55 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# LLM-HYPER: Generative CTR Modeling for Cold-Start Ad Personalization via LLM-Based Hypernetworks 
+
+Luyi Ma * Wanjia Sherry Zhang * Zezhong Fan * Shubham Thakur * Kai Zhao Kehui Yao Ayush Agarwal Rahul Iyer Jason Cho Jianpeng Xu Evren Korpeoglu Sushant Kumar Kannan Achan 
+
+Walmart Global Tech Sunnyvale, California, USA 
+
+{luyi.ma, sherry.zhang, zezhong.fan, shubham.thakur0, kai.zhao}@walmart.com {kehui.yao, Ayush.Agarwal, rahul.iyer, jason.cho}@walmart.com {jianpeng.xu, EKorpeoglu, sushant.kumar, kannan.achan}@walmart.com 
+
+Abstract 
+
+On online advertising platforms, newly intro-duced promotional ads face the cold-start prob-lem, as they lack sufficient user feedback for model training. In this work, we propose LLM-HYPER, a novel framework that treats large language models (LLMs) as hypernetworks to directly generate the parameters of the click-through rate (CTR) estimator in a training-free manner. LLM-HYPER uses few-shot Chain-of-Thought prompting over multimodal ad content (text and images) to infer feature-wise model weights for a linear CTR predictor. By re-trieving semantically similar past campaigns via CLIP embeddings and formatting them into prompt-based demonstrations, the LLM learns to reason about customer intent, fea-ture influence, and content relevance. To en-sure numerical stability and serviceability, we introduce normalization and calibration tech-niques that align the generated weights with production-ready CTR distributions. Extensive offline experiments show that LLM-HYPER significantly outperforms cold-start baselines in NDCG @10 by 55.9%. Our real-world on-line A/B test on one of the top e-commerce platforms in the U.S. demonstrates the strong performance of LLM-HYPER, which drasti-cally reduces the cold-start period and achieves competitive performance. LLM-HYPER has been successfully deployed in production. 
+
+1 Introduction 
+
+In the rapidly evolving landscape of online adver-tising, platforms face a persistent ‘cold-start’ chal-lenge: newly introduced promotional ads often lack sufficient historical user feedback for effec-tive training of CTR ranking models (Park and Chu, 2009; Lee et al., 2019; Lu et al., 2020; Wei et al., 2021), for example, during rapid transitions from Christmas to New Year promotions. Improper 
+
+> *Equal contribution.
+
+cold-start solutions could significantly harm ad rel-evance and platform revenue within the limited conversion window. High-stakes advertising environments, such as e-commerce homepages, demand not only predictive accuracy but also operational transparency and con-trollability to satisfy business policies (e.g., brand and price) and audit requirements. In industrial CTR ranking pipelines, linear layers are widely used to aggregate high-level user preference repre-sentations from low-level interaction histories and calibrate signals from various channels for final CTR estimation (McMahan et al., 2013; Cheng et al., 2016; Liang et al., 2020; Wang et al., 2022; Yan et al., 2022), owing to their structural simplic-ity. Because their coefficients directly measure fea-ture contributions, linear layers further provide the built-in transparency needed to meet regulatory and policy standards. This makes an interpretable lin-ear scoring function a desirable control component when integrated with complex deep or LLM-based models, helping to satisfy explanation requirements and mitigate risks associated with opaque model behavior (Roustaei, 2024). While Large Language Models (LLMs) have demonstrated remarkable semantic reasoning capa-bilities that could directly generate the target rank-ing in natural language with reasoning and explana-tion (Geng et al., 2022; Cui et al., 2022; Liao et al., 2023; Tan et al., 2024; Ma et al., 2024) by contex-tualizing user and item representations (Qiu et al., 2021; Yao et al., 2022; Zhang et al., 2022; Hou et al., 2022; Li et al., 2023), their direct deployment in real-time ranking environments is frequently pro-hibitive. Industrial ranking systems operate under extreme micro-latency constraints, often requiring low p99 response times. Such rigorous benchmarks effectively preclude the direct of heavy and costly architectures or real-time LLM inference for every ranking request. Our paper focuses on the critical research ques-
+
+> arXiv:2604.12096v1 [cs.AI] 13 Apr 2026
+
+tion: How to leverage LLMs’ reasoning capacity to derive a linear ranking solution without training labels (cold start) while decoupling costly LLM in-ference from the low-latency, fast-evolving deploy-ment environment at an industrial scale (efficient deployment). To address this research question, we present LLM-HYPER, a novel framework deployed in production that leverages Large Language Mod-els (LLMs) as hypernetworks (Ha et al., 2016; Chauhan et al., 2024) to generate linear model weights for cold-start ads ranking in a training-free manner. LLM-HYPER prompts an LLM (e.g., Gemini-2.5) with the text and image content of the cold-start ads (e.g., title, image, and metadata) (He et al., 2017; Acharya et al., 2023), and the definition of user features to directly infer feature-wise weights for a ready-to-deploy linear ranking model, which is different from existing hypernet-work solutions with strict dependency of training data (Zhang et al., 2018; Knyazev et al., 2021; Zh-moginov et al., 2022; Beck et al., 2023; Knyazev et al., 2023; Zhang et al., 2024). Specifically, we retrieve warm ads similar to the cold-start ad and use their text, image, and trained model weights as few-shot examples for Chain-of-Thought (CoT) (Wei et al., 2022) reasoning in the weight-generation prompt. Since user features will be used to multiply the generated model weights to compute the ranking score, we include the user fea-ture definition in the prompt to reduce the context gap between the generation stage (NLP reasoning) and the model-serving stage (Numeric computa-tion). We define generation criteria for LLM rea-soning and reflection (Shinn et al., 2023). 
+
+Industrial Deployment : LLM-HYPER decou-ples the time-consuming weight generation by LLM from scalable serving. Before the launch date of cold-start ads, LLM-HYPER has sufficient time to generate the model weights offline. A label-independent normalization and calibration mecha-nism is subsequently introduced to stabilize model weights for robust deployment, ensuring that the generated weights yield fast, numerically stable, and well-calibrated CTR predictions in production. Results from offline evaluation on the proprietary interaction data show that LLM-HYPER signif-icantly outperforms cold-start baselines. LLM-HYPER achieves convincing CTR performance comparable to the in-production warm-start model in a 30-day online A/B deployment on one of the top e-commerce platforms in the U.S. LLM-HYPER is successfully deployed in production to power the Homepage Ads cold-start ranking. 
+
+2 Methodology 
+
+In this section, we describe the details of LLM-HYPER for weight generation. We first present the prompt details for LLM reasoning and weight gen-eration, and explain multimodal retrieval for Chain-of-Thought (CoT) few-shot learning. Finally, we address the normalization of model weights for production-ready CTR prediction. Figure 1 illus-trates the framework. 
+
+2.1 Preliminaries: Linear CTR Estimator 
+
+Let U be the set of customers with |U| = N and 
+
+R be the set of ads with |R| = M . For a cus-tomer u ∈ U and a recommended ad r ∈ R , let the n-dimensional personalized feature vector be 
+
+ξu = ξu 
+
+> 0
+
+, ξ u 
+
+> 1
+
+, . . . , ξ un
+
+, constructed from histori-cal interactions and contextual signals. Denote the weight vector for an ad r as θr = θr
+
+> 0
+
+, θ r
+
+> 1
+
+, . . . , θ rn
+
+,the predicted click-through rate (CTR) for the pair 
+
+(u, r ) is p(u, r ) = σ(θr)′ ξu , where σ(x) = 
+
+ 1 + e−x−1 is the sigmoid function. In the tra-ditional supervised learning setting, each θr is learned by minimizing the log-loss over all users: 
+
+L = − 1
+
+N
+
+X
+
+> u
+
+h
+
+yur log p(u, r )+ (1 − yur ) log {1 − p(u, r )}
+
+i
+
+where yur is the binary label indicating whether user 
+
+u clicked on ad r.In LLM-HYPER, the weight vector θr
+
+for each cold ad r is directly generated by LLM. Formally, given prompt ξ,r =
+
+text ξ, img r, text r, few-shot r
+
+, and then generate θr = LLM  prompt ξ,r 
+
+. We explain the prompt formulation in section 2.2. Note that this linear model generalizes to an internal feature aggregation layer in complex deep models (Liang et al., 2020; Wang et al., 2022) and to the linear cal-ibration layer over different signal channels (Yan et al., 2022), which is beyond the scope of this paper. We focus on demonstrating the essential step of LLM-generated linear weights, specifically under the CTR prediction task. 
+
+2.2 Prompt Design 
+
+Our prompt template contains three essential parts: 
+
+cot_example for contextualization, task_input 1. Multi -modal Retrieval                                                   
+
+> You are a hypernetwork.
+> Given { cot_examples }, and
+> {task_input }, generate the
+> model weights for each
+> features following { criteria }:
+> 𝜉 1‘s weight 𝜃 1:
+> 𝜉 2‘s weight 𝜃 2:
+> …
+> Your answer:
+> 𝑖𝑚𝑔 !
+> New Campaign
+> Campaign
+> Meta
+> Information
+> 𝑡𝑒𝑥𝑡 !
+> Multi -modal
+> Retrieval
+> Prompt
+> construction
+> Multi -modal
+> LLM reasoning
+> #CoT Examples
+> Example 1 : Campaign Image Title, Image
+> Summary, Similarity Score, Model Weights:
+> (𝜉 1definition, 𝜃 1value),
+> (𝜉 2definition, 𝜃 2value),
+> ...,
+> (𝜉 𝑛 definition, 𝜃 𝑛 value);
+> Example 2 : Campaign Image Title, Image
+> Summary, Similarity Score, Model Weights:
+> (𝜉 1definition, 𝜃 1value),
+> (𝜉 2definition, 𝜃 2value),
+> ...,
+> (𝜉 𝑛 definition, 𝜃 𝑛 value);
+> # Task Input
+> Feature definition 𝜉
+> 𝜉 1definition:
+> 𝜉 2definition:
+> …
+> 𝜉 ndefinition:
+> # campaign image 𝒊𝒎𝒈 𝒊 and the meta
+> information 𝒕𝒆𝒙𝒕 𝒊 description
+> Content:
+> -campaign message:
+> {title_and_message }
+> -campaign Image Summary:
+> {image_caption }
+> # Criteria
+> 1. Identify the key interests and preferences of
+> the customers based on the feature
+> definition.
+> 2. Analyze the campaign title and image
+> summary to determine the related product
+> information.
+> 3. Consider the factors like relevance and
+> previous examples' scores weighted by the
+> campaign content's similarity, predict a
+> score.
+> The score should be in range from -1 to 1.
+> Consider this distribution when making your
+> prediction.
+> Weights Generated by LLM:
+> 𝜉 1‘s weight 𝜃 1:value
+> 𝜉 2‘s weight 𝜃 2:value
+> …
+> 𝜉 n-1‘s weight 𝜃 n-1:value
+> 𝜉 n‘s weight 𝜃 n:value
+
+LLM -HYPER framework (a) 
+
+{cot_examples } details (b) 
+
+> Weight Normalization
+> img 1
+> img 2
+> img 3
+> Campaign
+> Meta
+> Information
+> !"#! !
+> Campaign
+> Meta
+> Information
+> !"#! "
+> Campaign
+> Meta
+> Information
+> !"#! #
+> Weight !
+> Weight "
+> Weight (#
+
+{criteria } details (d) {task_input } details (c)    
+
+> 2. Prompt Design 3. Weight Normalization
+
+Figure 1: LLM-HYPER: (a) framework and (b)-(d) prompt details. Weights are normalized for CTR prediction. 
+
+for cold ad materialization, and criteria for gen-eration guidance and reflection. 
+
+cot_example : Ads involve both rich text infor-mation (e.g., titles and messages) and visual in-formation (images) to attract customers’ atten-tion. To find informative past ads for few-shot CoT, we use CLIP (Radford et al., 2021) to en-code the ads text and image data into embeddings, 
+
+ei = CLIP (img i, text i), and build a multimodal retrieval 1 based on that, KNN r = argmin 
+
+i∈H, |S|=k
+
+X
+
+i∈S
+
+∥ei − er∥, (1) where H is a set of past campaigns, er is the CLIP embedding of the current candidate r. With the indexes of top-K ads KNN r, we retrieve their text, images, meta information and also past trained weight vector as few-shot examples, few-shot r =
+
+{(text i, img i, θi)|i ∈ KNN R}, where θi is trained using traditional linear methods based on past warm ad data (Figure 1-a(1)). These few-shot examples, together with the current campaign 
+
+(text r, img r), are used for prompt formulation (Fig-ure 1-b). We provide the similarity score between the selected examples and the current new candi-date for the LLM to transfer knowledge. 
+
+task_input and criteria : The instruction sec-tion of the prompt emphasizes the definition of input user features and cold ad’s text and visual cap-tion (generated by LLMs) for LLM to reason the 
+
+> 1
+
+KNN by Faiss: https://github.com/facebookresearch/faiss 
+
+target network weights (Figure 1-c). We provide weight generation criteria (Figure 1-d) as guidance and reflection. We specify the output format by explicitly requiring one weight per line per feature to guide the weight generation (Appendix D & G). 
+
+2.3 Weight Normalization 
+
+To enhance the numeric stability, we first normalize the predicted weight vector θr, producing a new parameter vector ˜θr = θr/|| θr|| . This step miti-gates the risk of overfitting by constraining large parameter values. We further calibrate the normalized weight vec-tor by shifting, which aligns the distribution of its predicted probabilities with those of pre-existing, fully trained models and ensures the seamless inte-gration into the online serving environment. Specif-ically, the intercept term is shifted by δ so that, 
+
+E[σ{( ˜θr)′
+
+ξu + δ}] = α, (2) where α is the average predicted probability of sim-ilar available contents in Equation 1. The value of the intercept shift δ can be derived from Equation 2 by computation numerically. This adjustment can be approached by sampling customer data to get the distribution of ( ˜θr)′
+
+ξu, so that final output proba-bilities align with the intended balance of positive and negative predictions. Our LLM-HYPER only needs to run weight prediction once before pushing to online exposure without time-consuming label Warm Ads  
+
+> LLM -HYPER Cold Ads Ads and
+> Generated weight
+> Ads and Trained
+> weight
+> Traditional ML
+> Training
+> Cache
+> Realtime Offline
+> CTR
+> Inference
+> CoT  User
+> Clicks
+> Cached User
+> Weights
+> Cold Ads User interaction
+> Warm Ads User interaction
+
+Figure 2: LLM-HYPER deployment 
+
+collection, streamlining the model definition and launch. 
+
+2.4 LLM-HYPER Deployment 
+
+When new cold ads Rcold = {r1, r 2, ... } come in, LLM-HYPER generates model weights Θ = 
+
+{θ1, θ2, ... } for each cold ad for CTR estimation in offline environment before the ad launch date. The generated weights could be stored in a cache acces-sible in real time or on a server for real-time rank-ing inference, thereby overcoming the cold-start issue. After launching the cold-start ads, cold ads are warmed up, and interaction data are collected to fuel the traditional machine learning-based CTR model training. The platform then use trained CTR model for warm-start ranking inference (Figure 2). Appendix C provides additional deployment insights. 
+
+3 Experiments 
+
+We conduct experiments with the aim of answering the following research questions: RQ1 : The ef-fectiveness of LLM-HYPER for weight generation and CTR ranking in the offline environment; RQ2 :Ablation study on the impact of CoT and visual fea-tures for weight generation; RQ3 : Explainability of LLM-HYPER for weight generation; RQ4 : Ro-bustness of LLM-HYPER for weight generation. 
+
+3.1 Dataset Description 
+
+To evaluate models effectively offline, we randomly sample 675 warm ads and user-interaction feedback from the past 3 months, involving 1,000,000 users, on one of the largest e-commerce platforms in the U.S. To simulate the cold-start scenario offline, we first partition the dataset chronologically: 455 ear-lier ads and their trained model weights constitute the retired ad set, and the remaining 120 more re-cent ads constitute the active ad set. The active ad set is further split into training and test sets: inter-actions of 800,000 users are used for training, and interactions from 200,000 users are held out for testing. Due to the proprietary nature of the dataset, further details are not disclosed. 
+
+3.2 Baselines Warm-start Baseline : LR warm represents the tra-ditional "warm-start" scenario where a linear CTR model is trained on the training set of 120 active ads and evaluated on the test set. This sets an ideal case for new ads though it is typically unattainable in a true cold-start setting. 
+
+Cold-start Baselines : We consider three types of cold-start baselines. First is Emb T 5, a popu-lar embedding-based cold-start recommender base-line that computes the cosine similarity between the user and ad Sentence-T5-base (Ni et al., 2022) semantic embeddings, built from their respective NLP contexts. The Ad NLP context is built by the LLM from the title and image caption, whereas the user’s NLP context is formed by the LLM summa-rizing the user’s past ad interactions. Second, we consider LLM-R (Hou et al., 2024a) and LLM-TR (Zhang et al., 2025) as LLM recommender baselines for cold-start scenarios. These LLM rec-ommenders rank ads based on user and ad NLP con-texts. Finally, we consider a heuristic baseline for the low-latency requirements. LR cold : The model weights are set to the median values of weights across all 455 retired ads to mitigate the influence of outlier ads. All baseline models are implemented using the reported configuration and parameters. 
+
+Cold-start LLM-HYPER (ours) : We create vari-ants of LLM-HYPER based on the types of LLM used. LH 2.5P and LH 2.5F use Gemini-2.5-Pro and 2.5-Flash (Comanici et al., 2025), respec-tively. LH 4o uses GPT-4o (Hurst et al., 2024) and 
+
+LH 5.1 uses GPT-5.1 2. We use 5-shot CoT and 
+
+temperature = 0 .5 for all LLM-HYPER variants (see Appendix A for additional details). We report AUC and NDCG @{5, 10 } for offline ranking performance on the test set, and relative CTR score for online A/B testing. We report serving-time efficiency using the average latency metric L(ms) for CTR prediction across all 120 active ads. 
+
+3.3 Experimental Results 
+
+We present offline evaluation results in Table 1. 
+
+Performance : While LR warm sets the upper bound of the performance due to its ideal but unattainable setting in the cold start, all LLM-
+
+> 2https://openai.com/index/gpt-5-1/
+
+HYPER baselines outperform other cold-start base-lines (p-value ≤ 0.05 ), with LH 2.5P achieving the best cold-start AUC (+20.2%) and NDCG @10 
+
+(+55.9%) compared with the best cold-start base-line LR cold . Emb T 5 does not perform well in strict cold-start scenarios due to the big context gap between offline ad relevance and online user feedback (Song et al., 2024), while LLM-HYPER overcomes this gap by effective LLM reasoning. 
+
+LLM-R and LLM-TR have the worst performance over the metrics due to the hallucinated and out-of-distribution prediction (Jiang et al., 2025). For example, these two LLM recommenders might gen-erate an inaccurate ad name or index without fur-ther correction, and rank too novel ads with zero interaction to top positions. These issues hurt their performance and applicability. LLM-HYPER has fewer issues with ad name hallucination due to its direct weight generation and normalization. 
+
+Latency : LLM-HYPER variants achieve the same competitive latency as other linear baselines within a range of (0 .14 , 0.17) milliseconds on average, generating a ranking for a user. This low latency is because we decouple the costly LLM infer-ence steps from the serving stage, only inferenc-ing the linear computation. LLM recommender baselines take much more time to respond due to time-consuming LLM calls. LLM-TR achieves better performance than LLM-R at the cost of ad-ditional hierarchical LLM calls, further increasing the latency. LLM-HYPER offers a great balance between costly LLM reasoning and low-latency serving ( RQ1 ). 
+
+3.4 Ablation Study: CoT and Visual Feature 
+
+To study the impact of CoT and visual feature in-put on performance, we conducted a series of ab-lation studies that varied the number of few-shot examples and the exclusion of image information from the prompt on the best LLM-HYPER variant 
+
+LH 2.5P . Results are summarized in Table 2. All LLM-HYPER variants with visual features outper-form LR cold , the best cold-start baseline in Table 1. Even the simplest zero-shot setting achieves a 33.3% improvement in NDCG @10 , demonstrat-ing strong cross-modal generalization. The 5-shot configuration achieves the best balance across all ranking metrics, though the 3-shot configuration shows a slight advantage in NDCG @10 , suggesting that a moderate number of high-quality examples is sufficient to learn the weight-distribution logic. Ex-cluding visual features from the prompt drastically reduces performance across all variants, indicating the crucial role of visual content understanding in the LLM reasoning and user-ad interaction ( RQ2 ).                                          
+
+> Model AUC NDCG5 NDCG10 L(ms) Emb T50.4105 0.0174 0.0262 0.357
+> LLM-R 0.0571 0.00931 0.0221 2.13 E3
+> LLM-TR 0.0576 0.00886 0.0508 3.78 E3
+> LH 4o0.6539 0.0490 0.0764 0.163
+> LH 5.10.6497 0.0427 0.0668 0.158
+> LH 2.5F0.6654 0.0435 0.0779 0.160
+> LH 2.5P0.6722 0.0456 0.0792 0.157
+> LR cold 0.5593 0.0328 0.0508 0.147
+> LR warm 0.7005 0.0639 0.0871 0.151
+
+Table 1: Offline Cold-start Ranking Comparison.                        
+
+> Models NDCG5 NDCG10 LH 2.5P, zero-shot 0.0376 0.0677
+> LH 2.5P, zero-shot, −img 0.0165 0.0352
+> LH 2.5P, 3-shot 0.0421 0.0798 LH 2.5P, 3-shot, −img 0.0267 0.0511
+> LH 2.5P, 5-shot 0.0456 0.0792
+> LH 2.5P, 5-shot, −img 0.0292 0.0506
+
+Table 2: CoT and Visual Feature Impact 
+
+3.5 Explainability 
+
+Explainability is essential for high-stakes adver-tising environments. Because LLM-HYPER by-passes the traditional model training process to directly generate model weights, it is critical to as-sess the explainability and trustworthiness of the feature importance generated by LLMs. 
+
+Human-labeled Dataset : Since weights generated by LLM approximate the importance of user pref-erence, we asked marketing experts to build an ex-plainable ground-truth dataset on the feature impor-tance. Market experts identify the most important user features (one or multiple) for each ad in the test set. This identified feature serves as the ground truth for evaluating whether LLMs’ reasoning and outputs capture these ground-truth labels. 
+
+Evaluation Metrics: HitRate @5 (HR @5 ) to mea-sure the probability of the ground-truth features appearing in the top-5 most important features re-flected by LLM-generated weights. Coverage @5 
+
+to measure the extent to which the top-5 pre-dicted preferences recover the attribute space of the ground-truth features. Additionally, we compute 
+
+Consistency Rate to assess the logical agreement between the LLM’s natural-language reasoning and its numerical weight outputs with respect to the ground truth. These metrics collectively quantify the model’s ability to map ad features to human-annotated labels for explainability (see Appendix B for detailed definitions of the metrics). 
+
+Explainability and Alignment Results: Figure 3 shows that increasing the number of shots di-rectly enhances alignment with target features. Coverage @5 improves from 0.317 (zero-shot) to 
+
+0.351 (5-shot), while HR @5 hits its maximum at 
+
+0.81 in the 3-shot setting. This indicates that CoT examples serve as semantic anchors, helping the LLM accurately leverage predicted weights to the intended features. Furthermore, the Consistency score remains remarkably high ( > 0.95 ) across all settings, confirming that predicted weights are grounded in explicit, human-interpretable reason-ing. This high level of instruction-following en-sures the weight scale faithfully reflects the prefer-ences identified in the reasoning phase, fulfilling industrial transparency requirements ( RQ3 ). 
+
+3.6 Robustness of LLM-HYPER 
+
+In industrial applications, ad ranking must be ro-bust against semantic perturbations and adversarial modifications, especially when ground-truth labels are unavailable for real-time fine-tuning. We evalu-ate this robustness by applying three types of coun-terfactual modifications to ads: Enhanced , Dimin-ished , and Neutralized . In Enhanced , LLMs rewrite the ad title to enhance human-labeled features (e.g., by adding more information about dogs). In Dimin-ished , LLMs rewrite the ad title, thereby conflict-ing with human-labeled features (e.g., by switching from dog to cat information). In Neutralized , LLM neutralizes the human-labeled features in the ad title (e.g., by switching from dog to just pets). We evaluate the accuracy of the binary classification task to determine whether LLM-HYPER changes the generated weights for the human-labeled fea-tures in the same semantic direction as the modifi-cation (see Appendix E for more details). 
+
+Results : As illustrated in Figure 4, our frame-work exhibits significant robustness under cold start scenarios. GPT-5.1 ( LH 5.1) demonstrates the context reasoning capabilities, achieving an accuracy of 0.88 in the Diminished setting, ef-fectively penalizing weights that deviate from the target features. While all backbones (including GPT-4o LH 4o and Gemini 2.5 series LH 2.5F/P )show a performance decline in the Neutral cate-gory, the overall trend proves that LLM-HYPER can reliably adjust weights based on semantic shifts. This capability is crucial for industrial de-ployment, as it allows the system to reflect pref-erence changes through reasoning-weight consis-tency rather than relying on historical interaction data. LLM-HYPER demonstrates promising cold-start robustness that captures semantic changes while maintaining full interpretability for human auditors ( RQ4 ). !%"  ! ##$ &      
+
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+>  
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> "#$"$
+> !#$"$# 
+> !#$"$#!$
+> !#$"$ #!$
+> !#$"$ #!$ LR !"#$
+> LR %&'( LH).+, -0-shot
+> LH).+, -3-shot
+> LH).+, -5-shot
+
+Figure 3: Explainability Results of Cold Start Model ! "%! &#                   
+
+> 
+> 
+> 
+> 
+> 
+> 
+> &#'
+>    
+> 
+> 
+> 
+>  
+>  
+>  
+>  
+>  
+> 
+> "%#%$!
+>  "
+>  
+>  ! $
+>  ! #"
+> LH!"
+> LR #"$% LH &.(
+> LH).&*
+> LH ).&+
+> Enhanced Diminished Neutralized
+
+Figure 4: Counterfactual Robustness of Cold Start Model with accuracy of weight change 
+
+4 Online A/B Test and Deployment 
+
+We conducted a 30-day online A/B test on the Homepage Ad ranking to provide an end-to-end, industrial-scale evaluation. To establish a base-line, we consider LR warm as the control, with pre-collected user feedback used for model training before the A/B test. Model weights generated by LLM-HYPER are in the variant group. The ac-tive ads are not exposed to the variant group for strict cold-start scenarios. Table 3 summarizes the results. 
+
+Models Relative CTR score LLM-HYPER 92% 
+
+LR warm 100% 
+
+Table 3: Online 30-Day A/B Test Results. 
+
+LLM-HYPER achieves competitive CTR per-formance with the ideal warm-start LR warm , with no statistically significant difference observed (p-value = 0.62), demonstrating the effectiveness of LLM-HYPER in generating weights for strict cold-start in a production environment. LLM-HYPER has been successfully deployed in production. 
+
+References 
+
+Arkadeep Acharya, Brijraj Singh, and Naoyuki Onoe. 2023. Llm based generation of item-description for recommendation system. In Proceedings of the 17th ACM conference on recommender systems , pages 1204–1207. Lakshya A Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Ar-nav Singhvi, Herumb Shandilya, Michael J Ryan, Meng Jiang, and 1 others. 2025. Gepa: Reflec-tive prompt evolution can outperform reinforcement learning. arXiv preprint arXiv:2507.19457 .Jacob Beck, Matthew Thomas Jackson, Risto Vuo-rio, and Shimon Whiteson. 2023. Hypernetworks in meta-reinforcement learning. In Conference on Robot Learning , pages 1478–1487. PMLR. Ye Bi, Liqiang Song, Mengqiu Yao, Zhenyu Wu, Jian-ming Wang, and Jing Xiao. 2020. Dcdir: A deep cross-domain recommendation system for cold start users in insurance domain. In Proceedings of the 43rd international ACM SIGIR conference on re-search and development in information retrieval ,pages 1661–1664. Desheng Cai, Shengsheng Qian, Quan Fang, Jun Hu, and Changsheng Xu. 2023. User cold-start recom-mendation via inductive heterogeneous graph neural network. ACM Transactions on Information Systems ,41(3):1–27. Vinod Kumar Chauhan, Jiandong Zhou, Ping Lu, So-heila Molaei, and David A Clifton. 2024. A brief review of hypernetworks in deep learning. Artificial Intelligence Review , 57(9):250. Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra, Hrishi Aradhye, Glen An-derson, Greg Corrado, Wei Chai, Mustafa Ispir, and 1 others. 2016. Wide & deep learning for recom-mender systems. In Proceedings of the 1st workshop on deep learning for recommender systems , pages 7–10. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, and 1 others. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .Zeyu Cui, Jianxin Ma, Chang Zhou, Jingren Zhou, and Hongxia Yang. 2022. M6-rec: Generative pretrained language models are open-ended recommender sys-tems. arXiv preprint arXiv:2205.08084 .Sunhao Dai, Ninglu Shao, Haiyuan Zhao, Weijie Yu, Zihua Si, Chen Xu, Zhongxiang Sun, Xiao Zhang, and Jun Xu. 2023. Uncovering chatgpt’s capabilities in recommender systems. In Proceedings of the 17th ACM Conference on Recommender Systems , pages 1126–1132. Manqing Dong, Feng Yuan, Lina Yao, Xiwei Xu, and Liming Zhu. 2020. Mamo: Memory-augmented meta-optimization for cold-start recommendation. In 
+
+Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining ,pages 688–697. Chelsea Finn, Pieter Abbeel, and Sergey Levine. 2017. Model-agnostic meta-learning for fast adaptation of deep networks. In International conference on ma-chine learning , pages 1126–1135. PMLR. Yunfan Gao, Tao Sheng, Youlin Xiang, Yun Xiong, Haofen Wang, and Jiawei Zhang. 2023. Chat-rec: Towards interactive and explainable llms-augmented recommender system. arXiv preprint arXiv:2303.14524 .Shijie Geng, Shuchang Liu, Zuohui Fu, Yingqiang Ge, and Yongfeng Zhang. 2022. Recommendation as language processing (rlp): A unified pretrain, person-alized prompt & predict paradigm (p5). In Proceed-ings of the 16th ACM Conference on Recommender Systems , pages 299–315. David Ha, Andrew Dai, and Quoc V Le. 2016. Hyper-networks. arXiv preprint arXiv:1609.09106 .Xiangnan He, Lizi Liao, Hanwang Zhang, Liqiang Nie, Xia Hu, and Tat-Seng Chua. 2017. Neural collabora-tive filtering. In Proceedings of the 26th international conference on world wide web , pages 173–182. Yupeng Hou, Shanlei Mu, Wayne Xin Zhao, Yaliang Li, Bolin Ding, and Ji-Rong Wen. 2022. Towards universal sequence representation learning for recom-mender systems. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pages 585–593. Yupeng Hou, Junjie Zhang, Zihan Lin, Hongyu Lu, Ruobing Xie, Julian McAuley, and Wayne Xin Zhao. 2024a. Large language models are zero-shot rankers for recommender systems. In ECIR .Yupeng Hou, Junjie Zhang, Zihan Lin, Hongyu Lu, Ruobing Xie, Julian McAuley, and Wayne Xin Zhao. 2024b. Large language models are zero-shot rankers for recommender systems. In European Conference on Information Retrieval , pages 364–381. Springer. Feiran Huang, Zefan Wang, Xiao Huang, Yufeng Qian, Zhetao Li, and Hao Chen. 2023. Aligning distillation for cold-start item recommendation. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval ,pages 1147–1157. Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, and 1 others. 2024. Gpt-4o system card. arXiv preprint arXiv:2410.21276 .Chumeng Jiang, Jiayin Wang, Weizhi Ma, Charles LA Clarke, Shuai Wang, Chuhan Wu, and Min Zhang. 2025. Beyond utility: Evaluating llm as recom-mender. In Proceedings of the ACM on Web Con-ference 2025 , pages 3850–3862. Boris Knyazev, Michal Drozdzal, Graham W Taylor, and Adriana Romero Soriano. 2021. Parameter pre-diction for unseen deep architectures. Advances in Neural Information Processing Systems , 34:29433– 29448. Boris Knyazev, Doha Hwang, and Simon Lacoste-Julien. 2023. Can we scale transformers to predict pa-rameters of diverse imagenet models? In Inter-national Conference on Machine Learning , pages 17243–17259. PMLR. Hoyeop Lee, Jinbae Im, Seongwon Jang, Hyunsouk Cho, and Sehee Chung. 2019. Melu: Meta-learned user preference estimator for cold-start recommen-dation. In Proceedings of the 25th ACM SIGKDD international conference on knowledge discovery & data mining , pages 1073–1082. Jiacheng Li, Ming Wang, Jin Li, Jinmiao Fu, Xin Shen, Jingbo Shang, and Julian McAuley. 2023. Text is all you need: Learning language representations for se-quential recommendation. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pages 1258–1267. Tingting Liang, Congying Xia, Yuyu Yin, and Philip S. Yu. 2020. Joint training capsule network for cold start recommendation. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR ’20) . ACM. ArXiv:2005.11467. Jiayi Liao, Sihang Li, Zhengyi Yang, Jiancan Wu, Yancheng Yuan, Xiang Wang, and Xiangnan He. 2023. Llara: Aligning large language models with sequential recommenders. arXiv preprint arXiv:2312.02445 .Junling Liu, Chao Liu, Peilin Zhou, Renjie Lv, Kang Zhou, and Yan Zhang. 2023. Is chatgpt a good rec-ommender? a preliminary study. arXiv preprint arXiv:2304.10149 .Siwei Liu, Iadh Ounis, Craig Macdonald, and Zaiqiao Meng. 2020. A heterogeneous graph neural model for cold-start recommendation. In Proceedings of the 43rd international ACM SIGIR conference on research and development in information retrieval ,pages 2029–2032. Yuanfu Lu, Yuan Fang, and Chuan Shi. 2020. Meta-learning on heterogeneous information networks for cold-start recommendation. In Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining , pages 1563– 1573. Luyi Ma, Xiaohan Li, Zezhong Fan, Kai Zhao, Jianpeng Xu, Jason Cho, Praveen Kanumala, Kaushiki Nag, Sushant Kumar, and Kannan Achan. 2024. Triple modality fusion: Aligning visual, textual, and graph data with large language models for multi-behavior recommendations. arXiv preprint arXiv:2410.12228 .H Brendan McMahan, Gary Holt, David Sculley, Michael Young, Dietmar Ebner, Julian Grady, Lan Nie, Todd Phillips, Eugene Davydov, Daniel Golovin, and 1 others. 2013. Ad click prediction: a view from the trenches. In Proceedings of the 19th ACM SIGKDD international conference on Knowledge dis-covery and data mining , pages 1222–1230. Jianmo Ni, Gustavo Hernandez Abrego, Noah Constant, Ji Ma, Keith Hall, Daniel Cer, and Yinfei Yang. 2022. Sentence-t5: Scalable sentence encoders from pre-trained text-to-text models. In Findings of the associ-ation for computational linguistics: ACL 2022 , pages 1864–1874. Seung-Taek Park and Wei Chu. 2009. Pairwise prefer-ence regression for cold-start recommendation. In 
+
+Proceedings of the third ACM conference on Recom-mender systems , pages 21–28. Zhaopeng Qiu, Xian Wu, Jingyue Gao, and Wei Fan. 2021. U-bert: Pre-training user representations for improved recommendation. In Proceedings of the AAAI Conference on Artificial Intelligence , vol-ume 35, pages 4320–4327. Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sas-try, Amanda Askell, Pamela Mishkin, Jack Clark, and 1 others. 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR. Narges Roustaei. 2024. Application and interpreta-tion of linear-regression analysis. Medical Hypoth-esis, Discovery & Innovation in Ophthalmology ,13(3):151–159. Konstantin Schürholt, Boris Knyazev, Xavier Giró-i Ni-eto, and Damian Borth. 2022. Hyper-representations as generative models: Sampling unseen neural net-work weights. Advances in Neural Information Pro-cessing Systems , 35:27906–27920. Konstantin Schürholt, Dimche Kostadinov, and Damian Borth. 2021. Self-supervised representation learning on neural network weights for model characteristic prediction. Advances in Neural Information Process-ing Systems , 34:16481–16493. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. 2023. Re-flexion: Language agents with verbal reinforcement learning. Advances in Neural Information Process-ing Systems , 36:8634–8652. Yuda Song, Gokul Swamy, Aarti Singh, J Bagnell, and Wen Sun. 2024. The importance of online data: Un-derstanding preference fine-tuning via coverage. Ad-vances in Neural Information Processing Systems ,37:12243–12270. Bedionita Soro, Bruno Andreis, Hayeon Lee, Wony-ong Jeong, Song Chong, Frank Hutter, and Sung Ju Hwang. 2024. Diffusion-based neu-ral network weights generation. arXiv preprint arXiv:2402.18153 .Weiwei Sun, Lingyong Yan, Xinyu Ma, Shuaiqiang Wang, Pengjie Ren, Zhumin Chen, Dawei Yin, and Zhaochun Ren. Is chatgpt good at search? investigat-ing large language models as re-ranking agents. In 
+
+EMNLP 2023 .Juntao Tan, Shuyuan Xu, Wenyue Hua, Yingqiang Ge, Zelong Li, and Yongfeng Zhang. 2024. Idgenrec: Llm-recsys alignment with textual id learning. In 
+
+Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Infor-mation Retrieval , pages 355–364. Riku Togashi, Mayu Otani, and Shin’ichi Satoh. 2021. Alleviating cold-start problems in recommendation through pseudo-labelling over knowledge graph. In 
+
+Proceedings of the 14th ACM international confer-ence on web search and data mining , pages 931–939. Manasi Vartak, Arvind Thiagarajan, Conrado Miranda, Jeshua Bratman, and Hugo Larochelle. 2017. A meta-learning perspective on cold-start recommendations for items. Advances in neural information processing systems , 30. Dong Wang, Shaoguang Yan, Yunqing Xia, Kavé Sala-matian, Weiwei Deng, and Qi Zhang. 2022. Learn-ing supplementary nlp features for ctr prediction in sponsored search. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD ’22) , pages 4010–4020, Wash-ington, DC, USA. ACM. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, and 1 others. 2022. Chain-of-thought prompting elic-its reasoning in large language models. Advances in neural information processing systems , 35:24824– 24837. Yinwei Wei, Xiang Wang, Qi Li, Liqiang Nie, Yan Li, Xuanping Li, and Tat-Seng Chua. 2021. Contrastive learning for cold-start recommendation. In Proceed-ings of the 29th ACM international conference on multimedia , pages 5382–5390. Mixue Xie, Shuang Li, Binhui Xie, Chi Liu, Jian Liang, Zixun Sun, Ke Feng, and Chengwei Zhu. 2024. Weight diffusion for future: Learn to generalize in non-stationary environments. Advances in Neural Information Processing Systems , 37:6367–6392. Le Yan, Zhen Qin, Xuanhui Wang, Michael Bendersky, and Marc Najork. 2022. Scale calibration of deep ranking models. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pages 4300–4309. Shaowei Yao, Jiwei Tan, Xi Chen, Juhao Zhang, Xiaoyi Zeng, and Keping Yang. 2022. Reprbert: distilling bert to an efficient representation-based relevance model for e-commerce. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pages 4363–4371. Runsheng Yu, Yu Gong, Xu He, Yu Zhu, Qingwen Liu, Wenwu Ou, and Bo An. 2021. Personalized adaptive meta learning for cold-start user preference prediction. In Proceedings of the AAAI conference on artificial intelligence , volume 35, pages 10772– 10780. Baoquan Zhang, Chuyao Luo, Demin Yu, Xutao Li, Huiwei Lin, Yunming Ye, and Bowen Zhang. 2024. Metadiff: Meta-learning with conditional diffusion for few-shot learning. In Proceedings of the AAAI conference on artificial intelligence , volume 38, pages 16687–16695. Chris Zhang, Mengye Ren, and Raquel Urtasun. 2018. Graph hypernetworks for neural architecture search. 
+
+arXiv preprint arXiv:1810.05749 .Song Zhang, Nan Zheng, and Danli Wang. 2022. Gbert: Pre-training user representations for ephemeral group recommendation. In Proceedings of the 31st ACM In-ternational Conference on Information & Knowledge Management , pages 2631–2639. Wenlin Zhang, Chuhan Wu, Xiangyang Li, Yuhao Wang, Kuicai Dong, Yichao Wang, Xinyi Dai, Xi-angyu Zhao, Huifeng Guo, and Ruiming Tang. 2025. Llmtreerec: Unleashing the power of large language models for cold-start recommendations. In Proceed-ings of the 31st International Conference on Compu-tational Linguistics , pages 886–896. Andrey Zhmoginov, Mark Sandler, and Maksym Vla-dymyrov. 2022. Hypertransformer: Model gener-ation for supervised and semi-supervised few-shot learning. In International Conference on Machine Learning , pages 27075–27098. PMLR. Zhihui Zhou, Lilin Zhang, and Ning Yang. 2023. Con-trastive collaborative filtering for cold-start item rec-ommendation. In Proceedings of the ACM Web Con-ference 2023 , pages 928–937. A LLM-HYPER Implementation Details and Trade-offs 
+
+All LLM-HYPER variants perform weight genera-tion offline before computing the CTR for ranking and latency evaluation. When generating the weights, we explored vari-ous configurations of user feature combinations to improve generation. While asking LLMs to generate one feature weight at a time maintains high tractability, it loses cross-feature connections for weight reasoning and is very costly (in time and money). However, providing the definitions of all features simultaneously reduces instructional following and increases the risk of hallucination. Thus, the feature batch size is very critical for suc-cessful weight generations. We find that 5 to 10 features at a time provide good cross-feature con-nectivity and tractability for LLM generation. Generation time varies across LLM backbones. Table 4 summarizes the average generation time in seconds for an ad. Combined with Table 1, we can see that Gemini-2.5-Pro offers the best perfor-mance in CTR ranking but also takes the longest generation time offline. Although the long genera-tion time won’t affect the online serving, Gemini-2.5-Pro is still more expensive than its lighter ver-sion, Gemini-2.5-Flash. This provides a trade-off for backend LLMs to balance overall LLM usage and serving performance. 
+
+Models Generation Time(s) GPT-4o 47.7 
+
+GPT-5.1 58.7 
+
+Gemini-2.5-Flash 83.3 
+
+Gemini-2.5-Pro 102.9 
+
+> Table 4: Offline LLM weight generation time (averaged by each ad)
+
+B Metrics Definition for Explainability 
+
+To rigorously evaluate the explainability and align-ment of LLM-HYPER , we define three primary metrics: Hitrate@5 , Coverage@5 , and Consis-tency Rate . These metrics quantify LLM-Hyper’s ability to map ad to feature-level preferences and ensure LLM’s internal reasoning and prediction coherence. 
+
+Hitrate@5 (HR@5) This metric measures whether the ground-truth target feature is identi-fied within LLM’s top-5 predictions. For each ad i,let Pgt,i be the target feature and Ptop 5,i be the set of top-5 features ranked by their predicted weights in descending order. The Hitrate@5 is defined as: HR@5 = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+I(Pgt,i ∈ P top 5,i ) (3) where M denotes the total number of evaluation ad and I(·) is the indicator function. 
+
+Coverage@5 To assess the semantic overlap be-tween the predicted weights and the ground-truth features, we employ a Jaccard-based coverage metric. For cases where an ad align with mul-tiple features (represented as a set Pgt,i ), Cover-age@5 quantifies the intersection over union (IoU) between the predicted top-5 set Ptop 5,i and the ground-truth set: Coverage@5 = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+|P top 5,i ∩ P gt,i ||P top 5,i ∪ P gt,i | (4) Specifically, in scenarios where Pgt,i contains only a single target feature, this metric reflects the preci-sion of the LLM’s high-confidence alignment. 
+
+Consistency Rate Consistency Rate evaluates the logical alignment between the LLM’s natural language reasoning ( Ri) and its generated numeri-cal weight scores ( Si). We utilize Sign Agreement 
+
+as the primary measure. An auxiliary LLM-Judge 
+
+maps the reasoning text Ri into a sentiment polar-ity sign (Ri) ∈ { positive , neutral , negative }. Sim-ilarly, the predicted score Si is mapped based on its scalar value (relative to a threshold of 0). The Consistency Rate is calculated as: Consistency Rate = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+I(sign (Ri) = sign (Si)) 
+
+(5) In practice, we utilize Gemini-2.5-Pro as the LLM-Judge to provide the sentiment polarity sign. 
+
+C Deployment Insights 
+
+In this section, we discuss insights into deployment. 
+
+C.1 Reduction of Hallucination and Randomness 
+
+Hallucinations and randomness in LLM outputs could slow down weight initialization due to incor-rect information and improper numeric scale, re-spectively. For example, hallucinated output could create a non-existing connection, misleading the weight generation and simulating incorrect user-ad interactions. Randomness affects the robustness, especially for features with borderline importance. During deployment, we take several practices to reduce hallucinations and randomness. First, we ask LLM to generate both reasoning and weight to enforce the self-reflection. Figure 5 and 6 show the emphasis of reasoning. Second, we employ the LLM-as-judge technique to validate the generation. The incorrect information will be updated after re-generation. These two help reduce hallucination effectively. To reduce randomness, especially in contextualized and borderline features, we ask the LLM to generate the output multiple times at the given budget and take the average, thereby reduc-ing randomness. Furthermore, the mini-batch-style feature-weight prediction in Appendix A provides additional context, thereby stabilizing weight gen-eration for borderline features. 
+
+C.2 Regulation of Improper Contents 
+
+Improper content could happen if the cold-start ranker ranks the improper ad to users. For ex-ample, ranking a meat-related ad to a user with a strong preference for a vegetarian diet not only harms ranking metrics but also diminishes the user experience. Because the reasoning and weights are generated by LLM-HYPER, we use the same LLM-as-judge technique to cross-validate the fea-ture definition and ad content. This check serves as a filter rather than simply assessing the correct-ness of scores, meaning that filtered ads will be tagged and removed from the ad candidates for ranking and serving if a user has a high value for the corresponding features. Because we only need to validate the generation per ad rather than per user, the check can be performed efficiently at a manageable LLM cost. 
+
+C.3 Prompt Optimization 
+
+The prompt for weight generation in LLM-HYPER is further optimized in practice using DSPy 3 and GEPA (Agrawal et al., 2025), incorporating human rater feedback and instructions from the trained model for warm-start ads. 
+
+> 3https://dspy.ai/
+
+D Visualization of LLM-generated Weights 
+
+In ad ranking, many input features are clearly de-fined. For example, engagement-related features are usually defined by the number of clicks and view events. We use an example of the engage-ment metric defined for toy- and game-related ads— feature_toys_games : Customer engage-ment with toys, games, and puzzle categories .LLM-HYPER will generate weights based on the ad’s content and its relevance to this feature defi-nition. Table 5 summarizes the visualized results, including the LLM reasoning along with the gener-ated weights. LLM-HYPER generates the weight value based on the ad content. For Ad 1, which is about toy and construction sets, LLM-HYPER assigns a large weight value due to its strong con-nection. For Ad 2, which is about outdoor fur-niture, LLM-HYPE generates a very low weight value because of the conflicting relationship be-tween toys and furniture. For Ad 3, LLM-HYPER predicts a neutral score due to weak relevance. These results indicate that LLM-HYPER can trans-late LLM’s strong reasoning capability into linear model weights to simulate user-ad interaction, mit-igating the cold-start issue. 
+
+E More Evaluation Details: Counterfactual Robustness Evaluation 
+
+To evaluate the robustness of LLM-HYPER in industrial settings where ground-truth interaction labels are frequently unavailable, we introduce a counterfactual experiment. This experiment as-sesses whether the model consistently adjusts its weight generation in response to controlled seman-tic perturbations. 
+
+E.1 Perturbation Taxonomy and Construction 
+
+For each ad, we apply three distinct types of seman-tic modifications to the ad title and summary using an auxiliary LLM generator. To ensure semantic validity, these modifications are conditioned on the human-labeled target feature :• Enhanced : Rewrites the ad to strengthen its alignment with the target feature’s latent inter-ests. • Diminished : Rewrites the ad to conflict with or deviate from the target feature. Ad Ad Content Weight Key Signals LLM Rationale 
+
+Ad 1 Age-appropriate building toys and construction sets 0.95 • Strong: Toy and game category engage-ment • Strong: Building and construction toy affin-ity The dominant feature activation centers on toy and building set interactions. The Ad’s prod-uct category and thematic con-tent closely align with this fea-ture’s predictive pattern, indicat-ing strong relevance for engage-ment prediction. Ad 2 High-value outdoor furniture with minor recreational overlap -0.35 • Strong: Indoor recre-ational products • Weak: Outdoor lawn activities The dominant feature signal cen-ters on indoor play items. The secondary outdoor activity signal is insufficient to predict interest in premium outdoor living cate-gories. Ad 3 Children’s footwear (Crocs) with shared toy purchaser demo-graphic 0.0 • Weak: Children’s product category over-lap • Weak: Parent shopper demographic The feature captures toy purchas-ing behavior, which correlates with parents who also purchase children’s apparel and footwear. The cross-category purchasing pattern creates a neutral signal for children’s fashion items de-spite product category mismatch.   
+
+> Table 5: Feature weight predictions for feature_toys_games feature across different ad contexts.
+
+• Neutralized : Rewrites the ad to remove spe-cific feature-targeting cues, resulting in a generic description. The prompt used for Counterfactual modifica-tion is shown in Figure 7. 
+
+E.2 Metric: Accuracy of Weights Direction 
+
+To evaluate the LLM-HYPER ’s robustness, we formulate a binary classification task to deter-mine whether LLM-HYPER adjusts the generated weights in the same semantic direction as the ap-plied modifications. We define the Accuracy of Weights Direction as the primary metric. For each modification type m ∈{Enhanced, Diminished, Neutralized }, let Sorig 
+
+denote the weight of the original ad and Scf denote the weight of the counterfactual ad. For the i-th sample, the binary prediction is considered correct (D(i, m ) = 1 ) if the shift in weight aligns with the semantic intent of the modification: 
+
+D(i, m ) = 
+
+
+
+1 if 
+
+(m = Enhanced ∧ Scf > S orig ) ∨
+
+(m = Diminished ∧ Scf < S orig ) ∨
+
+(m = Neutralized ∧ | Scf | < |Sorig |)0 otherwise (6) The aggregate Accuracy for this binary classifi-cation task is calculated as: Accuracy = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+D(i, m ) (7) where N represents the total number of counter-factual samples. This metric quantifies the LLM’s ability to reliably translate semantic perturbations into consistent numerical weight adjustments for the human-labeled features. 
+
+E.3 Semantic Perturbation Examples 
+
+Table 6 provides examples of the ad transforma-tions across different modification settings used in our robustness experiments. Original Ad Target Fea-tures Mod Type Modified Ad Sorig Scf ∆ Score 
+
+Patio & Gar-den outdoor activity &sports 
+
+Enhanced Game Day Upgrades: Patio & Grill 
+
+0.192 0.735 +0 .543 
+
+Vitamins &Supps Healthy Liv-ing 
+
+Neutralized Daily Essentials 1.055 0.975 −0.080 
+
+Fall Home Trends Home Decor Diminished Fall Gutter & Roof Maintenance 
+
+3.750 1.150 −2.600    
+
+> Table 6: Examples of counterfactual semantic modifications and the resulting weight changes generated by LLM-HYPER (LH 2.5P).
+
+E.4 Case Study: LLM Prediction on Counterfactual Samples 
+
+To verify that LLM-HYPER is not merely reacting to keyword statistics but is performing grounded reasoning, we provide the following representative cases: 
+
+Case 1: Enhanced Sample. For the ad “Fall Savings Patio And Garden” targeted at a outdoor activity&sports feature, the model initially identi-fies a positive relationship. Upon modification to 
+
+“Game Day Upgrades: Patio & Grill Savings” , the model’s internal reasoning successfully identifies 
+
+“Grill” and “Game Day” as high-affinity features for the feature’s interest in social sports gatherings. Consequently, the assigned weight increases from 
+
+0.192 to 0.735 (∆ = +0 .543 ). 
+
+Case 2: Neutralized Sample. In the “Vitamins And Supplements” case for the “Healthy Living” 
+
+feature, the original score ( 1.055 ) indicates a strong match. When neutralized to “Daily Essentials” ,the model’s reasoning explicitly notes the removal of health-specific utility and the loss of medical-grade branding, leading to a dampened weight of 
+
+0.975 (∆ = −0.080 ), correctly reverting toward a neutral baseline. 
+
+Case 3: Diminished Sample. For the ad “Fall Home Trends” targeted at a “Home Decor” fea-ture, the original title aligns with interior aesthetics (3.750 ). However, modifying it to “Fall Gutter & Roof Maintenance” shifts the semantic focus to exterior structural labor. The LLM’s reasoning highlights that this new focus lacks the decorative appeal expected by the feature, resulting in a sharp penalty to 1.150 (∆ = −2.600 ). 
+
+F Related Work 
+
+Cold-start Recommendation has been studied in many past works (Wei et al., 2021; Park and Chu, 2009; Lee et al., 2019; Lu et al., 2020; Vartak et al., 2017). Methods based on content features of cold items (customers) leverage the content similarity between warm and cold data for semantic rele-vance enhancement (Liu et al., 2020; Togashi et al., 2021; Cai et al., 2023) and knowledge alignment (Wei et al., 2021; Huang et al., 2023; Zhou et al., 2023) to enhance the learning on the incomplete labels. Other methods adapt the model agnostic meta-learning framework (Finn et al., 2017) to ad-dress the efficient learning on limited labels (Lee et al., 2019; Vartak et al., 2017; Dong et al., 2020; Yu et al., 2021; Bi et al., 2020). However, all these solutions rely on training labels. Our solution over-comes this limitation in the strict cold start, where no labels are available during the training stage, and leverages LLMs to generate the model weight directly without training. 
+
+Hypernetwork is a neural network that generates model weights for another neural network (i.e., target network) (Ha et al., 2016; Chauhan et al., 2024). Hypernetworks have shown promising re-sults in a variety of deep learning problems (Beck et al., 2023; Zhang et al., 2018; Knyazev et al., 2021; Zhmoginov et al., 2022; Knyazev et al., 2023; Zhang et al., 2024) and parameter generation from pretrained distributions has been addressed in (Schürholt et al., 2021, 2022). Recent works (Soro et al., 2024; Xie et al., 2024) further push the boundary to explore diffusion-based solutions for unseen distributions. However, these solutions are not applicable in the strict cold start scenario due to the absence of training labels. Our proposed LLM-HYPER fills the gap by generating weights from the multi-modal description of the unseen distribution. 
+
+Large Language Models : applications in recom-mender systems fall into three categories: repre-sentation learning, in-context learning, and gener-ative recommendation. In representation learning, LLMs enhance user and item representations by utilizing contextual data during the recommenda-tion process (Hou et al., 2022; Li et al., 2023; Qiu et al., 2021; Yao et al., 2022; Zhang et al., 2022). In-context learning, LLMs follow instructions to di-rectly generate recommendations without the need for training or fine-tuning (Gao et al., 2023; Hou et al., 2024b; Liu et al., 2023; Sun et al.; Dai et al., 2023) even under cold start scenarios. LLM-based generative recommendation directly generates the target item in natural language (Geng et al., 2022; Cui et al., 2022; Liao et al., 2023; Tan et al., 2024; Ma et al., 2024). However, running LLMs in the production environment could be costly. LLM-HYPER generates the model weights for effective real-time performance. 
+
+G LLM-HYPER Prompts Design 
+
+We provide the complete prompt template for the 3-shot CoT with the feature batch size of 5 in Figure 5. Note that the template and instructions could be modified according to actual ad ranking scenarios. We focus on e-commerce ad ranking, so we high-light e-commerce-related guidelines in the prompt template. LLM reasoning can be emphaizd by updating the output format instruction. Figure 6 presents an enhanced version by adding multiple reasoning dimensions, such as context alignment detection, summarization of matching aspects and rationales. Many LLMs support multimodal reasoning. Be-sides image caption, the actual image file could be encoded for better reasoning. This practice will help the robust deployment in an industrial envi-ronment: 
+
+# Create message with an image message = HumanMessage( content=[ {"type": "text", "text": user_prompt}, {"type": "image_url", "image_url": f"{base64_image}" }])# Get response response = llm.invoke([message]) ## System Prompt You are a personalization scoring system that generates feature weights for predicting customer engagement with advertisements . Your role is to analyze customer preferences and ad content to determine the importance of different features in calculating relevance scores . ## User Prompt ** Reference Examples :** Below are 3 past ads with their corresponding weights to guide your predictions :Example 1: - Ad Title : { few_shot [0][ ' ad_title ']} - Image Summary : { few_shot [0][ ' image_caption ']} - Weights : { few_shot [0][ ' ad_weights ']} Example 2: - Ad Title : { few_shot [1][ ' ad_title ']} - Image Summary : { few_shot [1][ ' image_caption ']} - Weights : { few_shot [1][ ' ad_weights ']} Example 3: - Ad Title : { few_shot [2][ ' ad_title ']} - Image Summary : { few_shot [2][ ' image_caption ']} - Weights : { few_shot [2][ ' ad_weights ']} ** Your task ** Given a customer with specific preferences and shopping behavior , generate feature weights for predicting the engagement score when this customer sees the following ad : ** Target Ad :** Generate feature weights for the following ad : - Ad Title : { input_data [ ' ad_title ']} - Image Summary : { input_data [ ' image_caption ']} ** User Features :** - Features : { input_data [ ' features ']} - Descriptions : { input_data [ ' feature_descriptions ']} ** Instructions :** 1. Identify key customer interests from the profile 2. Analyze the target ad to determine product categories 3. Compare ad content with customer interests 4. Assess relevance and alignment 5. Generate weights reflecting each feature 's contribution ** Guidelines :** - Weights follow a normal distribution centered near zero - Typical range : -1 to 1- Consider similarity to reference examples - Only exceed range if examples justify it ## Output Format Return ONLY a JSON object with 5 feature weights . No explanations . {" feature_1 ": 0.123 , " feature_2 ": -0.456 , " feature_3 ": 0.789 , " feature_4 ": -0.234 , " feature_5 ": 0.567 }
+
+Figure 5: Prompt template for generating feature weights in LLM-HYPER. ## System Prompt [ same as the regular LLM - HYPER system prompt ] ## User Prompt [ same as the regular LLM - HYPER user prompts ] ## Formatting Requirements Provide ONLY the JSON output : {" ad_analysis ": " what the ad offers ", " alignment ": " matches and mismatches ", " key_factors ": [" factor1 ", " factor2 "] , " reasoning_summary ": " brief explanation ", " predicted_score ": 0.00 }
+
+Figure 6: Prompt for weight prediction with emphasis of chain-of-thought reasoning. 
+
+## System Prompt [ same as the regular LLM - HYPER system prompt ] ## User Prompt ** Original Ad :** - Title : { original_title } - Image Summary : { original_summary } ** Target Features :** - Features : { input_data [ ' features ']} - Descriptions : { input_data [ ' feature_descriptions ']} ** Modification Type : { modification_type }** For ' enhanced ': Modify to BETTER align with target features For ' diminished ': Modify to LESS align with target features For ' neutralized ': Make more GENERIC , removing category references Keep modifications realistic and subtle . ## Formatting Requirements Provide ONLY the JSON output : {" modified_title ": " new title ", " modified_summary ": " new summary ", " modification_explanation ": " rationale for changes " }
+
+Figure 7: Prompt for generating counterfactual Ad modifications.

@@ -1,0 +1,945 @@
+Title: TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds
+
+URL Source: https://arxiv.org/pdf/2604.13737v1
+
+Published Time: Thu, 16 Apr 2026 00:59:29 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds 
+
+# Yifeng Zhou*, Yuehong Hu*, Zhixiang Feng*, Junwei Pan*, Kaihui Wu, Hanyong Li, Shangyu Zhang, Shudong Huang, Zhangbin Zhu, Chengguo Yin, Haijie Gu, Jie Jiang 
+
+Tencent Inc. Shenzhen, China {joefzhou,patrickhu,lionelfeng,jonaspan}@tencent.com 
+
+## Abstract 
+
+Recommender systems have historically developed along two largely independent paradigms: feature interaction models for modeling correlations among multi-field categorical features, and sequen-tial models for capturing user behavior dynamics from historical interaction sequences. Although recent trends attempt to bridge these paradigms within shared backbones, we empirically reveal that naive unifying these two branches may lead to a failure mode of Sequential Collapse Propagation (SCP). That is, the interaction with those dimensionally ill non-sequence fields leads to the dimen-sional collapse of the sequence features. To overcome this challenge, we propose TokenFormer , a unified recommendation architecture with the following innovations. First, we introduce a Bottom-Full-Top-Sliding (BFTS) attention scheme , which applies full self-attention in the lower layers and shrinking-window sliding attention in the upper layers. Second, we introduce a Non-Linear Interaction Rep-resentation (NLIR) that applies one-sided non-linear multiplicative transformations to the hidden states. Extensive experiments on pub-lic benchmarks and Tencent’s advertising platform demonstrate state-of-the-art performance, while detailed analysis confirm that 
+
+TokenFormer significantly improves dimensional robustness and representation discriminability under unified modeling. 
+
+## 1 Introduction 
+
+Recommender systems are a foundational infrastructure of the mod-ern digital economy, powering online advertising, feed ranking, e-commerce, and short-video platforms. Their practical importance is evident in both monetization scale and user engagement intensity. According to the IAB/PwC Internet Advertising Revenue Report, U.S. internet advertising revenue reached $258.6 billion in 2024, up 14.9% year over year [ 20 ]. At the same time, social and short-video platforms continue to grow rapidly: DataReportal reports 5.24 billion global social media user identities in early 2025 [ 24 ], while TikTok alone reached at least 1.59 billion users via its ad-vertising tools and its Android users spent almost 35 hours on the app in November 2024 [ 25 , 26 ]. Behind this scale lies a core mod-eling problem: given highly sparse user, item, and context signals together with users’ evolving behavior histories, how can we build recommendation models that are both expressive and scalable? A long-standing answer has evolved along two largely separate research branches. The first branch focuses on non-sequential multi-field feature interaction for sparse tabular recommendation. Starting from collaborative filtering and matrix factorization [ 27 ], the lit-erature progressed to explicit interaction models [ 22 , 30 , 35 , 41 ], then to deep CTR architectures [ 6, 11 , 13 , 18 , 28 , 34 , 44 ]. More 
+
+> * Authors contributed equally to this research.
+
+Figure 1: The central tradeoff in unified recommendation modeling. Left: representation discriminability measured by mutual information (MI). Right: dimensional robustness measured by the singular value spectrum and effective rank. Compared with a sequence-only Transformer (green), naive unification of sequential and non-sequential features with a vanilla Transformer (blue) improves discriminability, but also induces much steeper spectral decay and lower effec-tive rank in sequential representations, revealing sequential collapse propagation . The proposed BFTS and NLIR mitigate this collapse, restore dimensional robustness, and further improve discriminability. 
+
+recently, this line has moved toward dense-scaling interaction back-bones [ 31 , 48 , 49 , 57 ]. The second branch focuses on user interest modeling from behavior sequences. This line spans self-attention sequential recommenders [ 23 ], target-aware interest models [ 9, 54 –56 ], and recent long-sequence systems [ 2 , 3, 16 , 17 , 32 , 38 ]. While both branches are central to industrial recommendation, they have traditionally been developed with different operators, different in-ductive biases, and different scaling strategies. However, modern industrial recommender systems are rarely confined to a single modeling paradigm. Real-world applications demand holistic reasoning over both static heterogeneous multi-field features and user sequential behavior trajectories. Despite the clear imperative for unification, bridging these branches re-mains an open challenge. Conventional strategy is to combine them through heterogeneous subnetworks, experts, or late-fusion pipelines [ 31 , 49 , 50 ]. Although recent pioneers like InterFormer, OneTrans, HyFormer, and Kunlun [ 15 , 19 , 46 , 51 ] have moved to-ward unification, they often still preserve an internal separation through hybrid stacks or alternating components. Consequently, there is still no fully integrated architecture capable of natively modeling field-field, sequence-sequence, and sequence-field inter-actions within a single, consistent computational manifold.  
+
+> 1
+> arXiv:2604.13737v1 [cs.IR] 15 Apr 2026 KDD/WWW-style Draft, 2025, Zhou, et al.
+
+A key obstacle to such unification, in our view, is a previously underexplored phenomenon that we term Sequential Collapse Prop-agation (SCP). In industrial settings, many non-sequential features have low information abundance due to various reasons, such as low-cardinality or frequency skewness, making their embeddings prone to occupying a low-dimensional subspace [ 12 ]. In conven-tional decoupled models, this collapse is safely confined to the non-sequential side. However, under a unified model, these collapse-prone static tokens directly interact with sequential behavior tokens through shared operators. Fig.1 reveals a critical tension in such uni-fication. A sequence-only Transformer preserves a comparatively high-dimensional sequential representation space, but suffers from weaker discriminability because it does not leverage non-sequential signals. A naive joint modeling Transformer over both sequence and non-sequence token streams substantially improves mutual in-formation, indicating that static features provide valuable predictive cues, yet it also exhibits a markedly steeper spectral decay, showing that the sequential representations have become significantly more collapsed. To this end, we propose TokenFormer to handle these challenges with three pivotal designs. First, it unifies static fields, behavior tokens, and target attributes into a monolithic stream, enabling all dependencies to be learned by unified blocks. Second, it intro-duces a bottom-full-top-sliding (BFTS) attention schedule, featuring Sliding Window Attention (SWA) with shrinking sliding windows in higher layers. Third, it employs a Non-Linear Interaction Rep-resentation (NLIR) gated mechanism on the model representation layers. As shown in Figure 1, the combination of BFTS and NLIR 
+
+effectively preserves and recovers the intrinsic dimensionality of the representations, thereby improving discriminability and mitigating the degradation of sequential modeling caused by dimensionally ill static features. We provide detailed analyses in Sec. 5 to further validate these findings. Extensive experiments on public datasets and Tencent’s large-scale online advertising platform demonstrate the effectiveness of 
+
+TokenFormer . Beyond overall offline and online improvements, we perform comprehensive analyses of attention patterns, dimensional robustness and representation discriminability, showing that the proposed architecture not only improves recommendation accuracy but also substantially mitigates the dimensional collapse that arises when sequence and non-sequence tokens are unified. The main contributions of this work are summarized as follows: 
+
+• We identify Sequential Collapse Propagation as a central chal-lenge in unified recommendation, and provide empirical evi-dence showing that collapse-prone non-sequential features can induce dimensional collapse in sequential representa-tions under shared backbones. 
+
+• We propose TokenFormer , a homogeneous decoder-only architecture that unifies static feature fields and behavior sequences into a single token stream for recommendation. 
+
+• We introduce a bottom-full-top-sliding interaction hierarchy and a non-linear interaction representation mechanism to jointly improve temporal modeling efficiency, interaction expressiveness, and dimensional robustness. 
+
+• We validate TokenFormer through extensive offline experi-ments and online deployment in Tencent Ads, together with detailed analyses that explain why the proposed design bet-ter resists collapse than existing alternatives. 
+
+## 2 Related Work 2.1 Feature Interaction and Sequential Modeling. 
+
+Feature interaction in multi-field data has evolved from linear meth-ods and Factorization Machines [ 6 , 22 , 30 , 35 , 37 ] to high-order neu-ral crossings like DCN and xDeepFM [ 28 , 43 ]. Modern industrial backbones, including Wukong, DHEN, and RankMixer [ 48 , 49 , 57 ], further scale these interactions for large-scale deployment. Recent studies on representation collapse and expressiveness [ 12 , 31 ] sug-gest that explicit feature crossing, much like attention-based field models [ 39 ], fundamentally follows a pipeline of projection , weight-ing , and multiplicative interaction .Parallelly, sequential recommendation has transitioned from re-current/convolutional units [ 14 , 42 ] to self-attention backbones [23 , 40 ] and target-aware architectures [ 5 , 9 , 32 , 54 , 55 ]. As indus-trial logs expand, a dedicated line of work scales sequence model-ing to lifelong histories via retrieval-based or two-stage systems [ 2, 3 , 17 , 32 , 38 ]. To maintain computational tractability at these scales, sliding-window attention (SWA) [ 1 , 21 , 29 ] and localized transducers like HSTU-Ultra [ 8 ] have emerged as critical primitives for balancing receptive field with efficiency. A discernible trend across both paradigms is the increasing adop-tion of gating mechanisms. Modern architectures, notably HSTU [ 47 ] and its derivatives, demonstrate that augmenting attention with multiplicative modulation significantly bolsters stability and capacity. Under this lens, sequential models converge on a recurring computational motif—computing relevance, aggregating context, and performing gated interactions—revealing that sequential atten-tion is structurally isomorphic to explicit feature interaction, where the “position” in sequences plays a role fundamentally analogous to the “field” in multi-field data. 
+
+## 2.2 Representation Collapse in Recommendation 
+
+Representation collapse refers to the tendency of learned embed-dings to occupy a low-dimensional subspace, losing discriminability across items or users. In the context of recommendation, this prob-lem is especially acute for low-cardinality or weak-information features such as demographic buckets or coarse context fields. Re-cent work has systematically demonstrated that embedding collapse becomes a critical barrier when scaling up recommendation mod-els [ 12 ], and that collapse and feature entanglement jointly degrade recommendation quality in large-scale industrial systems [ 31 ]. From a model design perspective, the Feature Generation paradigm shows that nonlinear interaction operators can explicitly preserve repre-sentation rank during feature crossing [ 45 ], providing a theoretical basis for using multiplicative gating to mitigate collapse. 
+
+## 2.3 Toward Unified Modeling of Fields and Sequences 
+
+Despite sharing computational primitives, feature interaction and sequential modeling have largely evolved as separate trajectories.  
+
+> 2TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025,
+
+Classical hybrid systems, such as DIN [ 55 ], DIEN [ 54 ], DSIN [ 9], BST [ 5 ], and SIM [ 32 ], typically rely on heterogeneous pipelines that late-fuse cross-feature modules with sequence encoders. While effective, these designs lack a homogeneous architecture capable of jointly modeling field-field, sequence-sequence, and sequence-field dependencies [10]. Recent literature has sought to bridge this gap through diverse architectural innovations. InterFormer [ 46 ] introduces a compo-nents interleaving design to facilitate bidirectional information flow, while OneTrans [ 51 ] unifies token types via mixed parameteriza-tion. Similarly, HyFormer [ 19 ] employs query decoding to manage interactions, and Kunlun [ 15 ] adopts a per-layer dual-block strategy. Despite these advancements, a fundamental structural bifurcation between token types often persists. In contrast, TokenFormer originates from a unified formulation :we demonstrate that both explicit feature interaction and sequential attention can be subsumed under a single computational template of projection, relevance weighting, and context mixing. By treating all fields and behaviors as a singular entity stream within a shared gated-attention operator, TokenFormer provides a more uniform and scalable backbone than prior multi-path architectures. 
+
+## 3 Problem Setup and Preliminaries 
+
+We consider recommendation inputs composed of three groups of entities: non-sequential field features F , sequential behavior tokens T , and target features V. Existing recommendation models typically operate on only part of this entity space and focus on spe-cific interaction patterns. This perspective serves as the conceptual bridge to the unified formulation in Sec. 4.1. 
+
+Feature interaction models. Classical feature interaction models mainly consume (F , V) . Each feature is first mapped from its vanilla ID to an embedding, and an interaction function is then applied to model correlations among non-sequential fields and target-side features: 
+
+ˆ𝑦 = 𝜙 (𝑔 FI (F , V)) , (1) where 𝑔 FI (·) denotes the feature interaction function and 𝜙 (·) de-notes the prediction head. Depending on the model, 𝑔 FI may be instantiated as pairwise product, bilinear interaction, or explicit high-order crossing, as in FM, FFM, FwFM, FmFM, CrossNet, and related variants [11, 18, 22, 30, 35, 41, 44]. 
+
+Sequential recommendation models. Sequential models mainly consume T , or (T , V) in the target-aware setting. Each behavior token is first represented by aggregating its constituent features, and the model then captures dependencies through attention-based operators. In particular, 
+
+H = 𝑔 self (T ) , (2) where 𝑔 self (·) denotes self-attention over historical behaviors and captures T ↔ T interactions, as in SASRec, BERT4Rec, BST, and related Transformer-style sequential recommenders [ 5 , 23 , 40 , 47 ]: 
+
+u = 𝑔 target (T , V) , (3) where 𝑔 target (·) denotes target attention and captures T ↔ V 
+
+interactions, as in DIN, DIEN, DSIN, SIM, TWIN, and TIN [ 3, 9, 32 ,54–56]. 
+
+Cross-feature sequential modeling. A smaller but important line of work additionally introduces interactions between sequential and non-sequential entities. Such models jointly consume (F , T ) 
+
+and use a cross-feature interaction function 
+
+z = 𝑔 cross (F , T ) , (4) to capture F ↔ T dependencies, for example through cross-attention [ 46 , 52 ], heterogeneous fusion, or unified hybrid interac-tion blocks [15, 19, 51]. 
+
+From partial interactions to unified interaction. From this viewpoint, existing paradigms cover only subsets of the full entity space: feature interaction models focus on (F , V) , self-attention models focus on T , target-attention models focus on (T , V) , and cross-feature sequential models focus on (F , T ) . This suggests a more general formulation: recommendation can be cast as learning interactions over the unified entity set F ∪ T ∪ V . Our model is built on this principle. 
+
+## 4 TokenFormer 4.1 Unified Token Stream 
+
+The architecture of TokenFormer is illustrated in Figure 2. We define a unified entity set 
+
+E = F ∪ T ∪ V . (5) A unified backbone should jointly model both intra-group and inter-group interactions over E. These interactions include: 
+
+• F ↔ F : correlations among non-sequential user, item, and context features, which are the core object of feature inter-action models. 
+
+• T ↔ T : correlations among historical behaviors, corre-sponding to self-attention in sequential recommendation. 
+
+• V ↔ V : correlations among target-side features for con-structing an expressive target representation. 
+
+• T ↔ V : behavior–target relevance, corresponding to target-attention in target-aware recommendation. 
+
+• F ↔ T : dependencies between user behaviors and non-sequential user/context features, typically handled by cross-feature sequential modeling. 
+
+• F ↔ V : user–target and context–target correlations, which are central to collaborative filtering and feature interaction models. Therefore, unified recommendation requires a single architecture that can simultaneously model all six interaction types, rather than separating feature interaction and sequential modeling into hetero-geneous components. 
+
+4.1.1 Unified Entity Stream. TokenFormer represents all inputs features as a flattened stream of unified tokens. Let 𝑀 be the number of feature fields, 𝑇 the historical sequence length, and 𝐾 the number of target items. The total input sequence length 𝑆 𝐿 is given by: 
+
+𝑆 𝐿 =
+
+(
+
+𝑀 + 𝑇 + 𝐾 + 𝑁 sep without actions ,𝑀 + 2𝑇 + 𝐾 + 𝑁 sep with actions , (6) where 𝑁 sep denotes the number of special delimiter tokens. Unlike conventional models that employ heterogeneous modules for different data types, we construct a unified input X(0) ∈ R𝑆 𝐿 ×𝑑 
+
+for the initial layer by concatenating all entity embeddings. Taking  
+
+> 3KDD/WWW-style Draft, 2025, Zhou, et al.
+
+Unified Interaction Block 
+
+Unified Interaction Block 
+
+> 𝑆𝐸𝑃
+
+… … …
+
+… … …   
+
+> user -centric
+> NTP loss
+> new impression
+> BC Eloss
+> ℱ𝒯 𝒱 𝑆𝐸𝑃
+
+## ⨁ 
+
+> Non -Linear
+
+## ⊙
+
+FFN 
+
+> apply RoPE
+> Full C ausal Mask
+
+A
+
+UI B
+
+## ⨁
+
+## ⨁ 
+
+> Shrink & Discard
+> Shrink & Discard
+> ℱ
+> 𝒘 𝟏
+> 𝒘 𝑳
+> 𝒯 𝒱
+
+Unified Interaction Block 
+
+## ⨂
+
+Q KVG𝒘 𝑳 #𝟏 
+
+> Discard  Discard
+
+… TokenFormer 
+
+> 𝑋 (()
+> 𝑋 ((*+)
+
+…
+
+Norm 
+
+> Bottom -Full -Top -Sliding
+
+Figure 2: Overview of TokenFormer . TokenFormer represents multi-field features F , sequential behavior tokens T , and target features V as a unified token stream, which is processed by stacked Unified Interaction Blocks (UIBs). Each UIB combines the proposed Bottom-Full-Top-Sliding (BFTS) attention design, which applies full causal attention in shallow layers and shrinking SWA in deeper layers, with the Non-Linear Interaction Representation (NLIR) for multiplicative feature interaction. 
+
+the action-aware scenario as an example, the sequence X(0) is formulated as: 
+
+X(0) =
+
+h
+
+xF 
+
+> 1
+
+, . . . , xF
+
+> 𝑀
+
+| {z }
+
+> non-seq tokens
+
+, esep , xT 
+
+> 𝑠 1
+
+, xT 
+
+> 𝑎 1
+
+, . . . , xT 
+
+> 𝑠 𝑇
+
+, xT
+
+> 𝑎 𝑇
+
+| {z }
+
+> seq tokens
+
+, esep , xV 
+
+> 𝑐 1
+
+, . . . , xV
+
+> 𝑐 𝐾
+
+| {z }
+
+> target tokens
+
+i⊤
+
+,
+
+(7) Notably, we dispense with explicit type embeddings, instead, em-ploy a unified Rotary Positional Embedding (RoPE) across the entire stream to inject relative positional information. This allows the model to capture dependencies within a unified geometric space, as further detailed in Sec. D.1. To distinguish between different seg-ments, we insert a special delimiter token ⟨sep ⟩ (with embedding 
+
+esep ) as the segment boundary. 
+
+Unified Positional Assignment. To align sequential and non-sequential multi-field tokens within the RoPE-enhanced attention, we propose a type-aware indexing scheme. We denote 𝑆 𝐿 as the maximum sequence length. Static fields are mapped to a shared prefix, while behavioral tokens and the target follow a relative chronological order: 
+
+𝑝 𝑖 =
+
+
+
+0 if 𝑥 𝑖 ∈ F ,𝑝𝑜𝑠 (𝑥 𝑖 ) if 𝑥 𝑖 ∈ T ,𝑆 𝐿 + 1 if 𝑥 𝑖 ∈ V ,
+
+(8) where 𝑝𝑜𝑠 (·) extracts the chronological temporal index of the be-havioral token. This design ensures to preserves the invariant prop-erties of static features while maintaining the sensitive temporal evolution of user behaviors. 
+
+## 4.2 Unified Interaction Block 
+
+TokenFormer adopts a homogeneous decoder-only backbone with 
+
+𝐿 stacked Unified Interaction Blocks (UIBs). Each block is a variant of the vanilla attention block, specifically augmented by two key innovations: (i) a Bottom-Full-Top-Sliding (BFTS) attention mecha-nism that modifies the attention mask in a layer-dependent manner, and (ii) a nonlinear interacted representation (NLIR) module that improves the attention output through multiplicative modulation. The core transformation at layer 𝑙 is summarized as: 
+
+˜A(𝑙 ) = Attn (X(𝑙 ) , 𝑀 (𝑙 ) 
+
+> 𝐵𝐹𝑇 𝑆
+
+), (9) 
+
+X(𝑙 +1) = FFN (NLIR ( ˜A(𝑙 ) , X(𝑙 ) )) . (10) Here, Attn (·) denotes attention with the proposed BFTS mask sched-ule ( 𝑀 (𝑙 ) 
+
+> 𝐵𝐹𝑇 𝑆
+
+), and NLIR (·) denotes the nonlinear interaction applied to the attention output. The detailed formulations of these two components are given in Sec. 4.3 and Sec. 4.4, respectively. By stacking such blocks, TokenFormer progressively integrates global contextual information in shallow layers and emphasizes more localized temporal structure in deeper layers , while simultaneously enhancing the expressiveness of the attention output through non-linear interaction. 
+
+## 4.3 BFTS Attention Mechanism 
+
+We next describe the attention mechanism used in the Unified Interaction Block. Given the normalized input X(𝑙 ) at layer 𝑙 , we first project it into Q, K, and V, and compute attention in the standard causal form. In TokenFormer , we adopt Rotary Position Embedding (RoPE) to encode relative order information, yielding the attention output: 
+
+˜A(𝑙 ) = Softmax 
+
+ R ( Q, Θ) R ( K, Θ)⊤
+
+√𝑑 𝑘 
+
++ M (𝑙 )
+
+
+
+V, (11) where R (· , Θ) denotes the RoPE transformation, and M (𝑙 ) is the visibility mask at layer 𝑙 .
+
+Sliding Window Attention. A natural way to reduce the cost of dense attention on long behavioral sequences is to restrict each  
+
+> 4TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025,
+
+token to a local receptive field. Concretely, in sliding-window at-tention (SWA), token 𝑖 is allowed to attend only to the most recent 
+
+𝑤 valid predecessors. This is implemented by the following mask: 
+
+M (𝑙 ) 
+
+> 𝑖,𝑗
+
+=
+
+(
+
+0, if 𝑗 ≤ 𝑖 and 𝑖 − 𝑗 < 𝑤, 
+
+−∞ , otherwise . (12) Compared with full causal attention, SWA reduces the effective attention range from the entire prefix to a local window, thereby focusing the model on nearby temporal dependencies. SWA is particularly attractive in unified recommendation model-ing for two reasons. First, it reduces the computational and memory cost of attention from dense global interactions to sparse local in-teractions, which is important when the unified token sequence contains long user histories. Second, many fine-grained behav-ioral dependencies in recommendation are inherently local, such as short-term interest continuation and near-neighbor behavior co-occurrence. By constraining attention to a sliding window, the model can emphasize such local temporal patterns while suppress-ing interference from distant and potentially noisy behaviors. 
+
+From Uniform SWA to Bottom-Full-Top-Sliding. Despite these advantages, applying SWA uniformly to all layers is suboptimal for a unified architecture. In TokenFormer , the input sequence contains not only sequential behavior tokens but also heteroge-neous static feature tokens. Early layers therefore need sufficiently broad receptive fields to establish global cross-domain interactions among these heterogeneous tokens. If all layers are restricted to local windows from the beginning, the model may prematurely lose the ability to propagate global contextual information across the unified sequence. To balance global interaction and local refinement, we propose the Bottom-Full-Top-Sliding (BFTS) mechanism. The key idea is sim-ple: shallow layers use full causal attention to build a comprehensive cross interaction over the unified token stream, while deeper layers switch to shrinking sliding-window attention to refine local tempo-ral structure on top of that foundation. This mechanism aligns the attention range with representation depth: broad interaction is em-phasized in lower layers, while localized refinement is emphasized in deeper layers. Formally, let the 𝐿 -layer backbone consist of 𝑙 f full-attention layers and 𝑙 s sliding-window-attention layers, where 𝐿 = 𝑙 f + 𝑙 s.The entire transformation can be written as 
+
+X(𝐿 ) =
+
+
+
+F (𝑤 𝑙 ) 
+
+> SWA
+
+◦ · · · ◦ F (𝑤 0 )
+
+> SWA
+
+| {z } 
+
+> 𝑙 slayers
+
+◦
+
+
+
+F (∞)  
+
+> Full
+
+◦ · · · ◦ F (∞) 
+
+> Full
+
+| {z } 
+
+> 𝑙 flayers
+
+ X(0) , (13) where F denotes the layer transformation function. To implement the shrinking window strategy, the attention spans {𝑤 𝑘 }𝑙 s 
+
+> 𝑘 =1
+
+are or-dered as 𝑤 𝑙 s < 𝑤 𝑙 s −1 < · · · < 𝑤 1. Accordingly, the layer-dependent visibility mask is defined as 
+
+M (𝑙 ) 
+
+> 𝑖,𝑗
+
+=
+
+(
+
+0, if 𝑗 ≤ 𝑖 and 𝑖 − 𝑗 < 𝜔 (𝑙 ),
+
+−∞ , otherwise , 𝜔 (𝑙 ) =
+
+(
+
+∞, 𝑙 ≤ 𝑙 f ,𝑤 𝑙 , 𝑙 > 𝑙 f .
+
+(14) This progressive reduction in window size forces the model to distill broad global dependencies into increasingly granular and localized representations. TokenFormer preserves global context modeling where it is most needed and introduces local sparsification only after the model has established sufficiently rich cross-token interactions. 
+
+Non-Sequence Token Discarding. In our unified stream, the static field tokens 𝑋 F primarily serve as global contextual priors. Once their information is sufficiently integrated into the sequence representations during the initial layers, retaining them becomes redundant for further refinement. To enforce a more effective rep-resentation paradigm, we implement a layer-wise token discarding strategy. Specifically, after layer 𝑙 f, the model completely ceases to attend to the first 𝑀 non-sequence tokens: 
+
+M (𝑙 ) 
+
+> 𝑖,𝑗
+
+= −∞ , ∀𝑙 ≥ 𝑙 f, 𝑖 ∈ [ 𝑀, 𝑆 𝐿 − 1], 𝑗 ∈ [ 0, 𝑀 − 1]. (15) This strategy ensures that deeper layers allocate their full expressive capacity and attention bandwidth solely to behavioral evolution and target-aware reasoning, further forcing the cross-feature in-teractions (between static features and sequential behaviors) to be thoroughly completed within the early layers. 
+
+## 4.4 Non-Linear Interacted Representation 
+
+TokenFormer incorporates a unified nonlinear interaction para-digm [ 4, 18 , 45 ] designed to enhance representational discriminabil-ity and recover dimensional robustness . Unlike conventional gating mechanisms that treat the modulation branch as a passive coeffi-cient, we interpret it as a learned nonlinear transformation that interacts multiplicatively with the primary feature stream. This design choice aims to strengthen feature expressiveness while si-multaneously mitigating representation collapse. 
+
+Multiplicative Interaction in Attention. To modulate the de-pendency between dense behavioral signals and sparse static fields, we apply an element-wise interaction operation to the attention output A(𝑙 ) . Concretely, we first compute a gate projection from the layer input: 
+
+G(𝑙 ) = X(𝑙 ) W(𝑙 ) 
+
+> 𝑔
+
+, W(𝑙 ) 
+
+> 𝑔
+
+∈ R𝑑 ×𝑑 , (16) and then use it to modulate the attention output: 
+
+˜I(𝑙 ) = 𝜎 (G(𝑙 ) ) ⊙ A(𝑙 ) , (17) where 𝜎 (·) is the sigmoid function. This operation introduces high-order non-linearity into the token mixing process, thereby strength-ening feature interactions and enhancing the discriminability and diversity of the latent representations. By modulating the atten-tion output through multiplicative gating, the model effectively preserves the rank richness of the feature space, producing a more expressive interacted representation for the subsequent stage. The corresponding post-attention residual state is: 
+
+I(𝑙 ) = X(𝑙 ) + ˜I(𝑙 ) . (18) 
+
+## 4.5 SwiGLU Feed-Forward Network. 
+
+Following the gated attention operation, TokenFormer employs a SwiGLU-based feed-forward network. Given the interacted repre-sentation I(𝑙 ) , we first apply RMSNorm and then compute 
+
+˜I(𝑙 ) = RMSNorm (I(𝑙 ) ),
+
+H(𝑙 ) =
+
+
+
+Swish (˜I(𝑙 ) W1) ⊙ ( ˜I(𝑙 ) W2)
+
+
+
+W3,
+
+X(𝑙 +1) = I(𝑙 ) + H(𝑙 ) ,
+
+(19)  
+
+> 5KDD/WWW-style Draft, 2025, Zhou, et al.
+
+where W1, W2, and W3 are learnable weight matrices. This de-sign preserves the standard residual feed-forward update while keeping the feed-forward stage consistent with the multiplicative interaction principle used in the attention branch. 
+
+## 4.6 Unified Optimization Objectives 
+
+A distinguishing feature of TokenFormer is that the same unified token architecture can support different recommendation paradigms under a shared supervision framework. In this work, we consider two settings that are also used in the experiments: User-Centric 
+
+recommendation and New Impression Only recommendation. 
+
+User-Centric setting. The model is trained with dense autore-gressive supervision over the unified token sequence. Historical behaviors, static user fields, and candidate-related tokens are jointly modeled, and the supervision signal can be applied throughout the sequence in a next-token style manner. This setting encourages the model to learn a comprehensive user representation from the full interaction context. 
+
+New Impression Only setting. The model focuses on targeted su-pervision over the newly exposed impression tokens, while treating the preceding user history as contextual input. Historical interac-tions serve as auxiliary contextual priors, providing the necessary background information without contributing to the loss gradients. Consequently, the loss is applied only to the candidate items or terminal decision tokens associated with the current impression thereby aligning this setup with common industrial ranking scenar-ios where the prediction target is confined to the newly arriving candidate set. Formally, let Ω = {1, . . . , 𝑆 𝐿 } be the set of indices for the unified stream. We define Iloss ⊂ Ω as the subset of indices designated for supervision (e.g., indices of target candidates). For each super-vised index 𝑡 ∈ I loss , the final output representation X(𝐿 ) 
+
+> 𝑡
+
+∈ R𝑑 is projected onto an 𝐴 -dimensional action space via a linear head: 
+
+ℓ𝑡 = W𝐿 X(𝐿 ) 
+
+> 𝑡
+
++ b𝐿 , ℓ𝑡 ∈ R𝑁 , (20) where W𝐿 ∈ R𝑁 ×𝑑 and b𝐿 ∈ R𝑁 are learnable parameters. The logits are then normalized with a softmax function, and the model is trained with the Cross-Entropy (CE) loss: 
+
+LCE = − 1
+
+|I loss |∑︁ 𝑡 ∈ I loss 
+
+log exp (ℓ𝑡,𝑐 𝑡 )
+
+Í𝐴 𝑎 =1 exp (ℓ𝑡,𝑎 )
+
+!
+
+, (21) where 𝑐 𝑡 ∈ { 1, . . . , 𝑁 } denotes the ground-truth action label for the token at position 𝑡 .
+
+## 5 Experiments 
+
+We conduct extensive experiments to rigorously evaluate the ef-fectiveness, efficiency, and internal mechanisms of our proposed 
+
+TokenFormer . To provide a clear roadmap for our empirical analy-sis, we aim to answer the following core Research Questions (RQs) in this section: 
+
+• RQ1 (Overall Performance): How does TokenFormer per-form against state-of-the-art baselines under different modeling paradigms (i.e., User-Centric and New Impression Only)? (De-tailed in Sec. 5.2) 
+
+• RQ2 (Representational Discriminability): Do the NLIR and explicit BFTS constraints substantially enhance the discriminabil-ity of the final representations? (Detailed in Sec. 5.3) 
+
+• RQ3 (Dimensional Robustness): How the integration of NLIR and BFTS mitigates the Sequential Collapse Propagation (SCP) typically induced by unifying high-dimensional sequential behav-iors with low-dimensional static features? (Detailed in Sec. 5.4). 
+
+• RQ4 (Layer-wise Attention Allocation): How does the BFTS allocate attention across layers, assigning global heterogeneous integration to shallow layers and localized temporal refinement to deep layers? (Detailed in Sec. 5.5) 
+
+• RQ5 (Efficiency and Effectiveness): Can BFTS-based SWA effectively reduce computational cost (GFLOPs) while simultane-ously boosting predictive accuracy? (Detailed in Sec. 5.6). 
+
+• RQ6 (Ablation Study): What are the individual contributions of each core architectural component within TokenFormer ?(Detailed in Sec. 5.7) 
+
+• RQ7 (Industrial Scalability): Does TokenFormer adhere to neural scaling laws, and how does its representation capacity scale when transitioned from academic datasets to massive in-dustrial environments? (Detailed in Sec. 5.8) 
+
+## 5.1 Experimental Setup 
+
+Datasets. We evaluate our proposed framework on the publicly available KuaiRand-27K dataset, a representative benchmark for se-quential recommendation that comprises approximately 27k unique user interaction trajectories. To ensure a rigorous assessment of model performance, we partition the dataset into training, valida-tion, and testing sets following a 19k/2k/5k split, respectively. To further demonstrate the scalability and generalizability of Token-Former in production-grade environments, we extend our evalu-ation to several high-traffic scenarios within the industrial-scale 
+
+Tencent Ads platform . Unlike public benchmarks, these industrial datasets encompass billions of interaction logs, characterized by extremely high feature sparsity and dynamic user intent. 
+
+Training Paradigm and Optimization. For parameter optimiza-tion, we employ the AdamW optimizer with an initial learning rate of 0.001. We adopt a Next-Token Prediction (NTP) training paradigm, which enables the model to effectively capture the latent transition dynamics across the entire historical sequence. 
+
+## 5.2 Overall Performance Comparison 
+
+To comprehensively evaluate the effectiveness of TokenFormer ,we conduct extensive experiments against a wide range of state-of-the-art baselines. Following the data organization principles in recent generative recommendation [ 53 ], we categorize these models into two distinct paradigms based on their training objectives and sequence handling: 
+
+User-Centric Organization. Models in this setting, including HSTU, HSTU-Ultra, and the vanilla Transformer, are optimized via the standard Next-Token Prediction (NTP) objective across the entire interaction history. This paradigm treats the user’s complete behavior sequence as a single coherent training sample. While it strictly preserves chronological dependencies and captures step-by-step auto-regressive transitions, it often suffers from significant  
+
+> 6TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025,
+
+Table 1: Main results on KuaiRand-27k. Δ denotes the AUC improvement relative to the Transformer baseline in each category, measured in per mille ( ‰).                                                   
+
+> Paradigm Model Macro AUC Δ(‰)Params GFLOPs
+> User-Centric Transformer 0.85467 -3.41M 3.7G HSTU 0.85694 +2.27 0.50M 0.3G HSTU-Ultra 0.85762 +2.95 0.50M 0.2G
+> TokenFormer-T 0.85967 +5.00 0.48M 0.8G
+> TokenFormer-S 0.86043 +5.76 3.77M 3.5G
+> TokenFormer-M 0.86116 +6.49 5.64M 5.3G
+> TokenFormer-L 0.86282 +8.15 10.14M 9.8G New Impression Only Transformer* 0.84019 -3.41M 3.7G OneTrans 0.84663 +6.44 3.91M 0.1G HyFormer 0.85063 +10.44 2.78M 0.2G
+> TokenFormer-S *0.85161 +11.42 3.77M 3.5G
+
+computational redundancy as historical patterns are repeatedly processed during training. 
+
+New Impression Only Organization. Models in this setting, such as OneTrans, HyFormer, and the target-optimized variants (Trans-former* and TokenFormer-S*), are trained exclusively to predict the latest impressed target item. In this paradigm, historical behav-iors are treated primarily as contextual features to facilitate the interaction with the specific target item, rather than modeling the step-by-step sequential evolution of the entire history. Table 1 summarizes the overall performance on the KuaiRand-27K dataset. Based on these empirical results, we draw the following key observations: TokenFormer significantly outperforms all base-lines within the sequence-preserving category. Notably, the tiny version outperforms the Transformer baseline by 5.00 ‰ in AUC, surpassing the strong baseline HSTU-Ultra by 2.05 ‰. This superi-ority underscores the efficacy of our unified gated backbone in cap-turing heterogeneous feature interactions while maintaining strict sequential dependencies. A performance gap is observed between the two paradigms. Models optimized with NTP loss generally ex-hibit higher AUC than their target-loss counterparts. This suggests that preserving the ordinal consistency of user sequences provides a richer supervisory signal for representation learning. Meanwhile, 
+
+TokenFormer delivers highly competitive performance under the 
+
+New Impression Only setting as well, demonstrating its seamless adaptability across different loss formulations. 
+
+## 5.3 Impact of NLIR and BFTS on Representation Expressiveness 
+
+To empirically validate the representational advantages of the mul-tiplicative interactions introduced by the Non-Linear Interaction Representation (NLIR), we analyze the Mutual Information (MI) between the post-attention representations and the target labels. Intuitively, a higher MI indicates that the learned embeddings re-tain more discriminative information. Since the representations are high-dimensional and continuous, we adopt a discretization-based estimator to ensure tractability. Specifically, we partition the repre-sentation space into 𝐾 clusters via K-Means and compute the MI 
+
+Figure 3: Discriminability analysis across varying cluster numbers 𝐾 . To clearly illustrate the performance gains, we report the scaled MI. The proposed BFTS and NLIR can effec-tively improve discriminability for output embeddings. 
+
+between the cluster assignments and the ground-truth labels. This metric serves as a direct quantitative metric for the expressiveness of the output embeddings. The results of this discriminability analysis are illustrated in Figure 3, where we evaluate the MI across various discretization granularities ( 𝐾 ). While the performance gap remains relatively narrow at smaller values of 𝐾 , it widens significantly as the discretization granularity increases. The visualization clearly demonstrates the necessity of our pro-posed components. Specifically, the integration of the BFTS and the NLIR yields a consistent and substantial improvement in MI across nearly all values of 𝐾 , confirming that both modules are indispensable for capturing label-predictive features. This phenom-enon corroborates our theoretical intuition: the explicit non-linear multiplicative interactions introduced by NLIR significantly enrich the representational capacity. BFTS provides an optimized interac-tion pattern to establish a structured receptive field to constrain  
+
+> 7KDD/WWW-style Draft, 2025, Zhou, et al.
+
+Figure 4: Block-wise effective-rank trajectory of sequential behavioral tokens ( T ) for the Vanilla Transformer, +BFTS and +NLIR. We track the output across each block include: Attention output (Eq.11), the successive residual additions (Eq.18), and the FFN output (Eq.19). 
+
+cross-token interference, while NLIR serves as a critical role for distilling complex signals into high-fidelity representations. Their complementary interplay TokenFormer significantly bolsters the discriminative power of the final representations. Beyond the gains attributable to BFTS and NLIR, Figure 3 also re-veals that relying solely on behavioral sequences is insufficient for robust preference modeling: even the vanilla joint modeling (Trans-former) yields a substantial gain in representational discriminability over its sequence-only counterpart (Transformer), confirming that non-sequential static attributes provide indispensable categorical priors that anchor the evolving user interests. However, such a naive unification approach cause the Sequential Collapse Propaga-tion (SCP), as it fails to preserve the dimensional robustness for the vulnerable sequential tokens. 
+
+## 5.4 Impact of NLIR and BFTS on Dimensional Robustness 
+
+We hypothesize that the dimensional collapse in unified recom-mendation is not inevitable. Specifically, we conjecture that the Bottom-Full-Top-Sliding (BFTS) architecture and Non-Linear In-teraction Representation (NLIR) can separately mitigate this issue: BFTS prevents low-rank noise propagation by varying attention scope across layers, while NLIR enhances dimensional robustness by injecting non-linearity into ill-conditioned static features. To examine these effects, we conduct a layer-wise spectral analy-sis on the KuaiRand-27k dataset. We compare three model variants: (1) Transformer, a vanilla joint modeling baseline; (2) BFTS-only, which employs global causal attention in the first two layers and shrinking window SWA in the deep layers; (3) NLIR-only, which conduct the Non-Linear Interaction Representation within the at-tention block. We utilize the effective rank (erank) of hidden rep-resentations in each block as a quantitative metric for representa-tional robustness. The detailed computation procedure is provided in Appendix B.2. As illustrated in Figure 4, the vanilla joint modeling exhibits a markedly steeper spectral decay, confirming that sequential repre-sentations are severely collapsed by the introduction of low-rank 
+
+Figure 5: Effective rank comparison of sequential behavioral tokens ( T ) across layers. To demonstrate the protective effect of the non-linear gating mechanism, we compare the layer-wise outputs given the input X(𝑙 ) . While the linear attention output (Eq. 11) suffers from sharply rank degradation, the non-linear gated output of TokenFormer (Eq. 17) signifi-cantly mitigates this collapse in the early stages. 
+
+static features. Both BFTS and NLIR independently contribute to dimension recovery. These observations suggest that: BFTS limits the propagation of collapse by imposing localized attention priors in deeper layers, which prevents low-rank static noise from diluting the high-frequency behavioral signals. NLIR restores the represen-tation rank by introducing non-linear multiplicative interactions that promote feature decorrelation. This mechanism ensures that the model captures highly expressive representation rather than confining the representation to a few dominant simplistic feature, thereby preserving the expressive granularity. Beyond the primary architectural components, the spectral tra-jectories in Figure 4 elucidate how the residual connections system-atically modulate the representation rank: 
+
+Attention-Residual Restoration : The residual connection after the attention operator, in Eq.18: I(𝑙 ) = X(𝑙 ) +˜I(𝑙 ) ., consistently increases the effective rank. That is, erank (I(𝑙 ) ) is systematically higher than erank (˜I(𝑙 ) ) across nearly all measured stages. This suggests that the attention residual branch does not merely stabilize optimization, but also actively restores dimensional diversity lost during the pure attention transformation. 
+
+FFN-Residual Regularization : After the FFN transformation, the sub-sequent residual connection in Eq.19: X(𝑙 +1) = I(𝑙 ) + H(𝑙 ) , tends to pull the effective rank back to an intermediate range. In most cases, erank (X(𝑙 +1) ) is located between erank (I(𝑙 ) ) and erank (H(𝑙 ) ). This pattern suggests the FFN residual branch plays a critical regulariz-ing role, preventing the representation from drifting too far from the rank profile established by the preceding attention stage. We further focus on the sequential behavioral tokens, whose representations are more susceptible to collapse propagation from static fields in the unified architecture. As shown in Figure 5, al-though the effective rank decreases gradually with depth in both models, this degradation is substantially mitigated when NLIR is enabled. In contrast, the vanilla variant exhibits a sharper drop, suggesting that sequential representations become progressively compressed into a lower-dimensional space.  
+
+> 8TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025,
+
+Figure 6: Evolution of attention patterns. Top: Vanilla Transformer suffers from redundant revisiting of static fields in last layers; once the initial cross-interactions is completed in shallow layers, such back-attend introduces noise. Bottom: TokenFormer 
+
+decouple this by BFTS. It establishes cross-interactions in shallow layers and switches to shrinking window SWA in deeper layers to refine sequential representations. AUC 
+
+Figure 7: Left: Attention receptive field distributions . His-tograms left to right correspond to first and last layer, re-spectively. In shallow layers, TokenFormer exhibits a wider receptive field to facilitate comprehensive cross-integration. In deeper layers, while the Transformer maintains a broad distribution due to redundant back-attention to static tokens. Right: AUC for ablation study. 
+
+Taken together, these observations are consistent with our hy-pothesis. They suggest that the non-linear interaction acts as an effective safeguard against dimensional collapse during heteroge-neous token interaction. More importantly, the results imply that the benefit of gating is not limited to local feature filtering; it also helps preserve representation diversity throughout the network. Meanwhile, the residual branches exhibit their own geometric ef-fect: the attention residual consistently lifts effective rank, while the FFN residual typically re-centers it to an intermediate level. This provides a more refined geometric explanation for the downstream ranking gains of TokenFormer .
+
+## 5.5 Layer-wise Attention Analysis in BFTS 
+
+We argue that an effective feature interaction paradigm should allocate distinct attention scopes to different layers. Intuitively, the learning process can be viewed as an information refinement pipeline: the network should first perform a comprehensive, global interaction between static (low-dimensional, non-sequential) user profiles in the early stages. Once this global context is established, the deeper layers should exclusively concentrate on localized, tem-poral fusion without being distracted by static priors. Specifically, we visualize the attention masks of a Vanilla Trans-former and our TokenFormer across different layers in Figure 6, and further quantify their corresponding attention receptive field distributions via histograms in Figure 7. Our visualizations reveal a stark contrast in their interaction behaviors. As shown in the attention grids Figure 6 (where the first 
+
+𝑀 tokens denote non-sequential tokens), the Vanilla Transformer (top row) attends heavily to these 𝑀 static tokens in both the initial and final layers, while intermediate layers default to localized band-diagonal interactions. The final layers exhibit an attention "drift," persistently attending back to distant, non-sequential positions. This counter-intuitive behavior is corroborated by the histogram analysis (Figure 7), where the Vanilla Transformer average recep-tive field paradoxically expands in the final layers (increasing from 40.0 in the intermediate stage to 46.4). Conversely, due to the ex-plicit formulation of BFTS, Figure 6 (bottom row) TokenFormer its shallow layers force significantly richer and broader interactions with the 𝑀 non-sequential tokens in the shallow layers compared to the Vanilla Transformer (52.7 vs. 40.0), ensuring a more exhaustive cross-domain feature interaction in shallow layers. Furthermore, it exhibits striking intra-window sparsity within the narrowed band, dynamically attending only to the most relevant adjacent tokens rather than uniformly weighting the entire local window. Notably, in deep layers, TokenFormer completely drops the attention to non-sequential positions when applying the SWA. Consequently, the superior predictive performance (i.e., higher AUC) of TokenFormer over the baseline confirms our initial as-sumption. We argue that once static priors are adequately fused with the behavioral sequence in early stages, repeatedly aggregat-ing them in deep layers becomes redundant, potentially introduces noise, and severely dilutes the model’s focus on highly-predictive temporal dynamics. By utilizing the band-diagonal SWA pattern to mask out non-sequential interactions, BFTS forcibly contracts  
+
+> 9KDD/WWW-style Draft, 2025, Zhou, et al.
+
+Figure 8: Efficiency and effectiveness trade-offs of various BFTS configurations. Explicit attention constraints of BFTS improve AUC, while linear-complexity SWA simultaneously reduces GFLOPs 
+
+the attention scope and discards the structural noise introduced by these static tokens. This division of labor ensures a sophisticated functional specialization: early layers are "liberated" to comprehen-sively integrate cross-domain features , while deep layers are entirely dedicated to localized temporal refinement .
+
+## 5.6 Efficiency and Effectiveness of BFTS 
+
+In this section, we investigate whether the BFTS architecture can transcend the traditional trade-off between model performance and computational cost. Our core hypothesis is that while shallow lay-ers require global visibility to fuse heterogeneous features, deeper layers benefit from localized attention, which filters out long-range noise and reduces complexity to near-linear 𝑂 (𝐿 ).The empirical results, as illustrated in Fig. 8, reveal a significant performance gap tied to the hierarchical placement of attention. Our proposed 2F2S architecture achieves the best AUC among all configurations, outperforming the 4F baseline by 0.85 ‰ while re-ducing GFLOPs by 201.0 ‰. Reversing the order to 2S2F, which prematurely constrains interactions in shallow layers, drops AUC by 6.18 ‰. These observations confirm that the architectural integra-tion of BFTS delivers a dual benefit: it acts as a structural regularizer 
+
+that enhances representational purity while simultaneously lower-ing inference costs .Further sensitivity analysis indicates that the effectiveness of BFTS is closely tied to the sliding window size 𝑤 . While overly ex-pansive windows introduce distant noise and narrow windows trun-cate critical local dependencies, an optimal balance ( 𝑤 = [32 , 16 ])yields the peak performance. This suggests that a properly cali-brated window size serves as a vital inductive prior, ensuring the model focuses exclusively on the most pertinent behavioral dy-namics in the final decision stages. Consequently, TokenFormer 
+
+proves to be both a high-precision and high-efficiency backbone for large-scale recommendation. Beyond the macro-architecture, we further hypothesize that the internal configuration of window sizes ( 𝑤 ) should follow a 
+
+Table 2: Architectural configurations of TokenFormer across different model scales. Model Depth Dim Head Num 
+
+TokenFormer-T 4 64 4TokenFormer-S 4 256 4TokenFormer-M 6 256 4TokenFormer-L 8 256 8progressively shrinking pattern across layers to facilitate hierar-chical information distillation. To verify this, we compare uniform and shrinking window configurations within the 2F2S framework. As summarized in Fig. 8, a key observation emerges: shrinking windows consistently outperform their uniform counterparts. For instance, the configuration 𝑤 [32 , 16 ] achieves the best AUC, sur-passing the uniform 𝑤 [32 , 32 ] by 1.53 ‰ in AUC. This progressively shrinking receptive-field bias effectively concentrates the model’s focus on the most immediate and pertinent user local temporal representation. 
+
+## 5.7 Ablation Study 
+
+To dissect the individual contributions of our proposed components and understand their synergistic effects, we conduct an ablation study on the KuaiRand-27k dataset. The results, summarized in Fig.7, provide key insights into the efficacy of the Non-Linear In-teraction Representation (NLIR) and the Bottom-Full-Top-Sliding (BFTS) strategy. 
+
+Effectiveness of NLIR. As reported in Fig.7, incorporating NLIR alone yields a significant performance gain of +4.87 ‰ AUC over the Vanilla Transformer. This improvement supports our hypothesis that standard linear attention often lacks the requisite complexity to capture higher-order feature correlations. By introducing explicit non-linear multiplicative interactions, NLIR not only enhances the 
+
+expressiveness of the learned embeddings but also contributes to 
+
+dimensional robustness . It mitigates the potential representation collapse when aligning sparse, low-dimensional features with dense, high-dimensional sequential tokens 
+
+Impact of the BFTS Strategy. A critical observation arises when applying Sliding Window Attention (SWA) across all layers (denoted as 4S ). This configuration leads to a catastrophic perfor-mance degradation, with the AUC dropping ( -36.35 ‰). We attribute this sharp decline to the restricted receptive field inherent in a fully-windowed architecture, which inhibits the model’s ability to capture long-range temporal dependencies and global sequential patterns, resulting in information fragmentation. In contrast, our BFTS strat-egy mitigates this limitation by employing full attention in the early layers to establish comprehensive cross-token interactions, while reserving SWA for deeper layers to perform fine-grained, localized temporal refinement. As evidenced in Fig.7, the BFTS strategy achieves a robust improvement of +4.91 ‰ over the Vanilla Transformer, validating the necessity of hierarchical receptive field for modeling complex sequential patterns. 
+
+Online Ablation Study. We further conduct an online ablation study in the Tencent Ads production environment using AUC as the evaluation metric. The production baseline is the conventional 
+
+> 10
+
+TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025, 
+
+DLRM architecture, which has been incrementally trained on large-scale business data. Starting from a TokenFormer variant with full attention , we observe a relative AUC change of -0.16% compared with the production baseline. Replacing the full-attention backbone with the proposed BFTS mechanism turns the result into a positive gain of +0.14% . Finally, further equipping the BFTS backbone with the proposed NLIR achieves the best performance, yielding a relative AUC improvement of +0.22% over the production baseline. 
+
+## 5.8 Model Scaling and Empirical Observations 
+
+To investigate the capacity potential of the TokenFormer architec-ture, we conduct a scaling analysis by progressively increasing the model depth and hidden dimensions, as detailed in Table 2. Our empirical results on the public KuaiRand-27K dataset initially reveal a clear scaling law phenomenon: as the model complexity expands from Tiny to Large , we observe consistent performance gains in ranking accuracy (see Table 1). However, this scaling trajectory encounters a plateau beyond the 
+
+TokenFormer-L configuration. We attribute this saturation to the inherent data cardinality bottleneck of the KuaiRand-27K dataset, where the limited sample volume proves insufficient to regularize a model of such high capacity, eventually leading to marginal overfit-ting . In stark contrast, when deployed in our proprietary industrial production environment ( Tencent Ads ), which operates at a signifi-cantly larger data scale, TokenFormer continues to yield sustained performance improvements without exhibiting signs of premature saturation. This divergence suggests that while the architecture possesses a high theoretical upper bound for representation learn-ing, its full potential is best unlocked in data-abundant regimes typical of large-scale industrial scenarios. 
+
+## 5.9 Online A/B Tests 
+
+To evaluate whether the offline gains of TokenFormer transfer to production, we deploy it in the WeChat Channels advertising system and conduct online A/B tests in the feed recommendation scenario. The experiment is carried out on real production traffic from January 2026 to February 2026, with the treatment model exposed to 5% of the online traffic. The online baseline follows a decoupled design for sequential and non-sequential features and is trained incrementally on contin-uously accumulated business data, making it a strong and highly optimized production system. In contrast, TokenFormer replaces this separated modeling pipeline with a unified token-based archi-tecture, where heterogeneous static fields and sequential behaviors are jointly modeled through the proposed BFTS and NLIR. Token-Former is trained from scratch on two years of historical data before being deployed to the online A/B test. We report GMV as the primary online business metric. Com-pared with the production baseline, TokenFormer achieves a 4.03% 
+
+uplift in GMV during the A/B test. These results show that the gains observed offline can transfer to real serving conditions, and fur-ther confirm that the proposed unified architecture is practical and effective for large-scale industrial deployment. 
+
+## 6 Conclusion 
+
+In this paper, we identify Sequential Collapse Propagation (SCP) as a fundamental challenge in unifying multi-field and sequential recom-mendation. We empirically show that while non-sequential features provide informative priors, their low-rank nature can collapse be-havioral representations within shared backbones. To mitigate this, we propose TokenFormer , integrating a bottom-full-top-sliding (BFTS) attention hierarchy and a non-linear interaction represen-tation (NLIR) mechanism. Extensive experiments and online de-ployment in Tencent Ads demonstrate that TokenFormer not only achieves state-of-the-art accuracy but also recovers the intrinsic dimensionality of the representation manifold. Our work provides a robust blueprint for transitioning from heterogeneous expert ensembles toward unified, consistent recommendation backbones. 
+
+## References 
+
+[1] Iz Beltagy, Matthew E Peters, and Arman Cohan. 2020. Longformer: The long-document transformer. arXiv preprint arXiv:2004.05150 (2020). [2] Zheng Chai, Qin Ren, Xijun Xiao, Huizhi Yang, Bo Han, Sijun Zhang, Di Chen, Hui Lu, Wenlin Zhao, Lele Yu, et al . 2025. LONGER: Scaling Up Long Sequence Modeling in Industrial Recommenders. arXiv:2505.04421 [cs.IR] [3] Jianxin Chang, Chenbin Zhang, Zhiyi Fu, Xiaoxue Zang, Lin Guan, Jing Lu, Yiqun Hui, Dewei Leng, Yanan Niu, Yang Song, et al . 2023. TWIN: TWo-stage Interest Network for Lifelong User Behavior Modeling in CTR Prediction at Kuaishou. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD) . 3784–3794. [4] Jianxin Chang, Chenbin Zhang, Yiqun Hui, Dewei Leng, Yanan Niu, Yang Song, and Kun Gai. 2023. Pepnet: Parameter and embedding personalized network for infusing with personalized prior information. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 3795–3804. [5] Qiwei Chen, Huan Zhao, Wei Li, Pipei Huang, and Wenwu Ou. 2019. Behavior sequence transformer for e-commerce recommendation in alibaba. In Proceedings of the 1st international workshop on deep learning practice for high-dimensional sparse data . 1–4. [6] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra, Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, et al .2016. Wide & Deep Learning for Recommender Systems. In Proceedings of the 1st Workshop on Deep Learning for Recommender Systems . 7–10. [7] Weiyu Cheng, Yanyan Shen, and Linpeng Huang. 2020. Adaptive factorization network: Learning adaptive-order feature interactions. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 34. 3609–3616. [8] Qin Ding, Kevin Course, Linjian Ma, Jianhui Sun, Rouchen Liu, Zhao Zhu, Chunx-ing Yin, Wei Li, Dai Li, Yu Shi, et al . 2026. Bending the Scaling Law Curve in Large-Scale Recommendation Systems. arXiv preprint arXiv:2602.16986 (2026). [9] Yufei Feng, Fuyu Lv, Weichen Shen, Menghan Wang, Fei Sun, Yu Zhu, and Keping Yang. 2019. Deep Session Interest Network for Click-Through Rate Prediction. In Proceedings of the Twenty-Eighth International Joint Conference on Artificial Intelligence (IJCAI) . 2301–2307. [10] Huan Gui, Ruoxi Wang, Ke Yin, Long Jin, Maciej Kula, Taibai Xu, Lichan Hong, and Ed H Chi. 2023. Hiformer: Heterogeneous feature interactions learning with transformers for recommender systems. arXiv preprint arXiv:2311.05884 (2023). [11] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017. DeepFM: A Factorization-Machine based Neural Network for CTR Prediction. In Proceedings of the Twenty-Sixth International Joint Conference on Artificial Intelligence (IJCAI) . 1725–1731. [12] Xingzhuo Guo, Junwei Pan, Ximei Wang, Baixu Chen, Jie Jiang, and Mingsheng Long. 2024. On the embedding collapse when scaling up recommendation models 
+
+(ICML’24) . JMLR.org, Article 671, 19 pages. [13] Xiangnan He and Tat-Seng Chua. 2017. Neural Factorization Machines for Sparse Predictive Analytics. In Proceedings of the 40th International ACM SIGIR Conference on Research and Development in Information Retrieval . 355–364. [14] Balázs Hidasi, Alexandros Karatzoglou, Linas Baltrunas, and Domonkos Tikk. 2016. Session-based Recommendations with Recurrent Neural Networks. In 
+
+International Conference on Learning Representations (ICLR) Workshop .[15] Bojian Hou, Xiaolong Liu, Xiaoyi Liu, Jiaqi Xu, Yasmine Badr, Mengyue Hang, Sudhanshu Chanpuriya, Junqing Zhou, Yuhang Yang, Han Xu, Qiuling Suo, Laming Chen, Yuxi Hu, Jiasheng Zhang, Huaqing Xiong, Yuzhen Huang, Chao Chen, Yue Dong, Yi Yang, Shuo Chang, Xiaorui Gan, Wenlin Chen, Santanu Kolay, Darren Liu, Jade Nie, Chunzhi Yang, Jiyan Yang, and Huayu Li. 2026. Kunlun: Establishing Scaling Laws for Massive-Scale Recommendation Systems through Unified Architecture Design. arXiv preprint arXiv:2602.10016 (2026). 11 KDD/WWW-style Draft, 2025, Zhou, et al. 
+
+[16] Ruijie Hou, Zhaoyang Yang, Yu Ming, Hongyu Lu, Zhuobin Zheng, Yu Chen, Qinsong Zeng, and Ming Chen. 2024. Cross-Domain LifeLong Sequential Model-ing for Online Click-Through Rate Prediction. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . ACM, 5116–5125. doi:10.1145/3637528.3671601 [17] Xian Hu, Ming Yue, Zhixiang Feng, Junwei Pan, Junjie Zhai, Ximei Wang, Xinrui Miao, Qian Li, Xun Liu, Shangyu Zhang, et al . 2025. Practice on Long Behavior Sequence Modeling in Tencent Advertising. arXiv:2510.21714 [cs.IR] [18] Tongwen Huang, Zhiqi Zhang, and Junlin Zhang. 2019. FiBiNET: Combining Feature Importance and Bilinear Feature Interaction for Click-Through Rate Prediction. In Proceedings of the 13th ACM Conference on Recommender Systems (RecSys) . 169–177. [19] Yunwen Huang, Shiyong Hong, Xijun Xiao, Jinqiu Jin, Xuanyuan Luo, Zhe Wang, Zheng Chai, Shikang Wu, Yuchao Zheng, and Jingjian Lin. 2026. HyFormer: Revis-iting the Roles of Sequence Modeling and Feature Interaction in CTR Prediction. 
+
+arXiv preprint arXiv:2601.12681 (2026). [20] Interactive Advertising Bureau and PricewaterhouseCoopers. 2025. In-ternet Advertising Revenue Report: Full Year 2024 . Technical Report. In-teractive Advertising Bureau (IAB) and PricewaterhouseCoopers (PwC). https://www.iab.com/wp-content/uploads/2025/04/IAB_PwC-Internet-Ad-Revenue-Report-Full-Year-2024.pdf Reports U.S. internet advertising revenue of $258.6 billion in 2024, up 14.9% year over year. [21] Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, De-vendra Singh Chaplot, Diego de Las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. 2023. Mistral 7B. CoRR abs/2310.06825 (2023). arXiv:2310.06825 doi:10.48550/ARXIV.2310.06825 [22] Yuchin Juan, Yong Zhuang, Wei-Sheng Chin, and Chih-Jen Lin. 2016. Field-aware Factorization Machines for CTR Prediction. In Proceedings of the 10th ACM Conference on Recommender Systems . 43–50. [23] Wang-Cheng Kang and Julian McAuley. 2018. Self-Attentive Sequential Rec-ommendation. In 2018 IEEE International Conference on Data Mining (ICDM) .197–206. [24] Simon Kemp. 2025. Digital 2025: The State of Social Media in 2025 . DataRepor-tal. https://datareportal.com/reports/digital-2025-sub-section-state-of-social Reports 5.24 billion active social media user identities worldwide in early 2025. [25] Simon Kemp. 2025. Digital 2025: Top Social Platforms in 2025 . DataReportal. https: //datareportal.com/reports/digital-2025-sub-section-top-social-platforms Re-ports that TikTok’s Android user base spent almost 35 hours using the app in November 2024. [26] Simon Kemp. 2025. TikTok Users, Stats, Data & Trends for 2025 . DataReportal. https://datareportal.com/essential-tiktok-stats Reports TikTok advertising reach of at least 1.59 billion users in January 2025. [27] Yehuda Koren, Robert Bell, and Chris Volinsky. 2009. Matrix Factorization Tech-niques for Recommender Systems. Computer 42, 8 (2009), 30–37. [28] Jianxun Lian, Xiaohuan Zhou, Fuzheng Zhang, Zhongxia Chen, Xing Xie, and Guangzhong Sun. 2018. xDeepFM: Combining Explicit and Implicit Feature Interactions for Recommender Systems. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD) . 1754– 1763. [29] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. 2021. Swin transformer: Hierarchical vision transformer us-ing shifted windows. In Proceedings of the IEEE/CVF international conference on computer vision . 10012–10022. [30] Junwei Pan, Jian Xu, Alfonso Lobos Ruiz, Wenliang Zhao, Shengjun Pan, Yu Sun, and Quan Lu. 2018. Field-weighted Factorization Machines for Click-Through Rate Prediction in Display Advertising. In Proceedings of The Web Conference (WWW) . 1349–1357. [31] Junwei Pan, Wei Xue, Ximei Wang, Haibin Yu, Xun Liu, Shijie Quan, Xueming Qiu, Dapeng Liu, Lei Xiao, and Jie Jiang. 2024. Ads Recommendation in a Collapsed and Entangled World. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 3319–3330. [32] Qi Pi, Guorui Zhou, Yujing Zhang, Zhe Wang, Lejian Ren, Ying Fan, Xiaoqiang Zhu, and Kun Gai. 2020. Search-based User Interest Modeling with Lifelong Sequential Behavior Data for Click-Through Rate Prediction. In Proceedings of the 29th ACM International Conference on Information & Knowledge Management .2685–2692. [33] Zihan Qiu, Zekun Wang, Bo Zheng, Zeyu Huang, Kaiyue Wen, Songlin Yang, et al . 2025. Gated Attention for Large Language Models: Non-linearity, Sparsity, and Attention-Sink-Free. arXiv preprint arXiv:2505.06708 (2025). [34] Yanru Qu, Han Cai, Kan Ren, Weinan Zhang, Yong Yu, Ying Wen, and Jun Wang. 2016. Product-Based Neural Networks for User Response Prediction. In Proceed-ings of the 2016 IEEE International Conference on Data Mining . 1149–1154. [35] Steffen Rendle. 2010. Factorization Machines. In 2010 IEEE International Confer-ence on Data Mining (ICDM) . 995–1000. [36] Steffen Rendle, Walid Krichene, Li Zhang, and John Anderson. 2020. Neural collaborative filtering vs. matrix factorization revisited. In Proceedings of the 14th ACM conference on recommender systems . 240–248. [37] Matthew Richardson, Ewa Dominowska, and Robert Ragno. 2007. Predicting clicks: estimating the click-through rate for new ads. In Proceedings of the 16th international conference on World Wide Web . 521–530. [38] Zihua Si, Lin Guan, ZhongXiang Sun, Xiaoxue Zang, Jing Lu, Yiqun Hui, Xingchao Cao, Zeyu Yang, Yichen Zheng, Dewei Leng, et al . 2024. TWIN-V2: Scaling Ultra-Long User Behavior Sequence Modeling for Enhanced CTR Prediction at Kuaishou. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management . 4890–4897. [39] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang, and Jian Tang. 2019. AutoInt: Automatic Feature Interaction Learning via Self-Attentive Neural Networks. In Proceedings of the 28th ACM International Confer-ence on Information and Knowledge Management (CIKM) .[40] Fei Sun, Jun Liu, Jian Wu, Changhua Pei, Xiao Lin, Wenwu Ou, and Peng Jiang. 2019. BERT4Rec: Sequential Recommendation with Bidirectional Encoder Rep-resentations from Transformer. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management (CIKM) . 1441–1450. [41] Yang Sun, Junwei Pan, Alex Zhang, and Aaron Flores. 2021. 𝐹 𝑀 2: Field-matrixed Factorization Machines for Recommender Systems. In Proceedings of the Web Conference (WWW) . 2828–2837. [42] Jiaxi Tang and Ke Wang. 2018. Personalized Top-N Sequential Recommenda-tion via Convolutional Sequence Embedding. In Proceedings of the 11th ACM International Conference on Web Search and Data Mining (WSDM) .[43] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & cross network for ad click predictions. In Proceedings of the ADKDD’17 . 1–7. [44] Ruoxi Wang, Rakesh Shivanna, Derek Z. Cheng, Sagar Jain, Dong Lin, Lichan Hong, and Ed H. Chi. 2021. DCN V2: Improved Deep & Cross Network and Practical Lessons for Web-scale Learning to Rank Systems. In Proceedings of the Web Conference (WWW) . 1785–1797. [45] Mingjia Yin, Junwei Pan, Hao Wang, Ximei Wang, Shangyu Zhang, Jie Jiang, Defu Lian, and Enhong Chen. 2025. From Feature Interaction to Feature Generation: A Generative Paradigm of CTR Prediction Models. arXiv preprint arXiv:2512.14041 
+
+(2025). [46] Zhichen Zeng, Xiaolong Liu, Mengyue Hang, Xiaoyi Liu, Qinghai Zhou, Chaofei Yang, Yiqun Liu, Yichen Ruan, Laming Chen, Yuxin Chen, et al . 2025. InterFormer: Effective Heterogeneous Interaction Learning for Click-Through Rate Prediction. In Proceedings of the 34th ACM International Conference on Information and Knowledge Management .[47] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhaojie Gong, Fangda Gu, Jiayuan He, Yinghai Lu, and Yu Shi. 2024. Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations. In Proceedings of the 41st International Conference on Machine Learning (ICML) .[48] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Daifeng Guo, Yanli Zhao, Shen Li, Yuchen Hao, Yantao Yao, Guna Lakshminarayanan, Ellie Dingqiao Wen, Jongsoo Park, Maxim Naumov, and Wenlin Chen. 2024. Wukong: Towards a Scaling Law for Large-Scale Recommendation. arXiv:2403.02545 [cs.LG] [49] Buyun Zhang, Liang Luo, Xi Liu, Jay Li, Zeliang Chen, Weilin Zhang, Xiaohan Wei, Yuchen Hao, Michael Tsang, Wenjun Wang, et al . 2022. DHEN: A Deep and Hierarchical Ensemble Network for Large-Scale Click-Through Rate Prediction. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 2060–2069. [50] Junjie Zhang, Ruobing Xie, Hongyu Lu, Wenqi Sun, Wayne Xin Zhao, Yu Chen, and Zhanhui Kang. 2025. Frequency-Augmented Mixture-of-Heterogeneous-Experts Framework for Sequential Recommendation. In Proceedings of the ACM on Web Conference 2025 . 2596–2607. [51] Zhaoqi Zhang, Haolei Pei, Jun Guo, Tianyu Wang, Yufei Feng, Hui Sun, Shaowei Liu, and Aixin Sun. 2025. OneTrans: Unified Feature Interaction and Sequence Modeling with One Transformer in Industrial Recommender. arXiv:2510.26104 [cs.IR] [52] Zuowu Zheng, Xiaofeng Gao, Junwei Pan, Qi Luo, Guihai Chen, Dapeng Liu, and Jie Jiang. 2022. AutoAttention: Automatic Field Pair Selection for Attention in User Behavior Modeling. In 2022 IEEE International Conference on Data Mining (ICDM) . 1257–1262. [53] Guorui Zhou, Hengrui Hu, Hongtao Cheng, Huanjie Wang, Jiaxin Deng, Jinghao Zhang, Kuo Cai, Lejian Ren, Lu Ren, Liao Yu, et al . 2025. Onerec-v2 technical report. arXiv preprint arXiv:2508.20900 (2025). [54] Guorui Zhou, Na Mou, Ying Fan, Qi Pi, Weijie Bian, Chang Zhou, Xiaoqiang Zhu, and Kun Gai. 2019. Deep Interest Evolution Network for Click-Through Rate Prediction. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 33. 5941–5948. [55] Guorui Zhou, Xiaoqiang Zhu, Chengru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep Interest Network for Click-Through Rate Prediction. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD) . 1059– 1068. 12 TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025,     
+
+> [56] Haolin Zhou, Junwei Pan, Xinyi Zhou, Xihua Chen, Jie Jiang, Xiaofeng Gao, and Guihai Chen. 2024. Temporal Interest Network for User Response Prediction. In
+> Companion Proceedings of the ACM on Web Conference 2024 . 413–422. [57] Jie Zhu, Zhifang Fan, Xiaoxie Zhu, Yuchen Jiang, Hangyu Wang, Xintian Han, Haoran Ding, Xinmin Wang, Wenlin Zhao, Zhen Gong, et al .2025. RankMixer: Scaling Up Ranking Models in Industrial Recommenders. arXiv:2507.15551 [cs.IR]
+
+## A Complexity Analysis and Serving Optimization 
+
+This appendix analyzes the computational complexity of the pro-posed Bottom-Full-Top-Sliding (BFTS) design and the serving-side optimization used in online deployment. We focus on the dominant attention cost and omit lower-order terms such as normalization, bias addition, and point-wise nonlinearities. 
+
+Full attention vs. sliding-window attention. Consider an attention layer with sequence length 𝐿 and hidden dimension 𝑑 . For full atten-tion, both score computation and value aggregation are dominated by dense pairwise interactions, yielding 
+
+Cfull = O( 𝐿 2𝑑 ). (22) When sliding-window attention is used with window size 𝑤 , each token attends to at most 𝑤 preceding tokens, reducing the complex-ity to 
+
+Cwindow = O( 𝐿𝑤𝑑 ), 𝑤 ≪ 𝐿. (23) Hence, 
+
+Cwindow 
+
+Cfull 
+
+= 𝑤 𝐿 , (24) showing that local attention becomes substantially cheaper when 
+
+𝑤 ≪ 𝐿 .
+
+Backbone complexity under BFTS.. Suppose the TokenFormer 
+
+backbone contains 𝐿 𝑓 full-attention layers and 𝐿 𝑤 sliding-window-attention layers. Its total complexity is 
+
+Chybrid = O  𝐿 𝑓 𝐿 2𝑑 + 𝐿 𝑤 𝐿𝑤𝑑  , (25) whereas an all-full-attention backbone of the same depth would require 
+
+Call -full = O  (𝐿 𝑓 + 𝐿 𝑤 )𝐿 2𝑑  . (26) Thus, BFTS preserves global modeling in lower layers while re-ducing the cost of upper layers through local attention. The same distinction also appears in memory usage: 
+
+Mfull = O( 𝐿 2), Mwindow = O( 𝐿𝑤 ). (27) 
+
+Serving complexity under joint encoding. Let 𝐿 𝑢 and 𝐿 𝑎 denote the numbers of user-side and ad-side tokens, respectively, and let 
+
+𝐵 be the number of candidate ads scored for one request. Under a straightforward joint-encoding strategy, each candidate is scored with a concatenated sequence of length 𝐿 𝑢 + 𝐿 𝑎 , giving 
+
+Cjoint serve = O  𝐵 (𝐿 𝑢 + 𝐿 𝑎 )2𝑑  . (28) A key inefficiency here is that the user-side self-interaction is re-computed for every candidate, even though the user context is shared. 
+
+Serving complexity under decoupled encoding. To remove this redundancy, we adopt a decoupled serving strategy. The user-side tokens are encoded once and compressed into 𝑁 summary tokens, which are then combined with each candidate ad for scoring. The resulting complexity is 
+
+Cdecouple serve = O  𝐿 2
+
+> 𝑢
+
+𝑑 + 𝐵 (𝑁 + 𝐿 𝑎 )2𝑑  . (29) Compared with Eq. 28, the quadratic user-side term is no longer multiplied by 𝐵 , and the candidate-specific cost depends on the compressed representation length 𝑁 rather than the original user sequence length 𝐿 𝑢 . The complexity gap between the two serving strategies can be written as 
+
+ΔC = Cjoint serve −C decouple serve ≈ O  (𝐵 − 1)𝐿 2
+
+> 𝑢
+
+𝑑 + 𝐵 (𝐿 𝑢 + 𝐿 𝑎 )2 − ( 𝑁 + 𝐿 𝑎 )2 𝑑  .
+
+(30) As long as 𝐵 > 1 and 𝑁 < 𝐿 𝑢 , the decoupled design is asymptotically more efficient. 
+
+Practical serving improvement. In our online deployment, the de-coupled inference strategy improves serving throughput from 126 QPS to 695 QPS, corresponding to a 5.5 × speedup. This gain is con-sistent with the above analysis: it comes from removing repeated user-side computation and combining it with the architectural spar-sification induced by BFTS. 
+
+Summary. Overall, TokenFormer improves efficiency from two complementary perspectives: BFTS reduces the cost of upper layers through local attention, while decoupled serving amortizes user-side computation across candidate ads. Together, these two mecha-nisms make the model substantially more practical for large-scale industrial deployment. 
+
+## B Analysis Tools B.1 Mutual Information Diagnostics of Hidden Representations 
+
+This appendix details the computation of the mutual information (MI) diagnostics used in Section 5.4. These diagnostics quantify how much task-relevant discriminative information is retained in the model’s output representations with respect to each user action. 
+
+Representation extraction. For each model variant, we perform a forward pass over the test set and extract three types of repre-sentations: (i) the raw logit output Xraw ∈ R𝑁 ×𝑑 , (ii) the sigmoid-activated output Xsig ∈ R𝑁 ×𝑑 , and (iii) the penultimate-layer hidden states Xpen ∈ R𝑁 ×𝑑 ℎ , where 𝑁 is the number of test samples and 𝑑 ,
+
+𝑑 ℎ denote the output and hidden dimensions, respectively. 
+
+Multi-label construction. Our recommendation task involves mul-tiple user actions. For each sample 𝑖 , we extract a binary label vector 
+
+y𝑖 =  𝑦 (1) 
+
+> 𝑖
+
+, . . . , 𝑦 (𝐴 )
+
+> 𝑖
+
+ ∈ { 0, 1}𝐴 , (31) where 𝐴 denotes the number of action types ( e.g. , click, like, follow, comment, forward) and 𝑦 (𝑎 ) 
+
+> 𝑖
+
+= 1 indicates that the user performed action 𝑎 on the target item. Each action is treated as an independent binary classification task for MI estimation.  
+
+> 13 KDD/WWW-style Draft, 2025, Zhou, et al.
+
+Continuous MI estimation. We estimate the mutual information between the continuous representations and each binary action label using the 𝑘 -nearest-neighbor-based KSG estimator. For each action 𝑎 , the per-feature MI scores are aggregated to obtain a scalar: 
+
+MI (𝑎 ) 
+
+> KSG
+
+=
+
+> 𝑑
+
+∑︁ 
+
+> 𝑗 =1
+
+b𝐼 
+
+
+
+𝑋 𝑗 ; 𝑌 (𝑎 ) 
+
+, (32) where b𝐼 (· ; ·) denotes the KSG estimate for the 𝑗 -th feature dimension and the 𝑎 -th action label. The KSG estimator operates directly on continuous representations, thereby avoiding information loss from discretization. 
+
+Discretized MI via KMeans clustering. As a complementary ap-proach, we discretize the continuous representations using KMeans clustering. For a given number of clusters 𝐾 , we fit KMeans on Xraw 
+
+and assign each sample to its nearest cluster center: 
+
+𝑐 (𝐾 ) 
+
+> 𝑖
+
+= KMeans (x𝑖 ; 𝐾 ) , 𝑖 = 1, . . . , 𝑁 . (33) We then compute the discrete mutual information between the cluster variable 𝐶 and each action label 𝑌 (𝑎 ) :
+
+MI (𝑎 ) (𝐾 ) =∑︁  
+
+> 𝑐 ∈ C
+
+∑︁ 𝑦 ∈ { 0,1}
+
+𝑝 (𝑐, 𝑦 ) log 𝑝 (𝑐, 𝑦 )
+
+𝑝 (𝑐 ) 𝑝 (𝑦 ) , (34) where C = {1, . . . , 𝐾 }. We evaluate the following cluster numbers: 
+
+𝐾 ∈ { 4, 8, 16 , 32 , 48 , 64 , 96 }, (35) to assess the robustness of the MI estimates with respect to dis-cretization granularity. 
+
+Weighted aggregation across actions. Since different actions ex-hibit vastly different positive rates, we aggregate per-action MI scores into a single summary statistic via a weighted mean: 
+
+MI =
+
+Í𝐴 𝑎 =1 𝑤 𝑎 · MI (𝑎 )
+
+Í𝐴 𝑎 =1 𝑤 𝑎 
+
+, (36) where the weights 𝑤 𝑎 reflect the relative importance of each action. When not explicitly specified, the weights default to the positive sample counts 𝑤 𝑎 = 𝑛 + 
+
+> 𝑎
+
+= Í𝑖 𝑦 (𝑎 ) 
+
+> 𝑖
+
+, ensuring that rare but important actions are not dominated by high-frequency ones. 
+
+Multi-seed aggregation. To reduce variance from random initial-ization, we repeat all experiments across multiple random seeds. For each model variant, we compute MI diagnostics independently per seed and report the mean across seeds. 
+
+Interpretation. The MI diagnostics provide a functional assess-ment of representation quality by directly measuring how much discriminative information the learned representations preserve for each downstream action. The continuous KSG estimator avoids discretization artifacts, while the KMeans-based MI offers inter-pretability through explicit clustering structure. Together, they provide complementary views of the information content from both nonparametric and partition-based perspectives. 
+
+Figure 9: Block-wise effective-rank trajectory of sequential behavioral tokens ( T ) for the Vanilla Transformer, Trans-former with only sequence tokens, TokenFormer , +BFTS and +NLIR. We track the output across each block include: Attention output (Eq.11), the successive residual additions (Eq.18), and the FFN output (Eq.19). 
+
+## B.2 Spectral Diagnostics of Hidden Representations 
+
+This appendix details the computation of the spectral diagnostics used in Section 5.4, including the effective rank and the normalized singular value spectrum. 
+
+Hidden representation extraction. For each layer 𝑙 , we collect hidden representations from a forward pass over the test set. We retain only the item and candidate-item tokens, identified by their token types, and stack their hidden states into a representation matrix 
+
+X(𝑙 ) ∈ R𝑆 𝑙 ×𝑑 , (37) where 𝑆 𝑙 denotes the number of collected tokens at layer 𝑙 , and 𝑑 
+
+is the hidden dimension. In our experiments, 𝑑 = 256 . To keep the analysis computationally tractable, we cap the number of sampled tokens at 𝑆 max = 10 ,000 .
+
+Singular value decomposition. Given the representation matrix 
+
+X(𝑙 ) , we first center it by subtracting the column-wise mean: 
+
+¯X(𝑙 ) = X(𝑙 ) − 1𝑆 𝑙 𝝁 (𝑙 )⊤ , 𝝁 (𝑙 ) = 1
+
+𝑆 𝑙 𝑆 𝑙 ∑︁ 
+
+> 𝑖 =1
+
+x(𝑙 ) 
+
+> 𝑖
+
+, (38) where x(𝑙 ) 
+
+> 𝑖
+
+denotes the 𝑖 -th row of X(𝑙 ) . We then perform singular value decomposition (SVD): 
+
+¯X(𝑙 ) = U(𝑙 ) Σ(𝑙 ) V(𝑙 ) ⊤, (39) with 
+
+Σ(𝑙 ) = diag 
+
+
+
+𝑠 (𝑙 ) 
+
+> 1
+
+, 𝑠 (𝑙 ) 
+
+> 2
+
+, . . . , 𝑠 (𝑙 )
+
+> 𝑑
+
+
+
+, (40) where {𝑠 (𝑙 ) 
+
+> 𝑘
+
+}𝑑 𝑘 =1 are the singular values sorted in descending order. 
+
+Effective rank. To quantify subspace utilization, we compute the entropy-based effective rank from the singular value distribution. Specifically, we first normalize the singular values as 
+
+𝑝 (𝑙 ) 
+
+> 𝑘
+
+= 𝑠 (𝑙 )
+
+> 𝑘
+
+Í𝑑 𝑗 =1 𝑠 (𝑙 )
+
+> 𝑗
+
+, 𝑘 = 1, . . . , 𝑑. (41)  
+
+> 14 TokenFormer: Unify the Multi-Field and Sequential Recommendation Worlds KDD/WWW-style Draft, 2025,
+
+The effective rank of layer 𝑙 is then defined as 
+
+𝑟 (𝑙 ) 
+
+> eff
+
+= exp −
+
+> 𝑑
+
+∑︁ 
+
+> 𝑘 =1
+
+𝑝 (𝑙 ) 
+
+> 𝑘
+
+log 𝑝 (𝑙 )
+
+> 𝑘
+
+!
+
+. (42) A larger effective rank indicates that variance is distributed across a broader set of latent dimensions, whereas a smaller value implies stronger concentration in a low-dimensional subspace. 
+
+Normalized singular value spectrum. To characterize how vari-ance is distributed across latent dimensions, we further compute the normalized singular value spectrum by dividing each singular value by the largest one: 
+
+˜𝑠 (𝑙 ) 
+
+> 𝑘
+
+= 𝑠 (𝑙 )
+
+> 𝑘
+
+𝑠 (𝑙 )
+
+> 1
+
+, 𝑘 = 1, . . . , 𝑑. (43) The resulting spectrum { ˜𝑠 (𝑙 ) 
+
+> 𝑘
+
+}𝑑 𝑘 =1 satisfies ˜𝑠 (𝑙 ) 
+
+> 1
+
+= 1 and is mono-tonically non-increasing. A slower decay indicates that variance is spread more evenly across dimensions, while a steeper decay suggests that the representation is dominated by a small number of leading singular directions. 
+
+Layer-wise and stage-wise analysis. For the layer-wise analysis, we compute the above diagnostics independently for each layer 𝑙 .For the intra-block analysis in Section 5.4, the same procedure is applied to hidden representations collected at three stages within each Transformer block: (i) the attention output before the residual connection, (ii) the MLP/FFN output before the residual connection, and (iii) the final block output after residual addition. 
+
+Interpretation. The spectral diagnostics capture complementary aspects of representation geometry. Effective rank reflects the over-all degree of subspace utilization, whereas the normalized singular value spectrum reveals how variance is distributed among singular directions. Together, they provide a compact characterization of dimensional robustness in the learned hidden representations. 
+
+## C Normalized Singular Value Spectrum Analysis 
+
+This appendix provides a complementary spectral analysis of hid-den representations using normalized singular value spectra. To further examine how variance is distributed across latent dimensions, we compare the normalized singular value spectra of the gated and non-gated models. As shown in Figure 10, across all layers, the gated TokenFormer exhibits a less top-heavy spec-trum and a heavier tail than the non-gated variant. In other words, variance is distributed more evenly across dimensions rather than being dominated by a few singular directions. This result provides complementary evidence for the same con-clusion as the effective-rank analysis. While the effective rank re-flects the overall degree of subspace utilization, the spectral distri-bution reveals how variance is structurally allocated within that subspace. Taken together, both observations support the claim that explicit gating improves dimensional robustness by preserv-ing richer and more balanced representations. This also provides a geometric explanation for the downstream ranking gains of Token-Former : better-preserved representation diversity leads to stronger and more stable sequence modeling. 
+
+Figure 10: Per-layer normalized singular value spectra. Com-pared with the non-gated baseline, TokenFormer exhibits less top-heavy spectra, indicating a more balanced allocation of variance across latent dimensions. 
+
+## D Discussion D.1 RoPE-based Positional Awareness 
+
+From Additive to Multiplicative Dynamics. Contrary to conven-tional recommendation paradigms that often marginalize positional embeddings arguing that explicit timestamps in side-information provide sufficient implicit chronology . We argue that capturing fine-grained relative dependencies is pivotal for modeling user behavior evolution. Standard architectures typically employ additive posi-tional encodings, where the attention score between a query q at position 𝑚 and a key k at position 𝑛 is: Attn (𝑚, 𝑛 ) = (q + p𝑚 )⊤ (k + p𝑛 ) = q⊤k
+
+|{z} 
+
+> semantic
+
++ q⊤p𝑛 + p⊤ 
+
+> 𝑚
+
+k
+
+| {z }
+
+> cross-terms
+
++ p⊤ 
+
+> 𝑚
+
+p𝑛 
+
+|{z} 
+
+> bias
+
+,
+
+(44) where p denotes absolute positional embeddings. We observe that such additive schemes inevitably introduce detrimental noise through the cross-terms. Because positional embeddings typically reside in a lower-intrinsic-dimensional subspace, forcing additive interactions between high-dimensional semantic states and low-rank positional vectors can trigger severe representation interference , where the intrinsic geometry of the semantic manifold is compromised to satisfy rigid positional constraints. To preserve representation integrity, TokenFormer adopts mul-tiplicative RoPE . By rotating hidden states in the complex plane, the interaction is redefined as: Attn (𝑚, 𝑛 ) = (R𝑚 q)⊤ (R𝑛 k) = q⊤ (R⊤ 
+
+> 𝑚
+
+R𝑛 )k = q⊤R𝑛 −𝑚 k. (45) Crucially, unlike additive projections, R𝑛 −𝑚 is an orthogonal matrix. This unitary transformation acts as a full-rank isometry, strictly pre-serving the 𝐿 2 norm and the intrinsic dimensionality of the semantic representations without squashing them into a low-rank subspace.  
+
+> 15 KDD/WWW-style Draft, 2025, Zhou, et al.
+
+This formulation elegantly encodes the relative distance 𝑛 − 𝑚 di-rectly into the phase of the hidden states. Therefore, TokenFormer 
+
+completely circumvents the risk of rank collapse, maintaining the full expressive power of the semantic manifold while achieving superior length extrapolation. 
+
+Type-Aware Feature Interactions. According to the properties of RoPE, the relative rotation matrix between any two static tokens is R0−0 = I. Consequently, the attention score between field tokens degenerates into a pure semantic dot-product: Attn (0, 0) = q⊤k.By sharing position 𝑝 0, the Transformer backbone executes multi-order feature interactions analogous to a Factorization Machine (FM) without positional interference. Furthermore, when sequential tokens interact with static fields, the relative rotation R𝑛 −0 allows the model to dynamically modulate its reliance on static profiles based on the specific temporal stage 𝑛 of the user’s journey, learning how historical context should be weighted against long-term user preferences. 
+
+## D.2 Gated Mechanism 
+
+While gated mechanisms are broadly adopted [ 4, 7, 18 , 33 ], we specifically theoretically frame their necessity in our unified archi-tecture through two critical lenses: 
+
+Representation Expressiveness. Capturing sparse ID co-occur-rences inherently requires explicit multiplicative interactions [ 36 ,47 ], which vanilla attention lacks during value aggregation. The gating formulation (i.e., Eq.17) injects this requisite nonlinearity, expanding the model’s hypothesis space (detailed in Sec. 5.3). 
+
+Dimensional Robustness. According to Interaction Collapse The-ory [ 12 ], unifying low-cardinality static features with dynamic sequences amplifies the risk of rank collapse. The nonlinear mul-tiplicative operator theoretically preserves the dimensional rank of X1, effectively truncating the collapse propagation across do-mains [45] (empirically validated in Sec. 5.4).

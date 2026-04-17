@@ -1,0 +1,460 @@
+Title: PeReGrINE: Evaluating Personalized Review Fidelity with User Item Graph Context
+
+URL Source: https://arxiv.org/pdf/2604.07788v1
+
+Published Time: Fri, 10 Apr 2026 00:32:54 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+Preprint. Under review. 
+
+# PeReGrINE: Evaluating Personalized Review Fidelity with User–Item Graph Context 
+
+Steven Au 
+
+Icahn School of Medicine at Mount Sinai 
+
+steven.au@mssm.edu 
+
+Baihan Lin 
+
+Icahn School of Medicine at Mount Sinai 
+
+baihan.lin@mssm.edu 
+
+## Abstract 
+
+We introduce PeReGrINE, a benchmark and evaluation framework for personalized review generation grounded in graph-structured user–item evidence. PeReGrINE restructures Amazon Reviews 2023 into a tempo-rally consistent bipartite graph, where each target review is conditioned on bounded evidence from user history, item context, and neighborhood inter-actions under explicit temporal cutoffs. To represent persistent user prefer-ences without conditioning directly on sparse raw histories, we compute a User Style Parameter that summarizes each user’s linguistic and affective tendencies over prior reviews. This setup supports controlled comparison of four graph-derived retrieval settings: product-only, user-only, neighbor-only, and combined evidence. Beyond standard generation metrics, we introduce Dissonance Analysis, a macro-level evaluation framework that measures deviation from expected user style and product-level consensus. We also study visual evidence as an auxiliary context source and find that it can improve textual quality in some settings, while graph-derived evi-dence remains the main driver of personalization and consistency. Across product categories, PeReGrINE offers a reproducible way to study how evi-dence composition affects review fidelity, personalization, and grounding in retrieval-conditioned language models. 
+
+## 1 Introduction 
+
+Personalized generation is difficult to evaluate because the model has to satisfy two con-straints at the same time. It has to say something correct about the item, and it has to sound like the user who is supposed to be writing. Reviews make this tension easy to see. A good review is grounded in product details, but it also reflects the reviewer’s tone, sentiment, and tolerance for flaws. Standard overlap metrics only capture part of that behavior, and many existing setups do not separate which evidence source is helping with which part of the task. Recent benchmarks have made this area easier to study. LaMP (Salemi et al., 2024) framed personalized text generation across several tasks, and PGraphRAG (Au et al., 2025) showed that graph-based retrieval can help with personalized review writing. Still, retrieval design matters. If the retrieval query contains fragments of the target review, the search area can become narrow in a way that is hard to disentangle from leakage. We refer to our benchmark as PeReGrINE, short for Personalized Review Generation with Graph and Image-grounded Neighborhood Evidence. PeReGrINE uses a different setup. Item-side retrieval is anchored on product metadata that exists before generation, and every retrieved context is filtered by explicit temporal cutoffs. We build PeReGrINE by restructuring Amazon Reviews 2023 (Hou et al., 2024) into a temporally consistent bipartite graph of users, items, and reviews. Each target review is paired with bounded evidence from three sources: the user’s earlier reviews, prior reviews of the same item, and product metadata. Instead of conditioning the language model directly on long and often sparse raw histories, we compute a User Style Parameter that summarizes stable linguistic and affective tendencies from a user’s past reviews. This gives 1
+
+> arXiv:2604.07788v1 [cs.IR] 9 Apr 2026
+
+Preprint. Under review. us a compact representation of user behavior while keeping retrieval tied to information that would be available at inference time. The benchmark supports four retrieval settings: product-only, user-only, neighbor-only, and combined evidence. This gives a direct way to test what each source contributes. Product evidence may improve grounding. User history may improve personalization. Neighbor reviews may help with product-level consensus. To measure these trade-offs, we combine standard generation metrics with Dissonance Analysis, a macro-level evaluation framework that measures deviation from expected user style and product-level consensus. We also study visual evidence as an auxiliary context source so that the benchmark is relevant to multimodal language models as well as text-only retrieval-augmented models. Our results are fairly consistent. Within PeReGrINE’s own ablations, combined graph evidence gives the best overall balance between grounding and personalization, while visual evidence helps in some settings but does not replace graph structure. In matched reruns against LaMP-style and PGraphRAG baselines, PeReGrINE improves review-text metrics on a metadata-required subset, while the baselines remain stronger on some title and rating metrics. The contribution of PeReGrINE is mainly in data construction and evaluation, not in proposing a new training algorithm. We see it as a benchmark for studying retrieval-augmented and multimodal language models under a personalized generation setting. Our contributions are: • We introduce PeReGrINE, a benchmark for personalized review generation built from Amazon Reviews 2023 with explicit temporal constraints and bounded graph evidence. • We define a product-anchored retrieval setup that separates product grounding, user history, and neighbor consensus, and avoids using target-review fragments to drive item retrieval. • We propose a compact User Style Parameter for representing persistent reviewer behavior without conditioning directly on sparse raw histories. • We introduce Dissonance Analysis and use it to study how text, graph, and visual evidence affect fidelity, personalization, and product grounding. 
+
+## 2 Related Work 
+
+2.1 Personalized Text Generation 
+
+Personalized generation aims to adapt model outputs to a particular user’s preferences, style, or behavioral history. Early work on personalized dialogue and text generation relied on explicit user attributes or hand-written personas (Zhang et al., 2018; Wolf et al., 2019). More recent approaches use instruction tuning, retrieval, or profile summarization to condition large language models on user histories (Alhafni et al., 2024; Jiang et al., 2024; Mysore et al., 2024). LaMP (Salemi et al., 2024) was especially influential because it turned personalization into a benchmark problem and made it easier to compare methods across tasks such as summarization and review synthesis. That line of work established the importance of user context, but it does not fully answer how to combine user-specific signals with item-specific grounding. Reviews are shaped by both. A model that only sees user history may capture tone but miss the product, while a model that only sees product information may produce generic text. PeReGrINE is designed as an evaluation setting for that trade-off. 
+
+2.2 Graph Retrieval for Personalized Reviews 
+
+Graph-based methods provide a natural way to organize user-item interactions. In rec-ommender systems, graph neural networks and knowledge-graph methods use local and multi-hop structure to propagate preference signals across users and items (Wang et al., 2Preprint. Under review. 2019b; He et al., 2020; Wang et al., 2019a). Retrieval-augmented language models extend a similar idea to text generation by selecting relevant context at inference time (Lewis et al., 2020; Izacard & Grave, 2021). For personalized reviews, this structure remains useful even when the generator has vision capabilities. Images can add product cues, but they do not remove the need to separate user evidence, item evidence, and neighborhood consensus. Existing graph-retrieval work mostly focuses on text and interaction signals, so it leaves open where visual context should enter a personalized generation pipeline: retrieval, context construction, or generation. That gap motivates PeReGrINE’s benchmark design. PGraphRAG (Au et al., 2025) is the closest prior work. PeReGrINE builds on the same general problem setting of graph-based personalized review generation, but changes the evaluation protocol in two ways. First, item-side retrieval is anchored on product metadata that is available before generation rather than on text derived from the target review. Second, all retrieved evidence is filtered by explicit temporal cutoffs. These choices make the setup closer to deployment-time retrieval, but they also change the retrieval problem itself. For that reason, published PGraphRAG numbers are not directly comparable to PeReGrINE unless both methods are rerun under the same constraints. We want to be explicit about scope here. PeReGrINE is not meant to claim that one retrieval choice is universally better in every application. The narrower claim is that benchmark comparisons are easier to interpret when the retriever only uses information that would be available before generation. That is why we disclose the difference in retrieval protocol directly. 
+
+2.3 Multimodal Signals in Review Settings 
+
+Visual information has long been useful in recommendation and preference modeling. Prior work uses images and other multimodal features to improve item representations, ranking, or compatibility prediction (He & McAuley, 2016; Wei et al., 2020; Luo et al., 2021). In generation, multimodal models have been effective for captioning, question answering, and visually grounded reasoning, but personalized language generation remains less explored. When visual context is used for review generation, it often improves factual grounding to the item while leaving the writing style relatively generic (Yan et al., 2023; Ceylan et al., 2024). Our focus is narrower. We use images as auxiliary evidence inside a benchmark where the main question is how different evidence sources affect personalization and consistency. In PeReGrINE, visual evidence is useful to study, but it is not the only or primary signal. 
+
+## 3 Problem Formulation 
+
+We model the review ecosystem as a bipartite graph G = ( U, I, E), where U is the set of users, I is the set of items, and each edge in E is a review connecting a user to an item. A review is represented as 
+
+r = ( s, t, b, V, τ), (1) where s is the scalar rating, t is the review title, b is the review body, V is optional visual evidence associated with the review, and τ is the timestamp. Each item node i ∈ I also contains product metadata Mi, such as textual descriptions and catalog images. Each benchmark instance corresponds to a target user-item pair (u, i) and a gold review written at time τ⋆. The model is allowed to use only evidence with timestamps earlier than 
+
+τ⋆. This constraint is enforced for both user history and item neighborhoods. For a target item i, we define the temporally valid item neighborhood as 
+
+H<τ⋆ 
+
+> i
+
+= {r | (v, i, r) ∈ E, v ∈ U, τ(r) < τ⋆}. (2) The item profile is then 
+
+Pi = ( Mi, H<τ⋆ 
+
+> i
+
+). (3) 3Preprint. Under review. For a target user u, the temporally valid user history is 
+
+Pu = H<τ⋆ 
+
+> u
+
+= {r | (u, j, r) ∈ E, j ∈ I, τ(r) < τ⋆}. (4) The task is to generate a full review ˆRgen = ( ˆs, ˆt, ˆb) that is grounded in the item context while reflecting the user’s writing behavior. 
+
+3.1 User Style Parameter 
+
+Rather than conditioning directly on all of Pu, we compute a dense User Style Parameter 
+
+θs = Aggregate (Pu), (5) which summarizes stable linguistic and affective tendencies from the user’s prior reviews. This summary is used to rank evidence and to represent persistent user preferences without forcing the language model to ingest long, sparse histories. 
+
+3.2 Operational Objective 
+
+At the full-profile level, the task can be written as ˆRgen = arg max  
+
+> R′
+
+Pr (R′ | Pi, Pu). (6) In practice, the full profiles are too large to condition on directly, so we introduce item-side and user-side retrieval functions: ˆRgen = arg max  
+
+> R′
+
+Pr (R′ | R i(Pi, θs), Ru(Pu)) . (7) One practical distinction of PeReGrINE is that Ri never observes the target review text. Item-side retrieval is anchored on product metadata and temporally valid item neighbors, while Ru draws from the user’s prior reviews. This keeps the benchmark focused on inference-time evidence rather than answer-like queries. 
+
+## 4 Method 
+
+PeReGrINE uses a retrieval-augmented pipeline with three stages, shown in Figure 1. First, we compute a compact user style summary θs. Second, we retrieve item evidence and user evidence from the graph under a strict temporal cutoff. Third, we prompt a language model to generate a rating, title, and review body from the selected evidence. 
+
+4.1 User Style Aggregation 
+
+To compute θs, we extract a stylometric feature vector from each review in the user’s history. The vector contains 11 explicit features: four length features (character count, word count, sentence count, and average sentence length), four sentiment features from VADER (positive, negative, neutral, and compound), and three writing-style features (punctuation density, capitalization ratio, and first-person pronoun density). We average these features over the full user history to obtain a single style vector. This summary is not meant to replace the user’s raw history in every setting. Its role is narrower. It gives the retriever a stable way to compare candidate evidence against the user’s past behavior, especially when the raw history is sparse or noisy. 
+
+4.2 Product-Anchored Item Retrieval 
+
+The item retriever constructs a bounded item context Ci = Ri(Pi, θs) from product metadata and temporally valid neighbor reviews. The procedure is product-anchored in the sense that the semantic query comes from Mi, not from any fragment of the target review. 4Preprint. Under review. 
+
+Figure 1: Overview of PeReGrINE. The system computes a user style summary, retrieves item-side and user-side evidence from the graph, and then conditions a language model on the resulting context. We first gather all reviews attached to the target item that satisfy the temporal cutoff. If the neighborhood contains more than k candidates, we rank each review r ∈ H<τ⋆ 
+
+> i
+
+using score (r) = 0.5 × sim semantic (r, Mi) + 0.5 × sim style (r, θs). (8) The semantic term is the cosine similarity between the candidate review text and the item metadata embedding. The style term is the cosine similarity between the candidate’s stylometric vector and θs.This design keeps retrieval tied to information that would exist before generation. The retriever sees the product description, the user’s historical style summary, and the graph neighborhood, but not the gold review text. That is the main methodological difference between PeReGrINE and review-text-query setups. For visual evidence, we caption catalog images and user-provided review images with a pretrained vision-language model and store the resulting text. These captions are appended to the retrieved context after ranking. They do not determine the ranking score itself, which keeps the search process centered on graph evidence and product metadata rather than image availability. This design also defines the current scope of the multimodal claim. PeReGrINE is multi-modal at the evidence-construction and generation stages, but not in the retrieval ranking itself. Images are converted to captions and used as auxiliary context after retrieval, while the ranking function remains text- and style-based. We treat this as a deliberate simplifica-tion for benchmark design, but also as a limitation. The current benchmark does not test whether image embeddings or joint vision-text retrieval would improve item selection. 
+
+4.3 User Retrieval 
+
+The user retriever builds Cu = Ru(Pu) by selecting a small set of reviews from the target user’s earlier history. Here we are not looking for product relevance. We want representative examples of the user’s own voice. We therefore rank each candidate review using only the style similarity term: score user (r) = sim style (r, θs). (9) The top-ku reviews are passed to the language model as style evidence. 5Preprint. Under review. 
+
+4.4 Generation 
+
+The final stage prompts a language model with the retrieved evidence. The same basic prompt template is used across product-only, user-only, neighbor-only, and combined settings; unavailable evidence blocks are simply removed. The model is asked to produce a rating, a title, and a review body in a fixed format. The full template used in the combined setting is shown in Appendix Figure 2. 
+
+## 5 Experiments 
+
+5.1 Data and Workflow 
+
+We use Amazon Reviews 2023 across 7 product categories, with summary statistics in Appendix Table 6. Every instance satisfies a minimum user history size of |Hu| ≥ 4 and a minimum item neighborhood size of |Hi| ≥ 3. The training split is used only to populate the retrieval database. At evaluation time, all retrieved evidence must precede the target review timestamp. The dataset also has a visible temporal shift. The development splits contain older reviews and a much smaller share of image-based examples than the test splits. This makes the benchmark useful for studying how retrieval settings behave under different levels of available visual context. We also disclose an important protocol choice. PeReGrINE is not directly comparable to setups that retrieve with fragments of the target review or other answer-like text. Those queries can shrink the candidate set around the gold review. In PeReGrINE, item retrieval is anchored on product metadata and prior graph evidence only. We make this choice to reduce leakage risk and to keep the evaluation closer to what would be available before generation. It may also make retrieval harder, so the distinction should be kept in mind when comparing against prior work. We run four experimental stages: 1. A text-only ablation on the All Beauty subset using Qwen2.5-3B-Instruct, comparing product-only, user-only, neighbor-only, and combined evidence. 2. A text-only model comparison on the combined setting for All Beauty. 3. A multimodal ablation on All Beauty using Qwen3-VL-8B-Instruct. 4. A final category-level run with the combined multimodal setting on the full 500-instance test sets for all 7 categories. 
+
+5.2 Evidence Settings 
+
+To isolate the effect of each evidence source, we evaluate four retrieval settings: 1. Product: item metadata Mi only. 2. User: user history Hu only. 3. Neighbor: prior reviews of the target item Hi only. 4. Both: product metadata, user history, and item neighbors together. 
+
+5.3 Matched Baselines 
+
+For a fair comparison, we rerun LaMP-style prompting, PGraphRAG, and PeReGrINE on the same metadata-required subset of 100 All Beauty development examples, using the same temporal cutoffs, generator path, prompt budget, and output format. We also test a joint PeReGrINE variant that writes one full review and then projects that output to title, text, and rating evaluation. 6Preprint. Under review. Table 1: Matched baseline comparison on the metadata-required 100-example All Beauty development subset. Higher is better for ROUGE-L, BERTScore-F1, and METEOR. Lower is better for MAE and RMSE.                                         
+
+> Method Text R-L Text B-F1 Text M Title R-L Title B-F1 Title M MAE RMSE LaMP 0.1452 0.7573 0.1180 0.1593 0.7477 0.1468 0.30 0.6164 PGraphRAG 0.1475 0.7551 0.1259 0.1459 0.7365 0.1303 0.29 0.5916
+> PeReGrINE 0.1595 0.7636 0.1443 0.1474 0.7400 0.1343 0.33 0.6708 PeReGrINE-joint 0.1277 0.7543 0.1665 0.0465 0.7092 0.0304 0.94 1.5427
+
+We do not treat published results from prior work as directly comparable because the retrieval protocol is different. PeReGrINE anchors item retrieval on product metadata and prior graph evidence only, so a matched rerun is the appropriate comparison. All reruns passed the minimum-k constraints, user and neighbor invariants, parsing checks, and non-empty-query checks. One caveat is that the OpenAI Responses path used for these reruns did not support explicit seed control. Table 1 adds the main comparison missing from the earlier draft. On this matched subset, PeReGrINE gives the strongest review-text ROUGE-L and BERTScore-F1, while LaMP gives the strongest title metrics and PGraphRAG gives the lowest rating error. The joint variant has the highest review-text METEOR, but that appears to come from longer generations rather than better task fidelity. This pattern fits the retrieval designs: PeReGrINE is optimized for grounded review generation, while rating prediction is less directly targeted than in query styles that place more weight on answer-like sentiment cues. The joint variant performs substantially worse, especially on title and rating metrics. This is mainly a mode mismatch rather than a retrieval failure. In the split setting, each task is prompted separately. In the joint setting, one review is reused for all three evaluations. On this subset, the joint model predicts a 5-star rating in 85 of 100 cases, compared with 54 gold 5-star ratings, and produces much longer reviews on average than the split version. The paired significance tests also show strong split-versus-joint differences. For example, joint versus split PeReGrINE yields p = 1.7 × 10 −7 for title ROUGE-L and p = 3.56 × 10 −5 for absolute rating error. 
+
+5.4 Evaluation 
+
+We use two groups of metrics. The first group measures generation quality against the gold review. For review text and title generation, we report ROUGE-L, BLEU, METEOR, and BERTScore-F1. For rating prediction, we report exact-match accuracy, MAE, and RMSE. We also report title-text consistency to measure whether the generated title matches the generated review body. The second group is Dissonance Analysis. These macro-level scores measure deviation from expected user and product behavior, with lower values indicating better alignment. User Dissonance measures how far the output moves away from the user’s historical style, sentiment, length, and rating behavior. Product Dissonance measures how far the generated review moves away from the product’s consensus cluster. Sentiment Dissonance measures disagreement among the generated text, the predicted rating, and the gold review. Appendix F.2 provides the operational formulas used for these three scores. 
+
+5.5 Results 
+
+We first analyze the evidence ablations on All Beauty, then compare models in the combined text-only setting, then test multimodal evidence, and finally report category-level results. 
+
+5.5.1 Text-Only Evidence Ablation 
+
+Table 2 and Table 3 show a clear trade-off across evidence sources. Product-only evidence yields the strongest grounding, with the best Product Dissonance and the strongest title-text 7Preprint. Under review. Table 2: Micro metrics for the text-only evidence ablation on All Beauty using Qwen2.5-3B-Instruct. Best values are in bold.                                                
+
+> Task Metric Product User Neighbor Both Text ROUGE-L ( ↑)0.110 0.114 0.115 0.123
+> BLEU ( ↑)0.008 0.011 0.005 0.016
+> METEOR ( ↑)0.181 0.160 0.163 0.173 BERT-F1 ( ↑)0.742 0.743 0.746 0.752
+> Title ROUGE-L ( ↑)0.058 0.032 0.044 0.060
+> BERT-F1 ( ↑)0.707 0.699 0.697 0.707
+> Title-Text Consistency ( ↑)0.592 0.334 0.306 0.368 Rating Accuracy ( ↑)0.261 0.421 0.396 0.371 MAE ( ↓)0.903 0.817 0.753 0.705
+> RMSE ( ↓)1.154 1.321 1.195 1.153
+
+Table 3: Dissonance metrics for the text-only evidence ablation on All Beauty using Qwen2.5-3B-Instruct. Lower is better.                  
+
+> Metric ↓Product User Neighbor Both User Dissonance 0.274 0.199 0.257 0.251 Product Dissonance 0.358 0.503 0.400 0.399
+> Sentiment Dissonance 0.164 0.164 0.169 0.162
+
+consistency. User-only evidence gives the best personalization signal, with the lowest User Dissonance and the highest rating accuracy. The combined setting gives the best overall text similarity and the most balanced behavior across the metric groups. These results help clarify what the benchmark is measuring. User evidence and product evidence do not solve the same problem. One mainly helps the model sound like the reviewer, and the other mainly helps it stay close to the product. The combined setting works best because it exposes both signals at once. 
+
+5.5.2 Text-Only Model Comparison 
+
+We next compare several text-only models on the combined All Beauty setting. The full tables are reported in Appendix Table 12 and Appendix Table 13. LLaMA-3.1-8B-Instruct gives the strongest lexical overlap on the review body, Claude-4.5-Haiku gives the strongest BERTScore and title overlap, and GPT-5-nano is best on rating prediction and title-text consistency. This comparison shows that the benchmark is not only measuring one kind of fluency. Different models make different trade-offs among lexical similarity, rating behavior, and macro-level alignment. 
+
+5.5.3 Multimodal Ablation 
+
+We next ask whether adding images changes the ranking of evidence sources established in the text-only setting. We repeat the four-setting ablation with Qwen3-VL-8B-Instruct on the same All Beauty slice. The answer is mostly no. Combined evidence still gives the strongest overall performance, user-only still gives the lowest User Dissonance, and product-only remains competitive on grounding-oriented metrics. Images help mostly at the margin, improving several text metrics and slightly reducing product-level dissonance, but they do not overturn the structure already seen in the text-only case. Appendix Figure 3 points in the same direction. Images improve several text-body and title metrics, but the improvement in rating accuracy is limited. Visual evidence helps, especially for product grounding and descriptive quality, but it is still auxiliary to the graph-derived evidence. That is the framing we carry into the full-category run. 8Preprint. Under review. Table 4: Micro metrics for the multimodal evidence ablation on All Beauty using Qwen3-VL-8B-Instruct.                                                
+
+> Task Metric Product User Neighbor Both Text ROUGE-L ( ↑)0.127 0.120 0.124 0.131
+> BLEU ( ↑)0.012 0.009 0.008 0.014
+> METEOR ( ↑)0.183 0.135 0.164 0.192
+> BERT-F1 ( ↑)0.752 0.744 0.753 0.759
+> Title ROUGE-L ( ↑)0.072 0.049 0.040 0.059
+> BERT-F1 ( ↑)0.717 0.701 0.712 0.719
+> Title-Text Consistency ( ↑)0.541 0.336 0.443 0.469 Rating Accuracy ( ↑)0.517 0.538 0.558 0.588
+> MAE ( ↓)0.746 0.854 0.752 0.692
+> RMSE ( ↓)1.243 1.422 1.301 1.248
+
+Table 5: Dissonance metrics for the multimodal evidence ablation on All Beauty. Lower is better.                  
+
+> Metric ↓Product User Neighbor Both User Dissonance 0.253 0.197 0.253 0.252 Product Dissonance 0.374 0.501 0.379 0.374
+> Sentiment Dissonance 0.150 0.158 0.161 0.159
+
+5.5.4 Category-Level Results 
+
+After confirming on All Beauty that images help but do not replace graph structure, we run the combined multimodal configuration on the full 500-instance test sets for all 7 categories. Appendix Figure 4 and the category-wise appendix tables show large differences across domains. All Beauty is the easiest category in terms of text overlap and product-level consistency. Sports and Toys & Games show stronger rating predictability but less stable text quality. This suggests that category structure still matters more than the mere presence of visual context: some domains have tight product consensus and formulaic wording, while others allow more narrative variation. 
+
+## 6 Conclusion 
+
+PeReGrINE turns Amazon Reviews 2023 into a benchmark for personalized review gen-eration with explicit temporal constraints and product-anchored graph retrieval. The benchmark separates product evidence, user history, and neighbor consensus, and repre-sents reviewer behavior with a compact style parameter rather than relying only on long raw histories. Across the evaluated settings, the clearest result is that graph-derived evidence is the main driver of personalization and consistency. Product evidence improves grounding, user evidence improves stylistic alignment, and the combined setting gives the best overall balance. Visual evidence can improve text quality and product alignment in some cases, but it acts as an auxiliary signal rather than the main source of personalization. We view PeReGrINE as a controlled evaluation setting rather than a final system. Its main purpose is to make it easier to study how retrieval design choices affect grounding, leakage risk, and behavioral fidelity in personalized generation. In that sense, the paper is mainly about benchmark design, evaluation protocol, retrieval-augmented language models, and multimodal evidence rather than about introducing a new learning algorithm. The next sections state the main future directions, limitations, and disclosure details directly in the main paper. 9Preprint. Under review. 
+
+## Future Work 
+
+The clearest next step is to make retrieval itself multimodal. The current benchmark adds image evidence after ranking, but the ranking function still relies on text and stylometric similarity. A stronger follow-up would test image embeddings, joint vision-text retrieval, and visually similar-item retrieval so that visual evidence affects candidate selection directly rather than only the final prompt. Another useful extension is to broaden the product-side evidence. Product videos, video-derived features, frame-level descriptions, and explicit visual attribute extraction from catalog media would make the benchmark more relevant to multimodal language models used in realistic shopping settings. Richer review-side visual evidence would also help test how user-posted media interacts with product grounding. Two evaluation extensions are also still open. The first is feature-group ablations for the User Style Parameter so that length, sentiment, and writing-style cues can be tested separately. The second is component ablations for the Dissonance metrics so it is clearer which terms drive the final scores. 
+
+## Limitations 
+
+PeReGrINE is designed as a controlled benchmark, not as a final multimodal retrieval system. The retrieval ranker is not yet multimodal, so the current setup cannot test whether direct visual retrieval would improve item selection. The benchmark also favors denser graph neighborhoods over sparse cold-start cases, which improves experimental control but shifts the setting away from the hardest recommendation regimes. The User Style Parameter is intentionally compact and interpretable, but it is still only a proxy for reviewer behavior. It does not fully capture richer lexical, syntactic, or discourse-level variation, and this submission does not include a feature-group ablation to separate the contribution of each part of the style vector. The Dissonance metrics should also be read as heuristic summaries rather than exact mea-sures. They are useful for comparing behavioral drift across settings, but the current submission does not include component ablations that isolate the effect of each term. Ap-pendix F.3 and Appendix F.4 provide the underlying definitions and the current scope of these choices. 
+
+## AI Use Disclosure 
+
+Generative AI tools were used only for grammar and formatting suggestions during manuscript preparation and for limited help with chart generation from experimental outputs. All charts were checked manually. Diagrams and illustrations were created manu-ally by the authors. All experimental design decisions, analyses, and final wording choices remained under author control. 
+
+## References 
+
+Bashar Alhafni, Vivek Kulkarni, Dhruv Kumar, and Vipul Raheja. Personalized text gen-eration with fine-grained linguistic control. In Ameet Deshpande, EunJeong Hwang, Vishvak Murahari, Joon Sung Park, Diyi Yang, Ashish Sabharwal, Karthik Narasimhan, and Ashwin Kalyan (eds.), Proceedings of the 1st Workshop on Personalization of Generative AI Systems (PERSONALIZE 2024) , pp. 88–101, St. Julians, Malta, March 2024. Association for Computational Linguistics. URL https://aclanthology.org/2024.personalize-1.8/ .Steven Au, Cameron J Dimacali, Ojasmitha Pedirappagari, Namyong Park, Franck Dernon-court, Yu Wang, Nikos Kanakaris, Hanieh Deilamsalehy, Ryan A Rossi, and Nesreen K Ahmed. Personalized graph-based retrieval for large language models. arXiv preprint arXiv:2501.02157 , 2025. 10 Preprint. Under review. Gizem Ceylan, Kristin Diehl, and Davide Proserpio. Words meet photos: When and why photos increase review helpfulness. Journal of Marketing Research , 61(1):5–26, 2024. Ruining He and Julian McAuley. Vbpr: Visual bayesian personalized ranking from implicit feedback. In Proceedings of the 25th international conference on world wide web , pp. 143–152, 2016. Xiangnan He, Kuan Deng, Xiang Wang, Yan Li, Yongdong Zhang, and Meng Wang. Lightgcn: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval , pp. 639–648, 2020. Yupeng Hou, Jiacheng Li, Zhankui He, An Yan, Xiusi Chen, and Julian McAuley. Bridging language and items for retrieval and recommendation. arXiv preprint arXiv:2403.03952 ,2024. Gautier Izacard and Edouard Grave. Leveraging passage retrieval with generative models for open domain question answering. In Proceedings of the 16th Conference of the European Chapter of the Association for Computational Linguistics: Main Volume , pp. 1530–1540, 2021. Hang Jiang, Xiajie Zhang, Xubo Cao, Cynthia Breazeal, Deb Roy, and Jad Kabbara. Person-aLLM: Investigating the ability of large language models to express personality traits. In Kevin Duh, Helena Gomez, and Steven Bethard (eds.), Findings of the Association for Computational Linguistics: NAACL 2024 , pp. 3605–3627, Mexico City, Mexico, June 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.findings-naacl.229. URL https://aclanthology.org/2024.findings-naacl.229/ .Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich K ¨uttler, Mike Lewis, Wen-tau Yih, Tim Rockt ¨aschel, et al. Retrieval-augmented generation for knowledge-intensive NLP tasks. In Advances in Neural Informa-tion Processing Systems , volume 33, pp. 9459–9474, 2020. Huaishao Luo, Lei Ji, Ming Zhong, Yang Chen, Wen Lei, Nan Si, and Tat-Seng Chua. Clip4clip: An empirical study of clip for end-to-end video clip retrieval. In Proceedings of the 29th ACM International Conference on Multimedia , pp. 1018–1026, 2021. Sheshera Mysore, Zhuoran Lu, Mengting Wan, Longqi Yang, Bahareh Sarrafzadeh, Steve Menezes, Tina Baghaee, Emmanuel Barajas Gonzalez, Jennifer Neville, and Tara Safavi. Pearl: Personalizing large language model writing assistants with generation-calibrated retrievers. In Sachin Kumar, Vidhisha Balachandran, Chan Young Park, Weijia Shi, Shirley Anugrah Hayati, Yulia Tsvetkov, Noah Smith, Hannaneh Hajishirzi, Dongyeop Kang, and David Jurgens (eds.), Proceedings of the 1st Workshop on Customizable NLP: Progress and Challenges in Customizing NLP for a Domain, Application, Group, or Individual (CustomNLP4U) , pp. 198–219, Miami, Florida, USA, November 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.customnlp4u-1.16. URL https:// aclanthology.org/2024.customnlp4u-1.16/ .Alireza Salemi, Sheshera Mysore, Michael Bendersky, and Hamed Zamani. LaMP: When large language models meet personalization. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics , pp. 7370–7392, Bangkok, Thailand, 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.399. URL 
+
+https://aclanthology.org/2024.acl-long.399 .Xiang Wang, Xiangnan He, Yixin Cao, Meng Liu, and Tat-Seng Chua. Kgat: Knowledge graph attention network for recommendation. In Proceedings of the 25th ACM SIGKDD international conference on knowledge discovery & data mining , pp. 950–958, 2019a. Xiang Wang, Xiangnan He, Meng Wang, Fuli Feng, and Tat-Seng Chua. Neural graph collaborative filtering. In Proceedings of the 42nd international ACM SIGIR conference on Research and development in Information Retrieval , pp. 165–174, 2019b. 11 Preprint. Under review. Jinze Wei, Xiang Wang, Xiangnan He, Meng Wang, Fuli Feng, and Tat-Seng Chua. Mm-gnn: multi-modal graph neural network for multi-modal recommender systems. In Proceedings of the 13th international conference on web search and data mining , pp. 639–647, 2020. Thomas Wolf, Victor Sanh, Julien Chaumond, and Clement Delangue. Transfertransfo: A transfer learning approach for neural network based conversational agents, 2019. URL 
+
+https://arxiv.org/abs/1901.08149 .An Yan, Yuhan Liu, Shuo Zhang, Ee-Peng Lim, and Jing Han. Personalized showcases: Generating multi-modal explanations for recommendations. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval ,pp. 1027–1036, 2023. Saizheng Zhang, Emily Dinan, Jack Urbanek, Arthur Szlam, Douwe Kiela, and Jason Weston. Personalizing dialogue agents: I have a dog, do you have pets too? In Iryna Gurevych and Yusuke Miyao (eds.), Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 2204–2213, Melbourne, Australia, July 2018. Association for Computational Linguistics. doi: 10.18653/v1/P18-1205. URL 
+
+https://aclanthology.org/P18-1205/ .
+
+## A Data Processing Pipeline 
+
+To construct PeReGrINE, we processed Amazon Reviews 2023 (Hou et al., 2024) with a filtering and indexing pipeline designed to preserve temporal integrity while remaining practical for large product categories. 
+
+A.1 Pre-Processing and Graph Construction 
+
+The raw dataset is sparse and noisy. We retained only reviews posted after January 1, 2016, removed duplicates, and enforced minimum interaction counts for both items and users. In the final benchmark construction, we required at least three prior item-neighbor reviews and at least four prior user reviews so that each target instance had enough graph evidence for retrieval. To preserve temporal generalization, users were sorted by their most recent review times-tamp and partitioned into train, development, and test splits. For every evaluation instance with gold timestamp tgold , any user-history review or item-neighbor review with times-tamp t ≥ tgold was discarded. This cutoff is applied before retrieval and before prompt construction. 
+
+A.2 Scalable Neighbor Retrieval 
+
+A practical difficulty in graph-based benchmarking is the cost of validating temporally admissible neighbors. A naive linear scan becomes expensive for large categories. We therefore indexed each product by timestamp-sorted review lists and used binary search to locate valid neighbors. This reduced the cost of temporal validation substantially and made full-category preprocessing feasible without heavy subsampling. 
+
+A.3 Selection Trade-Offs 
+
+The benchmark uses different selection priorities at different stages. Early ablations on All Beauty emphasized graph structure and stable comparisons across retrieval settings. The broader category evaluation emphasized dense graph neighborhoods and sufficient image availability so that multimodal effects were observable. This choice improves controllability, but it also biases the benchmark away from the most sparse cold-start cases. We therefore treat sparsity robustness as an open question rather than a solved one. 12 Preprint. Under review. Table 6: Dataset statistics. All instances satisfy |Hu| ≥ 4 and |Hi| ≥ 3.     
+
+> Category Split # Inst. Mean
+
+|Hu| Mean |Hi | Img. %                                                                         
+
+> All Beauty Dev 218 6.07 6.46 17.0% Test 399 9.72 5.81 21.6% Baby Dev 500 5.53 15.53 0.6% Test 500 6.53 185.92 13.0% Arts & Crafts Dev 500 5.53 12.20 0.8% Test 500 7.39 69.13 12.6% Toys & Games Dev 500 5.55 11.31 0.4% Test 500 6.73 97.92 10.0% Pet Supplies Dev 500 5.26 18.77 1.0% Test 500 6.76 343.47 9.0% Sports Dev 500 5.32 20.69 0.8% Test 500 6.42 112.89 7.0% Beauty (Pers.) Dev 500 5.32 17.51 1.6% Test 500 6.51 228.81 9.8%
+> Total Dev 3,218 --2.0% Test 3,399 --11.6%
+
+Table 7: Comparison of the raw data distribution and the denser PeReGrINE benchmark subset. The benchmark intentionally shifts toward higher-degree items so that graph-conditioned generation is well defined. Raw Distribution PeReGrINE Test Set Category Avg. Degree Sparsity Avg. Degree Density Shift All Beauty 6.23 High 5.81 -6.7% Baby Products 27.56 Med 185.92 +574% Arts, Crafts & Sewing 11.23 Med 69.13 +515% Pet Supplies 34.10 Low 343.47 +907% Toys & Games 18.30 Med 97.92 +435% Sports & Outdoors 12.25 Med 112.89 +821% 
+
+## B Data Selection and Sampling Rationale 
+
+PeReGrINE moves from very large raw interaction logs to a smaller, denser benchmark. This was done to study personalization and grounding under controlled retrieval conditions rather than to approximate the raw distribution directly. 
+
+B.1 Graph Connectivity 
+
+Sparse nodes are common in recommender data, but they provide weak evidence for a benchmark whose goal is to compare user history, item context, and neighbor consensus under fixed prompt budgets. By enforcing minimum history and neighborhood sizes, the benchmark ensures that the four retrieval settings are all well-defined and that multimodal evidence is not swamped by missing context. 
+
+B.2 Cross-Category Generalization 
+
+The final benchmark emphasizes breadth across categories rather than exhaustive depth inside a single one. This makes it possible to compare retrieval behavior across domains with very different narrative styles, rating patterns, and graph densities. At the same time, it means the benchmark is not intended to represent the raw long-tail distribution exactly. 13 Preprint. Under review. 
+
+> Given the following product information and review evidence: === PRODUCT INFORMATION === [Formatted product metadata from C_i] === USER HISTORY === [Representative reviews from C_u] Review 1: Rating: [r]/5, Title: [t], Text: [b] Review 2: Rating: [r]/5, Title: [t], Text: [b] === ITEM NEIGHBOR REVIEWS === [Retrieved reviews for the same item] Review 1: Rating: [r]/5, Title: [t], Text: [b] Review 2: Rating: [r]/5, Title: [t], Text: [b] Generate a complete review for this product from this user. Include a rating from 1 to 5, a title, and review text. Return only: Rating: ... Title: ... Review: ...
+
+Figure 2: Prompt template for the combined-evidence setting. Other retrieval settings use the same template with the relevant evidence blocks removed. 
+
+## C Prompt and Summary Figures D Graph-Based Retrieval Paradigms 
+
+The bipartite graph view makes it easy to separate user-side and item-side evidence while keeping both inside a single retrieval framework. Figure 5 illustrates this relation. This figure is not intended as a claim of architectural novelty by itself. Its purpose is to clarify how PeReGrINE organizes evidence sources within one benchmark. In particular, the framework lets us compare user-history retrieval, neighbor retrieval, and combined retrieval under the same temporal constraints and with the same generator. PGraphRAG remains the closest prior work. The main difference is that PeReGrINE treats product metadata as the anchor for item-side retrieval and avoids using target-review fragments as part of the retrieval query. This changes the retrieval problem and is one reason matched reruns are necessary for fair comparison. 
+
+## E Category-Level Analysis 
+
+Aggregate metrics hide large category-level differences. The tables below summarize how text generation, title generation, rating prediction, and Dissonance Analysis vary across product domains. 
+
+E.1 Interpretation 
+
+All Beauty is comparatively easy for this task: it has stronger text overlap and lower dissonance than the more heterogeneous domains. Categories such as Sports & Outdoors and Toys & Games have better rating predictability, but weaker textual alignment. This suggests that some categories support clearer consensus over rating while still permitting more varied narrative expression. 14 Preprint. Under review. 0.000 0.005 0.010 0.015 0.020 0.025 
+
+> Text ROUGE-1
+> Text ROUGE-L
+> Text METEOR
+> Text BLEU
+> Text BERT-F1
+
+** 
+
+** 
+
+** 
+
+** 
+
+** 
+
+Text Metrics 
+
+0.02 0.00 0.02 0.04 0.06 0.08 0.10 0.12 
+
+> Title ROUGE-1
+> Title ROUGE-L
+> Title METEOR
+> Title BLEU
+> Title BERT-F1
+> Title Text Consistency
+
+*
+
+** 
+
+** 
+
+** 
+
+Title Metrics 
+
+0.05 0.00 0.05 0.10 0.15 0.20 0.25    
+
+> Rating MAE ( )
+> Rating MSE ( )
+
+*
+
+Rating Metrics 
+
+0.025 0.020 0.015 0.010 0.005 0.000 0.005    
+
+> User Dissonance ( )
+> Product Dissonance ( )
+> Sentiment Dissonance ( )
+
+** 
+
+** 
+
+Macro Metrics 
+
+Mean Difference ( ) Qwen-Vision (Both) Text-only (Both) 
+
+Significance: * p < 0.05, ** p < 0.01 (Wilcoxon signed-rank test) 
+
+Figure 3: Per-metric mean differences be-tween the multimodal combined setting and a text-only combined setting, grouped by task. Positive values indicate improvements from adding images. Asterisks mark signif-icant differences under a Wilcoxon signed-rank test. 0.00 0.02 0.04 0.06 0.08 0.10 0.12 0.14 
+
+Baby Products 
+
+Beauty & Personal Care 
+
+Pet Supplies 
+
+Sports & Outdoors 
+
+Toys & Games 
+
+All Beauty 
+
+Arts, Crafts & Sewing 
+
+ROUGE-L 
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 
+
+Baby Products 
+
+Beauty & Personal Care 
+
+Pet Supplies 
+
+Sports & Outdoors 
+
+Toys & Games 
+
+All Beauty 
+
+Arts, Crafts & Sewing 
+
+Rating Accuracy 
+
+0.0 0.1 0.2 0.3 0.4 0.5 
+
+Baby Products 
+
+Beauty & Personal Care 
+
+Pet Supplies 
+
+Sports & Outdoors 
+
+Toys & Games 
+
+All Beauty 
+
+Arts, Crafts & Sewing 
+
+Product Dissonance 
+
+Figure 4: Category-wise performance for the combined multimodal setting on the full test sets. Top: text generation quality (ROUGE-L). Middle: rating prediction accuracy. Bottom: product dissonance. 
+
+Figure 5: Retrieval paradigms supported by the bipartite formulation. User-history retrieval corresponds to the red edges, item-neighbor retrieval corresponds to the green edges, and the combined setting uses both. 
+
+E.2 Additional Model Comparison Tables 
+
+For completeness, we report the full text-only model comparison tables here rather than in the main paper body. 15 Preprint. Under review. Table 8: Category-wise review-text generation results. Higher values indicate stronger alignment with reference reviews.                                 
+
+> Category ROUGE-L BLEU METEOR BERTScore-F1 Baby Products 0.1131 0.0066 0.1863 0.7485 Beauty & Personal Care 0.1086 0.0087 0.1736 0.7414 Pet Supplies 0.1088 0.0045 0.1764 0.7430 Sports & Outdoors 0.1043 0.0072 0.1725 0.7426 Toys & Games 0.1009 0.0076 0.1810 0.7401 All Beauty 0.1434 0.0136 0.2119 0.7689 Arts, Crafts & Sewing 0.1044 0.0089 0.1804 0.7411
+
+Table 9: Category-wise title generation results.                         
+
+> Category Title ROUGE-L Title BERTScore-F1 Title-Text Consistency Baby Products 0.0626 0.7099 0.4286 Beauty & Personal Care 0.0600 0.7066 0.4217 Pet Supplies 0.0783 0.7146 0.4810 Sports & Outdoors 0.0688 0.7175 0.4413 Toys & Games 0.0657 0.7140 0.4601 All Beauty 0.0640 0.7199 0.4892 Arts, Crafts & Sewing 0.0544 0.7131 0.4578
+
+## F Dissonance and Evaluation Details 
+
+F.1 Rationale 
+
+Standard overlap metrics do not tell us whether a generation behaves like the target user or remains close to product consensus. Dissonance Analysis is meant to summarize those higher-level mismatches. These scores are heuristic and should be read as complements to the standard text metrics. 
+
+F.2 Operational Formulas 
+
+User Dissonance measures deviation from the target user’s historical profile: 
+
+Duser = w1|∆style | + w2|∆sentiment | + w3|∆rating | + w4|∆length |. (10) Product Dissonance measures drift away from the product’s review cluster: 
+
+Dprod = epred − ccluster 2 + aspect divergence. (11) Sentiment Dissonance measures disagreement among text sentiment, predicted rating, and gold behavior: 
+
+Dsent = |sent pred − sent gold | + |sent pred − rating pred | + |rating pred − rating gold |. (12) 
+
+F.3 Style Parameter Scope and Missing Ablation 
+
+The User Style Parameter intentionally uses a compact 11-feature summary: four length features, four VADER sentiment features, and three writing-style features. This choice favors interpretability and stability under sparse user histories. The current submission does not include a leave-one-feature-group-out style ablation. In other words, we do not yet isolate how much comes from length features, sentiment features, or punctuation and pronoun features separately. This should be treated as a limitation rather than as evidence that all feature groups contribute equally. 16 Preprint. Under review. Table 10: Category-wise rating prediction results. Lower is better for MAE and RMSE.                         
+
+> Category Accuracy MAE RMSE Baby Products 0.6160 0.8370 1.5190 Beauty & Personal Care 0.6100 0.9660 1.7181 Pet Supplies 0.5740 1.0360 1.7672 Sports & Outdoors 0.6460 0.6990 1.3544 Toys & Games 0.6520 0.8050 1.5305 All Beauty 0.4937 0.7657 1.2163 Arts, Crafts & Sewing 0.6300 0.8080 1.5205
+
+Table 11: Category-wise Dissonance metrics. Lower values indicate better alignment.                         
+
+> Category User Dissonance Product Dissonance Sentiment Dissonance Baby Products 0.3054 0.4733 0.1964 Beauty & Personal Care 0.3265 0.4866 0.2162 Pet Supplies 0.3114 0.4946 0.2271 Sports & Outdoors 0.3147 0.4949 0.1868 Toys & Games 0.3358 0.4896 0.1898 All Beauty 0.2385 0.2972 0.1534 Arts, Crafts & Sewing 0.3439 0.4965 0.2001
+
+F.4 Metric-Component Ablation Status 
+
+The current submission also does not include an ablation over the Dissonance metric com-ponents themselves. We provide the operational formulas above, but we do not separately test, for example, whether the style term dominates User Dissonance or whether the aspect-divergence term dominates Product Dissonance. This is another limitation of the current evaluation package. 
+
+F.5 Interpretation Limits 
+
+Dissonance scores rely on heuristic proxies. Product Dissonance assumes that the product-neighbor cluster is a reasonable reference point, which may penalize novel but valid obser-vations. User Dissonance assumes that a compact stylometric profile is a useful proxy for stable user behavior. These scores should therefore be interpreted as behavioral summaries, not as exact measurements of truth. 
+
+## G Qualitative Analysis 
+
+To illustrate the role of visual context, Figure 6 shows the input structure used by the system, and Table 14 gives two representative examples where visual grounding affects the final output. 17 Preprint. Under review. Table 12: Micro metrics for the text-only model comparison on the combined All Beauty setting. 
+
+Task Metric LLaMA-3.1 GPT-5 Qwen3-VL Claude-4.5 Text ROUGE-L ( ↑) 0.1284 0.1226 0.1258 0.1245 BLEU ( ↑) 0.0197 0.0113 0.0160 0.0150 METEOR ( ↑) 0.2072 0.1841 0.1867 0.1972 BERT-F1 ( ↑) 0.7494 0.7474 0.7549 0.7569 
+
+Title ROUGE-L ( ↑) 0.0467 0.0515 0.0591 0.0649 
+
+BERT-F1 ( ↑) 0.7044 0.7093 0.7148 0.7186 
+
+Consistency ( ↑) 0.4038 0.4793 0.4519 0.4366 Rating Accuracy ( ↑) 0.3792 0.5625 0.5500 0.4750 MAE ( ↓) 0.7146 0.6792 0.7042 0.6792 
+
+RMSE ( ↓) 1.0969 1.1850 1.2222 1.1162 
+
+Table 13: Dissonance metrics for the text-only model comparison. Lower is better. 
+
+Metric ( ↓) LLaMA-3.1 GPT-5 Qwen3-VL Claude-4.5 User Dissonance 0.2651 0.2446 0.2452 0.2843 Product Dissonance 0.3790 0.3843 0.3819 0.3808 Sentiment Dissonance 0.1458 0.1518 0.1663 0.1585 
+
+Figure 6: Illustration of the input structure. The user profile provides stylistic evidence, while product information provides grounding context. 18 Preprint. Under review. 
+
+Model Rating Generated review and short analysis Example A: correcting sentiment drift Gold 4.0 Title: Rich shades of red. The gold review is positive overall, with mild complaints about wear and lip dryness. Text-only 2.0 The text-only system hallucinates a packaging or shipping failure and drifts negative. This appears to come from over-reliance on user-history complaints. Multimodal 4.0 The multimodal output aligns with the product context and keeps the review near the correct positive rating. Example B: detecting negative quality cues Gold 2.0 Title: I loved the idea of this organic nail polish remover. The gold review is clearly negative despite an initially positive setup. Text-only 4.0 The text-only system defaults to a generic positive review and misses the product-specific failure case. Multimodal 1.0 The multimodal output is harsher than gold, but it captures the nega-tive product experience much better than the text-only baseline. 
+
+Table 14: Short qualitative examples comparing text-only and multimodal behavior. 19

@@ -1,0 +1,2642 @@
+Title: Robust Adversarial Policy Optimization Under Dynamics Uncertainty
+
+URL Source: https://arxiv.org/pdf/2604.10974v1
+
+Published Time: Tue, 14 Apr 2026 02:05:33 GMT
+
+Number of Pages: 33
+
+Markdown Content:
+# ROBUST ADVERSARIAL POLICY OPTIMIZATION 
+
+# UNDER DYNAMICS UNCERTAINTY 
+
+Mintae Kim & Koushil Sreenath 
+
+Hybrid Robotics , UC Berkeley Berkeley, CA 94720, USA 
+
+{mintae.kim, koushils }@berkeley.edu 
+
+## ABSTRACT 
+
+Reinforcement learning (RL) policies often fail under dynamics that differ from training, a gap not fully addressed by domain randomization or existing adver-sarial RL methods. Distributionally robust RL provides a formal remedy but still relies on surrogate adversaries to approximate intractable primal problems, leav-ing blind spots that potentially cause instability and over-conservatism. We pro-pose a dual formulation that directly exposes the robustness–performance trade-off. At the trajectory level, a temperature parameter from the dual problem is ap-proximated with an adversarial network, yielding efficient and stable worst-case rollouts within a divergence bound. At the model level, we employ Boltzmann reweighting over dynamics ensembles, focusing on more adverse environments to the current policy rather than uniform sampling. The two components act in-dependently and complement each other: trajectory-level steering ensures robust rollouts, while model-level sampling provides policy-sensitive coverage of ad-verse dynamics. The resulting framework, robust adversarial policy optimization (RAPO) outperforms robust RL baselines, improving resilience to uncertainty and generalization to out-of-distribution dynamics while maintaining dual tractability. 
+
+## 1 INTRODUCTION 
+
+Reinforcement learning (RL) has made major progress in sequential decision-making, yet deploy-ment in real domains is limited by dynamics mismatch Schulman et al. (2017); Haarnoja et al. (2018); Fujimoto et al. (2018). Policies trained in simulation often fail when transferred to real systems due to aleatoric and epistemic uncertainty, where small deviations can accumulate into catastrophic failures Morimoto & Doya (2005); Xu & Mannor (2010). This motivates robust RL: agents that sustain reliable performance under uncertainty Pinto et al. (2017); Rajeswaran et al. (2016). While much of RL research prioritizes maximizing nominal returns, deployment inevitably faces unseen environments, making robustness essential. In safety-critical settings such as robotics, driving, and finance, brittle policies are unacceptable Li et al. (2025); Radosavovic et al. (2024); Liu et al. (2020); Sallab et al. (2017); Gupta et al. (2025). Robustness also improves generalization, enabling adaptation to perturbations without retraining Smith et al. (2022); Ball et al. (2023). De-signing robust RL policies is difficult Tessler et al. (2019); Abdullah et al. (2019). Na¨ ıve methods often yield over-conservative policies or unstable training. The challenge lies in dynamics uncer-tainty: optimizing only for the nominal model gives fragile policies, while optimizing for all possible models is overly pessimistic Tobin et al. (2017). The central question is: How can we design RL algorithms robust to dynamics uncertainty, without collapsing into conservatism or instability? 
+
+Our approach begins from the robust MDP (RMDP) formulation with dynamics uncertain within a KL neighborhood of a nominal model Wang & Zou (2021); Ho et al. (2022). The dual problem converts this infinite-dimensional problem into a tractable scalar optimization, yielding closed-form adversarial distributions, entropic variance control, and contractive operators. This corresponds to evaluating returns under an exponentially tilted trajectory law with inverse temperature η. Direct sampling from this tilted law is infeasible in simulators that only roll out the nominal kernel Pinto et al. (2017); Zhou et al. (2023). We therefore introduce an adversarial network (AdvNet) that pre-dicts trajectory-level dual parameters. By steering rollouts toward low-return regions consistent with the KL budget, AdvNet effectively reweights trajectories to emphasize adverse outcomes, a practical 1
+
+> arXiv:2604.10974v1 [cs.LG] 13 Apr 2026
+
+realization of exponential tilting that exposes local vulnerabilities the policy might ignore. AdvNet alone cannot address global model misspecification. We therefore apply Boltzmann reweighting over an ensemble of environments with varied physical parameters, emphasizing models where the policy underperforms while remaining close to a prior. This provides structured coverage of adverse dynamics. Together, AdvNet and Boltzmann reweighting complement one another: the former en-forces robustness at the trajectory-level , the latter at the model-level . Prior approaches capture only fragments of this picture. Domain randomization (model-level) spreads training across perturbations but treats all equally, producing inefficient or cautious policies Tobin et al. (2017). Pure adversar-ial perturbations emphasize worst cases but lack distributional grounding and stability Pinto et al. (2017); Rigter et al. (2022); Vinitsky et al. (2020). Ensemble methods capture variability but without adversarial reweighting underestimate risk Rajeswaran et al. (2016). Thus, our work introduces robust adversarial policy optimization (RAPO) , a practical realiza-tion of distributionally robust RL. RAPO combines trajectory-level exponential tilting via AdvNet with model-level Boltzmann reweighting, forming a two-layer structure that guards against local fragility and global misspecification. Finally, RAPO is practical and scalable: it amortizes tra-jectory tilting and ensemble biasing within a PPO-compatible loop, yielding policies that preserve in-distribution (ID) performance while substantially improving robustness to dynamics uncertainty and out-of-distribution (OOD) perturbations. 
+
+## 2 RELATED WORK 
+
+Robust MDPs model dynamics uncertainty by assuming the transition kernel lies in an ambigu-ity set, with policies optimized for worst-case return Morimoto & Doya (2005); Xu & Mannor (2010); Mannor et al. (2016). The power of this approach depends on how the set is defined. Early norm- or interval-bounded sets poorly captured mismatch, while distributional neighborhoods such as Wasserstein or f -divergence balls better align with statistical uncertainty and connect to distri-butionally robust optimization, yielding stronger guarantees Xu & Mannor (2010); Abdullah et al. (2019). In practice, exact evaluation requires costly nested minimax problems, creating compu-tational and sample inefficiency Wang & Zou (2021; 2022). Many works thus approximate the objective, trading nominal performance for conservative guarantees and exposing the core tension of robust RL: rigor versus scalability Eysenbach & Levine (2021); Blanchet et al. (2023). An alternative is adversarial RL, formulating problem as a two-player game where an auxiliary agent perturbs states, actions, or dynamics to minimize return Pinto et al. (2017); Vinitsky et al. (2020). This zero-sum view parallels adversarial training and H∞ control Morimoto & Doya (2005). Such adversaries act as disturbance generators or hard-example miners, but often yield instability, oscillatory dynamics, and narrow local robustness without distributional guarantees Tessler et al. (2019); Eysenbach & Levine (2021). Other variants perturb environment parameters, observations, or include explicit opponents in multi-agent settings Rajeswaran et al. (2016); Mankowitz et al. (2019); Zhang et al. (2020; 2021); Oikarinen et al. (2021). Domain randomization instead samples environment parameters from broad distributions, enabling sim-to-real transfer but often producing inefficient or conservative policies Tobin et al. (2017); Peng et al. (2018); Li et al. (2025); Cai et al. (2025); Kim (2026). Complementary research directions include verification methods with certified robustness to bounded noise L¨ utjens et al. (2020), ad-versarial input perturbations that enforce Lipschitz regularity Zhang et al. (2021), and multi-agent opponents Gleave et al. (2019); Vinitsky et al. (2020). These approaches extend robustness but target input or agent-level perturbations, remaining orthogonal to dynamics-level uncertainty. 
+
+## 3 PRELIMINARIES 
+
+Notations: For any finite set X , we denote its cardinality by |X | . The set [n] represents {1, . . . , n }.For a set X , we write ∆X for the set of probability distributions over X (when X is finite, it coincides with the probability simplex), and Unif( X ) for the uniform distribution on X .
+
+Markov decision process: A Markov decision process (MDP) is a tuple (S, A, p, r, μ 0, γ ), where 
+
+S is the state space, A the action space, p : S × A → ∆S the transition kernel, r : S × A → [0 , 1] 
+
+a bounded reward function, μ0 ∈ ∆S the initial state distribution, and γ ∈ (0 , 1) the discount 2factor. A stochastic policy π : S → ∆A induces the expected discounted return J(π, p ) =
+
+Es0∼μ0, a t∼π, s t+1 ∼p
+
+ P ∞ 
+
+> t=0
+
+γtr(st, a t). The state value, state–action value, and advantage are 
+
+V π (s) = Ea∼π(·| s), s ′∼p(·| s,a )[r(s, a ) + γV π (s′)] , Qπ (s, a ) = r(s, a ) + γ Es′∼p(·| s,a )V π (s′),and Aπ (s, a ) = Qπ (s, a ) − V π (s), respectively. The Bellman operator w.r.t. π is T π V (s) = 
+
+Ea∼π(·| s), s ′∼p(·| s,a )[r(s, a ) + γV (s′)] Sutton et al. (1998); Agarwal et al. (2019). 
+
+Robust RL: In many applications, the ground-truth kernel p⋆ is unknown or subject to perturbations. To formalize robustness, we introduce a KL-ball ambiguity set around a nominal model ˆp, which represents the transition kernel of the training environment Tamar et al. (2014); Roy et al. (2017): 
+
+Pϵ(s, a ) = 
+
+n
+
+p(·| s, a ) ∈ ∆S : DKL 
+
+ p(·| s, a ) ∥ ˆp(·| s, a ) ≤ ϵ
+
+o
+
+, (1) and Pϵ = N 
+
+> s,a
+
+Pϵ(s, a ) under (s, a )-rectangularity Mannor et al. (2016). RMDPs then pose the following control problem: π⋆ ∈ arg max π inf p∈P ϵ J(π, p ). Rectangularity decouples uncertainty across state–action pairs and enables dynamic programming Iyengar (2005); Nilim & El Ghaoui (2005). Given Pϵ, the robust value of a policy π is V π 
+
+> Pϵ
+
+(s) = inf p∈P ϵ V πp (s),and the corresponding robust evaluation operator T π 
+
+> Pϵ
+
+: R|S| → R|S| is 
+
+(T π 
+
+> Pϵ
+
+V )( s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γ inf 
+
+> p∈P ϵ
+
+Es′∼p(·| s,a )V (s′)
+
+i
+
+. (2) The robust Bellman equation V = T π 
+
+> Pϵ
+
+V has the unique solution V = V π 
+
+> Pϵ
+
+under discounting and rectangularity. Under standard conditions— (s, a )-rectangularity, γ < 1, bounded rewards, and compact/convex uncertainty sets—both T π 
+
+> Pϵ
+
+and the optimality operator TPϵ are γ-contractions in ∥ · ∥ ∞, so V π 
+
+> Pϵ
+
+and V ⋆ are their unique fixed points and the value iteration converges to V ⋆.Moreover, there exists a stationary optimal policy π⋆ that achieves this robust value uniformly, i.e., 
+
+V π⋆ 
+
+> Pϵ
+
+(s) = sup {V π 
+
+> Pϵ
+
+(s) : π history-dependent } for all s ∈ S Iyengar (2005); Nilim & El Ghaoui (2005). Thus, it suffices to optimize over stationary policies. For any stationary π, there exists a stationary worst-case kernel pwc  
+
+> π
+
+∈ P ϵ such that V π 
+
+> Pϵ
+
+(s) = V πpwc  
+
+> π
+
+(s) for all s. We define the robust state–action value and advantage as Qπ 
+
+> Pϵ
+
+(s, a ) := Qπpwc  
+
+> π
+
+(s, a ) and Aπ 
+
+> Pϵ
+
+(s, a ) := Aπpwc  
+
+> π
+
+(s, a ),omitting the subscript Pϵ when clear from context. Deterministic stationary optimality follows since the maximization is linear in the action distribution, so the optimum lies at an extreme point of the simplex. 
+
+Occupancy and performance difference: For a stationary policy π, the discounted occupancy measure is defined as dπ (s) = (1 − γ) P 
+
+> t≥0
+
+γt Pr π (st = s), which specifies how frequently each state is visited under π (in continuous state spaces, the definition extends by treating dπ as a measure). The performance difference lemma (PDL) states that for any π, π ′, the return difference satisfies J(π′)−J(π) = 11−γ Es∼dπ′ , a ∼π′(·| s)[Aπ (s, a )] , i.e., improvement is the advantage of π av-eraged under the new policy’s occupancy Kakade & Langford (2002). In the robust setting, let pwc  
+
+> π
+
+∈Pϵ be a stationary worst-case kernel so that V π 
+
+> Pϵ
+
+= V πpwc  
+
+> π
+
+(under rectangularity and contraction). De-fine the robust discounted occupancy of π′ by dπ′ 
+
+> Pϵ
+
+(s) = (1 − γ) P 
+
+> t≥0
+
+γt Pr (pwc  
+
+> π′,π ′)
+
+(st = s). Write 
+
+Qπ 
+
+> Pϵ
+
+(s, a ) := Qπpwc  
+
+> π
+
+(s, a ) and Aπ 
+
+> Pϵ
+
+(s, a ) := Aπpwc  
+
+> π
+
+(s, a ). The robust performance difference lemma (RPDL) then gives J(π′, p wc  
+
+> π′
+
+) − J(π, p wc  
+
+> π
+
+) = 11−γ Es∼dπ′Pϵ , a ∼π′(·| s)[Aπ 
+
+> Pϵ
+
+(s, a )] , showing that robust improvement is exactly the expected robust advantage under the new policy’s robust occupancy. See App. G for proofs and further details. 
+
+## 4 ROBUST ADVERSARIAL POLICY OPTIMIZATION (RAPO) 
+
+4.1 ADVERSARIAL NETWORK FOR DUAL TEMPERATURE ESTIMATION 
+
+Dual representation and the η trade-off. The robust formulation begins from the hard-constraint primal in 2 and, via convex duality, admits the equivalent dual form 
+
+inf 
+
+> p∈P ϵ
+
+Ep[V ] = sup 
+
+> η≥0
+
+n
+
+− 1 
+
+> η
+
+log Eˆp[e−ηV ] − ϵη
+
+o
+
+, (3) where ˆp is the nominal kernel and η is the dual temperature that exponentially tilts returns. The offset term −ϵ/η reflects the KL budget and ensures robustness guarantees. The parameter η controls 3Algorithm 1 Robust Adversarial Policy Optimization 
+
+Input: horizon T , ensemble size K, dual budget ϵ, ensemble budget κ, batch size B, m samples 
+
+Initialize: actor θ0, critic ϕ0, AdvNet ψ0, prior w0, weights w ← w0 
+
+> 1:
+
+for t = 0 , 1, . . . , T − 1 do  
+
+> 2:
+
+Collect on-policy rollout {(s, a, r, d )}1: B under nominal env  
+
+> 3:
+
+(y, ψ t+1 ) ← ADV NET -T ARGETS (ϕt, ψ t, w, ϵ, m ) // Alg. 2  
+
+> 4:
+
+Update actor–critic by PPO with targets y (advantages via GAE)  
+
+> 5:
+
+w ← BOLTZMANN -R EWEIGHTING (w0, ϕ t+1 , κ ) // Alg. 3  
+
+> 6:
+
+end for  
+
+> 7:
+
+return θ, ϕ, ψ 
+
+the trade-off: larger η sharpens focus on adverse outcomes, but also drives divergence from the nominal prior. In practice, ˆp corresponds to the training environment’s transition kernel. To capture parametric variability, we instantiate an ensemble of perturbed kernels around ˆp, and Boltzmann reweighting adjusts their mixture weights under a KL budget. This extends the nominal model into an ensemble-based prior while retaining the dual interpretation. In particular, the dual form above computes the inner minimization in 2. See App. A for the full derivation. 
+
+Why dual instead of primal? A natural question arises as to why the dual formulation is em-ployed instead of directly optimizing the primal objective inf p: DKL (p∥ ˆp)≤ϵ Ep[V ]. Primal-based approaches, including adversarial training methods such as RARL Pinto et al. (2017), adversarial policies Gleave et al. (2019), or sampling-driven methods like RNAC Zhou et al. (2023), attempt to approximate robustness by explicitly searching over a family of perturbed environments or by introducing an adversarial agent. In practice, this reduces to evaluating a finite set of candidate dy-namics models. However, such a construction cannot guarantee coverage of the entire ambiguity set: the worst-case distribution may lie in between sampled models, leaving blind spots, or else lead to instability and over-conservatism due to reliance on extreme samples. By contrast, the dual form 3 collapses the infinite-dimensional optimization over distributions into a single scalar parameter 
+
+η. This converts the robust objective into a tractable risk-sensitive expectation under the nominal model, where the adversarial distribution is implicitly realized through exponential tilting rather than explicit sampling. Ensemble models in RAPO are only used to approximate the nominal dis-tribution ˆp and to provide epistemic variability, while robustness is guaranteed beyond the finite set of sampled environments. Moreover, the scalar η functions as a principled robustness–performance knob, enabling an efficient and interpretable trade-off that is absent in primal formulations. 
+
+AdvNet: amortized approximation of η⋆. Direct sampling from distribution pη (s′ | s, a ) = 
+
+e−ηV (s′)/ P 
+
+> j
+
+e−ηV (s′  
+
+> j)
+
+is infeasible in deterministic simulators, and solving for η⋆ by root finding each step is computationally prohibitive. To overcome this, we introduce an adversarial network (AdvNet) that amortizes the search for η⋆ by predicting it directly from rollouts (Alg. 2). AdvNet is a feedforward network that takes as input the current state st and optionally the action at, and outputs a scalar ηt = AdvNet ψ (st, a t) ≥ 0, with a softplus activation ensuring nonnegativity. Further discussion on state-action dependency of η is in App. C. Given m samples s′ 
+
+> i
+
+∼ ˆp(· | s, a )
+
+with values V (s′
+
+> i
+
+), we define bZη = 1
+
+> m
+
+Pmi=1 e−ηV (s′ 
+
+> i)
+
+and vrob (V, η ) = − 1 
+
+> η
+
+log bZη − ϵη . The robust Bellman target is yt = rt + γv rob (V, η t). To enforce the KL bound, we compute bDKL (η) = 
+
+Pmi=1 ˆpi(η) log( m ˆpi(η)) with ˆpi(η) = e−ηV (s′
+
+> i)
+
+/ P 
+
+> j
+
+e−ηV (s′ 
+
+> j)
+
+, and penalize deviations from ϵ.The loss is LAdvNet (ψ) = E[ yt ] + λKL E[( bDKL (ηt) − ϵ)2+], where λKL is a penalty coefficient. 
+
+Stability and approximation guarantees. AdvNet does not generate explicit perturbations but predicts ηt that approximates the optimal dual temperature η⋆. This amortizes the inner maximiza-tion, avoiding costly root finding and variance, while adapting η to the local state–action context. Importantly, the robust Bellman operator remains a γ-contraction under the supremum norm re-gardless of whether η is exact or approximate. If ˆη is the AdvNet output with |ˆη − η⋆| ≤ δ, then the induced value gap satisfies T ˆη V − T η⋆
+
+V ∞ ≤ C δ 2, for a constant C depending on the boundedness of returns. Thus, convergence to a unique fixed point is preserved even under imper-fect predictions, and approximation errors in η only enter quadratically into the robust value update. 4Algorithm 2 AdvNet-Targets (Robust one-step targets) 
+
+Input: critic ϕ, AdvNet ψ, mixture w, KL budget ϵ, samples m 
+
+> 1:
+
+Sample m next-states from ensemble using w; evaluate critic Vϕ to get Vn ∈ RB×m 
+
+> 2:
+
+Predict temperatures ηt ← gψ (s, a or 0) ; project to budget η⋆ ← proj (Vn, η t, ϵ ) (bisection)  
+
+> 3:
+
+Straight-through ˜η ← η⋆ − stopgrad( ηt) + ηt 
+
+> 4:
+
+Robust dual expectation vrob ← − 1˜η log 1
+
+> m
+
+Pmj=1 e−˜ηV (j) 
+
+> n
+
+− ϵ 
+
+> ˜η
+> 5:
+
+Targets y ← r + γ(1 − d) vrob  
+
+> 6:
+
+Update ψ by a few Adam steps on LAdvNet = E[y] + λKL E[( bDKL (˜ η) − ϵ)2+] 
+
+> 7:
+
+return y, ψ 
+
+Boltzmann reweighting, introduced next, then leverages these ηt values to emphasize globally harm-ful dynamics across the ensemble. See App. C for the full derivation and proof. 
+
+Hard-minimum baseline. A na¨ ıve approximation would be to evaluate robustness by taking the hard minimum over sampled next-state values, i.e., min i V (s′
+
+> i
+
+). However, this corresponds to the degenerate distribution p = δs′ 
+
+> min
+
+, which incurs DKL (δs′ 
+
+> min
+
+∥ˆp) = log(1 /ˆp(s′
+
+> min
+
+)) , equaling log m
+
+under a uniform empirical distribution with m samples. Unless ϵ ≥ log m, the KL constraint is violated; in continuous spaces, the KL even diverges. Thus, the hard minimum is infeasible under finite KL budgets, and the correct robust solution is the soft minimum induced by exponential tilting. 4.2 BOLTZMANN REWEIGHTING OF ENVIRONMENT DISTRIBUTION 
+
+Motivation. Na¨ ıve sampling would draw m rollouts uniformly from K ensemble environments. This provides an unbiased estimator of the nominal expectation but fails to emphasize rare yet harm-ful dynamics. Among the ensemble, there will inevitably exist configurations where the policy is particularly vulnerable (i.e., with low value estimates). Sampling from such adverse models is more informative than uniform sampling, since it exposes the policy to weaknesses that dominate the ro-bust objective. Formally, solving inf p∈P Ep[V ] requires Monte Carlo evaluation of expectations un-der p, which the dual formulation rewrites as an expectation under the nominal kernel ˆp. Boltzmann reweighting can therefore be interpreted as tilting ˆp away from uniformity and toward adversarial directions, while remaining regularized by a KL budget. We specifically adopt a KL constraint since it yields closed-form Boltzmann weights and a tractable one-dimensional dual. 
+
+Global variability and robust objective. While AdvNet provides trajectory-level robustness by estimating dual temperatures for exponential tilting, robust evaluation also requires accounting for global variability across dynamics parameters. Directly sampling from a full probabilistic family is infeasible, so we approximate dynamics uncertainty through a finite ensemble {pωk }Kk=1 with prior weights ρ ∈ ∆[K]. The goal is to emphasize harmful dynamics without discarding proximity to the prior, which motivates a Boltzmann reweighting scheme under a KL budget. We constrain adversarial weights w ∈ ∆[K] by Wρ(κ) = {w ∈ ∆[K] : DKL (w∥ρ) ≤ κ}, and define the robust objective Jrob (πθ ) = min w∈W ρ(κ) Eω∼w[ J(πθ , p ω ) ] , where J(πθ , p ω ) is the expected discounted return of πθ in dynamics pω .
+
+Vulnerability scoring and Boltzmann solution. For each model k, we compute a vulnerability score hk = E(s,a )∼D [ V πθ
+
+> pωk
+
+(s′) ] with s′ ∼ pωk (· | s, a ), where D is the empirical rollout distribution under the current policy. Alternatives such as advantage- or cost-based surrogates are also possible. The adversary then solves min w∈∆[K]
+
+PKk=1 w(k) hk subject to DKL (w∥ρ) ≤ κ, whose dual yields the Boltzmann form 
+
+w⋆β (k) = ρ(k) exp( −βh k)
+
+PKk=1 ρ(k) exp( −βh k) , β ≥ 0, (4) with β adjusted so DKL (w⋆β ∥ρ) = κ. As β → 0, w⋆β → ρ; as β → ∞ , w⋆β concentrates on the most adverse models. Numerical solutions for β use one-dimensional search exploiting the monotonicity of the KL term. See App. B for the full derivation. 5Algorithm 3 Boltzmann Reweighting 
+
+Input: prior w0 ∈ ∆[K], critic Vϕ, KL budget κ 
+
+> 1:
+
+Subsample (s, a ); roll out all K models to get s′
+
+> k
+
+; score Hk ← 1
+
+> S
+
+P Vϕ(s′
+
+> k
+
+) 
+
+> 2:
+
+Define w(β) ∝ w0 ⊙ exp( −βH ) 
+
+> 3:
+
+Find β⋆ ≥ 0 by bisection s.t. DKL (w(β⋆)∥w0) ≈ κ 
+
+> 4:
+
+return w ← w(β⋆)
+
+Role of ensembles and practical considerations. Unlike model-based planning methods that train probabilistic dynamics ensembles to capture both epistemic and aleatoric uncertainty, RAPO employs ensembles of deterministic simulators with varied dynamics parameters Chua et al. (2018); Yu et al. (2020). This construction does not aim to model intrinsic stochasticity but instead serves as a Monte Carlo device: it approximates the nominal kernel ˆp by aggregating deterministic transi-tions from multiple parameter settings. As such, RAPO primarily reflects epistemic-style variability across plausible dynamics configurations, while aleatoric uncertainty remains outside our scope. Boltzmann reweighting is therefore a principled mechanism that interpolates smoothly between the prior and worst-case emphasis while avoiding collapse. In practice, we stabilize hk with moving averages and variance reduction, and optionally regularize rapid changes in w. Importantly, η here governs model-level weighting and is distinct from the trajectory-level η predicted by AdvNet. To-gether, AdvNet captures local fragilities within rollouts, while Boltzmann reweighting emphasizes globally adverse dynamics across the ensemble, yielding complementary robustness. Finally, al-though RAPO operates with a finite ensemble {pωk }Kk=1 , App. F establishes that as K → ∞ the dual objective, optimal weights, and induced policies converge to those of the continuous family at the Monte Carlo rate O(K−1/2), providing theoretical justification for the finite approximation. 4.3 UNIFIED RAPO A LGORITHM 
+
+RAPO unifies trajectory-level robustness from AdvNet with model-level robustness from Boltzmann reweighting into a scalable min–max policy optimization framework. At each iteration, it solves 
+
+max  
+
+> θ
+
+min  
+
+> w,ψ
+
+Eω∼w
+
+h
+
+E˜τ ∼(πθ ,p ω ,ψ )
+
+h ∞X
+
+> t=0
+
+γt r(˜ st, ˜at)
+
+i i 
+
+, (5) where ψ parameterizes the trajectory-level adversary (AdvNet) and w is the model mixture con-strained by a KL budget κ. The inner minimization couples trajectory-level exponential tilting with model-level Boltzmann reweighting, while the outer maximization updates the policy. Alg. 1 in-stantiates this framework, with additional stability enhancements (e.g., budget scheduling, entropy regularization) described in App. H. The joint KL constraint naturally decomposes into two en-tropic risks: a model-level temperature β governing ensemble reweighting under budget κ, and a trajectory-level temperature η controlling return tilting under budget ϵ. The total robustness bud-get satisfies κ + ϵ ≤ B, yielding a factorized adversary with complementary roles for Boltzmann reweighting and AdvNet. This two–temperature view provides the theoretical foundation of RAPO. See App. E for the full derivation. 4.4 CONNECTION TO THE ROBUST PERFORMANCE DIFFERENCE LEMMA 
+
+RAPO builds directly on the RPDL perspective: robust policy improvement depends on expected robust advantages under the new policy’s robust occupancy. In practice, however, the worst-case ker-nel pwc  
+
+> π′
+
+that induces this occupancy is not directly accessible. RAPO therefore constructs a tractable surrogate distribution through a two-layer approximation: (i) model-level Boltzmann reweighting ,which forms a KL-constrained mixture ¯pw⋆β = P 
+
+> k
+
+w⋆β,k pωk (4) over a finite ensemble of dynam-ics, thereby emphasizing adverse models while remaining close to a prior and (ii) trajectory-level exponential tilting , where AdvNet predicts η(s, a ) to bias next-state sampling under ¯pw⋆β toward lower-value outcomes, yielding pπ′ 
+
+> β,η
+
+(s′|s, a ) = ¯pw⋆β (s′|s,a ) exp( −η(s,a )V π′      
+
+> (s′))
+> R¯pw⋆β(˜ s|s,a ) exp( −η(s,a )Vπ′(˜ s)) d˜s
+
+. The resulting sur-rogate occupancy ˜dπ′ 
+
+> β,η
+
+(s) = (1 − γ) P∞ 
+
+> t=0
+
+γt Pr (pπ′ 
+
+> β,η , π ′)
+
+(st = s) serves as a practical replace-ment for dπ′ 
+
+> Pϵ
+
+. Policy updates in RAPO can therefore be interpreted as optimizing robust advan-6Figure 1: Walker2d robustness curves across mass, inertia, friction, and torque scaling. RAPO matches PPO in-distribution while significantly outperforming all baselines under OOD regions. tages under ˜dπ′ 
+
+> β,η
+
+, with model-level and trajectory-level robustness acting independently yet com-plementarily. Importantly, the discrepancy between the true and surrogate occupancies admits a clean decomposition: |Edπ′Pϵ
+
+[f ] − E ˜dπ′
+
+> β,η
+
+[f ]| ≲ c1
+
+√κ + c2
+
+√ϵ + c3K−1/2 + c4N −1/2 + c5 δ2,where ∥f ∥∞ < ∞ and the terms correspond respectively to model-budget, trajectory-budget, finite-ensemble, finite-sample, and dual-temperature approximation errors (see App. E for derivation). Setting f (s, a ) = Aπ 
+
+> Pϵ
+
+(s, a ) recovers the RPDL, so that RAPO’s surrogate occupancy provides a principled approximation for evaluating robust policy improvement. Also, the trajectory KL budget 
+
+ϵ serves as a principled robustness–performance knob. From App. G, the nominal–robust value gap satisfies |V π 
+
+> ˆp
+
+− V π 
+
+> Pϵ
+
+| = O(√ϵ), showing that enlarging ϵ strengthens protection against adversarial transitions while degrading nominal performance only at a controlled √ϵ rate. 
+
+## 5 EXPERIMENTS 
+
+We evaluate whether RAPO improves robustness to dynamics variations while preserving ID per-formance comparable to standard baselines. Policies are trained under nominal dynamics but tested under perturbed parameters, so we report results in both ID (within training support) and OOD. Con-trolled sweeps measure robustness and performance degradation under parameter shifts. Walker2d 
+
+is our main testbed Freeman et al. (2021). Its locomotion is sensitive to dynamics changes, mak-ing it a representative benchmark. We vary four parameter families independently: mass, inertia, friction, and torque scaling, each swept from 0.5 to 1.5 in steps of 0.1, with 1.0 as nominal. The ID region is [0 .8, 1.2] , and values outside are OOD. Each setting is run with five seeds, reporting mean episode return with 95% confidence intervals. We also evaluate on a quadrotor payload track-ing task, demonstrating RAPO’s ability to handle coupled dynamics beyond standard locomotion benchmarks. Additional details and further experiments are in App. D. 5.1 ROBUSTNESS TO DYNAMICS UNCERTAINTY 
+
+Fig. 1 compares RAPO with PPO, PPO+DR, RARL, and EPOpt across mass, inertia, friction, and torque scaling. RAPO shows the most stable returns. We include PPO as a strong nominal base-line, PPO+DR to represent domain randomization, RARL for two-player adversarial training, and EPOpt as a risk-averse (worst-quantile/CVaR-style) objective. Together these cover nominal, ran-domization, adversarial, and distributionally robust strategies under matched rollout budgets and network sizes. In the ID region it closely tracks PPO with minor variation. RAPO requires more computation per step due to ensemble rollouts and Boltzmann reweighting, so it is not strictly more sample-efficient than PPO. In OOD regimes, PPO collapses once parameters leave training sup-port, PPO+DR slows but cannot prevent degradation, RARL is unstable, and EPOpt is conservative. RAPO sustains high returns at extreme scales with only modest decline, achieving a favorable ro-bustness–performance balance. Boltzmann reweighting emphasizes difficult regimes, sometimes producing non-monotonic effects (e.g., inertia scale 0.5 outperforming 0.6). Even within the ID prior, returns drop near parameter extremes, showing that uniform randomization does not yield uniform difficulty. Occasionally RAPO even outperforms PPO at the nominal scale, reflecting vari-ance reduction from exponential tilting that stabilizes updates. 7Figure 2: Walker2d ablation. We compare RAPO, w/o AdvNet, w/o Boltzmann reweighting (w = ρ), and w/o both. ID band shaded. Dropping either lowers robustness; dropping both gives the steepest OOD drop. Friction plot is flat for scales ≥ 1.0 due to no difference in frictional force. 
+
+Figure 3: Heatmaps for Walker2d . Each panel covers only one parameter scale α at each with others fixed at 1.0, showing Vu(α) over updates u. RAPO lifts the value floor, while without Boltz-mann reweighting ( w = U nif ([ K]) ) leaves OOD tails. See App. D. 5.2 ROLE OF ADV NET AND BOLTZMANN REWEIGHTING 
+
+We study RAPO ablations on Walker2d (Fig. 2). All variants use identical budgets and differ only by enabling AdvNet and/or Boltzmann reweighting. Full RAPO achieves the highest or tied returns in ID and remains stable OOD. Within [0 .9, 1.1] it is close to the no-reweighting variant, but beyond this band RAPO stays flat while ablations degrade. Removing both causes the steepest OOD drop, showing that uniform sampling without trajectory stress yields brittle tails. Boltzmann reweighting emphasizes difficult regimes, producing occasional non-monotonic but helpful effects (e.g., inertia 
+
+0.5 outperforming 0.6). For friction, scales ≥ 1.0 show flat curves. RAPO without AdvNet removes the trajectory adversary and sets the adversarial loss to zero, instead computing η⋆ by root finding on the convex dual so that the trajectory-level KL budget ϵ is satisfied. For computational feasibil-ity, this root finding is run for only a finite number of iterations, which makes it less effective than amortized prediction via AdvNet and generally yields weaker robustness. RAPO without Boltzmann reweighting fixes w = ρ, so environments are sampled uniformly from the entire prior distribution rather than focusing on adverse regimes, while AdvNet still perturbs trajectories. RAPO without both fixes w = ρ and disables AdvNet, reducing training to PPO on the prior mixture with uniform sampling. All other hyperparameters and rollout settings are identical. To further illustrate robust-ness, Fig. 3 shows heatmaps of value estimates over training. For each update u and parameter type, we sweep a dense grid of scales α ∈ [0 .5, 1.5] while holding others at 1.0 and compute Vu(α) from one-step critic rollouts. Although training uses a finite K-mixture, this diagnostic is continuous. Brighter colors indicate higher value and the blue trace marks arg max α Vu(α). Under RAPO, the value floor progressively rises across the full range: early updates show dark bands at extremes (hard regimes), which flatten and brighten over time. The result shows that RAPO actively covers entire parameter space, not leaving blind spots. See App. D for further experiment results. 5.3 QUADROTOR PAYLOAD TRACKING EXPERIMENTS 
+
+We evaluate RAPO on harder task: flexible cable-suspended payload trajectory tracking under ran-dom force and torque disturbances. Unlike quadrotor-only tracking, payload motion adds stronger coupling and hybrid effects from the suspended mass and cable, making robustness harder. Unlike locomotion tasks, the control objective is the payload position itself, which makes trajectory visual-ization informative. In both Walker2d and quadrotor-payload system, evaluation fixes dynamics 8Figure 4: 3D trajectory. RAPO stays close while PPO-DR drifts in the OOD environment. 
+
+Figure 5: x, y, z vs. time. RAPO reduces oscillations in the OOD environment.                   
+
+> Alg ID OOD Crash [%] PPO 7.5 18.2 40 PPO-DR 7.8 14.6 12 EPOpt 9.1 13.9 16 RARL 8.4 15.2 25
+> RAPO 7.6 9.4 0
+
+Table 1: Payload tracking in the OOD environment. RMSE [cm] ± 95% CI, re-ported only for successful episodes. Crashes are evalu-ated separately from RMSE, based on 20 episodes. RAPO achieves zero crash. parameters per episode (e.g., mass scale or payload mass/length), so these tests assess domain-shift generalization rather than strict rectangularity. The quadrotor environment also includes per-step random force/torque disturbances, which better approximate the rectangular RMDP setting. Thus the payload system tests robustness under both episode-level shifts and step-level disturbances. A Lissajous trajectory is used for stability tests under nominal (ID) and perturbed (OOD) dynamics. For ID, payload mass is sampled from [0 , 0.25] kg and cable length from [0 , 0.5] m. For OOD, mass is 0.5 kg and cable length 1.0 m, producing clear shifts in inertia and tension. Also, force and torque magnitude ranges are twice greater than ID. The environment includes sensor noise, ran-dom force/torque disturbances, aerodynamic downwash, propeller time constants ( τup , τ down ), and small initial perturbations. Fig. 4 shows the 3D trajectory: RAPO stays close to the reference, while PPO-DR drifts and oscillates, especially near the origin during hovering. PPO-DR also crashes mid-trajectory, consistent with Tab. 1. Fig. 5 shows x, y, z over time: RAPO reduces oscillations and steady-state error. Performance is measured by root-mean-square error (RMSE) between desired and actual payload trajectories. Results average 10 trials with 95% confidence intervals. RAPO achieves the lowest OOD RMSE, showing that combining trajectory- and model-level adversarial-ization stabilizes payload dynamics. Note that observation noise differs from RMDP uncertainty: the next state st+1 is deterministic, while the agent observes ot+1 = st+1 + ϵ. This is closer to input perturbation or POMDP formulations than to rectangular RMDPs, which assume uncertainty in the transition kernel. Domain randomization samples dynamics per episode, fixing the kernel for the whole trajectory. This is weaker than step-wise rectangular RMDPs and can be viewed as a subset or relaxed variant of the rectangular assumption. 
+
+## 6 CONCLUSION AND FUTURE WORK 
+
+We introduced RAPO , a framework that realizes distributionally robust RL by combining trajectory-level exponential tilting and model-level Boltzmann reweighting within a KL-robust dual formula-tion. This addresses the training–deployment mismatch where RL policies degrade under unseen dy-namics: unlike domain randomization or adversarial RL, distributional robustness formally accounts for such uncertainty, while prior surrogate-based primal methods suffer blind spots, instability, and over-conservatism due to incomplete coverage of the ambiguity set. RAPO builds on contraction of the robust Bellman operator, stationary optimality, and a robust performance-difference lemma, with the nominal–robust value gap scaling as O(√ϵ), thereby interpreting ϵ as a robustness–performance knob. Practically, RAPO amortizes dual-temperature search via AdvNet to steer worst-case roll-outs efficiently and stably within divergence bounds, while Boltzmann reweighting over ensembles turns naive uniform sampling into policy-sensitive sampling, emphasizing dynamics that most ex-pose policy vulnerabilities. These trajectory- and model-level components operate independently yet complement one another, yielding a surrogate robust occupancy distribution with controllable errors and jointly strengthening robustness. Empirically, RAPO preserves ID performance while improving OOD robustness in dynamics sweeps and quadrotor payload tracking under disturbances, reducing failure and RMSE over PPO, PPO-DR, EPOpt, and RARL. While RAPO entails additional ensemble and dual costs, approximation errors in η enter quadratically, and total error decomposes into √κ (model), √ϵ (trajectory), K−1/2 (ensemble), N −1/2 (sampling), and δ2 (dual approxima-9tion). Overall, RAPO closes the theory–practice gap by maintaining tractability while delivering robustness to uncertainty and generalization to OOD environments. Potential future work include pre-training ensembles and priors from real-world data through safe identification, thereby mitigating the simulation-to-reality gap, and integrating RAPO with model-based planning or Dyna-style rollouts to reduce interaction cost while retaining robustness. 
+
+## ACKNOWLEDGEMENTS 
+
+We used a large language model (LLM) to assist with polishing the writing. All ideas and contribu-tions are the authors’ own. This use complies with the ICLR policy on LLM usage, and the authors take full responsibility for the content in accordance with academic integrity. 
+
+## REFERENCES 
+
+Mohammed Amin Abdullah, Hang Ren, Haitham Bou Ammar, Vladimir Milenkovic, Rui Luo, Mingtian Zhang, and Jun Wang. Wasserstein robust reinforcement learning. arXiv preprint arXiv:1907.13196 , 2019. Alekh Agarwal, Nan Jiang, Sham M Kakade, and Wen Sun. Reinforcement learning: Theory and algorithms. CS Dept., UW Seattle, Seattle, WA, USA, Tech. Rep , 32:96, 2019. Philip J Ball, Laura Smith, Ilya Kostrikov, and Sergey Levine. Efficient online reinforcement learn-ing with offline data. In International Conference on Machine Learning , pp. 1577–1594. PMLR, 2023. Jose Blanchet, Miao Lu, Tong Zhang, and Han Zhong. Double pessimism is provably efficient for distributionally robust offline reinforcement learning: Generic algorithm and robust partial coverage. Advances in Neural Information Processing Systems , 36:66845–66859, 2023. Jiaze Cai, Vishnu Sangli, Mintae Kim, and Koushil Sreenath. Learning-based trajectory tracking for bird-inspired flapping-wing robots. In 2025 American Control Conference (ACC) , pp. 430–437. IEEE, 2025. Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforcement learn-ing in a handful of trials using probabilistic dynamics models. Advances in neural information processing systems , 31, 2018. Benjamin Eysenbach and Sergey Levine. Maximum entropy rl (provably) solves some robust rl problems. arXiv preprint arXiv:2103.06257 , 2021. C Daniel Freeman, Erik Frey, Anton Raichuk, Sertan Girgin, Igor Mordatch, and Olivier Bachem. Brax–a differentiable physics engine for large scale rigid body simulation. arXiv preprint arXiv:2106.13281 , 2021. Scott Fujimoto, Herke van Hoof, and David Meger. Addressing function approximation error in actor-critic methods. In International Conference on Machine Learning , pp. 1582–1591, 2018. Adam Gleave, Michael Dennis, Cody Wild, Neel Kant, Sergey Levine, and Stuart Russell. Adver-sarial policies: Attacking deep reinforcement learning. arXiv preprint arXiv:1905.10615 , 2019. Bibek Gupta, Mintae Kim, Albert Park, Eric Sihite, Koushil Sreenath, and Alireza Ramezani. Estimation of aerodynamics forces in dynamic morphing wing flight. arXiv preprint arXiv:2508.02984 , 2025. Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In Proceedings of the 35th International Conference on Machine Learning , volume 80 of Proceedings of Machine Learning Research , pp. 1861–1870. PMLR, 2018. Chin Pang Ho, Marek Petrik, and Wolfram Wiesemann. Robust phi -divergence mdps. Advances in Neural Information Processing Systems , 35:32680–32693, 2022. 10 Garud N Iyengar. Robust dynamic programming. Mathematics of Operations Research , 30(2): 257–280, 2005. Sham Kakade and John Langford. Approximately optimal approximate reinforcement learning. In 
+
+Proceedings of the nineteenth international conference on machine learning , pp. 267–274, 2002. Mintae Kim. Finite memory belief approximation for optimal control in partially observable markov decision processes. arXiv preprint arXiv:2601.03132 , 2026. Mintae Kim, Jiaze Cai, and Koushil Sreenath. Roverfly: Robust and versatile implicit hybrid control of quadrotor-payload systems. arXiv preprint arXiv:2509.11149 , 2025. Zhongyu Li, Xue Bin Peng, Pieter Abbeel, Sergey Levine, Glen Berseth, and Koushil Sreenath. Reinforcement learning for versatile, dynamic, and robust bipedal locomotion control. The Inter-national Journal of Robotics Research , 44(5):840–888, 2025. Xiao-Yang Liu, Hongyang Yang, Qian Chen, Runjia Zhang, Liuqing Yang, Bowen Xiao, and Christina Dan Wang. Finrl: A deep reinforcement learning library for automated stock trading in quantitative finance. arXiv preprint arXiv:2011.09607 , 2020. Bj¨ orn L¨ utjens, Michael Everett, and Jonathan P How. Certified adversarial robustness for deep reinforcement learning. In conference on Robot Learning , pp. 1328–1337. PMLR, 2020. Daniel J Mankowitz, Nir Levine, Rae Jeong, Yuanyuan Shi, Jackie Kay, Abbas Abdolmaleki, Jost Tobias Springenberg, Timothy Mann, Todd Hester, and Martin Riedmiller. Robust re-inforcement learning for continuous control with model misspecification. arXiv preprint arXiv:1906.07516 , 2019. Shie Mannor, Ofir Mebel, and Huan Xu. Robust mdps with k-rectangular uncertainty. Mathematics of Operations Research , 41(4):1484–1509, 2016. Jun Morimoto and Kenji Doya. Robust reinforcement learning. Neural computation , 17(2):335–359, 2005. Arnab Nilim and Laurent El Ghaoui. Robust control of markov decision processes with uncertain transition matrices. Operations Research , 53(5):780–798, 2005. Tuomas Oikarinen, Wang Zhang, Alexandre Megretski, Luca Daniel, and Tsui-Wei Weng. Robust deep reinforcement learning through adversarial loss. Advances in Neural Information Processing Systems , 34:26156–26167, 2021. Xue Bin Peng, Marcin Andrychowicz, Wojciech Zaremba, and Pieter Abbeel. Sim-to-real transfer of robotic control with dynamics randomization. In 2018 IEEE international conference on robotics and automation (ICRA) , pp. 3803–3810. IEEE, 2018. Lerrel Pinto, James Davidson, Rahul Sukthankar, and Abhinav Gupta. Robust adversarial reinforce-ment learning. In International conference on machine learning , pp. 2817–2826. PMLR, 2017. Ilija Radosavovic, Tete Xiao, Bike Zhang, Trevor Darrell, Jitendra Malik, and Koushil Sreenath. Real-world humanoid locomotion with reinforcement learning. Science Robotics , 9(89):eadi9579, 2024. Aravind Rajeswaran, Sarvjeet Ghotra, Balaraman Ravindran, and Sergey Levine. Epopt: Learning robust neural network policies using model ensembles. arXiv preprint arXiv:1610.01283 , 2016. Marc Rigter, Bruno Lacerda, and Nick Hawes. Rambo-rl: Robust adversarial model-based offline reinforcement learning. Advances in neural information processing systems , 35:16082–16097, 2022. Aurko Roy, Huan Xu, and Sebastian Pokutta. Reinforcement learning under model mismatch. Ad-vances in neural information processing systems , 30, 2017. Ahmad EL Sallab, Mohammed Abdou, Etienne Perot, and Senthil Yogamani. Deep reinforcement learning framework for autonomous driving. arXiv preprint arXiv:1704.02532 , 2017. 11 John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. Laura Smith, J Chase Kew, Xue Bin Peng, Sehoon Ha, Jie Tan, and Sergey Levine. Legged robots that keep on learning: Fine-tuning locomotion policies in the real world. In 2022 international conference on robotics and automation (ICRA) , pp. 1593–1599. IEEE, 2022. Richard S Sutton, Andrew G Barto, et al. Reinforcement learning: An introduction , volume 1. MIT press Cambridge, 1998. Aviv Tamar, Shie Mannor, and Huan Xu. Scaling up robust mdps using function approximation. In 
+
+International conference on machine learning , pp. 181–189. PMLR, 2014. Chen Tessler, Yonathan Efroni, and Shie Mannor. Action robust reinforcement learning and appli-cations in continuous control. In International Conference on Machine Learning , pp. 6215–6224. PMLR, 2019. Josh Tobin, Rachel Fong, Alex Ray, Jonas Schneider, Wojciech Zaremba, and Pieter Abbeel. Do-main randomization for transferring deep neural networks from simulation to the real world. In 
+
+2017 IEEE/RSJ international conference on intelligent robots and systems (IROS) , pp. 23–30. IEEE, 2017. Eugene Vinitsky, Yuqing Du, Kanaad Parvate, Kathy Jang, Pieter Abbeel, and Alexandre Bayen. Robust reinforcement learning using adversarial populations. arXiv preprint arXiv:2008.01825 ,2020. Yue Wang and Shaofeng Zou. Online robust reinforcement learning with model uncertainty. Ad-vances in Neural Information Processing Systems , 34:7193–7206, 2021. Yue Wang and Shaofeng Zou. Policy gradient method for robust reinforcement learning. In Inter-national conference on machine learning , pp. 23484–23526. PMLR, 2022. Huan Xu and Shie Mannor. Distributionally robust markov decision processes. Advances in Neural Information Processing Systems , 23, 2010. Tianhe Yu, Garrett Thomas, Lantao Yu, Stefano Ermon, James Y Zou, Sergey Levine, Chelsea Finn, and Tengyu Ma. Mopo: Model-based offline policy optimization. Advances in Neural Information Processing Systems , 33:14129–14142, 2020. Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui Hsieh. Robust deep reinforcement learning against adversarial perturbations on state observations. Ad-vances in neural information processing systems , 33:21024–21037, 2020. Huan Zhang, Hongge Chen, Duane Boning, and Cho-Jui Hsieh. Robust reinforcement learning on state observations with learned optimal adversary. arXiv preprint arXiv:2101.08452 , 2021. Ruida Zhou, Tao Liu, Min Cheng, Dileep Kalathil, PR Kumar, and Chao Tian. Natural actor-critic for robust reinforcement learning with function approximation. Advances in neural information processing systems , 36:97–133, 2023. 12 A DUAL FORMULATION OF KL-R OBUST EXPECTATION 
+
+A.1 SETUP , P RIMAL , AND DUAL 
+
+Fix a state–action pair (s, a ) and a nominal transition kernel ˆp(· | s, a ). For a bounded V : S → R,the stage-wise robust expectation under a KL-ball defined as 1 is inf p∈P ϵ Es′∼p[V (s′)] . Equiva-lently, min p∈∆S
+
+P 
+
+> x
+
+p(x)V (x) s.t. P 
+
+> x
+
+p(x) log p(x)ˆp(x) ≤ ϵ, which is a convex program with strong duality by Slater’s condition. Introducing multipliers η ≥ 0 and μ ∈ R, the Lagrangian is 
+
+L(p, η, μ ) = P 
+
+> x
+
+p(x)V (x) + η  P  
+
+> x
+
+p(x) log p(x)ˆp(x) − ϵ + μ  P  
+
+> x
+
+p(x) − 1. Stationarity in p(x)
+
+gives V (x) + η
+
+
+
+1 + log p(x)ˆp(x)
+
+
+
++ μ = 0 , hence p(x) ∝ ˆp(x)e− 1  
+
+> η V(x)
+
+and pη (x) = ˆp(x)e−ηV (x) 
+
+> Z(η)
+
+,
+
+Z(η) = Eˆp[e−ηV ]. Substitution yields the dual g(η) = − 1 
+
+> η
+
+log Z(η) − ϵη for η ≥ 0, so the dual problem is max η≥0 − 1 
+
+> η
+
+log Eˆp[e−ηV ] − ϵη .A.2 INVERSE -T EMPERATURE REPARAMETERIZATION AND OPTIMALITY 
+
+We directly view η as the dual variable. The robust expectation can be expressed as 
+
+inf p: DKL (p∥ ˆp)≤ϵ Ep[V ] = sup η≥0{− 1 
+
+> η
+
+log Eˆp[e−ηV ] − ϵη }. The corresponding optimizer is pη (x) =    
+
+> ˆp(x)e−ηV (x)
+> Eˆp[e−ηV ]
+
+. Differentiating gives g′(η) = 1 
+
+> η2
+
+(ϵ − DKL (pη ∥ˆp)) , so the optimum η⋆ satisfies 
+
+DKL (pη⋆ ∥ˆp) = ϵ. Thus inf p: DKL (p∥ ˆp)≤ϵ Ep[V ] = sup η≥0{− 1 
+
+> η
+
+log Eˆp[e−ηV ] − ϵη }, which provides the derivation of 3. Instead of enforcing the hard KL constraint, one may consider the soft penalty variant inf p{Ep[V ] +  
+
+> 1
+> η
+
+DKL (p∥ˆp)}. The corresponding Lagrangian is L(p, μ ) = P 
+
+> x
+
+p(x)V (x) + 1
+
+> η
+
+P 
+
+> x
+
+p(x)(log p(x) −
+
+log ˆ p(x))+ μ(P 
+
+> x
+
+p(x)−1) where μ enforces normalization. Stationarity with respect to p(x) yields  
+
+> ∂L
+> ∂p (x)
+
+= V (x) + 1 
+
+> η
+
+(1 + log p(x) − log ˆ p(x)) + μ = 0 , so that p(x) = c ˆp(x)e−ηV (x). Normalization gives c−1 = Zη = P 
+
+> x
+
+ˆp(x)e−ηV (x) = Eˆp[e−ηV ] and therefore pη (x) = ˆp(x)e−ηV (x) 
+
+> Zη
+
+. Plugging this optimizer into the objective, note that DKL (pη ∥ˆp) = P 
+
+> x
+
+pη (x) log pη (x)ˆp(x) = −η Epη [V ] − log Zη .Hence Epη [V ] + 1 
+
+> η
+
+DKL (pη ∥ˆp) = Epη [V ] + 1 
+
+> η
+
+(−ηEpη [V ] − log Zη ) = − 1 
+
+> η
+
+log Zη . Since Zη =
+
+Eˆp[e−ηV ], we conclude inf p{Ep[V ] + 1 
+
+> η
+
+DKL (p∥ˆp)} = − 1 
+
+> η
+
+log Eˆp[e−ηV ].Thus the soft-penalty form yields the classical entropic risk (risk-sensitive) evaluation with η act-ing as inverse risk-aversion. This variant avoids the explicit −ϵ/η offset of the hard-constrained formulation while preserving robustness via regularization. A.3 SAMPLE -B ASED APPROXIMATION 
+
+In practice, ˆp(· | s, a ) is sampled: s′
+
+> 1
+
+, . . . , s ′ 
+
+> m
+
+∼ ˆp. Sample-based approximations are bZη =
+
+> 1
+> m
+
+Pmi=1 e−ηV (s′
+
+> i)
+
+, ˆqi(η) = e−ηV (s′    
+
+> i)
+> P
+> je−ηV (s′
+> j)
+
+, and bDKL (η) = P 
+
+> i
+
+ˆqi(η) log( mˆqi(η)) . The approximate dual is bvrob (η) = − 1 
+
+> η
+
+log bZη − ϵη , and η⋆ is found by root-finding so that bDKL (η⋆) ≈ ϵ. Monotonic-ity holds since ddη DKL (pη ∥ˆp) = η Var pη (V ) ≥ 0, enabling bisection or Newton updates. Gradients for critic training follow from ∂∂V (s′
+
+> i)
+
+  − 1 
+
+> η
+
+log bZη
+
+ = ˆ qi(η), so the TD target is yt = rt + γ bvrob (η⋆)
+
+with backpropagation weight γ ˆqi(η⋆). By Jensen’s inequality, E[log bZη ] ≤ log Zη , so − 1 
+
+> η
+
+log bZη
+
+is upward biased. At η⋆, the primal value is bEpη⋆ [V ] = P 
+
+> i
+
+ˆqi(η⋆)V (s′
+
+> i
+
+) = − ∂∂η log bZη η=η⋆ , and ideally coincides with the dual value when bDKL (η⋆) = ϵ. In practice small duality gaps may occur, so monitoring g = dual − primal is useful. A.4 BIAS CORRECTION AND ROOT -F INDING 
+
+Since − 1 
+
+> η
+
+log bZη is biased upward, concentration yields if | bZη − Zη | ≤ ϵZ η w.p. 1 − ξ then 
+
+− 1 
+
+> η
+
+log bZη ≥ − 1 
+
+> η
+
+log Zη − 1 
+
+> η
+
+log(1 + ϵ). A conservative estimator is − 1 
+
+> η
+
+log bZη − cm/η with 13 cm ≃
+
+q log(1 /ξ ) 
+
+> m
+
+or bootstrap. Variance may be reduced by larger m or ensembles of dynamics models, with looser ϵ in high-variance regions. For root-finding, bisection brackets (0 +, η U ) by monotonicity; Newton updates use η ← η − bDKL (η)−ϵη dVar pη (V ) , with projection η > 0 and damping when variance is small. A.5 ENTROPIC RISK FUNCTIONAL , C ONTRACTION , AND TRACTABILITY 
+
+The functional Ψη (V ) = − 1 
+
+> η
+
+log Eˆp[e−ηV ] enjoys translation invariance Ψη (V + c) = Ψ η (V ) + c
+
+and Lipschitz continuity |Ψη (V ) − Ψη (W )| ≤ ∥V − W ∥∞, hence the robust Bellman op-erator (TKL V )( s) = max a{r(s, a ) + γ sup η≥0(Ψ η (V | s, a ) − ϵ/η )} is a γ-contraction in 
+
+∥ · ∥ ∞. Variance control follows from a cumulant expansion: let μ = Eˆp[V ], U = V − μ,and KU (t) = log Eˆp[etU ] = P 
+
+> n≥1
+
+κn tn/n ! be the cumulant generating function of U with 
+
+κ1 = 0 , κ2 = Var ˆp(V ), etc.; then log Eˆp[e−ηV ] = −ημ + KU (−η) = −ημ + P 
+
+> n≥2
+
+κn (−η)n 
+
+> n!
+
+,so Ψη (V ) = μ − P 
+
+> n≥2
+
+κn (−1) n 
+
+> n!
+
+η n−1 = μ − η 
+
+> 2
+
+Var ˆp(V ) + η2 
+
+> 6
+
+κ3 − η3 
+
+> 24
+
+κ4 + O(η4), which makes explicit that the first correction to the mean is − η 
+
+> 2
+
+Var ˆp(V ) and higher-order terms depend on higher cumulants, i.e., η directly tunes sensitivity to dispersion and tails. In practice, with sam-ples s′
+
+> 1
+
+, . . . , s ′ 
+
+> m
+
+∼ ˆp, one uses bΨη,m (V ) = − 1 
+
+> η
+
+log( 1
+
+> m
+
+Pmi=1 e−ηV (s′
+
+> i)
+
+), which admits concentration bounds of order O(e2ηM /(η√m)) for V ∈ [−M, M ]. These properties explain why KL diver-gence is well-suited in robust Bellman operators: it induces exponential tilting with closed-form optimizers, preserves contraction, and remains tractable while offering explicit variance control via the η–cumulant expansion. 
+
+## B BOLTZMANN REWEIGHTING UNDER KL C ONSTRAINTS 
+
+We derive the Boltzmann (Gibbs) reweighting that biases an environment ensemble toward adverse models while staying close to a prior. The exponential form follows from the conjugacy of the log-partition function and relative entropy. We give the KL-constrained primal, its dual, the exponential-family solution, and key properties (existence, uniqueness, monotonicity, limits, and the continuous case). B.1 INTUITIVE MOTIVATION : I MPORTANCE SAMPLING AND EXPONENTIAL TILTING 
+
+We seek a mixture w absolutely continuous w.r.t. a prior ρ to emphasize high vulnerability scores 
+
+hk while remaining close to ρ. Writing w(k) = ρ(k)L(k) with L ≥ 0 and Eρ[L] = 1 , an in-formation budget via KL restricts feasible likelihood ratios. Convex duality then yields the optimal 
+
+Lβ (k) ∝ e−βh k and hence wβ (k) = ρ(k)e−βh k  
+
+> P
+> jρ(j)e−βh j
+
+, i.e., exponential tilting (Esscher transform). This guarantees positivity/normalization, aligns with cumulant-generating functions, and is the unique optimizer compatible with a KL constraint, providing a canonical “soft-min” toward adverse mod-els. B.2 SETUP , P RIMAL , AND DUAL 
+
+Let Ω = {ω1, . . . , ω K } index models with prior ρ ∈ ∆[K] and scores hk ∈ R. We choose w ∈ ∆[K]
+
+to emphasize adverse models under a KL budget κ ≥ 0:
+
+min 
+
+> w∈∆[K]
+> K
+
+X
+
+> k=1
+
+w(k)hk s.t. DKL (w∥ρ) ≤ κ. (6) This is convex and satisfies Slater, so strong duality holds. With multipliers λ ≥ 0 (KL) and μ ∈
+
+R (normalization), the Lagrangian is L(w, λ, μ ) = P 
+
+> k
+
+w(k)hk + λ  P  
+
+> k
+
+w(k) log w(k) 
+
+> ρ(k)
+
+− κ +
+
+μ  P  
+
+> k
+
+w(k) − 1. Stationarity gives hk + λ(1 + log w(k) 
+
+> ρ(k)
+
+) + μ = 0 , hence w(k) ∝ ρ(k)e−hk /λ and after normalization 
+
+w⋆β (k) = ρ(k)e−βh k
+
+P 
+
+> j
+
+ρ(j)e−βh j , β = 1 
+
+> λ
+
+≥ 0. (7) 14 By complementary slackness, the optimal β⋆ satisfies 
+
+DKL (w⋆β⋆ ∥ρ) = κ. (8) Minimizing over w yields the dual function g(λ) = −λ log P 
+
+> k
+
+ρ(k)e−hk /λ − λκ , equivalently 
+
+max 
+
+> β≥0
+
+n
+
+− 1 
+
+> β
+
+log 
+
+> K
+
+X
+
+> k=1
+
+ρ(k)e−βh k − κβ
+
+o
+
+, (9) whose maximizer β⋆ together with 7 solves 6. The term −(1 /β ) log P 
+
+> k
+
+ρ(k)e−βh k is the negative free energy (Gibbs principle). B.3 CONVEX -A NALYTIC VIEW (D ONSKER –V ARADHAN )For any f = ( fk), log P 
+
+> k
+
+ρ(k)efk = sup w∈∆[K] {P 
+
+> k
+
+w(k)fk − DKL (w∥ρ)}. Setting fk = −βh k
+
+gives − 1 
+
+> β
+
+log P 
+
+> k
+
+ρ(k)e−βh k = inf w∈∆[K] {P 
+
+> k
+
+w(k)hk + 1 
+
+> β
+
+DKL (w∥ρ)}. Introducing the budget κ
+
+via a Lagrange multiplier recovers 9 and 7. Exponential tilting is thus the optimizer of an entropy-regularized worst-case objective. B.4 PROPERTIES , L IMITS , AND CONTINUOUS CASE 
+
+Existence/uniqueness: strong duality holds by Slater. When hk are not all equal and κ > 0, 8 has a unique solution β⋆, hence a unique w⋆β⋆ . Monotonicity: with Z(β) = P 
+
+> k
+
+ρ(k)e−βh k and wβ as in 7, ddβ DKL (wβ ∥ρ) = β Var wβ (h) ≥ 0, with strict inequality unless h is ρ-a.s. constant. Continuity and strict increase guarantee a unique β⋆ matching κ. Temperature limits: as β → 0, wβ → ρ. As 
+
+β → ∞ , wβ concentrates on arg min k hk, turning the soft-min into a hard minimum. Continuous ensembles: on (Ω , F) with prior ρ and measurable h : Ω → R, dw β 
+
+> dρ
+
+(ω) = e−βh (ω)   
+
+> R
+> Ωe−βh ( ˜ ω)ρ(d˜ω)
+
+, with 
+
+DKL (wβ⋆ ∥ρ) = κ, obtained by replacing sums with integrals. Starting from 6, Lagrangian duality or the Gibbs variational principle yields the exponential-family optimizer 7, with inverse temperature β trading off energy (vulnerability) and entropy (deviation from prior) and chosen by 8. This is the Boltzmann reweighting used to bias sampling toward adverse regimes in a principled, tunable way. B.5 WHY KL C ONSTRAINT IN BOLTZMANN REWEIGHTING 
+
+For an ensemble Ω = {ω1, . . . , ω K } with prior ρ ∈ ∆[K] and vulnerability scores hk ∈ R, the KL-constrained reweighting problem 
+
+min 
+
+> w∈∆[K]
+> K
+
+X
+
+> k=1
+
+w(k)hk s.t. DKL (w∥ρ) ≤ κ (10) admits the Boltzmann solution wβ (k) = ρ(k)e−βh k  
+
+> P
+> jρ(j)e−βh j
+
+with DKL (wβ ∥ρ) = κ, which arises from strong duality and exponential tilting. This closed-form structure is unique to KL divergence: other 
+
+f -divergences yield polynomial or truncated forms such as w(k) ∝ ρ(k)(1 − βh k)+ for χ2, which lack smoothness and global stability. The mapping β 7 → DKL (wβ ∥ρ) is continuous, strictly increas-ing, and unbounded unless all hk coincide, guaranteeing that for each finite κ > 0 there exists a unique β⋆ satisfying the constraint. Thus wβ interpolates smoothly between w = ρ at β = 0 (no reweighting) and the hard-min distribution as β → ∞ . Finally, the budget κ has a direct information-theoretic meaning: DKL (w∥ρ) ≤ κ bounds the expected log-likelihood ratio Ew[log( w/ρ )] , so κ
+
+quantifies the exact information distance from the prior and explicitly limits how much prior mass can be shifted toward adverse models. 
+
+## C ON THE USE OF ADV NET FOR η APPROXIMATION 
+
+In Sec. 4, we introduced AdvNet as a practical mechanism to approximate the dual variable η⋆ that enforces the KL budget in RAPO. Here we provide further theoretical background and justifica-tion: we first explain why the hard minimum is infeasible, then review the exact dual optimization 15 and the interpretation of η as a KL–sharpness trade-off, and finally analyze AdvNet’s amortized approximation, including its stability and error propagation properties. C.1 WHY NOT SIMPLY TAKE THE MINIMUM ?A natural question is whether one can avoid the dual altogether and simply take the hard minimum over samples: min i V (s′
+
+> i
+
+) with s′ 
+
+> i
+
+∼ ˆp(·| s, a ). This corresponds to choosing the degenerate distribu-tion q = δs′ 
+
+> min
+
+. However, DKL (δs′ 
+
+> min
+
+∥ˆp) = log 1ˆp(s′ 
+
+> min )
+
+, which equals log m if ˆp is approximated by a uniform empirical distribution over m samples. Unless ϵ ≥ log m, the hard minimum violates the KL constraint and is therefore infeasible. In continuous spaces it becomes even worse: concentrating on a single point where ˆp(s′) = 0 yields infinite KL. Thus, the true robust solution under a finite KL budget is the soft minimum distribution qη defined by exponential tilting. The concentration of qη is controlled by η, which is uniquely chosen so that the KL budget is exactly satisfied. C.2 DUAL OPTIMIZATION VERSUS ADV NET APPROXIMATION 
+
+The dual variable η⋆ acts as the inverse temperature that enforces the KL constraint in the tilted mixture. In principle, one can solve a one-dimensional convex optimization for each (s, a ):
+
+η⋆(s, a ) = arg max η≥0{− 1 
+
+> η
+
+log Eˆp(·| s,a )[e−ηV (s′)] − ϵη }, and then compute the reweighted dis-tribution qη⋆ (s′) = ˆp(s′|s,a )e−η⋆V (s′)  
+
+> Eˆp[e−η⋆V(s′)]
+
+with DKL (qη⋆ ∥ˆp) = ϵ. This dual root-finding is exact but requires iterative optimization for every state-action query. AdvNet is introduced as an amortized approximation : rather than solving for η⋆ repeatedly, we train a neural network ˆη = fϕ(s, a ) to approximate the mapping (s, a ) 7 → η⋆. Training is supervised against either the dual solution η⋆ or the induced robust surrogate loss. Once trained, AdvNet provides a fast forward-pass approximation for arbitrary (s, a ).C.3 INTERPRETATION OF η AND THE KL–S HARPNESS TRADE -OFF 
+
+The tilting distribution qη (s′) = ˆp(s′|s,a )e−ηV (s′)  
+
+> Eˆp[e−ηV (s′)]
+
+places more mass on adverse states as η increases. Consequently, DKL (qη ∥ˆp) is strictly increasing in η. At η = 0 , qη = ˆ p and KL = 0 . As η → ∞ , qη
+
+collapses to the worst-case delta distribution and KL diverges. Hence η⋆ is the sharpness level that exactly matches the KL budget. Large η is not always better: while it yields stronger concentration on the worst case, it also violates the KL constraint and produces unstable gradients. The robust expectation balances both effects through the dual objective sup η≥0{− 1 
+
+> η
+
+log Eˆp[e−ηV ] − ϵη }.C.4 WHY THE DUAL TEMPERATURE η IS STATE –A CTION DEPENDENT 
+
+We show that the optimal dual temperature arises separately at each state–action pair from the hard KL-constrained inner problem, and under mild regularity it is a well-defined (locally smooth) function of (s, a ).
+
+Setup: one-step robust evaluation at (s, a ). Fix a policy π and value function V . With (s, a )-rectangular KL balls Pϵ(s, a ) = { p(· | s, a ) ∈ ∆S : DKL (p∥ˆp(· | s, a )) ≤ ϵ }, the robust Bellman operator (Prelim., 2) requires, for each (s, a ), the one-step inner minimum vrob (s, a ) = inf p∈P ϵ(s,a ) Es′∼p(·| s,a )V (s′). By convex duality for the hard KL constraint, this is equivalently 
+
+vrob (s, a ) = sup η≥0{− 1 
+
+> η
+
+log Eˆp(·| s,a )[e−ηV (s′)] − ϵη } = sup η≥0 L(s, a ; η). Thus the dual variable 
+
+η is the Lagrange multiplier of a local constraint at (s, a ).
+
+First-order condition and tightness of the KL budget. Write Zs,a (η) = Eˆp(·| s,a )[e−ηV (s′)] and 
+
+qs,a,η (s′) = e−ηV (s′) 
+
+> Zs,a (η)
+
+ˆp(s′ | s, a ). Then DKL (qs,a,η ∥ ˆp(· | s, a )) = −η Eqs,a,η [V ] − log Zs,a (η).16 A standard calculation yields ∂L 
+
+> ∂η
+
+(s, a ; η) = ϵ−DKL (qs,a,η ∥ ˆp(·| s,a ))  
+
+> η2
+
+. Hence any interior maximizer 
+
+η⋆(s, a ) satisfies the tightness condition DKL (qs,a,η ⋆(s,a )∥ˆp(· | s, a )) = ϵ.
+
+Monotonicity, unimodality, and uniqueness. For η > 0, ddη DKL (qs,a,η ∥ˆp(· | s, a )) =
+
+η Var qs,a,η [V (s′)] ≥ 0. Unless V is qs,a,η -a.s. constant, the derivative is positive, so η 7 →
+
+DKL (qs,a,η ∥ˆp) is strictly increasing. Combining with the gradient expression, η 7 → L (s, a ; η) is unimodal with a unique maximizer where the tightness condition holds. Therefore, for each (s, a ),the optimal dual temperature η⋆(s, a ) = arg max η≥0 L(s, a ; η) is uniquely defined (up to boundary cases). This shows η⋆ is inherently (s, a )-dependent : the data of the local problem— ˆp(· | s, a ) and the induced distribution of V (s′)—change with (s, a ), and so does the unique maximizer. 
+
+Regularity: when does η⋆(s, a ) behave like a function? Define the zero set Φ( s, a, η ) =
+
+DKL (qs,a,η ∥ˆp(· | s, a )) − ϵ. Under standard continuity assumptions in (s, a ) for ˆp(· | s, a ) and 
+
+V , Φ is continuous and C1 in η. Moreover, ∂Φ 
+
+> ∂η
+
+(s, a, η ) = η Var qs,a,η [V ] > 0 whenever η > 0 and the variance is nonzero. Hence, by the Implicit Function Theorem, any interior solution η⋆(s, a ) of 
+
+Φ = 0 defines a locally C1 function of (s, a ). Furthermore, since L(s, a ; η) is continuous in (s, a, η )
+
+and strictly concave in η, Berge’s Maximum Theorem implies that the argmax correspondence is single-valued and continuous in (s, a ). In sum, under mild non-degeneracy (nonzero variance) and continuity, we may treat η⋆ as a well-defined, locally smooth function (s, a ) 7 → η⋆(s, a ).
+
+Boundary and degenerate cases. If Var qs,a,η [V ] = 0 on an interval, or if ϵ is so small/large that the solution lies at the boundary, then η⋆(s, a ) may occur at η = 0 or at a large cutoff. In practice we project η to [ηmin , η max ] and (if needed) use one-dimensional bisection enforcing the tightness condition. 
+
+Implication for RAPO (AdvNet). Because the inner problem is solved for each (s, a ), the robust Bellman operator requires the local temperature η⋆(s, a ). RAPO’s AdvNet amortizes this implicit solution by learning a predictor fψ (s, a ) ≈ η⋆(s, a ), which is not a heuristic convenience but a direct realization of the dual structure: it supplies the state–action dependent temperature that makes the inner KL constraint tight and yields the correct soft-min target − 1 
+
+> η
+
+log Eˆp[e−ηV ] at each (s, a ).C.5 AMORTIZED APPROXIMATION VIA ADV NET : M OTIVATION , S TABILITY , AND ERROR 
+
+ANALYSIS 
+
+The term “amortized” follows variational inference: instead of optimizing a local variable η⋆ for each instance, we train a global function fψ (s, a ) that amortizes the inference cost. The mapping 
+
+(s, a ) 7 → η may seem unintuitive, but is learnable in practice because different regions of the state-action space consistently correlate with different adverse dynamics. 
+
+Example. Consider a pendulum with uncertain mass. For the same (s, a ), a lighter pendulum re-sponds faster, while a heavier pendulum is sluggish. If the policy applies large torques, heavy mass instances are more failure-prone. AdvNet can learn this regularity, outputting larger η for such (s, a )
+
+pairs to bias reweighting toward heavier models. To summarize, the dual variable η⋆ can in principle be computed exactly by solving the dual opti-mization, but this is computationally expensive; AdvNet provides an amortized approximation that replaces repeated per-sample root-finding with a single learned forward pass. Since hard minima correspond to degenerate distributions and are infeasible under finite KL budgets, the dual soft-minimum defined by η⋆ is the correct solution. The parameter η mediates the trade-off between worst-case sharpness and divergence from the nominal prior, and AdvNet offers an efficient practi-cal mechanism to approximate this trade-off. We now formalize the role of the state–action dependent dual variable. For a fixed (s, a ) with nominal kernel ˆp(· | s, a ) and a bounded V : S → R, the dual representation of the one-step robust evaluation under a hard KL constraint is ϕ(η; V ) = − 1 
+
+> η
+
+log Eˆp[e−ηV ]− ϵη , η ≥ 0, and the maximizer 
+
+η⋆(s, a ) ∈ arg max η≥0 ϕ(η; V | s, a ) exists uniquely. By the KKT conditions, DKL (qη⋆ ∥ˆp) = ϵ
+
+and qη (d s′) ∝ e−ηV (s′) ˆp(d s′). Since V (· | s, a ) varies with (s, a ), the optimizer η⋆ is inherently state–action dependent. 17 Contraction is preserved irrespective of AdvNet approximation. Fix any measurable mapping 
+
+ˆη : S × A → R≥0 and define ( eT V )( s) = max a{r(s, a ) + γ(Ψ ˆη(s,a )(V | s, a ) − ϵ/ ˆη(s, a )) } with 
+
+Ψη (V ) = − 1 
+
+> η
+
+log Eˆp[e−ηV ]. For all η > 0, Ψη is 1-Lipschitz in ∥ · ∥ ∞, i.e., |Ψη (V ) − Ψη (W )| ≤ ∥V −W ∥∞. Thus, for arbitrary ˆη(·), ∥ eT V − eT W ∥∞ ≤ γ∥V −W ∥∞, so eT remains a γ-contraction. Hence, even if AdvNet does not converge exactly to η⋆, the operator still converges to a unique fixed point without loss of contraction. 
+
+Strong concavity of the dual objective and quadratic error effects. The derivative of ϕ is 
+
+ϕ′(η) = 1 
+
+> η2
+
+(ϵ − DKL (qη ∥ˆp)) , and ϕ′′ (η) = − 2 
+
+> η3
+
+(ϵ − DKL (qη ∥ˆp)) − 1 
+
+> η
+
+Var qη (V ) ≤ 0. Thus 
+
+ϕ is strictly concave, ensuring a unique optimum η⋆. By Taylor expansion, ϕ(η⋆) − ϕ(ˆ η) = 
+
+− 12 ϕ′′ (ξ)(ˆ η − η⋆)2 ≤ 12Var qξ (V ) 
+
+> ξ
+
+(ˆ η − η⋆)2. If V ∈ [m, M ], then Var qξ (V ) ≤ (M − m)2/4.Restricting η ≥ ηmin > 0 yields 0 ≤ ϕ(η⋆) − ϕ(ˆ η) ≤ (M −m)2  
+
+> 8ηmin
+
+(ˆ η − η⋆)2. Hence the dual value loss grows only quadratically with the approximation error. 
+
+KL residual and local equivalence. Optimality satisfies r(η) := ϵ − DKL (qη ∥ˆp) = 0 . Since 
+
+r′(η) = −η Var qη (V ) ≤ − ηmin σ2min with variance lower bound σ2min > 0, the inverse function theorem implies |ˆη − η⋆| ≤ |ϵ−DKL (qˆη ∥ ˆp)|
+
+> ηmin σ2min
+
+. Substituting into the quadratic bound, ϕ(η⋆) − ϕ(ˆ η) ≤  
+
+> (M−m)2
+> 8η3min σ4min
+
+ ϵ − DKL (qˆη ∥ˆp)2. Thus penalizing or projecting KL residuals, as in our training objec-tive, directly controls approximation error. 
+
+Operator-level performance gap. Let (TKL V )( s) = max a sup η≥0{r + γ(Ψ η (V ) − ϵ/η )} de-note the exact operator, and eT the approximate one. For any V , |(TKL V )( s) − ( eT V )( s)| ≤ 
+
+γ max a(ϕ(η⋆) − ϕ(ˆ η(s, a ))) ≤ γC ϕ max a |ˆη(s, a ) − η⋆(s, a )|2, with Cϕ = ( M − m)2/(8 ηmin ).By contraction perturbation bounds, the fixed points V ⋆ and ˜V satisfy ∥V ⋆ − ˜V ∥∞ ≤ 
+
+> γ
+> 1−γ
+
+Cϕ sup s,a |ˆη(s, a ) − η⋆(s, a )|2. Hence, if AdvNet’s output error is uniformly bounded by δ,the resulting value function deviation is at most O(δ2).
+
+Summary. (i) The optimal η⋆ is inherently state–action dependent, motivating AdvNet as a natu-ral approximation. (ii) Contraction of the robust Bellman operator is preserved for any approximate 
+
+ˆη. (iii) Approximation error in η only induces a quadratic gap in the robust value. (iv) KL residuals provide a direct and quantifiable proxy for approximation accuracy. Together, these results rigor-ously justify the use of AdvNet: even without exact alignment to η⋆, convergence is preserved and approximation error propagates only as a second-order effect. 
+
+## D EXPERIMENT DETAILS AND ADDITIONAL RESULTS 
+
+D.1 ROBUSTNESS TO DYNAMICS UNCERTAINTY 
+
+We complement the Walker2d results in the main text with robustness sweeps on Ant ,
+
+Halfcheetah , and Hopper . Across all environments RAPO consistently attains the best trade-off between ID performance and OOD stability, while maintaining the strict ordering RAPO >
+
+PPO+DR > PPO that we already observed in Walker2d . The relative gaps between algorithms vary with morphology. For Ant , the curves are closer overall, yet RAPO still sustains high returns at OOD scales where baselines collapse. Halfcheetah shows sharper degradation of PPO once parameters move outside the training distribution, while PPO+DR delays the collapse but remains vulnerable; RAPO keeps returns high with only mild declines. Hopper is the most sensitive to dynamics changes: PPO and RARL both degrade quickly in OOD, EPOpt is conservative but stable, and RAPO preserves performance substantially better than all baselines. These experiments confirm several observations made on Walker2d . First, robustness does not come for free: RAPO evaluates multiple dynamics models per update and applies Boltzmann reweighting, so although rollout sample counts are fixed, per-step compute is higher than PPO. Sec-ond, Boltzmann reweighting concentrates learning on difficult parameter regimes, which produces informative non-monotonic effects such as inertia scale 0.5 outperforming 0.6 or torque showing 18 (a) Ant 
+
+(b) Halfcheetah 
+
+(c) Hopper 
+
+Figure 6: Robustness curves across mass, inertia, friction, and torque scaling. RAPO consistently outperforms baselines in OOD regions while retaining strong ID performance. left-OOD gains when the sampler emphasizes challenging configurations. Third, friction is effec-tively flat for scales ≥ 1.0 across all environments. Finally, even under uniform domain randomiza-tion, ID-region returns are not uniform: performance decreases toward the boundaries of the prior, underscoring that uniform sampling does not equal uniform task difficulty. D.2 ROLE OF ADV NET AND BOLTZMANN REWEIGHTING 
+
+We extend the ablation study beyond Walker2d by evaluating RAPO and its variants on Ant ,
+
+Halfcheetah , and Hopper . In all cases, training budgets and evaluation protocols are identical; the only differences are whether the trajectory adversary (AdvNet) and/or Boltzmann reweighting are active. Full RAPO consistently achieves the most stable curves in both ID and OOD regions. Re-moving one mechanism reduces robustness, and removing both produces the steepest OOD collapse, showing that trajectory stress testing and tilted sampling are complementary. 
+
+RAPO without AdvNet disables the adversarial head and sets its loss weight to zero, while retaining Boltzmann tilting. For each update the dual temperature η⋆ is obtained via convex dual root finding so that the tilted weights wk = ρk exp( η⋆∆k )P    
+
+> jρjexp( η⋆∆j)
+
+satisfy the KL constraint, where ∆k are Monte Carlo critic shortfalls. This variant captures globally adverse dynamics but misses trajectory-specific fragilities, leading to wider confidence intervals and occasional local dips. RAPO without Boltzmann reweighting fixes w = ρ, i.e., the sampler matches the prior distribution over dynamics, while AdvNet continues to perturb trajectories. This variant maintains mid-range OOD competitiveness 19 (a) Ant 
+
+(b) Halfcheetah 
+
+(c) Hopper 
+
+Figure 7: Ablation of RAPO components on Ant , Halfcheetah , and Hopper . Full RAPO achieves the best OOD robustness. Removing AdvNet or Boltzmann reweighting weakens robust-ness, and removing both leads to the sharpest collapse. but decays symmetrically at extremes because harmful models are undersampled. RAPO without both fixes w = ρ and removes AdvNet, effectively reducing training to PPO on the un-tilted mixture, which results in brittle tails centered near the nominal scale. Across environments the patterns are consistent with Walker2d . In Ant , RAPO sustains the highest OOD returns, while ablations fall off more sharply. In Halfcheetah , PPO-based variants degrade rapidly once parameters move OOD, but RAPO without AdvNet or without reweighting still preserve partial robustness; the combined removal collapses fastest. Hopper is especially sensitive to dynamics changes: RAPO provides stable OOD returns, whereas the ablations show steeper declines, particularly when both mechanisms are disabled. These results highlight that AdvNet and Boltzmann reweighting address different aspects of robustness—state–action dependent fragility versus global coverage—and that both are needed for the strongest performance. To further illustrate robustness, Fig. 8 reports value-function heatmaps for Ant , Halfcheetah ,and Hopper . For each update u and parameter type, we sweep a dense grid of scales α ∈
+
+[0 .5, 1.5] while holding the other parameters at 1.0, and compute Vu(α) from one-step critic rollouts. Concretely, given a batch of states {sb}Bb=1 sampled from the replay buffer, we eval-uate actions ab ∼ πu(·| sb), step the simulator with parameter scale α to obtain s′
+
+> b
+
+, and form 
+
+Vu(α) = 1
+
+> B
+
+PBb=1 
+
+ r(sb, a b; α) + γ ˆVϕu (s′
+
+> b
+
+), where ˆVϕu is the learned critic at update u. This 20 (a) Ant 
+
+(b) Halfcheetah 
+
+(c) Hopper 
+
+Figure 8: Heatmaps of value estimates with and without Boltzmann reweighting. RAPO progres-sively lifts the value floor across the entire range of scales, while removing reweighting leaves OOD tails dark, indicating poor robustness. diagnostic is continuous even though RAPO training uses a finite K-mixture. Brighter colors corre-spond to higher values, and the blue trace marks arg max α Vu(α).Across all three environments, RAPO gradually raises the value floor over the entire scale range. Early updates exhibit dark bands at extreme OOD scales, which flatten and brighten as training progresses. Without Boltzmann reweighting ( w = ρ), value remains concentrated around ID scales while OOD tails stay dark, reflecting poor coverage of adverse dynamics. To complement the main-text heatmaps, we provide additional results for the variant without Boltz-mann reweighting ( w = ρ). In this setting, value estimates remain concentrated near ID scales while OOD tails stay persistently dark, confirming that Boltzmann tilting is essential for coverage of ad-verse dynamics. Unlike full RAPO, which gradually raises the value floor across the full parameter range, the no-reweighting variant leaves hard regimes under-explored and fragile. 21 (a) Ant 
+
+(b) Halfcheetah 
+
+(c) Hopper 
+
+(d) Walker2d 
+
+Figure 9: Heatmaps of value estimates without Boltzmann reweighting ( w = ρ). Compared to the full RAPO results in the main text, bright regions remain confined to ID scales and OOD tails stay dark, reflecting poor coverage of challenging dynamics. 22 Table 2: Sensitivity of RAPO to ensemble size K (top) and Monte Carlo samples m (bottom). Performance is normalized return (mean ± std over 5 seeds). All runs finish within ≤ 45 min. 
+
+Ensemble size K sensitivity ( m = 16 )
+
+Env K = 4 K = 8 K = 16 K = 32 
+
+Hopper 0.72 ± .03 0.76 ± .02 0.78 ± .02 0.77 ± .03 Walker2d 0.65 ± .06 0.70 ± .04 0.73 ± .05 0.75 ± .05 HalfCheetah 0.60 ± .05 0.65 ± .04 0.67 ± .03 0.67 ± .04 Ant 0.50 ± .06 0.58 ± .04 0.62 ± .03 0.61 ± .03 
+
+Monte Carlo samples m sensitivity ( K = 16 )
+
+Env m = 4 m = 8 m = 16 m = 32 
+
+Hopper 0.74 ± .05 0.76 ± .03 0.77 ± .02 0.77 ± .02 Walker2d 0.68 ± .06 0.70 ± .04 0.72 ± .03 0.72 ± .03 HalfCheetah 0.62 ± .05 0.65 ± .04 0.66 ± .03 0.66 ± .03 Ant 0.55 ± .07 0.58 ± .05 0.60 ± .03 0.60 ± .03 Parameters Values Mass 0.280 kg Inertia around x, y 2.36 × 10 −4 kg · m2
+
+Inertia around z 3.03 × 10 −4 kg · m2
+
+Arm length 0.058 mPropeller thrust factor 1.145 × 10 −7 N · s2
+
+Payload mass 0.025 kg Table 3: Nominal quadrotor parameters. D.3 SENSITIVITY TO ENSEMBLE SIZE K AND MONTE CARLO SAMPLES m
+
+D.4 QUADROTOR SIMULATION DETAILS 
+
+Simulation Platform. All evaluations are conducted in high-fidelity simulation using the MuJoCo physics engine, following the RoVerFly framework Kim et al. (2025). The quadrotor dynamics include motor lag, input delay, and randomized aerodynamic effects to reduce the sim-to-real gap. A RL policy is trained with task and domain randomization, enabling robust performance across varying payload masses and cable lengths without controller switching. Nominal parameters are summarized in Tab. 3. 
+
+Failure Definition. A rollout is marked as a crash if any of the following occurs: (i) ground contact (z < 0.05 ), (ii) Euler angles exceeding 60 ◦, or (iii) position error greater than 1 m. This definition captures both catastrophic instability and sustained loss of tracking in simulation. 
+
+## E RELATIONSHIP BETWEEN TRAJECTORY AND MODEL -L EVEL KL BUDGETS 
+
+In this section, we formalize the relationship between RAPO’s two divergence budgets: the 
+
+trajectory-level budget ϵ (controlling exponential tilting over next-states/trajectories under a fixed model) and the model-level budget κ (controlling Boltzmann reweighting over an ensemble of dy-namics models). We show both arise from a single robust optimization posed on the joint law over model indices and trajectories. By the chain rule of relative entropy, the joint KL cleanly decom-poses into a model term and a (mean) trajectory term. This yields a principled trade-off between ϵ
+
+and κ, and justifies RAPO’s two-temperature dual ( η for trajectory tilting, β for model reweighting). We provide full statements and proofs. 23 E.1 SETUP : J OINT NOMINAL LAW AND ADVERSARY 
+
+Let Ω be a measurable set of model indices with prior ρ (discrete or continuous), and let Pω denote the nominal trajectory law under model ω ∈ Ω (e.g., a discounted path measure induced by the nominal transition kernel for that model). The joint nominal law on (ω, τ ) is ˆP (ω, τ ) = ρ(ω)Pω (τ ).An adversary selects a joint law Q on (ω, τ ), which we factor as Q(ω, τ ) = w(ω)Qω (τ ), where 
+
+w is a probability measure on Ω and Qω is a probability measure on trajectories for each ω. We use the following performance functional on trajectories (e.g., a discounted return or robust value surrogate): R(τ ) ∈ R, bounded with R(τ ) ∈ [m, M ]. The robust objective (minimization of return or maximization of cost) will be expressed as an adversarial expectation of R(τ ) under Q.E.2 A S INGLE JOINT KL B UDGET AND ITS EXACT DECOMPOSITION 
+
+Definition 1 (Joint KL budget) Fix B ≥ 0. The adversary is constrained by a single joint infor-mation budget DKL (Q∥ ˆP ) ≤ B.
+
+Lemma 1 (Chain rule decomposition of the joint KL) For any factorization Q(ω, τ ) =
+
+w(ω)Qω (τ ) and ˆP (ω, τ ) = ρ(ω)Pω (τ ), DKL (Q∥ ˆP ) = DKL (w∥ρ) + Eω∼w[DKL (Qω ∥Pω )] .
+
+Proof 1 By definition, DKL (Q∥ ˆP ) = R Q(ω, τ ) log Q(ω,τ )ˆP (ω,τ ) dτ dω. Factoring and rearranging gives 
+
+DKL (Q∥ ˆP ) = DKL (w∥ρ) + Eω∼w[DKL (Qω ∥Pω )] .
+
+Corollary 1 (Additive budget split and worst-case bounds) Under the single-budget constraint 
+
+DKL (Q∥ ˆP ) ≤ B, any feasible (w, {Qω }) satisfies DKL (w∥ρ) + Eω∼w[DKL (Qω ∥Pω )] ≤ B.In particular, if one enforces DKL (w∥ρ) ≤ κ and DKL (Qω ∥Pω ) ≤ ϵ for w-almost every ω, then 
+
+κ + ϵ ≤ B implies joint feasibility. Conversely, for any feasible Q, we must have κ ≤ B and 
+
+Ew[DKL (Qω ∥Pω )] ≤ B − κ.
+
+Interpretation. Lemma shows that a single joint KL budget B naturally decomposes into a model-level information shift κ := DKL (w∥ρ) and an average trajectory-level information shift Ew[·].Hence, RAPO’s two budgets (κ, ϵ ) can be viewed as a principled split of a single resource B.E.3 JOINT ROBUST OPTIMIZATION AND SEPARABLE DUAL 
+
+Consider the joint robust program inf Q: DKL (Q∥ ˆP )≤B E(ω,τ )∼Q[R(τ )] . By Lemma 1, introducing the factorization Q = w · Qω and first-order Lagrange multipliers yields separability across model 
+
+and trajectory levels. 
+
+Theorem 1 (Dual of the joint program: two temperatures) Assume R is bounded. The Lagrangian dual yields the equivalent unconstrained maximization over (β, η ) ≥ 0:
+
+inf Q: DKL (Q∥ ˆP )≤B EQ[R] = sup β,η ≥0{− 1 
+
+> β
+
+log Eω∼ρ[e−βh η (ω)] − B/β }, where 
+
+hη (ω) := −(1 /η ) log Eτ ∼Pω [e−ηR (τ )] is the trajectory-level entropic risk. The max-imizers (β⋆, η ⋆) induce Boltzmann reweighting wβ⋆ (ω) ∝ ρ(ω)e−β⋆hη⋆ (ω) and expo-nential tilting Qη⋆ 
+
+> ω
+
+(dτ ) ∝ e−η⋆R(τ )Pω (dτ ), with complementary-slackness condition 
+
+DKL (wβ⋆ ∥ρ) + Eω∼wβ⋆ [DKL (Qη⋆ 
+
+> ω
+
+∥Pω )] = B.
+
+Proof 2 Form the Lagrangian with multiplier λ ≥ 0: L(Q, λ ) = R Q(ω, τ )R(τ ) dωdτ +
+
+λ(R Q log Q 
+
+> ˆP
+
+− B). Minimization over Q gives Qλ(ω, τ ) ∝ ˆP (ω, τ )e−R(τ )/λ =
+
+ρ(ω)Pω (τ )e−R(τ )/λ . Writing η = λ−1 defines hη (ω) = −(1 /η ) log EPω [e−ηR ]. The remaining dependence on ω yields −(1 /β ) log Eρ[e−βh η (ω)] with β = λ. Strong duality holds by convexity and Slater’s condition. Optimality yields the reported Boltzmann/tilting forms and tightness of the joint KL. 
+
+Mapping to RAPO. A single joint constraint gives rise to two dual temperatures: η ↔ trajectory tilting (soft minimum within a model), β ↔ model reweighting (soft minimum across models). 24 Identifying DKL (w∥ρ) = κ and Ew[DKL (Qω ∥Pω )] as the trajectory budget (with worst-case upper bound ϵ) gives the relation κ + ϵ ≤ B.E.4 TRADE -OFFS , B OUNDS , AND PRACTICAL ALLOCATIONS 
+
+Proposition 1 (Budget trade-off) Let B be fixed. If DKL (w∥ρ) ≤ κ and DKL (Qω ∥Pω ) ≤ ϵ for all 
+
+ω, then κ + ϵ ≤ B. Conversely, any feasible (w, {Qω }) satisfies κ ≤ B and Ew[traj-KL ] ≤ B − κ.
+
+Proof 3 Immediate from Lemma 1 and Corollary 1. 
+
+Design guidance. With a single budget B, two allocation rules emerge: (i) Fixed split κ = αB ,
+
+ϵ = (1 − α)B for α ∈ [0 , 1] , reflecting prior trust. (ii) Adaptive split via dual updates: β ←
+
+β + γβ (DKL (w∥ρ) − κ), η ← η + γη (Ew[traj-KL ] − ϵ), i.e., Robbins–Monro updates compatible with RAPO. E.5 SPECIALIZATIONS : H ARD VS . S OFT , P ER -S TEP VS . T RAJECTORY 
+
+Hard vs. soft. The hard joint constraint DKL (Q∥ ˆP ) ≤ B yields the explicit −B/β term and implicit trajectory free energy hη (ω). Replacing hard constraints by penalties removes explicit offsets but preserves the two-temperature structure. KL residuals then appear as regularizers in RAPO. 
+
+Trajectory vs. per-step KL. If Qω , P ω arise from Markov kernels, the trajectory KL decomposes as DKL (Qω ∥Pω ) = EQω [P 
+
+> t≥0
+
+γtDKL (qω (·| st, a t)∥pω (·| st, a t))] . Thus uniform one-step budgets 
+
+δt ≤ ¯δ imply ϵ ≤ P 
+
+> t≥0
+
+γt ¯δ = ¯δ/ (1 − γ), mapping per-step to trajectory-level budgets. E.6 SUMMARY 
+
+A single joint KL budget decomposes into a model-level divergence and a mean trajectory-level divergence. The dual factorizes into two entropic risks with dual temperatures (β, η ), matching RAPO’s Boltzmann reweighting across models and exponential tilting within each model. This yields κ + ϵ ≤ B (or κ + Ew[traj-KL ] ≤ B) and motivates fixed or adaptive allocation strategies, justifying the two-budget design from a unified robust optimization principle. 
+
+## F FINITE ENSEMBLE APPROXIMATION OF MODEL UNCERTAINTY 
+
+RAPO models dynamics uncertainty at the model level by a finite ensemble of K dynamics models sampled from a nominal prior. Theoretically, uncertainty lives on a continuous parameter space 
+
+(Ω , ρ ), and the ensemble is an approximation. This section establishes that the finite-ensemble robust operator and its optimizer converge to their continuous-space counterparts as K → ∞ , with rates matching standard Monte Carlo concentration. F.1 SETUP AND NORMALIZATION 
+
+Let Ω be a measurable parameter space with prior ρ. For each ω ∈ Ω, let h(ω) denote the (one-step) robust “energy” we tilt with. We assume: 
+
+Assumption 1 (Bounded range and nondegenerate variance) There exist m < M such that 
+
+h(ω) ∈ [m, M ] for all ω. Define H := M − m. Without loss of generality we re-center h
+
+by h ← h − m, so h ∈ [0 , H ]. In addition, there exists σ2 > 0 and a compact interval 
+
+B = [ βmin , B ] ⊂ (0 , ∞) such that for all β ∈ B , the tilted law wβ (dω ) ∝ e−βh (ω)ρ(dω ) satis-fies Var wβ (h) ≥ σ2.
+
+For β ≥ 0, define Z(β) = Eρ[e−βh (ω)], Φ( β) = − 1 
+
+> β
+
+log Z(β) − κβ , with continuous tilted distribu-tion wβ (dω ) = e−βh (ω) 
+
+> Z(β)
+
+ρ(dω ).25 Given an i.i.d. ensemble {ωk}Kk=1 ∼ ρ, let ρK = 1
+
+> K
+
+PKk=1 δωk . The finite-ensemble analogues are 
+
+ZK (β) = 1
+
+> K
+
+PKk=1 e−βh (ωk ), ΦK (β) = − 1 
+
+> β
+
+log ZK (β)− κβ , and discrete tilted weights wβ,K (k) =     
+
+> e−βh (ωk)
+> PKj=1 e−βh (ωj)
+
+.
+
+Basic envelopes and Lipschitz constants. Under Assumption 1, e−BH ≤ e−βh (ω) ≤ 1, and 
+
+|∂β e−βh (ω)| = h(ω)e−βh (ω) ≤ H. Hence fβ (ω) := e−βh (ω) is bounded by 1 and H-Lipschitz in β
+
+on B.F.2 UNIFORM CONCENTRATION OF THE LOG -P ARTITION 
+
+Theorem 2 (Uniform concentration of ZK and log ZK ) Under Assumption 1, for any δ ∈ (0 , 1) ,with probability at least 1 − δ, sup β∈B |ZK (β) − Z(β)| ≤ C1
+
+q log(2 N/δ ) 
+
+> K
+
++ H∆, where N := 
+
+⌈(B − βmin )/∆⌉, ∆ > 0 is arbitrary, and C1 := 1. Choosing ∆ =
+
+q log(2 N/δ ) 
+
+> K
+
+yields 
+
+sup β∈B |ZK (β) − Z(β)| = O(
+
+q log(1 /δ ) 
+
+> K
+
+). Moreover, since Z(β), Z K (β) ∈ [e−BH , 1] , we also have sup β∈B | log ZK (β) − log Z(β)| ≤ eBH sup β∈B |ZK (β) − Z(β)| = O(
+
+q log(1 /δ ) 
+
+> K
+
+).
+
+Proof 4 Fix ∆ > 0 and construct a grid {βj }Nj=1 on B with mesh ≤ ∆. For each βj , Hoeffding’s inequality gives P(|ZK (βj ) − Z(βj )| > ϵ ) ≤ 2e−2Kϵ 2
+
+. A union bound over N points yields 
+
+P(max j |ZK (βj ) − Z(βj )| > ϵ ) ≤ 2N e −2Kϵ 2
+
+. Set ϵ =
+
+q log(2 N/δ )2K . For any β, pick nearest βj ;Lipschitzness gives |ZK (β) − Z(β)| ≤ H∆ + ϵ + H∆. Absorb constants to obtain the bound with 
+
+C1 = 1 . For log Z, use | log x − log y| ≤ | x − y|/ min {x, y } and min {Z(β), Z K (β)} ≥ e−BH .
+
+Corollary 2 (Uniform concentration of ΦK ) Under Assumption 1, with prob. ≥ 1 − δ,
+
+sup β∈B |ΦK (β) − Φ( β)| ≤ 1 
+
+> βmin
+
+sup β∈B | log ZK (β) − log Z(β)| = O(
+
+q log(1 /δ ) 
+
+> K
+
+).
+
+Proof 5 Immediate from Φ( β) = − 1 
+
+> β
+
+log Z(β) − κβ and β ≥ βmin .
+
+F.3 STABILITY OF THE OPTIMAL DUAL PARAMETER 
+
+Let β⋆ = arg max β∈B Φ( β) and β⋆K = arg max β∈B ΦK (β) (existence follows from compactness). We first recall strong concavity of Φ.
+
+Lemma 2 (Strong concavity of Φ) Under Assumption 1, for all β ∈ B , Φ′′ (β) = − 1 
+
+> β
+
+Var wβ (h) − 
+
+> 2
+> β3
+
+(κ − DKL (wβ ∥ρ)) ≤ − σ2 
+
+> B
+
+=: −μ. In particular, Φ is μ-strongly concave on B.
+
+Proof 6 Let A(β) := log Z(β). Standard exponential-family identities give A′(β) = −Ewβ [h]
+
+and A′′ (β) = Var wβ (h). Since Φ( β) = −(1 /β )A(β) − (κ/β ), straightforward differentiation yields Φ′(β) = A(β)+ κβ2 + 1 
+
+> β
+
+Ewβ [h] = κ+log Z(β)+ β Ewβ [h] 
+
+> β2
+
+= κ−DKL (wβ ∥ρ) 
+
+> β2
+
+, using DKL (wβ ∥ρ) = 
+
+− log Z(β) − β Ewβ [h]. Differentiating once more and using D′
+
+> KL
+
+(wβ ∥ρ) = β Var wβ (h) gives 
+
+Φ′′ (β) = − 2 
+
+> β3
+
+(κ − DKL (wβ ∥ρ)) − 1 
+
+> β
+
+Var wβ (h) ≤ − 1 
+
+> β
+
+Var wβ (h) ≤ − σ2 
+
+> B
+
+.
+
+Theorem 3 (Argmax stability) Under Assumption 1, there exists a universal constant C > 0 (de-pending only on βmin , B, H, σ ) such that, with probability 1 − δ, |β⋆K − β⋆| ≤ C
+
+q log(1 /δ ) 
+
+> K
+
+, and 
+
+|Φ( β⋆K ) − Φ( β⋆)| ≤ μ 
+
+> 2
+
+|β⋆K − β⋆|2 = O( log(1 /δ ) 
+
+> K
+
+).
+
+Proof 7 By Corollary 2, sup β |ΦK − Φ| ≤ εK with εK = O(
+
+q log(1 /δ ) 
+
+> K
+
+). By strong concavity (Lemma 2), for any x ∈ B , Φ( β⋆) − Φ( x) ≥ μ 
+
+> 2
+
+|β⋆ − x|2. Since ΦK (β⋆K ) ≥ ΦK (β⋆), Φ( β⋆) −
+
+Φ( β⋆K ) ≤ | Φ( β⋆) − ΦK (β⋆)| + |ΦK (β⋆K ) − Φ( β⋆K )| ≤ 2εK . Combining, μ 
+
+> 2
+
+|β⋆K − β⋆|2 ≤ Φ( β⋆) −
+
+26 Φ( β⋆K ) ≤ 2εK , hence |β⋆K − β⋆| ≤ p4εK /μ . The value gap bound follows by strong concavity: 
+
+Φ( β⋆) − Φ( β⋆K ) ≤ μ 
+
+> 2
+
+|β⋆ − β⋆K |2.
+
+F.4 CONVERGENCE OF TILTED EXPECTATIONS (W EAK CONVERGENCE )While wβ,K is supported on the finite set {ωk}, wβ is continuous on Ω. Comparing them in total variation is not meaningful. The correct notion is convergence of expectations for bounded test functions. 
+
+Theorem 4 (Uniform convergence of tilted expectations) Let G be any class of bounded measur-able test functions g : Ω → R with ∥g∥∞ ≤ 1. Under Assumption 1, for any fixed β ∈ B ,
+
+sup g∈G |Ewβ,K [g(ω)] − Ewβ [g(ω)] | = Op(K−1/2). Consequently, replacing β by β⋆K and β⋆ pre-serves the Op(K−1/2) rate by Theorem 3. 
+
+Proof 8 For fixed β, write the tilted expectations as ratios: Ewβ,K [g] =     
+
+> 1
+> K
+> P
+> ke−βh (ωk)g(ωk)
+> ZK(β)
+
+,
+
+Ewβ [g] = Eρ[e−βh g] 
+
+> Z(β)
+
+. Both numerator and denominator are empirical means of bounded vari-ables (envelopes ≤ 1). By the same grid/union bound argument as in Theorem ?? (now with-out grid since β is fixed), each concentrates at rate Op(K−1/2). A standard ratio bound yields 
+
+|Ewβ,K [g] − Ewβ [g]| ≤ | 1  
+
+> K
+> Pe−βh g−E[e−βh g]|
+> Z(β)
+
++ E[e−βh |g|]  
+
+> Z(β)ZK(β)
+
+|ZK (β) − Z(β)|, and Z(β), Z K (β) ≥
+
+e−BH lower bound the denominators. Both terms are Op(K−1/2) uniformly over ∥g∥∞ ≤ 1, com-pleting the proof. 
+
+F.5 OPERATOR - AND VALUE -L EVEL CONVERGENCE 
+
+Let Ψβ (V ) := −(1 /β ) log Eρ[e−βV ] and its finite-ensemble version Ψβ,K (V ) := 
+
+−(1 /β ) log EρK [e−βV ]. Fix discount γ ∈ (0 , 1) . Consider the (model-level) hard-budget robust op-erators on bounded value functions: (T V )( s) = max a sup β∈B { r(s, a ) + γ(Ψ β (V | s, a ) − κ/β ) },
+
+(TK V )( s) = max a sup β∈B { r(s, a ) + γ(Ψ β,K (V | s, a ) − κ/β ) }. (Exactly the same arguments apply to the soft-penalty form, replacing −κ/β with 0.) 
+
+Theorem 5 (Uniform operator convergence) Under Assumption 1, for any bounded V with range contained in [0 , H V ], there exists C > 0 such that, with probability at least 1−δ, ∥T K V −T V ∥∞ ≤ 
+
+> γβmin
+
+sup (s,a ), β ∈B | log ZV,K (β; s, a ) − log ZV (β; s, a )| ≤ Cγ 
+
+q log(1 /δ ) 
+
+> K
+
+, where ZV (β; s, a ) =
+
+Eρ[e−βV (s′)] and ZV,K is its empirical analogue. 
+
+Proof 9 For any (s, a ), the maps β 7 → Ψβ (V | s, a ) − κ/β and its empirical counterpart are uniformly approximated at rate O(
+
+q log(1 /δ ) 
+
+> K
+
+) by Theorem 5 (applied to h ≡ V (s′) ∈ [0 , H V ]). Taking sup β preserves the deviation bound: sup β∈B |Ψβ,K (V | s, a ) − Ψβ (V | s, a )| ≤ 
+
+> 1
+> βmin
+
+sup β∈B | log ZV,K (β) − log ZV (β)|. The outer max a also preserves the bound, and the re-ward terms cancel. Uniformity in (s, a ) follows from the common envelope bounds for V .
+
+Corollary 3 (Value fixed-point convergence) Let V ⋆ and V ⋆K be the unique fixed points of T and 
+
+TK (both γ-contractions under the ∥·∥ ∞ norm). Then, with probability at least 1−δ, ∥V ⋆K −V ⋆∥∞ ≤ 
+
+> 11−γ
+
+∥T K V ⋆ − T V ⋆∥∞ = O(
+
+q log(1 /δ ) 
+
+> K
+
+).
+
+Proof 10 By the contraction mapping perturbation bound, ∥V ⋆K − V ⋆∥∞ ≤ 11−γ sup V ∥T K V −T V ∥∞, and invoke Theorem 5. 
+
+F.6 POLICY -L EVEL CONSEQUENCES 
+
+Let π⋆ and π⋆K be greedy w.r.t. V ⋆ and V ⋆K under the robust operators above (or any standard tie-breaking). Using standard performance difference arguments adapted to the robust setting (omitted 27 for brevity), one obtains for the robust return J(π): |J(π⋆K ) − J(π⋆)| ≤ 2γ 
+
+> 1−γ
+
+∥V ⋆K − V ⋆∥∞ =
+
+O(p1/K ). (The proof follows the classical performance difference lemma (PDL) with the robust Bellman residual and the contraction and bounded range ensure the same constants up to γ.) F.7 DISCUSSION AND PRACTICAL IMPLICATIONS 
+
+The results above show that RAPO’s finite-ensemble approximation is theoretically sound. As K
+
+grows, the finite-ensemble dual ΦK uniformly approximates Φ. The optimizer β⋆K converges to 
+
+β⋆ at the Monte Carlo rate. Tilted expectations under wβ,K converge to those under wβ for any bounded test function. The robust Bellman operator, its fixed point, and the induced policy converge accordingly. The constants depend on the value range, the β-window [βmin , B ], and a variance lower bound σ2 which encodes non-degeneracy of the robust tilting. In practice, moderate ensemble sizes (e.g., K ∈ [8 , 32] ) already yield stable gains and our empirical sensitivity in Tab. 2 is consistent with the O(K−1/2) scaling predicted here. 
+
+## G PROPERTIES OF ROBUST BELLMAN OPERATOR 
+
+G.1 OPERATOR PROPERTIES 
+
+We begin by establishing fundamental algebraic properties of the robust Bellman operator. These properties ensure that the operator retains the same structural behavior as its nominal counterpart, thereby enabling dynamic programming arguments in the robust setting. Recall the robust Bellman operator for a fixed policy π:
+
+(T π 
+
+> P
+
+V )( s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γ inf  
+
+> p(·| s,a )∈P ϵ(s,a )
+
+Es′∼p(·| s,a )V (s′)
+
+i
+
+. (11) 
+
+Lemma 3 (Monotonicity) For any two bounded functions V, W : S → R, if V (s) ≤ W (s) for all 
+
+s ∈ S , then (T π 
+
+> P
+
+V )( s) ≤ (T π 
+
+> P
+
+W )( s) for all s ∈ S .
+
+Proof 11 Fix s ∈ S . For each a ∈ A , consider the inner infimum inf p∈P ϵ(s,a ) Es′∼p[V (s′)] . Since 
+
+V ≤ W pointwise, we have Ep[V (s′)] ≤ Ep[W (s′)] for any distribution p. Taking the infimum over the same set preserves the inequality. Averaging over a ∼ π(·| s) and adding r(s, a ) and γ yields the claim. 
+
+Lemma 4 (Translation Invariance) For any bounded V : S → R and constant c ∈ R,
+
+T π 
+
+> P
+
+(V + c)( s) = T π 
+
+> P
+
+V (s) + γc, ∀s ∈ S . (12) 
+
+Proof 12 Fix s, a . For any p ∈ P ϵ(s, a ), Es′∼p[V (s′) + c] = Es′∼p[V (s′)] + c. Taking the infimum over p preserves equality. Plugging back into the definition of T π 
+
+> P
+
+and multiplying the additive constant by γ yields the claim. 
+
+Proposition 2 ( γ-Contraction) For any bounded V, W : S → R,
+
+∥T π 
+
+> P
+
+V − T π 
+
+> P
+
+W ∥∞ ≤ γ∥V − W ∥∞. (13) 
+
+Proof 13 Fix s ∈ S . For any a ∈ A and any p ∈ P ϵ(s, a ), |Es′∼p[V (s′)] − Es′∼p[W (s′)] | ≤ ∥V −W ∥∞. Taking the infimum over p preserves the inequality. Therefore, for each s, |(T π 
+
+> P
+
+V )( s)−
+
+(T π 
+
+> P
+
+W )( s)| ≤ γ∥V − W ∥∞. Taking the supremum over s yields the claim. 
+
+Corollary 4 (Existence and uniqueness of robust value) By Banach’s fixed-point theorem, T π
+
+> P
+
+admits a unique fixed point V π 
+
+> Pϵ
+
+in RS . Moreover, value iteration Vk+1 = T π 
+
+> P
+
+Vk converges to 
+
+V π 
+
+> Pϵ
+
+for any initialization V0.
+
+Discussion. The above properties mirror those of the nominal Bellman operator, with the only difference being the inner minimization over the uncertainty set Pϵ(s, a ). These results ensure that standard dynamic programming arguments extend naturally to the robust setting, thereby justifying the use of value iteration and policy iteration under distributional ambiguity. 28 G.2 STATIONARY OPTIMALITY AND WORST -C ASE KERNELS 
+
+We now establish that in the robust MDP setting, it suffices to optimize over stationary deterministic policies. Moreover, for any fixed stationary policy, there exists a stationary worst-case kernel that attains the inner minimization in the robust Bellman operator. 
+
+Proposition 3 (Existence of stationary robust optimal policies) Consider a robust MDP with state space S, action space A, bounded reward function r : S × A → [0 , 1] , and discount fac-tor γ ∈ (0 , 1) . Suppose that for each (s, a ) ∈ S × A the uncertainty set Pϵ(s, a ) is nonempty, compact, and convex, and that rectangularity holds across (s, a ). Then there exists a stationary deterministic policy π⋆ such that 
+
+V π⋆ 
+
+> Pϵ
+
+(s) = sup 
+
+> π
+
+V π 
+
+> Pϵ
+
+(s), ∀s ∈ S . (14) 
+
+Proof 14 Define the robust optimality operator 
+
+(TP V )( s) = sup 
+
+> a∈A
+
+n
+
+r(s, a ) + γ inf  
+
+> p∈P ϵ(s,a )
+
+Es′∼p[V (s′)] 
+
+o
+
+. (15) 
+
+We first note that the operator TP is a γ-contraction on the space of bounded functions (Proposi-tion 2), hence it admits a unique fixed point V ⋆. Moreover, by Banach’s theorem, value iteration under TP converges to V ⋆ from any initialization. Next, fix a state s ∈ S . For each action a, the inner minimization problem 
+
+inf  
+
+> p∈P ϵ(s,a )
+
+Es′∼p[V (s′)] (16) 
+
+is a continuous convex optimization over the compact convex set Pϵ(s, a ). By the Weierstrass theo-rem, the minimum is attained by some distribution p⋆(·| s, a ). Thus, for each a, the inner infimum is well defined. Now, consider the outer maximization over actions. The map 
+
+a 7 → r(s, a ) + γ inf  
+
+> p∈P ϵ(s,a )
+
+Es′∼p[V (s′)] (17) 
+
+is linear in the choice of a distribution over A. Hence, the supremum over randomized policies 
+
+π(·| s) is attained at an extreme point of the simplex over A, i.e., a deterministic action. Therefore, for each state s, the optimal choice is deterministic. It follows that dynamic programming can be restricted to deterministic stationary policies. The greedy policy π⋆ defined by 
+
+π⋆(s) = arg max 
+
+> a∈A
+
+n
+
+r(s, a ) + γ inf  
+
+> p∈P ϵ(s,a )
+
+Es′∼p[V ⋆(s′)] 
+
+o
+
+(18) 
+
+is stationary and deterministic, and it achieves V ⋆. Thus π⋆ is a robust optimal policy. 
+
+Proposition 4 (Existence of stationary worst-case kernels) Fix any stationary policy π. Under the same assumptions as Proposition 3, there exists a stationary kernel pwc  
+
+> π
+
+∈ P ϵ such that 
+
+V π 
+
+> Pϵ
+
+(s) = V πpwc  
+
+> π
+
+(s), ∀s ∈ S . (19) 
+
+Proof 15 Consider the robust evaluation operator 
+
+(T π 
+
+> P
+
+V )( s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γ inf  
+
+> p∈P ϵ(s,a )
+
+Es′∼p[V (s′)] 
+
+i
+
+. (20) 
+
+For each (s, a ), the set Pϵ(s, a ) is nonempty, compact, and convex. The function p 7 → Es′∼p[V (s′)] 
+
+is continuous and linear in p. By the extreme value theorem, the infimum is attained by some 
+
+p⋆(·| s, a ) ∈ P ϵ(s, a ). Define a kernel pwc  
+
+> π
+
+by 
+
+pwc  
+
+> π
+
+(·| s, a ) = p⋆(·| s, a ), ∀(s, a ). (21) 
+
+This kernel is stationary, since it depends only on the current state-action pair. 
+
+29 Now, evaluate the value function of π under kernel pwc  
+
+> π
+
+:
+
+V πpwc  
+
+> π
+
+(s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γEs′∼pwc  
+
+> π(·| s,a )
+
+V πpwc  
+
+> π
+
+(s′)
+
+i
+
+. (22) 
+
+By construction of pwc  
+
+> π
+
+, the inner expectation coincides with the infimum defining T π 
+
+> P
+
+V . Hence, 
+
+(T π 
+
+> P
+
+V )( s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γEs′∼pwc  
+
+> π(·| s,a )
+
+V (s′)
+
+i
+
+. (23) 
+
+Thus, the fixed point of T π 
+
+> P
+
+coincides with the fixed point of the standard Bellman operator under 
+
+pwc  
+
+> π
+
+. Therefore, 
+
+V π 
+
+> Pϵ
+
+(s) = V πpwc  
+
+> π
+
+(s), ∀s ∈ S . (24) 
+
+Discussion. These results confirm that the robust control problem admits a well-defined saddle-point structure: the outer maximization over policies is achieved by a stationary deterministic pol-icy, while the inner minimization over models is achieved by a stationary worst-case kernel. This structure justifies the design of RAPO and similar algorithms as policy iteration schemes under rectangular KL-uncertainty. G.3 ROBUST PERFORMANCE DIFFERENCE LEMMA 
+
+We now present the analogue of the PDL in the robust MDP setting. The result shows that the difference in robust returns between two policies can be expressed in terms of robust advantages weighted by the robust occupancy measure of the new policy Kakade & Langford (2002). 
+
+Robust discounted occupancy measure. For a stationary policy π and its corresponding station-ary worst-case kernel pwc  
+
+> π
+
+(Proposition 4), define the robust discounted state occupancy measure 
+
+dπ 
+
+> Pϵ
+
+(s) = (1 − γ)
+
+> ∞
+
+X
+
+> t=0
+
+γt Ppwc   
+
+> π,π
+
+(st = s). (25) This is a valid distribution over S and places higher weight on states visited earlier under (π, p wc  
+
+> π
+
+).
+
+Robust advantage. Given π and pwc  
+
+> π
+
+, define the robust action-value and advantage functions by 
+
+Qπ 
+
+> Pϵ
+
+(s, a ) := r(s, a ) + γ Es′∼pwc  
+
+> π(·| s,a )
+
+[V π 
+
+> Pϵ
+
+(s′)] , (26) and Aπ 
+
+> Pϵ
+
+(s, a ) := Qπ 
+
+> Pϵ
+
+(s, a ) − V π 
+
+> Pϵ
+
+(s).
+
+Lemma 5 (Robust Performance Difference Lemma (RPDL)) For any two stationary policies π
+
+and π′, let pwc  
+
+> π
+
+and pwc  
+
+> π′
+
+denote their respective stationary worst-case kernels. Then 
+
+J(π′, p wc  
+
+> π′
+
+) − J(π, p wc  
+
+> π
+
+) = 11 − γ Es∼dπ′Pϵ , a ∼π′(·| s)
+
+Aπ 
+
+> Pϵ
+
+(s, a ). (27) 
+
+Proof 16 We expand the robust return of π′:
+
+J(π′, p wc  
+
+> π′
+
+) = Es0∼μ0 [V π′ 
+
+> Pϵ
+
+(s0)] , (28) 
+
+where μ0 is the initial distribution. For each state s,
+
+V π 
+
+> Pϵ
+
+(s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γ Es′∼pwc  
+
+> π(·| s,a )
+
+V π 
+
+> Pϵ
+
+(s′)
+
+i
+
+. (29) 
+
+Define the robust temporal-difference error of π evaluated under π′ and pwc  
+
+> π′
+
+:
+
+δπ (s, a, s ′) := r(s, a ) + γV π 
+
+> Pϵ
+
+(s′) − V π 
+
+> Pϵ
+
+(s). (30) 
+
+By construction, Es′∼pwc  
+
+> π(·| s,a )
+
+[δπ (s, a, s ′)] = Aπ 
+
+> Pϵ
+
+(s, a ).Now unroll the recursion for V π′ 
+
+> Pϵ
+
+along a trajectory (st, a t) generated by (π′, p wc  
+
+> π′
+
+):
+
+V π′ 
+
+> Pϵ
+
+(s0) − V π 
+
+> Pϵ
+
+(s0) = E
+
+h ∞X
+
+> t=0
+
+γt r(st, a t) + γV π 
+
+> Pϵ
+
+(st+1 ) − V π 
+
+> Pϵ
+
+(st) s0
+
+i
+
+(31) 
+
+= E
+
+h ∞X
+
+> t=0
+
+γt δπ (st, a t, s t+1 ) s0
+
+i
+
+. (32) 30 Taking expectations over s0 ∼ μ0 and re-indexing with the definition of dπ′ 
+
+> Pϵ
+
+, we obtain 
+
+J(π′, p wc  
+
+> π′
+
+) − J(π, p wc  
+
+> π
+
+) = 11 − γ Es∼dπ′Pϵ , a ∼π′(·| s)[Aπ 
+
+> Pϵ
+
+(s, a )] . (33) 
+
+Discussion. The lemma reveals a saddle-point structure: the robust performance improvement of 
+
+π′ over π depends only on the robust advantages of π, evaluated under the robust occupancy measure induced by π′. This extends the classical PDL to the distributionally robust setting, justifying robust policy improvement schemes where policy updates are guided by robust advantage estimates. G.4 ROBUST VALUE DROP BOUND 
+
+We now quantify how much the robust value under the KL-ball Pϵ can deviate from the nominal value under ˆp. The key tool is Pinsker’s inequality, which relates KL divergence to total variation distance. 
+
+Lemma 6 (One-step deviation bound) Let f : S → R be bounded with oscillation osc( f ) := sup s f (s) − inf s f (s). For any distributions p, ˆp ∈ ∆S ,
+
+Ep[f ] − Eˆp[f ] ≤ osc( f ) ∥p − ˆp∥TV , (34) 
+
+where ∥ · ∥ TV denotes total variation distance. Moreover, Pinsker’s inequality gives ∥p − ˆp∥TV ≤q 12 DKL (p∥ˆp).
+
+Proof 17 For any bounded f , write ¯f = (sup f + inf f )/2 and note that |f (s) − ¯f | ≤ 12 osc( f ) for all s. Then 
+
+Ep[f ] − Eˆp[f ] = X
+
+> s
+
+(p(s) − ˆp(s))( f (s) − ¯f ) (35) 
+
+≤ 12 osc( f ) X
+
+> s
+
+|p(s) − ˆp(s)| (36) 
+
+= osc( f ) ∥p − ˆp∥TV . (37) 
+
+This proves the first inequality. The second inequality is the classical Pinsker bound: ∥p − ˆp∥TV ≤q 12 DKL (p∥ˆp).
+
+Proposition 5 (Robust value drop bound) For any stationary policy π and any state s,
+
+0 ≤ V π 
+
+> ˆp
+
+(s) − V π 
+
+> Pϵ
+
+(s) ≤ γ
+
+1 − γ osc( V π ) √2ϵ. (38) 
+
+In particular, since r ∈ [0 , 1] implies osc( V π ) ≤ 11−γ , we obtain the uniform bound 
+
+V π 
+
+> ˆp
+
+(s) − V π 
+
+> Pϵ
+
+(s) ≤ γ
+
+(1 − γ)2
+
+√2ϵ. (39) 
+
+Proof 18 Fix π and (s, a ). For any p ∈ P ϵ(s, a ), Lemma 6 gives 
+
+Ep[V π ] − Eˆp[V π ] ≤ osc( V π ) ∥p − ˆp∥TV ≤ osc( V π )√2ϵ, (40) 
+
+since DKL (p∥ˆp) ≤ ϵ implies ∥p − ˆp∥TV ≤
+
+q 12 ϵ ≤ √2ϵ. Therefore, 
+
+inf  
+
+> p∈P ϵ(s,a )
+
+Ep[V π ] ≥ Eˆp[V π ] − osc( V π )√2ϵ. (41) 
+
+Now apply this bound to the robust Bellman operator: 
+
+(T π 
+
+> P
+
+V π )( s) = Ea∼π(·| s)
+
+h
+
+r(s, a ) + γ inf  
+
+> p∈P ϵ(s,a )
+
+Ep[V π ]
+
+i
+
+(42) 
+
+≥ Ea∼π(·| s)
+
+h
+
+r(s, a ) + γEˆp[V π ] − γ osc( V π )√2ϵ
+
+i
+
+(43) 
+
+= ( T π 
+
+> ˆp
+
+V π )( s) − γ osc( V π )√2ϵ. (44) 31 Algorithm 4 RAPO (main training loop) 
+
+Input: horizon U , rollout length T , ensemble size K, batch size B, samples m, discount γ, KL budgets (ϵ, κ ).
+
+Output: trained actor θ⋆, critic ϕ⋆, AdvNet ψ⋆. 
+
+> 1:
+
+Initialize actor–critic (θ0, ϕ 0), AdvNet ψ0, prior w0 ∈ ∆K , weights w ← w0. 
+
+> 2:
+
+Build K ensemble models by scaling dynamics; obtain vectorized step function step allK . 
+
+> 3:
+
+for update u = 0 , . . . , U − 1 do  
+
+> 4:
+
+// Rollout under nominal environment  
+
+> 5:
+
+for t = 0 , . . . , T − 1 do  
+
+> 6:
+
+Sample action at ∼ πθ (·| st); step env to get (st+1 , r t, d t). 
+
+> 7:
+
+Store transition (st, a t, r t, d t, log πθ (at|st), V ϕ(st)) . 
+
+> 8:
+
+end for  
+
+> 9:
+
+// Robust targets from ensemble and dual expectation  
+
+> 10:
+
+Flatten rollout to (s, a, r, d ); sample m next-states with mixture w using step allK . 
+
+> 11:
+
+Evaluate critic: Vn ∈ RB×m; predict temperatures ηt ← gψ (s, a or 0) . 
+
+> 12:
+
+Project to KL budget: η⋆ ← project eta to delta( Vn, η t, ϵ ); apply straight-through ˜η. 
+
+> 13:
+
+Robust dual expectation: vrob ← − 1˜η log 1
+
+> m
+
+P 
+
+> j
+
+e−˜ηV (j) 
+
+> n
+
+. 
+
+> 14:
+
+Targets: y ← r + γ(1 − d)vrob ; compute robust GAE (Adv , R ). 
+
+> 15:
+
+// Update AdvNet (Alg. 5)  
+
+> 16:
+
+ψ ← AdvNetUpdate( Vn, s, a, r, (1 − d), ψ ). 
+
+> 17:
+
+// PPO update of actor–critic  
+
+> 18:
+
+for e = 1 , . . . , UPDATE EPOCHS do  
+
+> 19:
+
+Shuffle into NUM MINIBATCHES ; update (θ, ϕ ) by clipped PPO loss with (R, Adv) . 
+
+> 20:
+
+end for  
+
+> 21:
+
+// Mixture reweighting (Alg. 6)  
+
+> 22:
+
+w ← BoltzmannReweight( w0, V ϕ, step allK , s, a, κ ). 
+
+> 23:
+
+Log diagnostics ( w entropy/KL, η stats, PPO losses).  
+
+> 24:
+
+end for  
+
+> 25:
+
+return (θ, ϕ, ψ )
+
+Subtracting the fixed-point equations V π 
+
+> Pϵ
+
+= T π 
+
+> P
+
+V π 
+
+> Pϵ
+
+and V π 
+
+> ˆp
+
+= T π 
+
+> ˆp
+
+V π 
+
+> ˆp
+
+, and applying the contraction property (Proposition 2), yields 
+
+0 ≤ V π 
+
+> ˆp
+
+(s) − V π 
+
+> Pϵ
+
+(s) ≤ γ
+
+1 − γ osc( V π )√2ϵ. (45) 
+
+Finally, if r ∈ [0 , 1] , then V π ∈ [0 , 11−γ ] so osc( V π ) ≤ 11−γ . Substituting gives the uniform bound 
+
+V π 
+
+> ˆp
+
+(s) − V π 
+
+> Pϵ
+
+(s) ≤ γ
+
+(1 − γ)2
+
+√2ϵ. (46) 
+
+Discussion. The bound shows that the gap between the nominal value and the robust value scales as O(√ϵ). This justifies interpreting ϵ as a robustness–performance trade-off knob: larger ϵ yields stronger robustness at the expense of a potentially larger drop in nominal performance. The explicit scaling with γ also highlights the compounding effect of distributional shift over long horizons. 
+
+## H ALGORITHMIC DETAILS 
+
+32 Algorithm 5 AdvNet training (amortized projection to KL budget) 
+
+Input: critic ϕ; AdvNet ψ; batch (s, a, r, d ); ensemble values Vn ∈ RB×m; KL budget ϵ; penalty 
+
+λKL .
+
+Output: updated AdvNet parameters ψ.
+
+1: Predict dual temperatures: ηt ← gψ (s, a or 0) .
+
+2: Project to feasible budget: η⋆ ← project eta to delta( Vn, η t, ϵ ) (bisection). 
+
+3: Straight-through estimator: ˜η ← stopgrad( η⋆) + ηt − stopgrad( ηt).
+
+4: Compute robust dual expectation: 
+
+vrob ← − 1˜η log 1
+
+m
+
+> m
+
+X
+
+> j=1
+
+exp( −˜ηV (j) 
+
+> n
+
+).
+
+5: Targets: y ← r + γ(1 − d)vrob .
+
+6: Empirical KL: with weights wj ∝ exp( −˜ηV (j) 
+
+> n
+
+), compute bDKL (˜ η) = P 
+
+> j
+
+wj (log wj + log m).
+
+7: Loss: 
+
+LAdvNet (ψ) ← E[y] + λKL E
+
+h
+
+( bDKL (˜ η) − ϵ)2+
+
+i
+
+.
+
+8: Update ψ by a few optimizer steps (e.g. Adam) on ∇ψ LAdvNet ; record η mean, KL mean, vrob 
+
+mean. 
+
+9: return ψ
+
+Algorithm 6 Boltzmann reweighting (mixture update under KL radius κ)
+
+Input: prior weights w0 ∈ ∆K ; critic ϕ; ensemble step function step allK ; batch (s, a ); KL radius 
+
+κ; subsample size S.
+
+Output: updated mixture weights w ∈ ∆K .
+
+1: Subsample S pairs (s, a ) from rollout. 
+
+2: Roll out all K ensemble models: S′ ← step allK( s1: S , a 1: S ) ∈ RS×K×d.
+
+3: Score each model: Hk ← 1
+
+> S
+
+PSi=1 Vϕ(S′
+
+> i,k
+
+), for k = 1 , . . . , K .
+
+4: Define tilted weights: w(β) ∝ w0 ⊙ exp( −βH ); normalize to ∆K .
+
+5: Perform bisection search on β ≥ 0: adjust β until DKL (w(β)∥w0) ≈ κ (or largest β with 
+
+DKL ≤ κ). 
+
+6: Repair numerics: w ← proj simplex( w(β⋆)) .
+
+7: return w
+
+33

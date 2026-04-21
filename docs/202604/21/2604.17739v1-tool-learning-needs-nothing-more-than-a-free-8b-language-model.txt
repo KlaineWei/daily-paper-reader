@@ -1,0 +1,403 @@
+Title: Tool Learning Needs Nothing More Than a Free 8B Language Model
+
+URL Source: https://arxiv.org/pdf/2604.17739v1
+
+Published Time: Tue, 21 Apr 2026 01:48:58 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Tool Learning Needs Nothing More Than A Free 8B Language Model 
+
+Chenming Tang ♠♣∗ Hsiu-Yuan Huang ♠♣♢∗ 
+
+Weijie Liu ♢† Junqiang Zheng ♢ Saiyong Yang ♢ Yunfang Wu ♠♣† ♠National Key Laboratory for Multimedia Information Processing, Peking University 
+
+> ♣
+
+School of Computer Science, Peking University ♢LLM Department, Tencent 
+
+tangchenming@stu.pku.edu.cn jagerliu@tencent.com wuyf@pku.edu.cn 
+
+> ∗
+
+Work done during an internship at Tencent †Corresponding authors 
+
+## Abstract 
+
+Reinforcement learning (RL) has become a prevalent paradigm for training tool calling agents, which typically requires online interactive environments. Existing approaches either rely on training data with ground truth annotations or require advanced commercial language models (LMs) to synthesize environments that keep fixed once created. In this work, we propose TRUSTEE, a data-free method training tool calling agents with dynamic environments fully simulated by free open-source LMs that can be as small as 8B, including task generation, user simulation, tool simulation and trajectory evaluation, paired with an adaptive curriculum learning mechanism that controls various aspects of the task difficulty dynamically during training. Our empirical results show that TRUSTEE brings consistent improvements across various domains and outperforms all the baselines which require extra external resources for training. These confirm that, with a sufficiently sophisticated design, even simulated environments with a local 8B LM as the backbone could set a strong baseline for tool learning, without expensive annotated data, realistic human interactions, executable tools or costly verifiable environments from human experts or commercial LMs. We hope our proposed paradigm could inspire future research on environment scaling with limited resources. 
+
+## 1 Introduction 
+
+Tool calling, also known as function calling, enables language models (LMs) to interact with the external environment. Thereafter, LMs have become active agents that can have access to external information [1], make use of realistic services [2, 3], and even make changes to the world [4]. With the prevalence of agentic reinforcement learning (agentic RL) [ 5], more and more work has been focusing on teaching LMs to call tools ( i.e. , tool learning) via RL. Earlier work directly adopt data for supervised fine-tuning (SFT), which requires ground truth annotations, for single-turn reinforcement learning from verifiable rewards (RLVR) [ 6, 7 , 8 ]. However, due to the cost and limited availability of real-world tools and users, when it comes to truly online multi-turn RL, there is a significant challenge in scaling the environment 1, for that such kind of RL requires a large number of online interactions including calling many tools and dynamically interacting with the user, which has also challenged evaluation [9, 10] and SFT data construction [11, 12, 13]. One approach of environment scaling is to apply LMs but most of these work only partially simulates the environment (simulates either the tools [14, 15, 16] or the users [17]) and relies on existing data   
+
+> 1In this paper, environment refers to all the external components for the agent, including users, tools and other entities like an optional verifier. Preprint. Work in progress. Results and conclusions may change.
+> arXiv:2604.17739v1 [cs.LG] 20 Apr 2026
+
+or environments ( i.e. , supports some specific tasks only). For instance, Simia-RL [18] simulates the responses of tools with LMs during interactions, but requires established data containing training tasks as the input ( e.g. , τ -bench [ 19 ]) and does not support the multi-turn interaction between the agent and the user. Another approach is to make use of synthesized code and databases [ 20 , 21 ], but such approach requires a complex generation pipeline for high-quality synthesis using expensive commercial LMs and the generated environments and tasks are fixed once created, which may be too easy for strong agents but overly difficult for weak ones. To this end, we introduce TRUSTEE, Tool lea Rning Using Simula TE d Environments, a data-free method training tool calling agents with a local open-source LM as the only required resource. TRUSTEE uses an LM to generate the task, simulate the user, simulate tool responses, and evaluate the trajectories, which provides complete environments for tool learning while independent of any existing training data or tasks, human annotations or interactions, realistic executable tools, or verifiable environments engineered by experts or commercial LMs. Moreover, we design an Adaptive 
+
+Curriculum Learning (ACL) mechanism that takes the advantage of the dynamically controllable nature of the simulated environments and tasks, which controls the difficulty of the tasks in various aspects based on the reward of the last step adaptively and ensures a smooth learning process for the tool calling agent. Our empirical evaluation validates the effectiveness of TRUSTEE. The Qwen3-8B LM, when trained solely with environments simulated by itself, outperforms all the baselines which either require annotated data or need advanced commercial LMs to synthesize or instantiate the environments. This proves that, with sufficiently sophisticated designs, simulated environments may serve as a powerful approach to tool learning that can even beat realistic data or synthesized verifiable environments. Our contributions include: • We introduce TRUSTEE, a paradigm of simulating every environment component with an LM for RL-based tool learning, paired with adaptive curriculum learning that dynamically keeps the tasks and environments at an appropriate difficulty for the agent. • We run computational experiments and demonstrate the effectiveness of TRUSTEE, confirm-ing even a fully simulated environment with an 8B open-source LM can lead to a competitive tool calling agent. • We validate that tool learning does not necessarily require established data, realistic hu-man interactions, executable tools, and verifiable environments from human experts or commercial LMs, moving a step towards cost-friendly tool learning. Our code will be publicly available when this work is completely finished. 
+
+## 2 Method 
+
+2.1 Problem Formulation 
+
+We formalize the tool calling agent task as a Partially Observable Markov Decision Process (POMDP) [22], defined by the tuple: 
+
+⟨S , A, P, R, γ, O⟩ , (1) where S is the state space, A = Atext ∪ A tool is the action space (textual response or tool calling), 
+
+P is the state transition probability, R is the reward space, γ is the discount factor, and R is the observation space. At the t-th step, the agent receives an observation ot = O(st) based on the state 
+
+st ∈ S , takes an action at ∈ A based on its policy πθ and the observation ot, receives a reward 
+
+rt = R(st, a t), and the environment transitions according to P (st+1 | st, a t).The initial objective of POMDP is to maximize the discounted cumulative reward: 
+
+JPOMDP (θ) = E 
+
+> τ∼πθ
+
+"T −1X
+
+> t=0
+
+γtrt
+
+#
+
+. (2) In this work, we focus on the final reward instead due to practical considerations: 
+
+Jours (θ) = E 
+
+> τ∼πθ
+
+[rτ ] . (3) 22.2 Fully Simulated Environment Tools User Query Toolset 
+
+> Query
+> Generator
+> Tool Calling
+> Result
+> Interaction
+> Feedback
+> Sampling
+> Tool
+> Simulator
+> User
+> Simulator
+> Policy
+> Optimization
+> Verifier
+> Simulator
+> Trajectory
+> Final Reward
+> Difficulty
+> Stage I:
+> Task
+> Generation
+> Stage II:
+> Environment
+> Simulation
+> Stage III:
+> Policy
+> Optimization
+
+Figure 1: The overview of TRUSTEE. Our fully simulated environment is demonstrated in Figure 1. There are three stages for each training step. The first stage is to generate tasks for this batch (§ 2.2.1). The second stage is to perform simulated interaction to collect trajectories (§ 2.2.2). The last stage is to reward the trajectories and optimize the policy (§ 2.2.3). 
+
+2.2.1 Task Generation 
+
+At the n-th training step, for each task Ti, we first sample a subset Fi of a large repository of tools F.The size of the subset is determined by the current task difficulty Dn (see § 2.3): 
+
+Fi = Sample (F, Dn). (4) In practice, the tool repository can be from various sources like existing datasets, crawled tools from the Internet, manually designed tool sets, etc. Note that the tools only consist of basic textual information including names and parameters and do not have to be actually executable functions. Then, we generate the task based on the sampled tools Fi and current difficulty Dn using a task generator Φtask instantiated by an LM: 
+
+Ti = Φ task (Fi, Dn) = ( pi, g i, q i, c i), (5) where pi is the user persona, gi is the user intent ( i.e. , the ultimate goal of the task), qi is the first user query to trigger an interaction, and ci is the expected tools to be called to finish the task. 
+
+2.2.2 Simulated Interaction 
+
+We perform simulated interaction based on the generated tasks. The interaction environment includes a tool executer Φtool and a user Φuser , both simulated by an LM. For each task Ti at training step n, we sample M interaction trajectories. In each trajectory, after receiving the first observation o0 = τ = ( qi), the agent LM θ begins to interact with both the tool executer and user by generating actions made up of tokens x1≤j≤| at| based on the current observation 
+
+ot (which is equivalent to the current trajectory τ in the LM agent scenario) and available tools Fi:
+
+at = πnθ (ot, Fi) = {xj }|at|
+
+> j=1
+
+, (6) which will be appended to the trajectory of this task: 
+
+τ = τ ⊕ at. (7) If at is a tool calling, the simulated tool Φtool will be called to generated a simulated tool result based on the current interaction history, the available tools for the agent and the user intent: 
+
+ft = Φ tool (τ, Fi, g i), (8) 3which will be appended to the trajectory as well: 
+
+τ = τ ⊕ ft. (9) Otherwise, if at is a textual response to the user, the simulated user Φuser will be called to generate a user message based on the current interaction history, the available tools for the agent, the user intent and the user persona: 
+
+ut = Φ user (τ, Fi, g i, p i), (10) which will be appended to the trajectory as well: 
+
+τ = τ ⊕ ut. (11) Then, the observation of the next step ot+1 will be updated as the current trajectory τ .The user simulator may choose to end the task by generating an empty response if it believes there is no need to perform more interactions. Otherwise, the interaction will continue until the sequence length or the interaction turn reaches a pre-defined limit. Optionally, the simulators may return an immediate reward rt for step-level rewarding. But we does not use these rewards because we observed they did not work well in our earlier experiments. 
+
+2.2.3 Rewarding and Optimization 
+
+For each sampled trajectory τm, when the interaction is finished, a verifier Φreward instantiated by an LM is called to evaluate the whole trajectory and generates a final reward based on the available tools for the agent, the user intent, the user persona, the expected tools to be called and the current task difficulty (which indicates the evaluation criteria): 
+
+rm = Φ reward (τm, Fi, g i, p i, c i, Dn). (12) When all the criteria are met, the trajectory receives a positive reward ( i.e. , 1 in this work). When most criteria are met, the verifier only gives a neutral reward ( i.e. , 0 in this work). If there are severe errors or the criteria are scarcely met, there will be a negative reward ( i.e. , -1 in this work). In this work, we choose GRPO [ 23 ] (with token-level loss [ 24 ]) as our optimization algorithm due to its relative stability and simplicity: 
+
+JGRPO (θ) = E
+
+> Ti∼T
+
+ 1
+
+Z
+
+> M
+
+X
+
+> m=1
+> Tm−1
+
+X
+
+> t=0
+> |at|
+
+X
+
+> j=1
+
+
+
+CLIP( rm,t,j (θ), ˆAm,t,j , ε ) − β DKL (πθ ∥πref )
+
+ , (13) where Z is the normalization factor: 
+
+Z =
+
+> M
+
+X
+
+> m=1
+> Tm−1
+
+X
+
+> t=0
+
+|at|, (14) 
+
+rm,t,j (θ) is the importance sampling ratio: 
+
+rm,t,j (θ) = πθ
+
+ xm,t,j | τm,<t , x <j 
+
+
+
+πθold 
+
+ xm,t,j | τm,<t , x <j 
+
+ , (15) 
+
+ˆAm,t,j is the group-relative advantage based on the final reward only: 
+
+ˆAm,t,j = rm − Mean  {rm}Mm=1 
+
+
+
+Std  {rm}Mm=1 
+
+ , (16) and DKL (πθ ∥πref ) is the KL penalty term. 
+
+2.3 Adaptive Curriculum Learning (ACL) 
+
+An advantage of the fully simulated environment is that every component of it is dynamic and adjustable in an online manner, which naturally enables adaptive curriculum learning which keeps a moderate difficulty for the current policy and ensures good learnability. 42.3.1 Task Difficulty 
+
+We control the difficulty of tasks in the following aspects. 
+
+Number of Available Tools The number of tools in Fi sampled from F directly determines the overall difficulty. The larger number of available tools for the agent, the harder for the agent to make use of tools properly and precisely. On the contrary, if there is only one tool available, the agent will have no trouble choosing tools. 
+
+Number of Expected Tool Callings The more expected times of tool calling which is passed to the task generator Φtask , the more complex the generated task will be. 
+
+Turns of Interactions If a task requires more interaction turns, it is naturally more difficult and complex. Therefore, we use the number of expected turns, which will be passed to the task generator 
+
+Φtask to design the task based on the expectation, to control the difficulty. Meanwhile, the maximum number of interaction turns also evolves dynamically with the expected turns for more efficient training. 
+
+System Prompt We expect the agent learns to perform high-quality tool calling under a general system prompt and make the specificity of the system prompt for the agent gradually decrease during training. To this end, we design system prompts at different degrees of specificity. The most specific system prompt describes the overall multi-turn tool calling task in detail with hands-on instructions of how to perform reasoning and how to call tools in a correct format (a few paragraphs). Then, a more concise system prompt presents the core notes (a few sentences) regarding the agentic task only. After that, a highly consolidated system prompt states the task in a sentence ( e.g. , “You are a helpful multi-turn dialogue assistant capable of leveraging tool calls to solve user tasks.”). Finally, the hardest system prompt is the most general one ( i.e. , “You are a helpful assistant.”), with no special descriptions regarding any specific task, which may make the agent unsure of what to do if it is less familiar with tool calling. 
+
+Persona of User Typically, a less expert user makes the task harder due to a lower level of knowledge [ 25 ]. Therefore, we design three kinds of user personas: expert, beginner, and novice. Then, we use this as an input to the task generator Φtask which generates a more specific description of the user persona pi, ensuring the diversity. 
+
+Ambiguity of Query If a user query is ambiguous, it may confuse the agent and require it to ask for further clarification from the user, which makes the task harder and more realistic. Therefore, we employ three ambiguity degrees: clear, somewhat ambiguous, and highly ambiguous. Then, we use this as an input to the task generator Φtask which generates a user query based on the requirements. 
+
+Criteria of Rewarding A stricter evaluation criteria naturally makes it harder for the agent to obtain a high reward. We increase the difficulty by gradually taking more criteria into consideration when calling the verifier simulator Φreward . The verifier gives a positive reward only when all the criteria are met. Concretely, we design five levels of criteria: meeting user intent, using expected tools correctly, no hallucination, no redundant trials, and efficiency. These draw a step-by-step path to a perfect tool-calling agent. 
+
+2.3.2 Difficulty Evolution 
+
+The difficulty is updated after each training step based on the overall reward of the finished batch. If the averaged reward ¯rn of training step n is higher than a threshold ηhigh , the difficulty level for the next step Dn+1 will increase by a step size δ. If the reward is lower than a threshold ηlow , Dn+1 will decrease by δ:
+
+Dn+1 =
+
+
+
+Dn + δ if ¯rn > η high 
+
+Dn − δ if ¯rn < η low 
+
+Dn otherwise 
+
+. (17) Then, all of the aspects described in § 2.3.1 will be derived based on Dn+1 . In this work, we design a large value range (e.g., from 1 to 100) for Dn+1 and convert it to the scales of different aspects. For 5example, since the range of user persona is 0-2 (0 for expert, 1 for beginner, and 2 for novice), the derived user persona level will be ⌊D n+1 × 0.02 ⌋. In this way, the user persona will be expert for difficulty from 1 to 49, beginner for difficulty from 50 to 99, and novice for difficulty 100. Since the difficulty works for every task in a batch, the batch may converge to a specific pattern of tasks, which hurts the diversity during training. For example, a detailed system prompt is always paired with an expert user. To this end, we apply a soft design of curriculum, which does not always follow the current difficulty strictly. To be specific, for each task, there is a probability of ϵ to sample the tool number, the expected tool callings, the interaction turns, the user persona, and the query ambiguity randomly within the current difficulty. In this way, the task patterns can be more diverse. 
+
+## 3 Experimental Setup 
+
+3.1 Data Evaluation Benchmarks We evaluate baselines and our method on the Berkeley Function Calling Leaderboard (BFCL) V4 [ 26 ] and τ 2-bench [ 25 ]. The former tests various aspects of tool calling for agents comprehensively and the latter evaluates interactive tool calling in three realistic scenarios. 
+
+Tool Repository We instantiate our tool repository F using the tools collected by ToolBench [ 27 ], which are representational state transfer (REST) APIs gathered from RapidAPI 2 with detailed descriptions, spanning 49 diverse categories like social media, e-commerce, and weather. Besides this tool repository, we do not need any specific data for training. 
+
+3.2 Language Model 
+
+We focus on the Qwen3 [ 28 ] herd of language models, which is widely used for reinforcement learning in the community. To be specific, we experiment with Q WEN 3-8B as the agent LM. We also use Q WEN 3-8B as the backbone LM for simulation (including Φtask , Φtool , Φuser , and Φreward ). 
+
+3.3 Baselines and Methods 
+
+Our evaluated baselines and methods include: (1) Original Model : the agent LM before training. (2) ToolRL [6]: a single-turn reinforcement learning from verifiable reward (RLVR) method using existing data [ 29 , 13 , 30 ] with ground truth annotations. (3) Tool-N1 [ 7]: another single-turn RLVR method using existing data [ 29 , 13 ] with ground truth annotations. (4) Simia-RL [18 ]: an online multi-turn training method that simulates the tool responses with commercial LMs and trains on 
+
+τ -bench [ 19 ]. (5) EnvScaler [ 20 ]: a method that generates environments via programmatic synthesis using commercial LMs. (6) AWM [21 ]: another method that employs programmatic environment synthesis using commercial LMs. (7) TRUSTEE (Ours) : our method training the agent in the environment simulated by an open-source LM. 
+
+3.4 Implementation Details 
+
+We experiment on a single node with 8 × NVIDIA H20 GPUs. 4 GPUs are used for agent training and the other 4 are used for deploying the simulation LM. Our training script is developed on the basis of verl [31]. The simulation backbone LM is deployed using vLLM [32]. To ensure the sampled tools from F are not overly discursive, we prioritize tools from the same category (also randomly sampled) when sampling. We begin to sample from a new category only when all the tools are selected in the previous one. The prompt templates used in our experiments are shown in Appendix A. The detailed descriptions of the task difficulty for adaptive curriculum learning are presented in Appendix B. The details of evaluation can be found in Appendix C. The hyper-parameters in our experiments are listed in Appendix D. The details of baseline methods are presented in Appendix E. 
+
+> 2https://rapidapi.com/hub
+
+64 Results 
+
+4.1 Results of Single-turn Tool Calling 
+
+Table 1: Results of single-turn tool calling. “Simp.”, “Mult.”, “Para.”, “P. M.” and “Avg.” refer to “Simple”, “Multiple”, “Parallel”, “Parallel Multiple” and “Average”, respectively.                                                                                  
+
+> Method BFCL Non-Live BFCL Live Simp. Mult. Para. P. M. Avg. Simp. Mult. Para. P. M. Avg.
+> QWEN 3-8B 74.6 95.5 91.5 89.5 87.8 83.0 79.8 75.0 79.2 80.3 ToolRL 76.1 95.5 93.5 90.0 88.8 86.4 80.4 81.3 58.3 81.2 Tool-N1 74.8 95.5 92.5 88.5 87.8 86.8 77.2 75.0 70.8 78.9 Simia 45.0 84.5 0.0 0.0 32.4 60.9 44.4 0.0 0.0 46.2 AWM 74.6 95.5 93.0 87.0 87.5 84.5 79.6 81.3 75.0 80.5 EnvScaler 74.7 94.0 92.0 89.0 87.4 84.9 80.5 81.3 70.8 81.2 TRUSTEE 75.6 96.0 95.0 92.0 89.7 86.4 81.1 81.3 83.3 82.2
+
+The results of single-turn tool calling (the Non-Live and Live subset of BFCL) are presented in Table 1. TRUSTEE exhibits the best performance across all the categories except “Simple” and secures the highest averaged metrics. Since Q WEN 3-8B has already been good at tool calling with high initial scores, some baselines fail to further improve its tool calling capability. Simia, which is specially tuned for the τ -bench, suffers from overfitting and degrades drastically on the general BFCL benchmark. Tool-N1, AWM and EnvScaler show degradation on certain subsets. ToolRL, although improves the average scores for both subsets, causes a sharp decline in the “Live Parallel Multiple” category. On the contrary, TRUSTEE ensures solid improvements in all the categories, even without any labeled data, verifiable environments, or advanced LMs. 
+
+4.2 Results of Multi-turn Tool Calling 
+
+Table 2: Results of multi-turn tool calling. “M. F.”, “M. P.”, “L. C.” and “Avg.” refer to “Missing Function”, “Missing Parameter”, ‘Long Context” and “Average”, respectively.                                                                           
+
+> Method BFCL Multi-Turn τ2-bench Base M. F. M. P. L. C. Avg. Airline Retail Telecom Avg.
+> QWEN 3-8B 49.5 44.0 34.0 32.0 39.9 24.0 43.0 15.8 27.6 ToolRL 52.0 45.0 35.0 33.0 41.3 22.0 16.7 14.0 17.6 Tool-N1 55.5 45.5 38.0 38.5 44.4 28.0 36.8 10.5 25.1 Simia 2.5 2.0 1.5 2.0 2.0 38.0 35.1 3.5 25.5 AWM 48.5 44.0 36.0 30.5 39.8 30.0 36.8 12.3 26.4 EnvScaler 53.5 45.5 39.0 40.0 44.5 22.0 4.4 9.7 12.0 TRUSTEE 54.0 49.0 40.0 42.5 46.4 26.0 45.6 17.5 29.7
+
+The results of multi-turn tool calling (the Multi-Turn subset of BFCL and τ 2-bench) are presented in Table 2. TRUSTEE exhibits the best performance across all the categories except “Base” of BFCL’s “Multi-Turn” and “Airline” of τ 2-bench. On “BFCL Multi-Turn”, TRUSTEE brings consistent improvements across all the categories. Simia suffers from overfitting and causes the LM to forget almost everything in this scenario while AWM does not necessarily improve the LM. The gain of ToolRL is also marginal. Tool-N1 and EnvScaler bring solid improvements but they require a lot more extra resources than TRUSTEE. On τ 2-bench, all the baselines degrade on certain subsets, especially “Telecom”, and none improves the overall averaged score. This reveals their limited generalization. Our proposed TRUSTEE is the only method that improves the LM’s performance on all the subsets with the highest average score. All the results validate the effectiveness of TRUSTEE. As a method requiring no extra resources like annotated data or commercial LMs, it exhibits the most outstanding performance across various 7evaluation aspects. These confirm that with a sufficiently sophisticated design of the simulated environment, tool learning requires nothing more than an open-source LM to serve as the environment backbone. For Q WEN 3-8B, this even means TRUSTEE needs nothing more than the LM itself. 
+
+## 5 Related Work 
+
+5.1 Tool Learning 
+
+Tool calling, also known as function calling, allows LMs to obtain information from the external environment [ 1 , 33 ], make use of helpful utilities [ 3 , 2], and interact with the real world [ 4], which converts generative assistants to intelligent agents. Tool learning aims to enhance the tool calling capability of LMs via training. Earlier research focuses on supervised fine-tuning, which requires high-quality offline data. ToolAlpaca [ 33 ] generates user queries and tool responses using LMs to synthesize single-turn data. BUTTON [ 12 ] and ToolACE [ 13 ]simulates both the user and tools to collect multi-turn trajectories for SFT. AgentScaler [ 11 ] instanti-ates tools as executable code and local databases and simulates the user with a user agent to collect multi-turn SFT data. Search-R1 [ 5] first introduces agentic reinforcement learning, which LMs learn to call tools ( e.g. ,search engine APIs) via multi-turn reinforcement learning, which is superior in generalization. A lot of work performs reinforcement learning with verifiable feedback (RLVR) with existing SFT data [ 6 , 7 , 8]. To enable truly multi-turn online learning, recent work constructs environments with LM-simulated tools [ 18 ] or synthesized code and databases [ 34 , 20 , 21 ]. Our work focuses on scaling the RL environment for tool learning with purely open-source LMs. 
+
+5.2 Environment Scaling for LM Agents 
+
+Real-world APIs are usually expensive and unstable [ 10 ], limiting the scalability of tool environments. Therefore, it is necessary to scale the environment for tool calling agents via simulation or synthesis. ZeroSearch [ 35 ] replaces the search engine API in Search-R1 with an LM. Simia-RL [ 18 ] simulates tool responses in the online interactions with LMs. GTM [ 36 ] trains a specific LM to simulate tool responses. AutoForge [ 34 ], EnvScaler [ 20 ] and AWM [ 21 ] automatically generate user intents and build environments in the form of executable code and local databases for online reinforcement learning. Our work instantiates the whole environment as an LM and takes the advantage of adaptive curriculum learning. 
+
+## 6 Limitations 
+
+Our work has certain limitations. First, the scalability of the simulated environment is constrained due to the bounded capability of the simulation LM, which may not generate sufficiently complex tasks or sufficiently accurate rewards when the task involves a large number of tools and a lot of turns of interactions. Second, there are a lot of hyper-parameters required in our method, especially those in the adaptive curriculum learning, which makes it difficult to find an optimal setup. Third, due to the instability of LMs, sometimes the simulation LM itself fails to generate a valid response and causes a lot of aborted trajectories, which may hurt the stability of the training. 
+
+## 7 Discussion 
+
+We have presented TRUSTEE, a data-free method that simulates all the environment components for online tool learning. Empirical results show that TRUSTEE brings consistent improvements across various domains of tool calling and outperforms all the compared baselines, which rely on either annotated data or environments synthesized by advanced commercial LMs. Our work proves that, with a proper design, fully simulated environments can effectively train tool calling agents even with a local open-source 8B LM as the backbone while requiring no annotated data or tasks. This work is still in progress. Future work includes: (1) exploring other approaches of credit assignment to take advantage of the turn-level rewards in our simulated environment and improve the training with denser supervision; (2) perform ablation study on TRUSTEE to analyze the contribution 8of each component; (3) employ different LMs as the simulator and analyze the effect of the simulator choice; (4) incorporating advanced entropy-controlling techniques to mitigate the entropy collapse during training; (5) providing a theoretical foundation for this study. 
+
+## References 
+
+[1] Yuchen Zhuang, Yue Yu, Kuan Wang, Haotian Sun, and Chao Zhang. ToolQA: A dataset for LLM question answering with external tools. In Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2023. [2] Shishir G Patil, Tianjun Zhang, Xin Wang, and Joseph E. Gonzalez. Gorilla: Large language model connected with massive APIs. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. [3] Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to use tools. In Thirty-seventh Conference on Neural Information Processing Systems , 2023. [4] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. In The Eleventh International Conference on Learning Representations , 2023. [5] Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan O Arik, Dong Wang, Hamed Zamani, and Jiawei Han. Search-r1: Training LLMs to reason and leverage search engines with reinforcement learning. In Second Conference on Language Modeling , 2025. [6] Cheng Qian, Emre Can Acikgoz, Qi He, Hongru WANG, Xiusi Chen, Dilek Hakkani-Tür, Gokhan Tur, and Heng Ji. ToolRL: Reward is all tool learning needs. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [7] Shaokun Zhang, Yi Dong, Jieyu Zhang, Jan Kautz, Bryan Catanzaro, Andrew Tao, Qingyun Wu, Zhiding Yu, and Guilin Liu. Nemotron-research-tool-n1: Exploring tool-using language models with reinforced reasoning. arXiv preprint arXiv:2505.00024 , 2025. [8] Yirong Zeng, Xiao Ding, Yutai Hou, Yuxian Wang, Li Du, Juyi Dai, Qiuyang Ding, Duyu Tang, Dandan Tu, Weiwen Liu, Bing Qin, and Ting Liu. Tool zero: Training tool-augmented LLMs via pure RL from scratch. In Findings of the Association for Computational Linguistics: EMNLP 2025 , 2025. [9] Yangjun Ruan, Honghua Dong, Andrew Wang, Silviu Pitis, Yongchao Zhou, Jimmy Ba, Yann Dubois, Chris J. Maddison, and Tatsunori Hashimoto. Identifying the risks of LM agents with an LM-emulated sandbox. In The Twelfth International Conference on Learning Representations ,2024. [10] Zhicheng Guo, Sijie Cheng, Hao Wang, Shihao Liang, Yujia Qin, Peng Li, Zhiyuan Liu, Maosong Sun, and Yang Liu. StableToolBench: Towards stable large-scale benchmarking on tool learning of large language models. In Findings of the Association for Computational Linguistics: ACL 2024 , 2024. [11] Runnan Fang, Shihao Cai, Baixuan Li, Jialong Wu, Guangyu Li, Wenbiao Yin, Xinyu Wang, Xiaobin Wang, Liangcai Su, Zhen Zhang, Shibin Wu, Zhengwei Tao, Yong Jiang, Pengjun Xie, Fei Huang, and Jingren Zhou. Towards general agentic intelligence via environment scaling. 
+
+arXiv preprint arXiv:2509.13311 , 2025. [12] Mingyang Chen, sunhaoze, Tianpeng Li, Fan Yang, Hao Liang, KeerLu, Bin CUI, Wentao Zhang, Zenan Zhou, and weipeng chen. Facilitating multi-turn function calling for LLMs via compositional instruction tuning. In The Thirteenth International Conference on Learning Representations , 2025. 9[13] Weiwen Liu, Xu Huang, Xingshan Zeng, xinlong hao, Shuai Yu, Dexun Li, Shuai Wang, Weinan Gan, Zhengying Liu, Yuanqing Yu, Zezhong WANG, Yuxian Wang, Wu Ning, Yutai Hou, Bin Wang, Chuhan Wu, Wang Xinzhi, Yong Liu, Yasheng Wang, Duyu Tang, Dandan Tu, Lifeng Shang, Xin Jiang, Ruiming Tang, Defu Lian, Qun Liu, and Enhong Chen. ToolACE: Winning the points of LLM function calling. In The Thirteenth International Conference on Learning Representations , 2025. [14] Michael Sullivan, Mareike Hartmann, and Alexander Koller. Procedural environment generation for tool-use agents. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , 2025. [15] Tommaso Castellani, Naimeng Ye, Daksh Mittal, Thomson Yen, and Hongseok Namkoong. Synthtools: A framework for scaling synthetic tools for agent development. arXiv preprint arXiv:2511.09572 , 2025. [16] Yixia Li, Hongru WANG, Jiahao Qiu, Zhenfei Yin, Dongdong Zhang, Cheng Qian, Zeping Li, Xiaoteng Ma, Guanhua Chen, Heng Ji, and Mengdi Wang. From word to world: Can large language models be implicit text-based world models? In ICLR 2026 Workshop on Lifelong Agents: Learning, Aligning, Evolving , 2026. [17] Cheng Qian, Zuxin Liu, Akshara Prabhakar, Jielin Qiu, Zhiwei Liu, Haolin Chen, Shirley Kokane, Heng Ji, Weiran Yao, Shelby Heinecke, Silvio Savarese, Caiming Xiong, and Huan Wang. Userrl: Training interactive user-centric agent via reinforcement learning. arXiv preprint arXiv:2509.19736 , 2025. [18] Yuetai Li, Huseyin A Inan, Xiang Yue, Wei-Ning Chen, Lukas Wutschitz, Janardhan Kulka-rni, Radha Poovendran, Robert Sim, and Saravan Rajmohan. Simulating environments with reasoning models for agent training. arXiv preprint arXiv:2511.01824 , 2025. [19] Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik R Narasimhan. τ -bench: A bench-mark for tool-agent-user interaction in real-world domains. In The Thirteenth International Conference on Learning Representations , 2025. [20] Xiaoshuai Song, Haofei Chang, Guanting Dong, Yutao Zhu, Zhicheng Dou, and Ji-Rong Wen. Envscaler: Scaling tool-interactive environments for llm agent via programmatic synthesis. 
+
+arXiv preprint arXiv:2601.05808 , 2026. [21] Zhaoyang Wang, Canwen Xu, Boyi Liu, Yite Wang, Siwei Han, Zhewei Yao, Huaxiu Yao, and Yuxiong He. Agent world model: Infinity synthetic environments for agentic reinforcement learning. arXiv preprint arXiv:2602.10090 , 2026. [22] Guibin Zhang, Hejia Geng, Xiaohang Yu, Zhenfei Yin, Zaibin Zhang, Zelin Tan, Heng Zhou, Zhong-Zhi Li, Xiangyuan Xue, Yijiang Li, Yifan Zhou, Yang Chen, Chen Zhang, Yutao Fan, Zihu Wang, Songtao Huang, Francisco Piedrahita Velez, Yue Liao, Hongru Wang, Mengyue Yang, Heng Ji, Jun Wang, Shuicheng Yan, Philip Torr, and Lei Bai. The landscape of agentic reinforcement learning for LLMs: A survey. Transactions on Machine Learning Research ,2026. Survey Certification. [23] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. [24] Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xiaochen Zuo, Yu Yue, Weinan Dai, Tiantian Fan, Gaohong Liu, Lingjun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, Wang Zhang, Hang Zhu, Jinhua Zhu, Jiaze Chen, Jiangjie Chen, Chengyi Wang, Hongli Yu, Yuxuan Song, Xiangpeng Wei, Hao Zhou, Jingjing Liu, Wei-Ying Ma, Ya-Qin Zhang, Lin Yan, Mu Qiao, Yonghui Wu, and Mingxuan Wang. Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 , 2025. [25] Victor Barres, Honghua Dong, Soham Ray, Xujie Si, and Karthik Narasimhan. τ 2-bench: Eval-uating conversational agents in a dual-control environment. arXiv preprint arXiv:2506.07982 ,2025. 10 [26] Shishir G. Patil, Huanzhi Mao, Charlie Cheng-Jie Ji, Fanjia Yan, Vishnu Suresh, Ion Stoica, and Joseph E. Gonzalez. The berkeley function calling leaderboard (bfcl): From tool use to agentic evaluation of large language models. In Forty-second International Conference on Machine Learning , 2025. [27] Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian, Ruobing Xie, Jie Zhou, Mark Gerstein, dahai li, Zhiyuan Liu, and Maosong Sun. ToolLLM: Facilitating large language models to master 16000+ real-world APIs. In The Twelfth International Conference on Learning Representations , 2024. [28] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. [29] Jianguo Zhang, Tian Lan, Ming Zhu, Zuxin Liu, Thai Hoang, Shirley Kokane, Weiran Yao, Juntao Tan, Zhiwei Liu, Yihao Feng, Juan Carlos Niebles, Shelby Heinecke, Huan Wang, Silvio Savarese, and Caiming Xiong. xLAM: A family of large action models to empower AI agent systems. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , 2025. [30] Qiqiang Lin, Muning Wen, Qiuying Peng, Guanyu Nie, Junwei Liao, Jun Wang, Xiaoyun Mo, Jiamu Zhou, Cheng Cheng, Yin Zhao, Jun Wang, and Weinan Zhang. Robust function-calling for on-device language model via function masking. In The Thirteenth International Conference on Learning Representations , 2025. [31] Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. Hybridflow: A flexible and efficient rlhf framework. In 
+
+Proceedings of the Twentieth European Conference on Computer Systems , 2025. [32] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large lan-guage model serving with pagedattention. In Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles , 2023. [33] Qiaoyu Tang, Ziliang Deng, Hongyu Lin, Xianpei Han, Qiao Liang, Boxi Cao, and Le Sun. Toolalpaca: Generalized tool learning for language models with 3000 simulated cases. arXiv preprint arXiv:2306.05301 , 2023. [34] Shihao Cai, Runnan Fang, Jialong Wu, Baixuan Li, Xinyu Wang, Yong Jiang, Liangcai Su, Liwen Zhang, Wenbiao Yin, Zhen Zhang, Fuli Feng, Pengjun Xie, and Xiaobin Wang. Aut-oforge: Automated environment synthesis for agentic reinforcement learning. arXiv preprint arXiv:2512.22857 , 2025. [35] Hao Sun, Zile Qiao, Jiayan Guo, Xuanbo Fan, Yingyan Hou, Yong Jiang, Pengjun Xie, Yan Zhang, Fei Huang, and Jingren Zhou. Zerosearch: Incentivize the search capability of llms without searching. arXiv preprint arXiv:2505.04588 , 2025. [36] Zhenzhen Ren, Xinpeng Zhang, Zhenxing Qian, Yan Gao, Yu Shi, Shuxin Zheng, and Jiyan He. Gtm: Simulating the world of tools for ai agents. arXiv preprint arXiv:2512.04535 , 2025. 11 Prompt Template for Task Generation 
+
+You are an expert at creating realistic tasks for agent training. Given a set of tools and difficulty settings, generate ONE task. ## Available Tools {tools} ## Settings - Expected number of distinct tool calls the agent should make: approximately {number of expected calls} - User persona (user’s expertise; describe this in the task): {persona} - Query ambiguity (for the first user message only): {ambiguity}. User persona and query ambiguity are independent (e.g. an expert can ask vaguely; a novice can ask clearly). - Expected interaction turns: {number of turns} ## Your Task Produce a single task with: 1. Expected turns: The task as a whole should match expected turns: {number of turns} Design the goal and first message so the conversation length fits this. 2. expected tool calls: A list of tool names (from the available tools above) that the agent is expected to use, in a plausible order. Length approximately {number of expected calls}. 3. user intent: A clear description of what the user ultimately wants to achieve (the ground truth goal for evaluation). This may be richer or more specific than what the user says in the first message. 4. user persona: A short description of the user’s expertise level, matching: {persona}. Do NOT tie this to query clarity. 5. first user query: The user’s first message only—how a real user would actually open the conversation. Keep it natural: - It need not state the full intent directly; the user might hint, ask a partial question, or express a vague need that the agent must clarify. - Match the query ambiguity level: {ambiguity} - Do not name tools; the message should lead naturally toward using the expected tools as the conversation unfolds. - Avoid sounding like a spec or a list of requirements; write as a real person would (e.g. "I’m trying to figure out..." or "Can you help with something?" rather than "I want you to do X, Y, and Z"). ## Output Format (JSON only) {"expected_tool_calls": ["tool_name_1", "tool_name_2", ...], "user_intent": "Description of what the user wants to achieve.", "user_persona": "Short description of user expertise (not query clarity).", "first_user_query": "The user’s first message (ambiguity as specified above)." }Generate the task now. Output only valid JSON. 
+
+Figure 2: Prompt template for task generation. 
+
+## A Prompt Templates 
+
+The prompt templates for Φtask , Φtool , Φuser , and Φreward are presented in Figure 2 - 5. 
+
+## B Details of Task Difficulty 
+
+The detailed descriptions of the different difficulty aspect at all levels are presented in Table 3. Note that the rewarding criteria are applied in an incremental manner. The criteria at level l should include all those from level 0 to level l.
+
+## C Details of Evaluation 
+
+For BFCL V4, we follow the default evaluation setup and do not further extend the maximum context size of the LM for long-context scenarios. For τ 2-bench, we adopt GPT-4.1 as the user simulator following [ 25 ]. The maximum number of interaction turns is 64 in our experiments due to limited budget. 12 Prompt Template for Tool Simulation 
+
+You are an environment simulator for tool calling agents. Your task is to simulate realistic tool execution results based on the interaction history and the agent’s tool call. ## Interaction History {history} ## Agent’s Tool Call {tool calling} ## Available Tools {tools} ## User Intent (task context) {user intent} ## Your Task Simulate the execution of the agent’s tool call and return: 1. Tool Result: The simulated execution output (or an error message if the call is invalid) 2. Tool Reward: An integer reward in {-1, 0, 1} evaluating how well this tool call serves the user’s intent ## Tool Result Guidelines ### Validation First, validate the tool call: - Parseable: Is the tool call properly formatted and parseable? If the tool call is null or malformed, return an error like "Error: Tool call must be properly formatted in the expected structure" - Tool exists: Is the tool name in the available tools? - Required arguments: Are all required parameters provided? - Argument types: Do argument types match specifications? - Argument values: Are values realistic and contextually appropriate? If invalid, return an error message explaining the issue. ### Simulation (for valid calls) If valid, simulate realistic execution output: - Contextual: Use information from history to generate relevant results - Realistic: Output should mirror real tool behavior with concrete, specific data - Consistent: Maintain consistency with previous interactions - Plausible: Avoid placeholders or generic values; use realistic naming Examples of good simulation: - Instead of "file1.txt", use "ProjectReport 2024 Q1.pdf" - Instead of "user@example.com", use "sarah.chen@techcorp.com" - Instead of "ID: 123", use "ID: a7c3f91b-2e8d" Examples of error messages: - "Error: Tool call is malformed or could not be parsed" - "Error: Tool ’send email’ not found in available tools" - "Error: Missing required parameter ’recipient’ for tool ’send email’" - "Error: Parameter ’amount’ must be a number, got string" ## Tool Reward Guidelines Assign exactly one of -1, 0, or 1: 1 — Tool call fully serves the user’s intent - Valid and well-formed (correct tool, required arguments present and correctly typed) - Clearly advances the user’s goal; optimal or near-optimal choice at this step - Arguments are accurate and contextually appropriate 0 — Tool call is valid but suboptimal - Correctly formatted and executable (tool exists, arguments valid) - Only partly aligned with the user’s intent, or a reasonable but not best choice - May be redundant, slightly off-purpose, or use weaker arguments than possible -1 — Invalid or intent-mismatched - Invalid: malformed, unparseable, wrong tool, missing or wrong-typed arguments, or will fail - Or valid but not addressing the user’s intent: wrong task, irrelevant tool, or counterproductive for the goal First decide validity and intent alignment, then assign the single value {-1, 0, 1}. Malformed or unparseable tool calls are always -1. ## Output Format Return your response in the following JSON format: {"result": "The simulated tool execution output or error message", "reward": 0 }Important: - result must be a string (success output or error message; may be JSON inside the string if needed) - reward must be exactly one of: -1, 0, 1 - Output valid JSON only (no extra text or comments) Generate the simulation now. 
+
+Figure 3: Prompt template for tool simulation. 13 Prompt Template for User Simulation 
+
+You are simulating a human user interacting with an assistant agent to accomplish a task. ## Original Task / First User Message {user query} ## User Intent (what the user ultimately wants) {user intent} ## User Persona {user persona} ## Available Tools (for agent use) {tools} ## Interaction History {history} ## Agent’s Latest Message {agent message} ## Your Task As the user, respond to the agent’s latest message and evaluate its quality. ### Response Guidelines Be Human-Like - Use natural, conversational language - Be concise and to the point (typically 1-3 sentences) - Show realistic reactions and emotions when appropriate - Don’t repeat the exact task; use your own words Provide Information Appropriately - Only provide information when the agent asks for it - Don’t volunteer all details at once Know When to End - If the task is successfully completed, respond with an empty string "" - If the agent has clearly failed and cannot help, respond with an empty string "" - Only end when it’s genuinely appropriate to stop the conversation Be Realistic - React naturally to agent’s actions (confusion, satisfaction, frustration, anger, etc.) - Ask for clarification if the agent’s response is unclear - Point out errors or issues if the agent makes mistakes ### Reward Guidelines Assign exactly one of -1, 0, or 1 based on how well the agent’s message serves the user’s intent and moves the task forward: 1 — Significant progress; fully meets the user’s intent - Clearly addresses what the user asked or needed at this step - Moves the task meaningfully toward completion (e.g. correct information, right tool use, useful next step) - Response is on-topic, clear, and appropriate 0 — Little progress or suboptimal - Partly relevant or only marginally helpful - Some progress but slow, indirect, or with unnecessary detours - Suboptimal choices (e.g. weaker tool use or incomplete answer) but not wrong -1 — Wrong, unclear, no progress, or off-topic - Wrong answer, off-topic, or fails to address the user’s intent - Unclear or confusing so the user cannot act on it - No real progress (e.g. repetition, irrelevant actions, or counterproductive steps) First judge progress and intent alignment, then assign the single value {-1, 0, 1}. ## Output Format Return your response in the following JSON format: {"response": "Your message as the user", "reward": 0 }Important: - response must be a string; use an empty string "" if the conversation should end - reward must be exactly one of: -1, 0, 1 - Output valid JSON only (no extra text or comments) Generate the user simulation now. 
+
+Figure 4: Prompt template for user simulation. 14 Prompt Template for Verifier Simulation 
+
+Your task is to evaluate how well an assistant agent performed in helping a user accomplish their task. ## User’s Original Query {user query} ## Expected Tool Calls (should be used correctly) {expected tool calls} ## User Intent (ground truth) {user intent} ## User Persona {user persona} ## Available Tools {tools text} ## Complete Interaction Trajectory {interaction history text} ## Evaluation Task Evaluate the assistant agent’s overall performance using ONLY the following {num criteria} key criteria (in order of importance): {criteria text} ### Reward Scale Assign a final reward of 1, 0, or -1: - 1: All of the above {num criteria} key criteria are met. - 0: Most of the above {num criteria} key criteria are met. - -1: Most of the above {num criteria} key criteria are NOT met or the agent does not call the tools at all. ## Output Format Return your evaluation in the following JSON format: {"reward": 0, "reasoning": "Brief explanation (1-2 sentences)" }Important: - reward must be exactly one of: -1, 0, 1 - Output valid JSON only Generate the evaluation now. 
+
+Figure 5: Prompt template for verifier simulation. 
+
+Detailed System Prompt 
+
+You are a helpful multi-turn dialogue assistant capable of leveraging tool calls to solve user tasks. # Steps for Each Turn 1. Think: Recall relevant context and analyze the current user goal. 2. Decide on Tool Usage: If a tool is needed, specify the tool and its parameters. 3. Respond Appropriately: If a response is needed, generate one while maintaining consistency across user queries. # Output Format If you need to call tools, use the following format: 
+
+<think> Your thoughts and reasoning </think> <tool_call> Tool call JSON object(s) </tool_call> 
+
+If you need to respond to the user, use the following format: 
+
+<think> Your thoughts and reasoning </think> Your response to the user. 
+
+# Important Notes 1. You must always include the <think> field to outline your reasoning. Provide either calling tools or responding to the user. The former leads to an interaction with the tool environment, while the latter switches back to the user interface. 2. You may invoke multiple tool calls simultaneously in the <tool_call> field. You will get the tool feedback after calling the tools. You may call tools for multiple turns if needed. 3. Refer to the previous dialogue records in the history, including the user’s queries, previous tool calls, tool feedback, and your responses. 
+
+Figure 6: Detailed system prompt. 15 Table 3: Details of task difficulty. 
+
+Aspect Level Description 
+
+Interaction Turns 0 One or a couple of turns: the task should be resolvable in a short exchange (e.g. 1–2 back-and-forths). 1 A few to several turns: the task should naturally involve some back-and-forth (e.g. clarification, multiple steps, a handful of exchanges). 2 Many turns: the task should require an extended conversation (e.g. multi-step workflow, several clarifications, or many tool uses and replies). System Prompt 0 See Figure 6. 1 See Figure 7. 2 You are a helpful multi-turn dialogue assistant capable of leveraging tool calls to solve user tasks. 3 You are a helpful assistant. User Persona 0 Expert: the user has extensive prior knowledge in the domain. 1 Beginner: the user has some prior knowledge but may need guidance. 2 Novice: the user has no prior knowledge and may need clarification on basics. Query Ambiguity 0 Clear: the first user message should be specific, complete, and unambiguous. 1 Somewhat ambiguous: the first user message may omit some details or be a little vague. 2 Highly ambiguous: the first user message should be vague, incomplete, or missing key information that the agent may need to clarify. Rewarding Criteria 0 Meet the user’s intent: Did the agent fulfill what the user wanted by using the tools? 1 Correctly use the expected tools: Did the agent use the expected tools appro-priately and correctly? 2 Free of hallucination: No invented facts, tool names, or outputs. 3 No redundant or incorrect trials: No unnecessary or wrong tool calls or steps. 4 Concise and efficient: Response and tool use are to-the-point and efficient. 
+
+Concise System Prompt     
+
+> You are a helpful multi-turn dialogue assistant capable of leveraging tool calls to solve user tasks. # Important Notes 1. You must always include the <think> field to outline your reasoning. Provide either calling tools or responding to the user. The former leads to an interaction with the tool environment, while the latter switches back to the user interface. 2. You may invoke multiple tool calls simultaneously in the <tool_call> field. You will get the tool feedback after calling the tools. You may call tools for multiple turns if needed. 3. Refer to the previous dialogue records in the history, including the user’s queries, previous tool calls, tool feedback, and your responses.
+
+Figure 7: Concise system prompt. 16 Table 4: Hyper-parameters for training. 
+
+Hyper-parameter Value 
+
+Learning Rate 1e-6 Total Steps 200 Batch Size (Number of Tasks per Step) 16 Mini Batch Size 4Micro Batch Size 1KL Loss Coefficient 0.001 Clip Ratio 0.2 Temperature 1.0 Group Size 8Maximum Prompt Length 8192 Maximum Response Length 16384 
+
+## D Hyper-parameters 
+
+D.1 Training 
+
+The hyper-parameters for training are listed in Table 4. The batch size is only 16 because a larger batch size requires a higher level of concurrency which may cause the local vLLM server for the simulation LM overloaded. 
+
+D.2 Curriculum 
+
+The step size of difficulty evolution δ is 3. The probability of soft curriculum ϵ is 0.5. The reward thresholds for difficulty update ηlow and ηhigh are 0.0 and 0.5, respectively. The range of the number of tools is 1-10. The range of the expected tool callings is 1-3. The ranges of the expected turns, maximum user turns, maximum tool turns, maximum agent turns are 1-2, 1-3, 1-3, 1-6, respectively. 
+
+## E Details of Baselines 
+
+ToolRL We reproduce ToolRL based on their released scripts 3 (we do not directly run theirs due to model incompatibility) with aligned maximum sequence length. We ran the training for 500 steps with a batch size of 32 to align the overall training time. However, the training process collapsed soon after 400 steps. Therefore, we evaluate the checkpoint of 400 training steps. 
+
+Tool-N1 We reproduce ToolRL based on their released scripts 4 (we do not directly run theirs due to model incompatibility) with aligned maximum sequence length. We run the training for 500 steps with a batch size of 32 to align the overall training time. 
+
+Simia-RL We evaluate their released checkpoint 5 trained using Q WEN 3-8B directly. We do not re-run their training script because Simia-RL is currently limited to a few scopes like τ -bench and requires expensive commercial LM for training. 
+
+EnvScaler We train the LM with the provided scripts 6 and the default hyper-parameters. We focus on the pure RL setting and thus train the model from scratch without SFT, which is in line with TRUSTEE and many other baselines. 
+
+> 3https://github.com/qiancheng0/ToolRL
+> 4https://github.com/NVlabs/Tool-N1
+> 5https://huggingface.co/Simia-Agent/Simia-Tau-SFT-RL-Qwen3-8B
+> 6https://github.com/RUC-NLPIR/EnvScaler
+
+17 AWM We evaluate their released checkpoint 7 trained using Q WEN 3-8B directly because no training script is released. 
+
+> 7https://huggingface.co/Snowflake/Arctic-AWM-8B
+
+18

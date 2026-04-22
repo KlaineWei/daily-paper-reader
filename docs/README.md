@@ -6,148 +6,148 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-21
-- 运行时间：2026-04-21 20:48:28 UTC
+- 最新运行日期：2026-04-22
+- 运行时间：2026-04-22 20:51:10 UTC
 - 运行状态：成功
 - 本次总论文数：42
 - 精读区：31
 - 速读区：11
 
 ### 今日简报（AI）
-今日深挖 42 篇前沿论文，重点聚焦机器人端侧小模型（SLM）在任务规划与代码生成上的突破。
-满分论文 Ro-SLM 证明了轻量化模型在端侧执行复杂指令的卓越性能，同时 HTAA 与 CLAW 在工具调用和全身运动生成上提供了新思路。
-建议关注“端侧智能”与“意图感知建模”的结合，这是实现机器人高效自主作业的关键趋势。
-- 详情：[/202604/21/README](/202604/21/README)
+今日精选 42 篇前沿论文，重点聚焦无人机视觉语言导航与 VLA 模型驱动的强化学习突破。
+研究揭示了 VLA 正则化能显著加速强化学习起步，并为无人机在复杂环境下的多模态协作导航提供了清晰的技术路线。
+建议关注 VLA 模型如何赋能具身智能体，特别是人形机器人多技能持续学习与物理可行性规划的结合。
+- 详情：[/202604/22/README](/202604/22/README)
 
 ### 精读区论文标签
-1. [Ro-SLM: Onboard Small Language Models for Robot Task Planning and Operation Code Generation](/202604/21/2604.10929v1-ro-slm-onboard-small-language-models-for-robot-task-planning-and-operation-code-generation)  
+1. [Vision-and-Language Navigation for UAVs: Progress, Challenges, and a Research Roadmap](/202604/22/2604.13654v1-vision-and-language-navigation-for-uavs-progress-challenges-and-a-research-roadmap)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：用于机器人任务规划和机载部署的小语言模型
-2. [Ro-SLM: Onboard Small Language Models for Robot Task Planning and Operation Code Generation](/202604/21/2604.10929v2-ro-slm-onboard-small-language-models-for-robot-task-planning-and-operation-code-generation)  
+   evidence：无人机长程任务中视觉-语言-动作 (VLA) 模型的综述
+2. [Jump-Start Reinforcement Learning with Vision-Language-Action Regularization](/202604/22/2604.13733v1-jump-start-reinforcement-learning-with-vision-language-action-regularization)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：用于机器人任务规划和机载部署的小语言模型
-3. [DA-PTQ: Drift-Aware Post-Training Quantization for Efficient Vision-Language-Action Models](/202604/21/2604.11572v1-da-ptq-drift-aware-post-training-quantization-for-efficient-vision-language-action-models)  
+   evidence：通过VLA引导的强化学习改善长程机器人操作
+3. [Goal2Skill: Long-Horizon Manipulation with Adaptive Planning and Reflection](/202604/22/2604.13942v1-goal2skill-long-horizon-manipulation-with-adaptive-planning-and-reflection)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：针对资源受限机器人的高效视觉-语言-动作模型
-4. [A hierarchical spatial-aware algorithm with efficient reinforcement learning for human-robot task planning and allocation in production](/202604/21/2604.12669v1-a-hierarchical-spatial-aware-algorithm-with-efficient-reinforcement-learning-for-human-robot-task-planning-and-allocation-in-production)  
+   evidence：将高层规划与底层VLA执行分离的双系统长程操作框架
+4. [HiVLA: A Visual-Grounded-Centric Hierarchical Embodied Manipulation System](/202604/22/2604.14125v1-hivla-a-visual-grounded-centric-hierarchical-embodied-manipulation-system)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：复杂环境下人机协作任务规划的分层强化学习
-5. [Jump-Start Reinforcement Learning with Vision-Language-Action Regularization](/202604/21/2604.13733v1-jump-start-reinforcement-learning-with-vision-language-action-regularization)  
+   evidence：VLA 中解耦高层规划与底层控制的分层框架
+5. [World-Value-Action Model: Implicit Planning for Vision-Language-Action Systems](/202604/22/2604.14732v1-world-value-action-model-implicit-planning-for-vision-language-action-systems)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：通过强化学习引导改进VLA模型在长程任务中的执行
-6. [Goal2Skill: Long-Horizon Manipulation with Adaptive Planning and Reflection](/202604/21/2604.13942v1-goal2skill-long-horizon-manipulation-with-adaptive-planning-and-reflection)  
+   evidence：VLA系统中的长程轨迹隐式规划
+6. [World-Value-Action Model: Implicit Planning for Vision-Language-Action Systems](/202604/22/2604.14732v2-world-value-action-model-implicit-planning-for-vision-language-action-systems)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：基于VLA和自适应规划的长程具身操控
-7. [HiVLA: A Visual-Grounded-Centric Hierarchical Embodied Manipulation System](/202604/21/2604.14125v1-hivla-a-visual-grounded-centric-hierarchical-embodied-manipulation-system)  
+   evidence：VLA系统的隐式规划，用于长程轨迹推理
+7. [Waking Up Blind: Cold-Start Optimization of Supervision-Free Agentic Trajectories for Grounded Visual Perception](/202604/22/2604.17475v1-waking-up-blind-cold-start-optimization-of-supervision-free-agentic-trajectories-for-grounded-visual-perception)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：VLA中解耦语义规划与电机控制的分层框架
-8. [World-Value-Action Model: Implicit Planning for Vision-Language-Action Systems](/202604/21/2604.14732v1-world-value-action-model-implicit-planning-for-vision-language-action-systems)  
+   evidence：针对智能体任务中小型视觉语言模型（SVLM）的冷启动强化学习
+8. [OmniVLA-RL: A Vision-Language-Action Model with Spatial Understanding and Online RL](/202604/22/2604.17706v1-omnivla-rl-a-vision-language-action-model-with-spatial-understanding-and-online-rl)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：VLA系统中长程轨迹的隐式规划
-9. [OmniVLA-RL: A Vision-Language-Action Model with Spatial Understanding and Online RL](/202604/21/2604.17706v1-omnivla-rl-a-vision-language-action-model-with-spatial-understanding-and-online-rl)  
+   evidence：结合在线强化学习和空间推理的VLA模型用于具身智能
+9. [OFlow: Injecting Object-Aware Temporal Flow Matching for Robust Robotic Manipulation](/202604/22/2604.17876v1-oflow-injecting-object-aware-temporal-flow-matching-for-robust-robotic-manipulation)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：结合在线强化学习的具身智能VLA模型
-10. [ReFineVLA: Multimodal Reasoning-Aware Generalist Robotic Policies via Teacher-Guided Fine-Tuning](/202604/21/2604.17800v1-refinevla-multimodal-reasoning-aware-generalist-robotic-policies-via-teacher-guided-fine-tuning)  
+   evidence：在VLA模型中注入物体感知的时序流匹配
+10. [Can Explicit Physical Feasibility Benefit VLA Learning? An Empirical Study](/202604/22/2604.17896v1-can-explicit-physical-feasibility-benefit-vla-learning-an-empirical-study)  
    标签：评分：10.0/10、query:slm-rl
-   evidence：针对长程操作任务微调VLA模型
-11. [Escaping the Context Bottleneck: Active Context Curation for LLM Agents via Reinforcement Learning](/202604/21/2604.11462v1-escaping-the-context-bottleneck-active-context-curation-for-llm-agents-via-reinforcement-learning)  
+   evidence：将物理可行性集成到视觉-语言-动作（VLA）模型中
+11. [HELM: Harness-Enhanced Long-horizon Memory for Vision-Language-Action Manipulation](/202604/22/2604.18791v1-helm-harness-enhanced-long-horizon-memory-for-vision-language-action-manipulation)  
+   标签：评分：10.0/10、query:slm-rl
+   evidence：通过记忆和验证模块改进VLA的长程操作任务
+12. [SpanVLA: Efficient Action Bridging and Learning from Negative-Recovery Samples for Vision-Language-Action Model](/202604/22/2604.19710v1-spanvla-efficient-action-bridging-and-learning-from-negative-recovery-samples-for-vision-language-action-model)  
+   标签：评分：10.0/10、query:slm-rl
+   evidence：针对长尾自动驾驶场景的高效动作规划与 VLA 模型
+13. [VLA Foundry: A Unified Framework for Training Vision-Language-Action Models](/202604/22/2604.19728v1-vla-foundry-a-unified-framework-for-training-vision-language-action-models)  
+   标签：评分：10.0/10、query:slm-rl
+   evidence：统一的视觉-语言-动作（VLA）模型训练框架
+14. [AnchorRefine: Synergy-Manipulation Based on Trajectory Anchor and Residual Refinement for Vision-Language-Action Models](/202604/22/2604.17787v1-anchorrefine-synergy-manipulation-based-on-trajectory-anchor-and-residual-refinement-for-vision-language-action-models)  
+   标签：评分：9.5/10、query:slm-rl
+   evidence：将VLA动作建模分解为轨迹锚点和残差修正的层次化框架
+15. [ST-$π$: Structured SpatioTemporal VLA for Robotic Manipulation](/202604/22/2604.17880v1-st--structured-spatiotemporal-vla-for-robotic-manipulation)  
+   标签：评分：9.5/10、query:slm-rl
+   evidence：用于机器人操控的结构化时空VLA模型
+16. [HazardArena: Evaluating Semantic Safety in Vision-Language-Action Models](/202604/22/2604.12447v1-hazardarena-evaluating-semantic-safety-in-vision-language-action-models)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：通过强化学习训练轻量化策略模型进行长程上下文管理
-12. [StarVLA-$α$: Reducing Complexity in Vision-Language-Action Systems](/202604/21/2604.11757v1-starvla--reducing-complexity-in-vision-language-action-systems)  
+   evidence：评估视觉-语言-动作 (VLA) 模型的语义安全性
+17. [A hierarchical spatial-aware algorithm with efficient reinforcement learning for human-robot task planning and allocation in production](/202604/22/2604.12669v1-a-hierarchical-spatial-aware-algorithm-with-efficient-reinforcement-learning-for-human-robot-task-planning-and-allocation-in-production)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：视觉-语言-动作（VLA）系统中的设计选择与复杂度降低
-13. [Vision-and-Language Navigation for UAVs: Progress, Challenges, and a Research Roadmap](/202604/21/2604.13654v1-vision-and-language-navigation-for-uavs-progress-challenges-and-a-research-roadmap)  
+   evidence：用于人机任务规划与分配的分层强化学习
+18. [Foundation Models in Robotics: A Comprehensive Review of Methods, Models, Datasets, Challenges and Future Research Directions](/202604/22/2604.15395v1-foundation-models-in-robotics-a-comprehensive-review-of-methods-models-datasets-challenges-and-future-research-directions)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：无人机导航中VLA模型与长程任务的综述
-14. [World-Value-Action Model: Implicit Planning for Vision-Language-Action Systems](/202604/21/2604.14732v2-world-value-action-model-implicit-planning-for-vision-language-action-systems)  
+   evidence：机器人领域基础模型长程规划综述
+19. [Long-Term Memory for VLA-based Agents in Open-World Task Execution](/202604/22/2604.15671v1-long-term-memory-for-vla-based-agents-in-open-world-task-execution)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：VLA系统中针对长程轨迹的隐式规划
-15. [Long-Term Memory for VLA-based Agents in Open-World Task Execution](/202604/21/2604.15671v1-long-term-memory-for-vla-based-agents-in-open-world-task-execution)  
+   evidence：用于实验室自动化中分层任务分解和长程推理的VLA模型
+20. [AEGIS: Anchor-Enforced Gradient Isolation for Knowledge-Preserving Vision-Language-Action Fine-Tuning](/202604/22/2604.16067v1-aegis-anchor-enforced-gradient-isolation-for-knowledge-preserving-vision-language-action-fine-tuning)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：VLA智能体的分层任务分解与长程推理
-16. [Semantic Area Graph Reasoning for Multi-Robot Language-Guided Search](/202604/21/2604.16263v1-semantic-area-graph-reasoning-for-multi-robot-language-guided-search)  
+   evidence：用于机器人控制的视觉-语言-动作模型微调与梯度隔离
+21. [FineCog-Nav: Integrating Fine-grained Cognitive Modules for Zero-shot Multimodal UAV Navigation](/202604/22/2604.16298v1-finecog-nav-integrating-fine-grained-cognitive-modules-for-zero-shot-multimodal-uav-navigation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：使用大语言模型进行多机器人语义搜索的分层框架
-17. [ReconVLA: An Uncertainty-Guided and Failure-Aware Vision-Language-Action Framework for Robotic Control](/202604/21/2604.16677v1-reconvla-an-uncertainty-guided-and-failure-aware-vision-language-action-framework-for-robotic-control)  
+   evidence：使用中等规模模型进行长程零样本多模态无人机导航
+22. [ReconVLA: An Uncertainty-Guided and Failure-Aware Vision-Language-Action Framework for Robotic Control](/202604/22/2604.16677v1-reconvla-an-uncertainty-guided-and-failure-aware-vision-language-action-framework-for-robotic-control)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于机器人控制的不确定性引导VLA框架
-18. [Small Model as Master Orchestrator: Learning Unified Agent-Tool Orchestration with Parallel Subtask Decomposition](/202604/21/2604.17009v1-small-model-as-master-orchestrator-learning-unified-agent-tool-orchestration-with-parallel-subtask-decomposition)  
+   evidence：用于机器人控制的不确定性引导和故障感知的VLA框架
+23. [Chain Of Interaction Benchmark (COIN): When Reasoning meets Embodied Interaction](/202604/22/2604.16886v1-chain-of-interaction-benchmark-coin-when-reasoning-meets-embodied-interaction)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：用于子任务分解和规划的轻量级编排器
-19. [GaLa: Hypergraph-Guided Visual Language Models for Procedural Planning](/202604/21/2604.17241v1-gala-hypergraph-guided-visual-language-models-for-procedural-planning)  
+   evidence：具身智能体交互推理与长程任务的基准测试
+24. [GaLa: Hypergraph-Guided Visual Language Models for Procedural Planning](/202604/22/2604.17241v1-gala-hypergraph-guided-visual-language-models-for-procedural-planning)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：具身智能中用于多模态过程规划的视觉语言框架
-20. [Think before Go: Hierarchical Reasoning for Image-goal Navigation](/202604/21/2604.17407v1-think-before-go-hierarchical-reasoning-for-image-goal-navigation)  
+   evidence：超图引导的视觉语言模型用于具身智能体程序化规划
+25. [Think before Go: Hierarchical Reasoning for Image-goal Navigation](/202604/22/2604.17407v1-think-before-go-hierarchical-reasoning-for-image-goal-navigation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：视觉语言导航的分层推理
-21. [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](/202604/21/2604.17473v1-dual-anchoring-addressing-state-drift-in-vision-language-navigation)  
+   evidence：将导航任务分解为高层规划和底层执行的分层推理
+26. [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](/202604/22/2604.17473v1-dual-anchoring-addressing-state-drift-in-vision-language-navigation)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：针对Video-LLM在长程视觉语言导航中的状态漂移问题进行优化
-22. [Waking Up Blind: Cold-Start Optimization of Supervision-Free Agentic Trajectories for Grounded Visual Perception](/202604/21/2604.17475v1-waking-up-blind-cold-start-optimization-of-supervision-free-agentic-trajectories-for-grounded-visual-perception)  
+   evidence：解决长程视觉语言导航中的状态漂移问题
+27. [ReFineVLA: Multimodal Reasoning-Aware Generalist Robotic Policies via Teacher-Guided Fine-Tuning](/202604/22/2604.17800v1-refinevla-multimodal-reasoning-aware-generalist-robotic-policies-via-teacher-guided-fine-tuning)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：小视觉语言模型的冷启动强化学习
-23. [Tool Learning Needs Nothing More Than a Free 8B Language Model](/202604/21/2604.17739v1-tool-learning-needs-nothing-more-than-a-free-8b-language-model)  
+   evidence：针对复杂的长程操作任务微调VLA模型
+28. [SYMBOLIZER: Symbolic Model-free Task Planning with VLMs](/202604/22/2604.17830v1-symbolizer-symbolic-model-free-task-planning-with-vlms)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：使用8B小规模语言模型和强化学习训练工具调用智能体
-24. [AnchorRefine: Synergy-Manipulation Based on Trajectory Anchor and Residual Refinement for Vision-Language-Action Models](/202604/21/2604.17787v1-anchorrefine-synergy-manipulation-based-on-trajectory-anchor-and-residual-refinement-for-vision-language-action-models)  
+   evidence：将VLM与经典规划结合用于长程推理
+29. [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](/202604/22/2604.18000v1-unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：VLA动作建模与轨迹规划的分层框架
-25. [SYMBOLIZER: Symbolic Model-free Task Planning with VLMs](/202604/21/2604.17830v1-symbolizer-symbolic-model-free-task-planning-with-vlms)  
+   evidence：测试VLA模型真实具身推理能力的诊断性基准
+30. [Test-Time Perturbation Learning with Delayed Feedback for Vision-Language-Action Models](/202604/22/2604.18107v1-test-time-perturbation-learning-with-delayed-feedback-for-vision-language-action-models)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：将视觉语言模型（VLM）与经典规划结合，用于长程任务和运动规划
-26. [OFlow: Injecting Object-Aware Temporal Flow Matching for Robust Robotic Manipulation](/202604/21/2604.17876v1-oflow-injecting-object-aware-temporal-flow-matching-for-robust-robotic-manipulation)  
+   evidence：通过延迟反馈对视觉-语言-动作模型进行测试时自适应
+31. [Learning from Less: Measuring the Effectiveness of RLVR in Low Data and Compute Regimes](/202604/22/2604.18381v1-learning-from-less-measuring-the-effectiveness-of-rlvr-in-low-data-and-compute-regimes)  
    标签：评分：9.0/10、query:slm-rl
-   evidence：VLA模型中的物体感知时间流匹配
-27. [ST-$π$: Structured SpatioTemporal VLA for Robotic Manipulation](/202604/21/2604.17880v1-st--structured-spatiotemporal-vla-for-robotic-manipulation)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：用于机器人操作的结构化时空VLA模型
-28. [Can Explicit Physical Feasibility Benefit VLA Learning? An Empirical Study](/202604/21/2604.17896v1-can-explicit-physical-feasibility-benefit-vla-learning-an-empirical-study)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：将物理可行性监督集成到VLA策略训练中
-29. [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](/202604/21/2604.18000v1-unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：视觉-语言-动作（VLA）模型具身推理能力的诊断基准
-30. [DAG-STL: A Hierarchical Framework for Zero-Shot Trajectory Planning under Signal Temporal Logic Specifications](/202604/21/2604.18343v1-dag-stl-a-hierarchical-framework-for-zero-shot-trajectory-planning-under-signal-temporal-logic-specifications)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：长程轨迹规划的分层框架
-31. [XEmbodied: A Foundation Model with Enhanced Geometric and Physical Cues for Large-Scale Embodied Environments](/202604/21/2604.18484v1-xembodied-a-foundation-model-with-enhanced-geometric-and-physical-cues-for-large-scale-embodied-environments)  
-   标签：评分：9.0/10、query:slm-rl
-   evidence：具有3D几何感知能力的视觉-语言-动作（VLA）模型，用于具身智能环境
+   evidence：针对小参数语言模型（SLM）推理任务的强化学习
 
 ### 速读区论文标签
-1. [HTAA: Enhancing LLM Planning via Hybrid Toolset Agentization & Adaptation](/202604/21/2604.10917v1-htaa-enhancing-llm-planning-via-hybrid-toolset-agentization--adaptation)  
+1. [Tree Learning: A Multi-Skill Continual Learning Framework for Humanoid Robots](/202604/22/2604.12909v1-tree-learning-a-multi-skill-continual-learning-framework-for-humanoid-robots)  
+   标签：评分：8.5/10、query:slm-rl
+   evidence：人形机器人技能的层次化参数继承机制
+2. [From Kinematics to Dynamics: Learning to Refine Hybrid Plans for Physically Feasible Execution](/202604/22/2604.12474v1-from-kinematics-to-dynamics-learning-to-refine-hybrid-plans-for-physically-feasible-execution)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：LLM可扩展工具使用规划的分层框架
-2. [AIM: Intent-Aware Unified world action Modeling with Spatial Value Maps](/202604/21/2604.11135v1-aim-intent-aware-unified-world-action-modeling-with-spatial-value-maps)  
+   evidence：学习优化混合规划以实现物理可行的机器人执行
+3. [DeCoNav: Dialog enhanced Long-Horizon Collaborative Vision-Language Navigation](/202604/22/2604.12486v1-deconav-dialog-enhanced-long-horizon-collaborative-vision-language-navigation)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：用于机器人控制的统一世界动作模型
-3. [CLAW: Composable Language-Annotated Whole-body Motion Generation](/202604/21/2604.11251v1-claw-composable-language-annotated-whole-body-motion-generation)  
+   evidence：多机器人系统的长程协作视觉语言导航
+4. [A hierarchical spatial-aware algorithm with efficient reinforcement learning for human-robot task planning and allocation in production](/202604/22/2604.12669v2-a-hierarchical-spatial-aware-algorithm-with-efficient-reinforcement-learning-for-human-robot-task-planning-and-allocation-in-production)  
    标签：评分：8.0/10、query:slm-rl
-   evidence：人形机器人控制的语言标注动作生成
-4. [CLAW: Composable Language-Annotated Whole-body Motion Generation](/202604/21/2604.11251v2-claw-composable-language-annotated-whole-body-motion-generation)  
-   标签：评分：8.0/10、query:slm-rl
-   evidence：人形机器人的语言条件全身控制器和运动生成
-5. [RTMC: Step-Level Credit Assignment via Rollout Trees](/202604/21/2604.11037v1-rtmc-step-level-credit-assignment-via-rollout-trees)  
+   evidence：用于制造业人机任务规划的分层强化学习
+5. [UniDoc-RL: Coarse-to-Fine Visual RAG with Hierarchical Actions and Dense Rewards](/202604/22/2604.14967v2-unidoc-rl-coarse-to-fine-visual-rag-with-hierarchical-actions-and-dense-rewards)  
+   标签：评分：7.5/10、query:slm-rl
+   evidence：视觉RAG强化学习中的层次化动作空间
+6. [Ternary Logic Encodings of Temporal Behavior Trees with Application to Control Synthesis](/202604/22/2604.12092v1-ternary-logic-encodings-of-temporal-behavior-trees-with-application-to-control-synthesis)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：多步智能体强化学习的步级信用分配
-6. [Learning to Forget -- Hierarchical Episodic Memory for Lifelong Robot Deployment](/202604/21/2604.11306v1-learning-to-forget----hierarchical-episodic-memory-for-lifelong-robot-deployment)  
+   evidence：使用行为树为自主系统构建长程规划
+7. [Long-Horizon Plan Execution in Large Tool Spaces through Entropy-Guided Branching](/202604/22/2604.12126v1-long-horizon-plan-execution-in-large-tool-spaces-through-entropy-guided-branching)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：用于机器人终身部署的分层情节记忆
-7. [Low-rank Optimization Trajectories Modeling for LLM RLVR Acceleration](/202604/21/2604.11446v1-low-rank-optimization-trajectories-modeling-for-llm-rlvr-acceleration)  
+   evidence：工具增强智能体中的长程规划与多步任务执行
+8. [GAM: Hierarchical Graph-based Agentic Memory for LLM Agents](/202604/22/2604.12285v1-gam-hierarchical-graph-based-agentic-memory-for-llm-agents)  
    标签：评分：7.0/10、query:slm-rl
-   evidence：大语言模型强化学习的参数高效训练与加速
-8. [Policy Split: Incentivizing Dual-Mode Exploration in LLM Reinforcement with Dual-Mode Entropy Regularization](/202604/21/2604.11510v1-policy-split-incentivizing-dual-mode-exploration-in-llm-reinforcement-with-dual-mode-entropy-regularization)  
-   标签：评分：7.0/10、query:slm-rl
-   evidence：大语言模型强化学习中的双模式探索
-9. [The Past Is Not Past: Memory-Enhanced Dynamic Reward Shaping](/202604/21/2604.11297v1-the-past-is-not-past-memory-enhanced-dynamic-reward-shaping)  
+   evidence：LLM智能体长程交互的层级化记忆框架
+9. [Soft $Q(λ)$: A multi-step off-policy method for entropy regularised reinforcement learning using eligibility traces](/202604/22/2604.13780v1-soft-q-a-multi-step-off-policy-method-for-entropy-regularised-reinforcement-learning-using-eligibility-traces)  
+   标签：评分：6.5/10、query:slm-rl
+   evidence：用于信用分配的多步离线强化学习方法
+10. [KnowRL: Boosting LLM Reasoning via Reinforcement Learning with Minimal-Sufficient Knowledge Guidance](/202604/22/2604.12627v1-knowrl-boosting-llm-reasoning-via-reinforcement-learning-with-minimal-sufficient-knowledge-guidance)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：大模型强化学习中的记忆增强奖励塑造
-10. [Relax: An Asynchronous Reinforcement Learning Engine for Omni-Modal Post-Training at Scale](/202604/21/2604.11554v1-relax-an-asynchronous-reinforcement-learning-engine-for-omni-modal-post-training-at-scale)  
+   evidence：通过知识引导的强化学习提升 LLM 推理能力
+11. [Contextual Multi-Task Reinforcement Learning for Autonomous Reef Monitoring](/202604/22/2604.12645v1-contextual-multi-task-reinforcement-learning-for-autonomous-reef-monitoring)  
    标签：评分：6.0/10、query:slm-rl
-   evidence：用于全模态后训练和智能体工作流的强化学习引擎
-11. [Utilizing and Calibrating Hindsight Process Rewards via Reinforcement with Mutual Information Self-Evaluation](/202604/21/2604.11611v1-utilizing-and-calibrating-hindsight-process-rewards-via-reinforcement-with-mutual-information-self-evaluation)  
-   标签：评分：6.0/10、query:slm-rl
-   evidence：针对稀疏奖励任务的自评估强化学习
+   evidence：不确定环境下自主航行器的强化学习控制
 
 
 <div class="dpr-home-promo-card">

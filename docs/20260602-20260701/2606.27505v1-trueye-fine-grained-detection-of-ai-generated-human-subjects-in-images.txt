@@ -1,0 +1,267 @@
+Title: TruEye: Fine-Grained Detection of AI-Generated Human Subjects in Images
+
+URL Source: https://arxiv.org/pdf/2606.27505v1
+
+Published Time: Mon, 29 Jun 2026 00:09:51 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# TruEye: Fine-Grained Detection of AI-Generated Human Subjects in Images 
+
+Jay Barot 1 and Dan Lin 1
+
+Vanderbilt University, Nashville TN, USA 
+
+jay.d.barot@vanderbilt.edu, dan.lin@vanderbilt.edu 
+
+Abstract. AI generated images are proliferating across the Internet. While some are used for entertainment, others are weaponized for fraud and social engineering attacks on social media users. Existing detectors overfit to generators seen during training, treat detection as opaque bi-nary classification, or rely on costly Large Language Models (LLMs) to explain their outputs. In this paper, we present TruEye, a novel model for fine grained detection and localization of AI manipulated or AI gen-erated humans and scenes. Unlike conventional detectors that assign a single authenticity label, TruEye is the first to distinguish among five compositional categories of synthetic content, including the most chal-lenging case in which a real human is composited into a real scene where they were never physically present. At its core is a mask conditioned dual stream transformer that separates human and scene tokens while preserv-ing patch level spatial correspondence. Specialized reasoning within each stream and region gated cross attention enforce semantic coherence be-tween subject and background, while token level supervision and global compositional classification yield robust, interpretable predictions with-out invoking an LLM. By restricting intra stream attention to seman-tically coherent tokens, TruEye also runs over 100 × faster than LLM based competitors. Experiments on 6 datasets and our newly curated FineSyn dataset, show that TruEye surpasses state of the art detectors with higher accuracy, faster inference, and stronger generalization to un-seen AI generated or manipulated images. 
+
+Keywords: Detect AI-generated Images · Dual-stream Architecture ·
+
+Fine-grained analysis 
+
+## 1 Introduction 
+
+AI-generated images, widely known as deepfakes, are flooding the Internet and have become nearly indistinguishable from authentic photos to the human eye [9,42]. While some are produced for entertainment, others are weaponized for fraud and social engineering at unprecedented scale. “Pig-butchering” scams [27,38], for in-stance, now leverage generative AI to fabricate convincing humans and scenes that deceive social media users into transferring funds to attackers. Defending platforms and end users against such attacks requires detectors that satisfy three simultaneous requirements: (i) generalization to images produced by generative  
+
+> arXiv:2606.27505v1 [cs.CV] 25 Jun 2026 2J. Barot and D. Lin
+
+models unseen during training, (ii) inference efficiency sufficient for deployment at platform scale, and (iii) interpretability , so that moderators and victims can understand and act on a verdict rather than blindly trust a binary label. Existing detectors fall short on all three fronts. Studies have shown that the accuracy of state-of-the-art detectors degrades sharply when evaluated on im-ages from generative models unseen during training [1]. Most earlier detectors also treat the task as binary classification, i.e., “real” versus “synthetic”, which offers no insight into what was manipulated or where . Recent detectors, including APSC-net [31], SIDA [12], and LEGION [14], have begun to provide localiza-tion of manipulated regions: some emit pixel-level masks, while others delegate explanation to a Large Language Model (LLM). However, these methods still fail to generalize to unseen or perturbed images, and LLM-driven explanations incur substantial inference latency and compute cost that are prohibitive for content-moderation pipelines processing millions of uploads per day. To address these limitations, we introduce TruEye , a novel detector for fine-grained detection and localization of AI-generated or AI-manipulated humans and scenes. Unlike prior work, TruEye is designed from the ground up around three principles that map directly onto the requirements above. To the best of our knowledge, TruEye is the first detector that distinguishes among five compositional categories of synthetic content: (a) synthetic human on synthetic scene (SHSS); (b) synthetic human on real scene (SHRS); (c) real human on synthetic scene (RHSS); (d) real human integrated into real scene (RHRS); and (e) synthetic scene (SS). Figure 1 illustrates how TruEye identi-fies and classifies manipulated regions. The RHRS category is particularly novel and security-relevant: an authentic human is composited into an authentic scene where they were never physically present. For example, a politician inserted into a protest. Although both the subject and the background are individually real, their co-occurrence is fabricated, making the image manipulative even though no pixel is itself “synthetic.” Rather than offloading explanation to an LLM, TruEye produces directly interpretable output: manipulated regions are high-lighted through patch-level predictions, and each detection is annotated with a fine-grained category label (e.g., SHRS, RHSS) that conveys the nature of the manipulation. This matches the interpretability goals of LLM-based approaches without paying their inference cost. Naively retrofitting existing detectors with a multi-head classifier does not yield satisfactory fine-grained accuracy, for two reasons. First, most state-of-the-art detectors are architected for binary detection; their feature extractors encode global statistical artifacts rather than the localized semantic inconsis-tencies needed to discriminate among categories [36,29]. Second, many existing models implicitly assume that forged regions occupy a substantial fraction of the input image, and consequently perform poorly on RHRS-style manipula-tions, where the inconsistency is confined to a thin boundary between human and scene [13,40]. Even recent localization-aware detectors such as SIDA [12] struggle in this regime. TruEye: Detecting AI-Generated Human Subjects 3 
+
+> Fig. 1. Samples from the FineSyn Dataset and TruEye detection results (labeled).
+
+TruEye’s key innovation is a mask-conditioned dual-stream transformer that decomposes each image into human tokens and scene tokens while preserving patch-level spatial correspondence. Each stream performs domain-specific rea-soning, fortified by a magnification module that amplifies subtle artifacts, while a region-gated cross-attention mechanism regulates inter-stream interactions to enforce semantic coherence between subject and background. Token-level super-vision aligns every patch’s authenticity prediction with its semantic ownership, and a global classification objective enforces compositional consistency across the image. The underlying design philosophy is divide and conquer : by decomposing the detection task into specialized subtasks (human–scene separation, human structural analysis, and scene structural analysis), each module concentrates on one objective and specializes in it. This modular design improves learning efficiency, generalizes robustly to unseen generators, and supports localization natively as the final prediction is obtained simply by aggregating patch-level outputs. Beyond accuracy, the dual-stream design substantially reduces inference cost. Rather than allowing every patch to attend to every other patch, human tokens attend only to human tokens and scene tokens attend only to scene tokens, with a single lightweight cross-attention step handling global aggregation. The result is a detector that runs over 100 × faster than LLM-based competitors while delivering comparable or richer interpretability. This makes TruEye practical for real-world deployment in content-moderation pipelines, where per-image latency and compute budget are hard constraints. In summary, this paper makes the following contributions: 
+
+– A fine-grained, interpretable detector without LLMs. We introduce TruEye, the first detector that distinguishes among five compositional cate-gories of synthetic content (SHSS, SHRS, RHSS, RHRS, SS) and produces both localization maps and human-readable category labels without invok-4 J. Barot and D. Lin 
+
+ing a Large Language Model. This delivers the interpretability of LLM-based pipelines at a fraction of the cost. 
+
+– A novel mask-conditioned dual-stream architecture. TruEye’s dual-stream transformer, equipped with feature magnification modules and region-gated bi-directional cross-attention, embodies a divide-and-conquer design that specializes one stream for humans and one for scenes. This architecture not only achieves strong fine-grained accuracy—including on the challenging RHRS category—but also restricts intra-stream attention to semantically co-herent tokens, yielding over 100 × faster inference than LLM-based detectors. 
+
+– Extensive evaluation demonstrating generalization and speed. We compare TruEye against six representative detectors spanning diverse ar-chitectural designs, including the 2025 state-of-the-art systems SIDA [12] and LEGION [14]. Evaluations span eight datasets, including OpenForen-sics [22], which was not used to train any of the evaluated models, providing a stringent test of cross-domain generalization. TruEye exhibits substantially stronger generalization while running significantly faster than all baselines. 
+
+– The FineSyn dataset. We curate and release FineSyn, a large labeled dataset of AI-generated images spanning the five fine-grained categories de-fined above. FineSyn enables the training of TruEye and is intended to sup-port future research on fine-grained synthetic-image analysis and the inter-pretability of detection results. The remainder of the paper is organized as follows. Section 2 reviews deepfake detection techniques. Section 3 presents our proposed TruEye detector. Section 4 reports experimental results. Finally, Section 5 concludes the paper. 
+
+## 2 Related Work 
+
+As aforementioned, most existing deepfake detectors perform binary classifi-cation, labeling an image as either real or fake. A variety of backbone archi-tectures have been explored, including Inception-style networks, Convolutional Neural Networks (CNNs), ResNets, Vision Transformers ViTs and Large Lan-guage Models (LLMs) [21,7,12,14]. In the following, we review these methods in chronological order, along with their underlying architectures. One of the earliest detectors is XceptionNet [33] which employs an Inception-based architecture with depthwise separable convolutions to extract hierarchical texture cues and leverages ImageNet pre-training for strong cross-dataset gen-eralization. However, its reliance on global texture patterns makes it sensitive to compression and post-processing noise. The Adobe detector [36], built on a ResNet50 backbone, identifies convolutional artifacts left by early Generative Adversarial Networks (GANs) through residual feature maps. Although it can detect most synthetic images generated by CNN-based generators, it transfers poorly to images created by diffusion and transformer models. To enhance generalization across unseen generators, recent approaches incor-porate transformer-based attention to capture long-range dependencies [21,7]. TruEye: Detecting AI-Generated Human Subjects 5
+
+For instance, FatFormer [26] introduces adaptive adapters that modulate atten-tion heads using forgery priors to enable the model to adjust its receptive field to diverse artifacts. FakeFormer [28] uses vulnerability-guided attention maps that focus on regions prone to manipulation, which enhances robustness under domain shifts. Frequency-based detectors further expose imperceptible inconsistencies. FreqFaceNet [11] combines spatial convolution and discrete cosine transform en-codings to emphasize high-frequency discrepancies, while frequency-enhanced transformers [34,35,25] integrate spectral residual cues or frequency-guided po-sitional embeddings to capture subtle generator-specific noise. Hybrid architec-tures like HTN [20] merge convolutional backbones with transformer modules to leverage both local structures and global semantics, and multi-attention models such as MADF [41] deploy region-specific attention heads to highlight local-ized inconsistencies in facial areas such as eyes, mouth, and hair. Despite these advances, extending binary detectors to fine-grained multi-class classification remains non-trivial as discussed in the introduction. This is because when mod-els are optimized for binary separability in feature space, learned embeddings collapse multiple manipulation modes into a single “synthetic” representation, which results in poor inter-class discrimination when applied to more nuanced categories as defined in this work. Recent works have also explored richer manipulation understanding beyond binary classification. MIML/APSC-Net [31] adopts a multi-instance multi-label framework to jointly predict multiple manipulation attributes, enabling more detailed semantic reasoning. GIMFormer [5] employs transformer-based repre-sentations to model manipulation presence, category, and affected regions in a unified framework. Most recently, OpenSDI/MaskCLIP [37] leverages CLIP-based vision–language representations with mask-guided supervision to improve both synthetic image detection and artifact localization. While these methods move beyond conventional binary detection, they do not explicitly address the fine-grained semantic categories considered in our work. Closely related to our proposed fine-grained detection, several localization-oriented forensic models attempt to identify manipulated regions at the pixel or patch level. ManTra-Net [39] formulates detection as dense anomaly estima-tion by employing encoder–decoder architectures to highlight local inconsisten-cies between predicted and reconstructed patches. Face X-ray [23] focuses on facial composites by detecting blending boundaries via gradient-domain analy-sis, effectively capturing transitions between real and synthetic facial regions. MVSS-Net [4] introduces multi-scale feature extraction and boundary supervi-sion to better detect splicing, copy-move, and removal artifacts by enforcing edge-level consistency constraints. TruFor [10] fuses RGB and noise fingerprints using a transformer-based multimodal fusion module. The most recent LLM-based detector, SIDA [12], introduces a multimodal framework that jointly leverages visual and textual representations for spatially grounded forgery de-tection. It employs cross-modal attention to correlate localized regions with language-based cues and integrates pixel-level segmentation heads for artifact localization [43]. Similarly, LEGION [14] proposes a multimodal large language 6 J. Barot and D. Lin 
+
+model based framework that performs forgery detection, artifact localization, and textual explanation. It uses both visual and textual information to produce segmentation masks together with artifact descriptions. It explores using artifact explanations as feedback to guide synthetic image refinement and regeneration. However, none of these localization methods provide fine-grained semantic rea-soning like our proposed TruEye, which explicitly distinguishes whether the syn-thetic component involves the human, the scene, or both. In our experiments, we systematically compare our approach with these methods and demonstrate that our model achieves superior detection accuracy and stronger generalizability. 
+
+## 3 The Proposed TruEye Detector 
+
+In this section, we present TruEye , a novel fine-grained detector for identifying AI-generated human subjects and scenes in images. 
+
+3.1 Architecture Overview 
+
+TruEye has a unique mask-conditioned dual-stream architecture built upon trans-former blocks. Figure 2 illustrates the overall architecture of TruEye which con-sists of four main components: (i) mask generator; (ii) dual-stream classifiers; (iii) feature magnifier; and (iv) global cross attention layer. Given an input image  x ∈ R3×H×W , TruEye will output a prediction label in one of the following six categories: (a) synthetic human on synthetic scene (SHSS); (b) synthetic human on real scene (SHRS); (c) real human on synthetic scene (RHSS); (d) real human integrated into real scene (RHRS); (e) synthetic scene (SS); and (f) fully real image (R). Specifically, an image will be processed as follows. 
+
+Input Embedding. We first divide the input image x into non-overlapping 
+
+P × P patches. Each patch is linearly projected into a D-dimensional embedding space using a convolutional layer with kernel size P and stride P , which serves as the patch embedding layer. In our experiments, images are partitioned into 16 ×
+
+16 patches, yielding N = 196 patch tokens. A learnable global classification token [CLS] is prepended to the sequence of patch embeddings. Positional encodings are added element-wise to token embeddings and have the same dimensionality 
+
+D as the token representations. The resulting input sequence x0 is defined as: 
+
+x0 = [ c; t] + p, (1) where c ∈ RD denotes the [CLS] token, t ∈ RN ×D represents the sequence of patch embeddings, and p ∈ R(N +1) ×D is the positional encoding. 
+
+Mask Generator. The TruEye’s mask generator predicts a binary mask m
+
+for each image token representation (excluding the [CLS] token), where m = 1 indicates that more than 50% of the corresponding image patch contains human-related content, and m = 0 indicates that the patch is predominantly scene TruEye: Detecting AI-Generated Human Subjects 7 
+
+> Fig. 2. An Overview of TruEye Architecture. (The depicted input image, predicted au-thenticity map, and patch numbering are included solely for demonstration purposes.)
+
+content. The mask generator is implemented as one transformer layer. The de-sign of this component serves two main purposes. First, it decomposes the ar-tificial artifact detection task into smaller subtasks, enabling the subsequent dual-stream classifier to focus on specific content types, either human or scene. Second, the mask generator allows the model to handle information regarding arbitrary human-to-scene ratios without modifying the overall token structure as described below. 
+
+Dual-Stream Classifier. After mask generation, image tokens are fed into a dual-stream classifier composed of two parallel branches, namely the human stream and the scene stream. Each stream contains 12 stacked layers, where each layer consists of a Transformer block followed by a Feature Magnification Module (FMM). To preserve compatibility with pretrained ViT weights, both streams operate on the full set of image tokens instead of removing tokens associated with the complementary region. Region-specific feature refinement is controlled via masking, such that in the human stream only human-region tokens are ac-tive, whereas in the scene stream only scene-region tokens are active. Specifi-cally, to ensure that active tokens are refined exclusively through intra-region interactions and that inactive tokens neither influence nor are influenced by the refinement process, attention logits are modified prior to softmax by adding a masking matrix M such that attention is permitted only between active tokens, while all interactions involving inactive tokens are suppressed. To further prevent unintended updates, we apply a region-gated residual mechanism. Specifically, residual updates from both the self-attention and MLP sublayers are applied only to active tokens, while inactive tokens bypass these updates and remain unchanged. This design maintains architectural compatibility with pretrained ViT blocks, preserves fixed tensor dimensions for efficient batching, and enforces strict region-specific feature learning without cross-region interference. 
+
+Feature Magnification Module (FMM). The Feature Magnification Mod-ule is a two-layer fully connected bottleneck after each transformer block. It first projects the output from the Transformer block from 768 dimensions to 8 J. Barot and D. Lin 
+
+48 dimensions and then expands back to 768, enforcing a compressed interme-diate representation that promotes informative feature learning. The resulting representation is converted into channel-wise scaling factors, namely excitation factors, constrained to [0 .5, 1.5]. Each channel of the original token feature is then multiplied by its corresponding excitation factor to amplify important channels (scale > 1) and suppressing less informative ones (scale < 1). In this way, FMM magnifies discriminative cues within human or scene tokens, which in turn im-proves sensitivity to localized inconsistencies. Formally, the output from FMM is represented as follows: 
+
+x ← (0 .5 + σ(g(x))) ⊙ x,  (2) where g(x) is the output from the two-layer bottleneck, σ(·) is the sigmoid func-tion and ⊙ denotes channel-wise multiplication. 
+
+Bidirectional Cross-Attention on [CLS] Tokens. After the 12 stacked Transformer + FMM blocks, we introduce a cross-attention mechanism between the [CLS] tokens of the two streams. Since each [CLS] token aggregates contex-tual information over all regions within its respective stream, this cross-attention operation enables the model to assess global image consistency. Specifically, the [CLS] token from the human stream attends to all image tokens in the scene stream, while the [CLS] token from the scene stream attends to all image tokens in the human stream, as formulated below: 
+
+h0 ← h0 + ϕ(h0, s, k (s)), s0 ← s0 + ϕ(s0, h, k (h)) (3) where  h0 and  s0 denote the [CLS] tokens of the human and scene streams, respec-tively, and  ϕ is a masked cross-attention operator. This lightweight interaction encourages mutual alignment without incurring full inter-token computation. This design is also critical for distinguishing the most challenging category “Real Human Real Scene” from fully real images. Patch-level predictions alone cannot differentiate the two as all patches would be classified as real in both cases. 
+
+Final Output. After cross-attention, the two updated [CLS] tokens are fused into a single global token. We retain the human tokens from the human stream and the scene tokens from the scene stream, yielding 197 tokens in total (one global token and 196 patch tokens). A shared linear layer is applied to each token to produce an authenticity logit, which is converted to a probability via a sigmoid function. Probabilities closer to 1 indicate the “synthetic” class, while those closer to 0 indicate “real”. 
+
+Inference. During inference, a binary decision is made by thresholding the output probability at 0.5. If at least one human token is classified as “synthetic”, the image is labeled as Synthetic Human (SH). Similarly, if at least one scene token is classified as “synthetic”, the image is labeled as Synthetic Scene (SS). The [CLS] token is used to distinguish “Real Human Real Scene” category from fully real images. An image is predicted as “real” only when the [CLS] token is TruEye: Detecting AI-Generated Human Subjects 9
+
+classified as real and no human or scene token is predicted as synthetic. Finally, localization is naturally derived from the patch-level prediction results, which indicate which regions of the image are synthetic. 
+
+3.2 Two-Stage Training 
+
+TruEye is optimized in two stages to stabilize learning and encourage hierar-chical supervision. During training, we initialize the model with pretrained ViT weights, set the initial learning rate to 3 × 10 −4, and use the AdamW optimizer with a mini-batch size of 32. The model is trained for 138 epochs with early stopping applied to prevent overfitting. 
+
+Stage I: Mask Pretraining. We first train the mask generator independently using patch-level binary supervision: 
+
+Lmsk = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+BCE ϵ
+
+ σ(mi), y (msk) 
+
+> i
+
+, (4) where mi denotes the predicted logit for the i-th patch, σ(·) is the sigmoid function, y(msk)  
+
+> i
+
+∈ { 0, 1} is the ground-truth binary mask label, and N is the number of patches. BCE ϵ denotes numerically stable binary cross-entropy. This stage provides strong localized supervision. Empirically, this initializa-tion improves optimization stability and prevents the global objective from dom-inating early training. 
+
+Stage II: End-to-End Optimization. We then fine-tune the entire TruEye framework end-to-end using a multi-level objective: 
+
+L = Lmsk + Ltok (wpos ) + λcls Lcls , λcls = 0 .6, (5) where λcls balances global and local supervision. The token-level loss is de-fined as 
+
+Ltok = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+BCE ϵ
+
+ σ(zi), y (tok)  
+
+> i
+
+; wpos 
+
+, (6) where zi denotes the token-level logit and ϵ is the label smoothing parameter. We set ϵ = 0 .02 to mitigate overconfidence and improve generalization. Also, to address potential class imbalance, we apply a dynamic positive weighting wpos 
+
+in the token-level loss Ltok 
+
+wpos = clip 
+
+ Nneg 
+
+Npos 
+
+, 0.5, 2.0
+
+
+
+, (7) where Npos and Nneg denote the numbers of synthetic and real tokens in the batch, respectively. This weighting increases the penalty for misclassifying syn-thetic tokens. When a batch contains few synthetic tokens, their loss is up-weighted to prevent the model from minimizing loss by predicting the majority 10 J. Barot and D. Lin 
+
+class (real). This keeps gradient contributions balanced across categories. The weight is clipped to ensure stable updates. Finally, the global token loss is 
+
+Lcls = BCE  σ(z0), y cls 
+
+, ycls ∈ { 0, 1}, (8) where z0 is the fused [CLS] logit and ycls indicates whether the image is syn-thetic. The global supervision encourages the [CLS] embedding to capture high-level semantic consistency and cross-region dependencies that may not be fully represented by patch-level gradients. 
+
+3.3 FineSyn Dataset 
+
+To enable systematic study of cross-domain authenticity cues between real and synthetic human–scene compositions, we created FineSyn , a curated dataset for fine-grained compositional analysis. To the best of our knowledge, FineSyn is the first dataset that explicitly covers all combinations of real and synthetic hu-mans and scenes. Each synthetic image was generated under manual supervision to ensure visual and semantic consistency. FineSyn focuses on human-centric imagery and spans diverse subjects, environments, and lighting conditions. We used an 80–20 split for training and evaluation. We structured FineSyn into six fine-grained categories as described in Section 3.1. We generated 5,000 images for each synthetic composition type and curated 10,000 diverse real human-centric images to strengthen authenticity priors and help the model learn clear distinctions between real and synthetic content. In total, FineSyn contains 35,000 images that comprehensively represent the full spectrum of human–scene compositions. Figure 1 illustrates representative sam-ples from categories involving human subjects and TruEye’s detection results. Synthetic-human regions are highlighted in red, and synthetic-scene regions are highlighted in yellow. For samples belonging to the real-human–real-scene cate-gory, TruEye produces no regional highlights and instead outputs the category label RHRS. We built the FineSyn dataset using a structured multi-stage pipeline that combines diffusion and GAN-based synthesis [32,18], segmentation, manual com-position, and harmonization. For diffusion-based generation, we used Stable Dif-fusion [32] with complementary levels of prompt diversity control: a scene-level framework varying location type, lighting, camera viewpoint, and weather, and a human-level framework adjusting age, clothing, pose, ethnicity, and other visual attributes. For GAN-based synthesis, we adopted multiple pretrained models, including GauGAN, StarGAN, CycleGAN, BigGAN, StyleGAN, ProGAN, and StyleGAN2 [30,6,44,3,16,15,18] to ensure visual and stylistic diversity across hu-man and scene distributions. To incorporate real content, we collected humans and backgrounds from COCO, ImageNet, FFHQ, CelebA-HQ, and Human Pose datasets [24,8,17,15,2]. We segmented both real and synthetic humans and composed them into real or synthetic scenes using a custom web application that enabled precise spatial control. For categories such as SHSS, we utilized generative models capable of TruEye: Detecting AI-Generated Human Subjects 11                 
+
+> Table 1. Model Structure Type, Size and Capabilities
+> Model Base Architecture # Params Size TruFor [CVPR 2023] MiT-B2 + DnCNN 68.7M 255.9 MB LEGION [ICCV 2025] LLM + ViT + SAM 8B 29.8 GB SIDA [CVPR 2025] LLM 13B 28.8 GB
+> TruEye (ours) ViT 263M 1 GB
+
+producing coherent human–scene composites directly, minimizing manual inter-vention. After composition, we refined each image using a harmonizer model [19] to standardize illumination, color balance, and texture. 
+
+## 4 Experiments 
+
+All experiments were conducted on a workstation equipped with an Intel Core i9-14900KF CPU (32 cores), 62 GB RAM, and a single NVIDIA GeForce RTX 4090 GPU (24 GB). For a comprehensive evaluation, we compare TruEye with three representa-tive detectors featuring diverse architectures, including classical convolutional networks, modern transformers, and recent LLM-based models, as discussed in Section 2. Specifically, we compared our model with two 2025 models, SIDA [12] and LEGION [14]. It is worth noting that both SIDA and LEGION do not ex-plicitly classify manipulated images into the fine-grained categories defined in this paper. SIDA has already been evaluated against many prior detectors, we further selected another representative model TruFor [10] which has not been compared with SIDA yet. Table 1 summarizes each model’s publication venue, year, base architecture, number of parameters, and model size. The datasets used for comparison include most of the training datasets re-leased with the models evaluated in this study. In addition, we include external datasets such as OpenForensics [22], FaceForensics++ [33] and OpenSDID [37] which is not used for training by any of the evaluated models, including our Tru-Eye, to provide an unbiased test set. Unlike many earlier deepfake datasets that focus on single-face images, OpenForensics includes diverse in-the-wild scenes with multiple faces, making it a more challenging benchmark for evaluating manipulation detection methods. FaceForensics++ is one of the most widely adopted benchmarks in digital media forensics and contains high-qualit ma-nipulations generated using multiple face forgery techniques, making it valu-able. OpenSDID provides a large-scale and balanced collection of real and AI-generated images produced by multiple state-of-the-art diffusion models, offering a challenging benchmark for evaluating the generalization capability of synthetic image detection methods across diverse generative sources. For a fair comparison and rigorous evaluation of generalization capability, all compared detectors are employed with their originally published param-eters ; and our TruEye model is trained exclusively on our newly curated FineSyn dataset which contains no overlap with the data used to train other detectors. 12 J. Barot and D. Lin 
+
+Table 2. Summary of Datasets                             
+
+> Dataset Year # Synthetic Images # Real Images Model Trained On It
+> FaceForensics++ 2019 10,000 1363 XceptionNet OpenForensics 2021 95,134 95,201 None SID-set 2025 200,000 100,000 SIDA OpenSDID 2025 150,000 150,000 MaskCLIP SynthScars 2025 12,236 0LEGION FineSyn (Ours) 2026 25,000 10,000 TruEye
+
+4.1 Performance of Fine-grained Analysis 
+
+In the first round of experiments, we evaluate the detection effectiveness of Tru-Eye on the FineSyn dataset. Since TruEye is built upon vision transformers, we also trained a standard vision transformer equipped with a multi-head classifier as a baseline for comparison. As shown in Table 3, TruEye achieves an overall accuracy of 95.52% and F1-score 97.08%, whereas the pure vision transformer reaches only 60.11% accuracy and 53.31% F1-score. Moreover, TruEye performs exceptionally well in the most challenging category (RHRS) where a real hu-man is integrated into a real scene. This result indicates that simply augmenting a vision transformer with a multi-head classifier is insufficient for performing fine-grained analysis tasks. 
+
+Table 3. Performance of TruEye & Pure ViT on FineSyn dataset                                    
+
+> Model SHSS SHRS SS RHSS RHRS Real Overall
+> IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%)
+> TruEye 90.34 94.93 89.93 94.70 93.05 96.40 94.35 97.09 97.13 98.54 97.43 98.70 93.70 96.73
+> Pure ViT 78.69 85.22 24.14 27.96 80.26 86.19 79.14 83.17 77.59 81.50 75.89 77.60 69.29 73.61
+
+4.2 Comparison with State-of-the-art Detectors 
+
+The primary objective of these experiments is to assess the generalization perfor-mance of TruEye compared with existing detectors and their abilities to satisfy real-time deployment requirements measured by per-image inference latency. As aforementioned, each detector is employed with its originally published parameters to eliminate potential discrepancies arising from retraining. Like-wise, our TruEye model is trained solely on the FineSyn dataset. Because exist-ing detectors do not perform fine-grained classification across the five synthetic categories defined in this study, we consolidate these fine-grained categories in our FineSyn dataset under a single “synthetic” label when testing other detec-tors. Similarly, we treat TruEye’s detection results of any of the five synthetic categories as “synthetic” when comparing to other detectors. TruEye: Detecting AI-Generated Human Subjects 13 
+
+Table 4. Generalization Performance, report AUC and IoU.                                                            
+
+> Method SID-set SynthScars FineSyn FF++ OpenForensics OpenSDID
+> (2025) (2025) (2026) (2019) (2021) (2025) AUC(%) IoU(%) AUC(%) IoU(%) AUC(%) IoU(%) AUC(%) IoU(%) AUC(%) IoU(%) AUC(%) IoU(%)
+> TruFor 74.08 35.00 n.a 3.65 78.78 33.60 62.93 54.79 80.49 71.39 55.08 33.91
+> SIDA 87.30 73.90 n.a 60.40 54.92 48.28 72.36 48.39 58.88 60.25 58.88 8.25
+> LEGION 71.74 35.36 n.a 55.91 47.43 33.81 77.88 50.30 8.32 4.26 64.57 41.17
+> TruEye 96 .50 79 .82 n.a 61 .58 98.32 93.70 89 .23 82 .96 93 .20 83 .46 91 .85 79 .82
+
+Fig. 3. Inference Speed of Models 
+
+Detection Accuracy Table 4 presents the cross-dataset evaluation results of all detectors across the 6 datasets. For each method, we report AUC and F1-score. The numbers highlighted in bold indicate the dataset on which the corresponding model was originally trained, and the boxed numbers indicate the best performer for that dataset. As shown in the table, most existing methods achieve their best performance on the datasets used for training but experience noticeable performance drops when evaluated on other datasets. This indicates their limited cross-dataset gen-eralization. In contrast, the proposed TruEye achieves consistently strong performance across all datasets, which demonstrates its superior robustness to dataset shifts. Unlike other models that peak only on their training datasets, TruEye maintains high accuracy and F1 scores across multiple benchmarks, ranking as the top performer on all datasets. Notably, OpenForensics, FaceForensics++ and OpenSDID are dataset on which none of the models were trained, and hence provides a strict evaluation of generalization ability. On this unseen dataset, TruEye outperforms all competing methods. TruEye’s strong generalization ability likely stems from its divide-and-conquer design philosophy, where each module specializes in a smaller subtask, combined with multi-objective training that jointly optimizes mask generation, human–scene token-level prediction, and global prediction. 14 J. Barot and D. Lin 
+
+Inference Speed Figure 3 reports the inference time of all evaluated models, where the bubble size represents the corresponding model size. Each model is tested on 1,000 images using its official inference script, and the average per-image inference time is calculated. As shown in the figure, our TruEye model achieves extremely low latency, i.e., only 4.57 ms per image. Its inference speed is comparable to the smallest models in the comparison, such as Adobe and XceptionNet. However, as discussed in the previous section, these smaller models exhibit significantly lower detection accuracy. Compared with recent state-of-the-art models from 2025, including SIDA and LEGION, TruEye is over 100 times faster while also achieving higher detection accuracy. Specifically, SIDA requires an average of 460 ms per image, and LE-GION requires 540 ms per image, yet both models still deliver lower detection accuracy than TruEye. In summary, TruEye achieves both superior accuracy and significantly lower latency with a much smaller parameter footprint, highlighting the efficiency of its architectural design. 
+
+Robustness Table 5 reports performance under four aggressive perturbations: JPEG compression (QF=10), Gaussian blur ( σ = 4), downsampling to 0.3 ×resolution, and additive Gaussian noise ( σ = 0 .1). We randomly sampled 2,000 images (1,000 real and 1,000 synthetic) from the evaluation datasets, excluding FineSyn to ensure a fair out-of-distribution test. TruEye consistently outperforms the most recent baselines, SIDA and LEGION and TruFor by a substantial margin. 
+
+Table 5. Robustness Analysis under Different Perturbations                                            
+
+> Type TruEye (Ours) SIDA LEGION TruFor
+> IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%) IoU(%) F1(%) jpeg 10 89.97 91.05 57.96 61.64 31.96 35.71 32.86 34.89 resize 0.3 84.49 85.91 66.50 68.66 31.28 35.15 33.67 34.22 blur 4 80.28 80.90 66.24 68.14 29.48 34.42 31.33 32.57 noise 0.1 88.76 90.16 60.45 62.92 30.96 35.57 32.51 32.87
+
+4.3 Ablation Analysis 
+
+In this ablation study, we analyze the contributions of the key components in TruEye including mask generation, dual-stream classification, feature magnifica-tion, and cross-attention mechanisms. Since the dual-stream classifier depends on the mask generator for stream separation and cannot operate independently, we focus on controlled variants that isolate the effects of dual-stream classifica-tion, feature magnification, and cross attention, respectively, to quantify their individual contributions to overall performance. Each variant is trained the same way as TruEye on the FineSyn dataset until the validation loss plateaus. TruEye: Detecting AI-Generated Human Subjects 15 
+
+Table 6. Ablation Analysis                                                  
+
+> Model Variant SHSS SHRS SS RHSS RHRS Real Overall
+> Acc(%) F1(%) Acc(%) F1(%) Acc(%) F1(%) Acc(%) F1(%) Acc(%) F1(%) Acc(%) F1(%) Acc(%) F1(%) Single Stream -23.01 -13.50 -23.90 -49.96 -8.90 -5.07 -39.85 -33.23 -11.02 -6.06 -6.92 -3.79 -18.93 -18.60 No FMM -17.16 -9.74 -6.23 -10.51 -3.59 -1.99 -10.88 -8.51 -13.55 -7.55 -9.08 -5.03 -10.07 -7.22 No Cross Attention -13.31 -7.40 -6.75 -11.09 -0.09 -0.05 -5.36 -4.03 -19.59 -11.29 -12.99 -7.36 -9.68 -6.86
+
+We first investigate whether the dual-stream architecture improves overall detection performance by comparing it with single-stream variants. Specifically, we consider two variants: (i) V1: a plain Vision Transformer without the mask generator, which has been evaluated in Section 4.1 and demonstrates substan-tially lower detection accuracy. (ii) V2: a single-stream model equipped with the mask generator, where all image tokens are processed by a single stack of Transformer blocks followed by the feature magnification module, but without the cross-attention layer. As shown in the 1st row of Table 6, the detection accu-racy and F1 score drop significantly compared to the dual-stream architecture. This performance gap suggests that separating human and scene representations enables more specialized feature learning and reduces interference between het-erogeneous visual cues. In contrast, a single-stream design forces the model to jointly encode human-specific artifacts and scene-level inconsistencies within a shared representation space, which may dilute discriminative signals. Second, to assess the contribution of the feature magnification modules (FMM), we remove them from each Transformer block while keeping the remaining ar-chitecture unchanged. As shown in 2nd row of Table 6, eliminating the FMM leads to a clear drop in overall detection performance. This indicates that fea-ture magnification enhances subtle discriminative cues, allowing the model to better amplify and capture fine-grained synthetic artifacts that may otherwise be suppressed during standard feature propagation. Third, we evaluate the effectiveness of the cross-attention mechanism by re-moving the cross-attention computation and directly fusing the global [CLS] tokens from the two streams. As shown in the 3rd row of Table 6, when cross-attention is disabled, the detection accuracy of RHRS (Real Human Real Scene) drops most significantly. This result highlights the importance of the cross-attention mechanism in enhancing the model’s holistic understanding of the image. 
+
+## 5 Conclusion 
+
+In this work, we introduce TruEye, a novel framework for highly accurate fine-grained detection and localization of AI-generated or manipulated humans and scenes in images. TruEye has a unique mask-conditioned dual-stream trans-former based architecture, which enables the model to capture subtle manip-ulations across both local and global contexts and to yield interpretable authen-ticity predictions that highlight where and what types of manipulations occur. The extensive experiments demonstrate that TruEye achieves consistently bet-ter generalization across diverse datasets compared to state-of-the-art detectors. 16 J. Barot and D. Lin 
+
+The newly curated FineSyn dataset further supports systematic fine-grained analysis of human–scene compositions for future research. Overall, this work establishes a framework that strengthens robustness and trust in AI-generated image detection. 
+
+## References 
+
+1. Abdullah, S.M., Cheruvu, A., Kanchi, S., Chung, T., Gao, P., Jadliwala, M., Viswanath, B.: An analysis of recent advances in deepfake image detection in an evolving threat landscape. In: Proceedings of the IEEE Symposium on Security and Privacy (IEEE S&P) (2024) 2. Andriluka, M., Pishchulin, L., Gehler, P., Schiele, B.: 2d human pose estimation: New benchmark and state of the art analysis. In: CVPR. pp. 3686–3693 (2014) 3. Brock, A., Donahue, J., Simonyan, K.: Large scale gan training for high fidelity natural image synthesis. In: ICLR (2018) 4. Chen, J., Tan, S., Wang, J., Li, W.: Mvss-net: Multi-view multi-scale supervised networks for image manipulation detection. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 14183–14191 (2021) 5. Chen, Y., Huang, X., Zhang, Q., Li, W., Zhu, M., Yan, Q., Li, S., Chen, H., Hu, H., Yang, J., Liu, W., Hu, J.: Gim: a million-scale benchmark for generative im-age manipulation detection and localization. In: Proceedings of the Thirty-Ninth AAAI Conference on Artificial Intelligence and Thirty-Seventh Conference on In-novative Applications of Artificial Intelligence and Fifteenth Symposium on Ed-ucational Advances in Artificial Intelligence. AAAI’25/IAAI’25/EAAI’25, AAAI Press (2025). https://doi.org/10.1609/aaai.v39i2.32231 , https://doi.org/ 10.1609/aaai.v39i2.32231 
+
+6. Choi, Y., Choi, M., Kim, M., Ha, J.W., Kim, S., Choo, J.: Stargan: Unified genera-tive adversarial networks for multi-domain image-to-image translation. In: CVPR. pp. 8789–8797 (2018) 7. Dagar, D., Vishwakarma, D.K.: Tex-vit: A generalizable, robust, texture-based dual-branch cross-attention deepfake detector. arXiv preprint arXiv:2408.16892 (2024), https://arxiv.org/abs/2408.16892 , accessed: Nov 2025 8. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: Imagenet: A large-scale hierarchical image database. In: CVPR. pp. 248–255 (2009) 9. for Good Lab, M.A.: How good are humans at detecting ai-generated images? results from the “real or not?” quiz. arXiv preprint arXiv:2507.18640 (2025), 
+
+https://arxiv.org/abs/2507.18640 , accessed: Nov 2025 10. Guillaro, M., Verdoliva, L., Cozzolino, D.: Trufor: Leveraging trustworthiness and uncertainty for generalized image forgery detection and localization. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 20606–20615 (2023) 11. Gupta, A., Sharma, N.: Freqfacenet: An enhanced transformer architecture with dual-order frequency attention for ai-generated face detection. Applied Intelligence 
+
+55 , 1–15 (2025) 12. Huang, T., Zhang, Q., Li, X., Zhao, H., Chen, P.Y.: Sida: Social media image ai-generation detection, localization and explanation with large multimodal models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2025) TruEye: Detecting AI-Generated Human Subjects 17 13. Huh, M., Liu, A., Owens, A., Efros, A.A.: Fighting fake news: Image splice detec-tion via learned self-consistency. Tech. Rep. UCB/EECS-2018-67, EECS Depart-ment, University of California, Berkeley (2018), https://www2.eecs.berkeley. edu/Pubs/TechRpts/2018/EECS-2018-67.pdf 
+
+14. Kang, H., Wen, S., Wen, Z., Ye, J., Li, W., Feng, P., Zhou, B., Wang, B., Lin, D., Zhang, L., He, C.: Legion: Learning to ground and explain for synthetic image detection (2025), https://arxiv.org/abs/2503.15264 
+
+15. Karras, T., Aila, T., Laine, S., Lehtinen, J.: Progressive growing of gans for im-proved quality, stability, and variation. In: ICLR (2018) 16. Karras, T., Laine, S., Aila, T.: A style-based generator architecture for generative adversarial networks. In: CVPR. pp. 4401–4410 (2019) 17. Karras, T., Laine, S., Aila, T.: A style-based generator architecture for generative adversarial networks. In: CVPR. pp. 4401–4410 (2019), introduced FFHQ dataset 18. Karras, T., Laine, S., Aittala, M., Hellsten, J., Lehtinen, J., Aila, T.: Analyzing and improving the image quality of stylegan. In: CVPR. pp. 8110–8119 (2020) 19. Ke, Z., Sun, C., Zhu, L., Xu, K., Lau, R.W.H.: Harmonizer: Learning to perform white-box image and video harmonization. In: ECCV (2022) 20. Khan, R., Yu, X., Liu, Y.: Hybrid transformer network for ai-generated image detection. In: Proceedings of the ACM International Conference on Content-Based Multimedia Indexing (CBMI). pp. 1–6 (2022) 21. Kong, C., Li, H., Wang, S.: Enhancing general face forgery detection via vision transformer with low-rank adaptation. arXiv preprint arXiv:2303.00917 (2023), 
+
+https://arxiv.org/abs/2303.00917 , accessed: Nov 2025 22. Le, T.N., Nguyen, H.H., Yamagishi, J., Echizen, I.: Openforensics: Large-scale challenging dataset for multi-face forgery detection and segmentation in-the-wild. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 10117–10127 (2021). https://doi.org/10.1109/ICCV48922.2021. 00997 
+
+23. Li, L., Bao, J., Yang, H., Chen, D., Wen, F.: Face x-ray for more general face forgery detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 5001–5010 (2020) 24. Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Doll´ ar, P., Zitnick, C.L.: Microsoft coco: Common objects in context. In: ECCV. pp. 740–755 (2014) 25. Liu, J., Wang, T., Zhang, S., Liu, F.: Frequency-modulated vision transformers for generalized deepfake detection. arXiv preprint arXiv:2306.02412 (2023), https: //arxiv.org/abs/2306.02412 , accessed: Nov 2025 26. Liu, Y., He, B., Zhang, W., Guo, Y.: Forgery-aware adaptive transformer for gen-eralizable synthetic image detection. arXiv preprint arXiv:2312.13015 (2023) 27. News, A.: How south-east asia’s pig butchering scam-mers are using ai face-swapping and other tools (May 15 2024), https://www.abc.net.au/news/2024-05-16/ pig-butchering-scams-artificial-intelligence-ai-face-swapping-/ 103804830 
+
+28. Nguyen, T., Patel, V.M.: Fakeformer: Efficient vulnerability-driven transformers for generalisable deepfake detection. arXiv preprint arXiv:2411.01256 (2024) 29. Ojha, U., Li, Y., Lee, Y.J.: Towards universal synthetic image detectors that gen-eralize across generative models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 24480–24489 (2023) 30. Park, T., Liu, M.Y., Wang, T.C., Zhu, J.Y.: Semantic image synthesis with spatially-adaptive normalization. In: CVPR. pp. 2337–2346 (2019) 18 J. Barot and D. Lin 31. Qu, C., Zhong, Y., Liu, C., Xu, G., Peng, D., Guo, F., Jin, L.: Towards mod-ern image manipulation localization: A large-scale dataset and novel methods. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 10781–10790 (June 2024) 32. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: CVPR. pp. 10684–10695 (2022) 33. R¨ ossler, A., Cozzolino, D., Verdoliva, L., Riess, C., Thies, J., Nießner, M.: Face-forensics++: Learning to detect manipulated facial images. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 1–11 (2019) 34. Tan, H., Zhao, Y., Liu, F.: Frequency-aware vision transformers for detecting ai-generated visual content. In: Proceedings of the AAAI Conference on Artificial Intelligence (2024) 35. Wang, M., Li, P., Chen, L.: Frequency domain filtered residual network for ai-generated image detection. Mathematics 11 (12), 2782 (2023) 36. Wang, S.Y., Zhang, O., Owens, A., Efros, A.A.: Cnn-generated images are sur-prisingly easy to spot... for now. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 8695–8704 (2020) 37. Wang, Y., Huang, Z., Hong, X.: Opensdi: Spotting diffusion-generated images in the open world (2025), https://arxiv.org/abs/2503.19653 
+
+38. Wired: Meta finally breaks its silence on pig butchering (Nov 21 2024), https: //www.wired.com/story/meta-pig-butchering-report-2024/ 
+
+39. Wu, Y., AbdAlmageed, W., Natarajan, P.: Mantra-net: Manipulation tracing net-work for detection and localization of image forgeries. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 9543–9552 (2019) 40. Zhang, Z., Li, M., Chang, M.C.: A new benchmark and model for challenging image manipulation detection. In: Proceedings of the AAAI Conference on Ar-tificial Intelligence. pp. 12759–12768 (2024), https://dl.acm.org/doi/10.1609/ aaai.v38i7.28571 
+
+41. Zhao, H., Dong, J., Chen, M.: Multi-attentional deepfake detection. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 2185–2194 (2021) 42. Zhou, X., Williams, J., Groves, M.: As good as a coin toss: Human detection of ai-generated content. Communica-tions of the ACM (2025), https://cacm.acm.org/research/ as-good-as-a-coin-toss-human-detection-of-ai-generated-content/ ,early Access, Accessed: Nov 2025 43. Zhou, Y., Fang, X., Chen, P.Y., Wang, S.: Sig: Spatially interpretable grounded deepfake detection via vision-language alignment. In: CVPR. pp. 11854–11863 (2024) 44. Zhu, J.Y., Park, T., Isola, P., Efros, A.A.: Unpaired image-to-image translation using cycle-consistent adversarial networks. In: ICCV. pp. 2223–2232 (2017)

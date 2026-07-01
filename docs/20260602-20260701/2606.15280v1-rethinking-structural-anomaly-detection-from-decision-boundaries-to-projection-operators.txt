@@ -1,0 +1,675 @@
+Title: Rethinking Structural Anomaly Detection: From Decision Boundaries to Projection Operators
+
+URL Source: https://arxiv.org/pdf/2606.15280v1
+
+Published Time: Tue, 16 Jun 2026 00:47:41 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Rethinking Structural Anomaly Detection: From Decision Boundaries to Projection Operators 
+
+Alexander Bauer 1,21Machine Learning Group, TU Berlin 
+
+> 2
+
+BIFOLD, Berlin, Germany 
+
+alexander.bauer@tu-berlin.de 
+
+Abstract 
+
+Most existing anomaly detection methods rely on estimating a probability density or learning an enclosing decision boundary, implicitly assuming that normal data occupies a region of non-zero volume in the ambient space. In contrast, structural anomaly detection considers data that lies near a low-dimensional manifold, creat-ing a mismatch between the inductive bias of existing methods and the structure of the data, often resulting in degraded performance. To address this mismatch, we introduce a geometric perspective. Specifically, we learn a projection opera-tor onto the manifold of normal samples and define a sample as anomalous if it is altered by this projection. This formulation naturally integrates the inductive bias of manifold-supported data and reframes anomaly detection in terms of a projection residual, thereby resolving issues arising from modeling degenerate distributions. Notably, it provides a unifying interpretation of reconstruction-based methods by explaining their success and failure in terms of projection quality. In particular, it explains the strong generalization ability of projection-aligned models as a consequence of contraction behavior toward the manifold. Moreover, by decoupling anomaly detection from probabilistic modeling, it reduces the tendency to misclassify rare but normal samples, a widely recognized limitation of existing approaches. Empirically, we demonstrate that projection-aligned methods achieve strong performance, outperforming boundary-based methods while improving upon existing reconstruction-based approaches. 
+
+1 Introduction 
+
+Conceptually, anomaly detection (AD) aims to identify observations that deviate from a notion of normality. In many practical scenarios, such as industrial inspection or medical imaging, anomalies arise as structural deviations in input images, including surface defects, shape deformations, or other irregularities disrupting normal visual patterns. The vast majority of existing AD methods [ 23 , 25 , 16 , 11 , 21 , 24 , 22 ] define normality either through a probability density, or more generally, a decision boundary enclosing normal samples. Crucially, this relies on an implicit assumption that normal data occupies a region of non-zero volume in the ambient space. However, this assumption is fundamentally misaligned with high-dimensional perceptual data such as images, where normal samples concentrate near a low-dimensional manifold. Since an embedded manifold has no interior with respect to the ambient space, any enclosing decision boundary necessarily includes unsupported regions, rendering it conceptually ill-posed. Employing boundary-based methods in this setting leads to fundamental practical issues, including unstable learning behavior, sensitivity to noise in the scoring function, and severe effects of the curse of dimensionality. Figure 1 illustrates, using the example of a One-Class Support Vector Machine (OC-SVM) [ 23 ], how the mismatch between the volumetric assumption of boundary-based methods and the low-dimensional nature of manifold-supported data manifests geometrically. When combined  
+
+> Preprint.
+> arXiv:2606.15280v1 [cs.LG] 13 Jun 2026 small kernel width large kernel width
+
+Figure 1: Illustration of the failure mode of an OC-SVM with an RBF kernel on manifold-supported data. Although normal samples concentrate near a low-dimensional manifold (blue curve), the isotropic similarity induced by the kernel in ambient space produces a volumetric inlier region. The effective radius of this region is controlled by the kernel width: decreasing it reduces coverage of the manifold and increases false positives (left), whereas increasing it expands the inlier region and increases false negatives (right). Note the change in classification of the star-shaped samples. with isotropic radial kernels (e.g., a Gaussian kernel), similarity is propagated equally in both tangent and normal directions of the data manifold. Consequently, the kernel width induces an unavoidable trade-off: large values admit larger off-manifold regions, leading to false negatives, while small values require dense sampling to ensure manifold coverage and otherwise lead to false positives. Although real-world data exhibits a non-zero volume through measurement error and finite-resolution effects, these introduce only a thin neighborhood around the underlying manifold and do not alter its intrinsic structure in practice. As the concept of an enclosing decision boundary becomes problematic for manifold-supported data, a natural alternative is to measure the abnormality of a sample via its distance to the manifold. However, this idea immediately encounters fundamental challenges: the manifold itself is unknown and must be inferred from finitely many samples, and computing distances requires solving a non-trivial optimization problem to identify the closest point on the manifold. In high-dimensional settings, both aspects are computationally and statistically intractable. Instead, we propose a different approach. The key observation is that, for natural images, the global shape of the data manifold is induced by strong spatial correlations between pixels, which drastically reduce the effective degrees of freedom. Specifically, these dependencies give rise to a form of index-induced regularity , rendering the value of a pixel largely predictable from its local neighborhood. This enables implicit modeling of the global geometry from individual samples by learning a mapping that corrects deviations from the manifold. When applied to anomalous data, this mapping acts as an approximate projection operator, mapping inputs toward the manifold without requiring explicit geometric representation. In this way, global geometry becomes tied to local predictive structure shared across training samples, supporting the learning and generalization of a projection mapping. The learned projection, in turn, induces an implicit characterization of the data manifold as the zero-set of a reconstruction functional. This provides a global description of normality without requiring explicit geometric estimation or costly optimization to identify nearest points on the manifold. To this end, we reinterpret and extend the family of correction-based methods [ 28 , 13 , 27 , 17 , 3]for structural anomaly detection (SAD) by viewing them as approximations of a learned projection operator onto the manifold of normal data. Given an input, the model produces a corrected version projected toward the manifold, while abnormality is quantified through the resulting projection residual. At the pixel level, the discrepancy between input and projection enables localization of anomalous regions. Importantly, this perspective provides a unified framework for understanding and improving existing approaches. First, it aligns the learning objective with the intrinsic geometry of the data, introducing an inductive bias consistent with manifold-supported distributions. Second, it offers a principled explanation for the limitations of decision-boundary methods and the success of reconstruction-based approaches in terms of projection quality. Third, by decoupling anomaly detection from probabilistic modeling, it reduces the tendency to misclassify rare but normal samples. Fourth, it provides a geometric interpretation of generalization through contractive behavior toward 2the manifold, where diverse perturbations map to consistent normal representations. Collectively, these insights provide a roadmap for improved algorithm design. In particular, they motivate geometry-aware regularization through Jacobian constraints, iterative refinement via fixed-point dynamics, and improved corruption strategies that encourage stable projection behavior and stronger generalization. The remainder of the paper is organized as follows. Section 2 summarizes the training framework used to approximate the projection operator, including the inference procedure during prediction. Section 3 presents a formal analysis of this framework by highlighting the conservative projection as an optimal solution to SAD and discussing how such a mapping is approximated through training. We further examine how the projection-based perspective provides a geometric interpretation of model generalization and outline directions for future algorithmic improvements. Section 4 shows the experimental evaluation on two established industrial anomaly detection benchmarks and compares the presented framework with state-of-the-art approaches. Finally, Section 5 concludes the paper. 
+
+2 Methodology 
+
+Formally, we approximate the nonlinear projection operator using an autoencoder 
+
+fθ : [0 , 1] h×w×3 → [0 , 1] h×w×3,
+
+where θ denotes the learnable parameters. Both input and output correspond to RGB images of resolution h × w. In particular, we make no architectural assumptions. Specifically, the model is not required to contain a bottleneck. The term autoencoder is used in a general sense, referring simply to mappings with identical input and output dimensionality. 
+
+2.1 Training 
+
+The model is trained in a self-supervised fashion using input-output pairs of normal samples and their corrupted versions. Let x ∈ [0 , 1] h×w×3 denote a normal (anomaly-free) image. A corrupted version 
+
+ˆx is obtained by altering randomly selected regions, specified by a real-valued mask M ∈ [0 , 1] h×w×3.Its complement is defined as ¯M := 1 − M, where 1 denotes the tensor of ones. We use a loss formulation established in prior work [ 3] and optimize it with respect to the model parameters θ:
+
+L(ˆ x, x, M; θ) := 1 − λ
+
+∥ ¯M∥1
+
+∥ ¯M ⊙ (fθ (ˆ x) − x)∥22 + λ
+
+∥M∥1
+
+∥M ⊙ (fθ (ˆ x) − x)∥22, (1) where ⊙ denotes elementwise tensor multiplication, ∥ · ∥ p the ℓp-norm, and λ ∈ [0 , 1] balances the contribution of corrupted versus uncorrupted regions. There are multiple ways of choosing a corruption pattern for generating the training data. An efficient and powerful augmentation technique proposed in [3] is to use an additional dataset (e.g., DTD [9]) of background images B offering a variation of structural patterns not occurring in the normal data. Given a normal image x ∈ M , a corruption pattern y ∈ B , and a randomly selected smooth mask 
+
+M, a corrupted version is created according to ˆx = M ⊙ y + ¯M ⊙ x.
+
+2.2 Test-Time Detection 
+
+After training, anomaly localization is performed by comparing an input ˆx with its reconstruction 
+
+fθ (ˆ x). To this end, we define a pixel-wise discrepancy function 
+
+∆ : [0 , 1] h×w×3 × [0 , 1] h×w×3 → [0 , 1] h×w.
+
+Different choices for ∆ exist in the literature, including Mean Squared Error (MSE), Structural Similarity Index Measure (SSIM) [ 5], and Gradient Magnitude Similarity (GMS) [ 26 ], each capturing distinct aspects of reconstruction quality. A binary segmentation mask for anomalous regions can be extracted by thresholding the pixel-wise map of anomaly scores. Independently of the specific choice of ∆, applying spatial smoothing prior to thresholding improves stability. For image-level detection, a global anomaly score is obtained by aggregating the values of the anomaly map, typically via summation. Alternative strategies, such as taking the maximum or 3<latexit sha1_base64="hLnWCX4ry4v1Hh+Ij3rwfwkYEtY=">AAACNHicbVDJSgNBEO1xN25Rj14ag6AgYUYkehT1IHiJYFTIhFDTqTGNPQvdNWIY5qO8+CFeRPCgiFe/wc5ycCto+vHeK6rqBamShlz32Rkbn5icmp6ZLc3NLywulZdXLkySaYENkahEXwVgUMkYGyRJ4VWqEaJA4WVwc9TXL29RG5nE59RLsRXBdSxDKYAs1S6f+seoCDb9LlDuB4nqmF5kv/yuKLZ52P7B+dRFgqL417211S5X3Ko7KP4XeCNQYaOqt8uPficRWYQxCQXGND03pVYOmqRQWJT8zGAK4gausWlhDBGaVj44uuAblunwMNH2xcQH7PeOHCLT3846I6Cu+a31yf+0ZkbhfiuXcZoRxmI4KMwUp4T3E+QdqVGQ6lkAQku7Kxdd0CDI5lyyIXi/T/4LLnaqXq1aO9utHByO4phha2ydbTKP7bEDdsLqrMEEu2dP7JW9OQ/Oi/PufAytY86oZ5X9KOfzC1/7rbo=</latexit> 
+
+!(ˆx, f ω (ˆx)) 
+
+projection 1 2 
+
+> <latexit sha1_base64="zCXVxbsZNOZw4azbqlF3qyNgpg8=">AAAB/XicbVA7T8MwGHR4lvIKj43FokJiqhKECmMFC2OR6ENqospxnNaqY0e2gyhRxF9hYQAhVv4HG/8Gp80ALSdZPt19n3y+IGFUacf5tpaWV1bX1isb1c2t7Z1de2+/o0QqMWljwYTsBUgRRjlpa6oZ6SWSoDhgpBuMrwu/e0+kooLf6UlC/BgNOY0oRtpIA/vQGyGdeYFgoZrE5soe8nxg15y6MwVcJG5JaqBEa2B/eaHAaUy4xgwp1XedRPsZkppiRvKqlyqSIDxGQ9I3lKOYKD+bps/hiVFCGAlpDtdwqv7eyFCsimxmMkZ6pOa9QvzP66c6uvQzypNUE45nD0Upg1rAogoYUkmwZhNDEJbUZIV4hCTC2hRWNSW4819eJJ2zutuoN27Pa82rso4KOALH4BS44AI0wQ1ogTbA4BE8g1fwZj1ZL9a79TEbXbLKnQPwB9bnD7pclhI=</latexit>
+
+ˆx <latexit sha1_base64="L/gswJA/OtrshIs6CWH54bUcTQU=">AAACFnicbVDLSsNAFJ3UV62vqks3wSLUhSURqS6LblxWsA9oQphMJs3QyYOZG7GEfIUbf8WNC0Xcijv/xknbhW09MMzhnHu59x434UyCYfxopZXVtfWN8mZla3tnd6+6f9CVcSoI7ZCYx6LvYkk5i2gHGHDaTwTFoctpzx3dFH7vgQrJ4ugexgm1QzyMmM8IBiU51TPfySw35p4ch+rLLAgo4DyvWwGGOecxz0+das1oGBPoy8SckRqaoe1Uvy0vJmlIIyAcSzkwjQTsDAtghNO8YqWSJpiM8JAOFI1wSKWdTc7K9ROleLofC/Ui0Cfq344Mh7JYTlWGGAK56BXif94gBf/KzliUpEAjMh3kp1yHWC8y0j0mKAE+VgQTwdSuOgmwwARUkhUVgrl48jLpnjfMZqN5d1FrXc/iKKMjdIzqyESXqIVuURt1EEFP6AW9oXftWXvVPrTPaWlJm/UcojloX7/icaEX</latexit> 
+
+fω (ˆx) anomaly heatmap 
+
+discrepancy Figure 2: Illustration of our anomaly detection process. Given an input ˆx, a trained model first produces an output fθ (ˆ x), which preserves normal regions and replaces irregularities with locally consistent patterns. Second, we compute a pixel-wise discrepancy map ∆(ˆ x, f θ (ˆ x)) ∈ [0 , 1] h×w
+
+between the input and the output to localize anomalous regions. restricting the aggregation to the largest responses, can reduce sensitivity to the spatial extent of anomalies. The overall inference pipeline is illustrated in Figure 2. In essence, this conceptually simple and principled framework enables accurate and efficient structural anomaly detection, as demonstrated in the experimental section. 
+
+3 Formal Analysis: Inductive Biases, Approximation and Generalization 
+
+This section formalizes the projection-based perspective as a principled framework for structural anomaly detection (SAD). We first show that it introduces the missing inductive bias required for manifold-supported data, providing a foundation for both detection and localization. We then identify the conservative projection as an optimal solution to SAD and discuss how it is approximated through the training framework presented in Section 2. Building on this view, we provide a geometric interpretation of model generalization through contraction toward the data manifold and discuss future directions for algorithmic development, including iterative refinement through fixed-point dynamics and geometry-aware regularization. 
+
+3.1 Geometric Inductive Bias via a Projection Operator 
+
+We now formalize the inductive biases required for detecting and localizing structural deviations. 
+
+Inductive Bias 1 (Fixed-Point Condition) . Let M ⊂ Rd denote the set of normal data points. A reconstruction mapping f : Rd → Rd must satisfy the fixed-point condition with respect to M:
+
+f (x) = x ⇐⇒ x ∈ M . (2) This property ensures identity reconstruction exclusively on the data manifold while excluding trivial identity mappings in the ambient space, a behavior often violated by regularized autoencoders. It therefore constitutes a minimal requirement for anomaly detection: any mapping satisfying this condition is sufficient for the detection task, as off-manifold inputs necessarily violate the fixed-point condition. In particular, any projection operator f with Im( f ) = M satisfies this property. Vanilla and many regularized autoencoders are often interpreted as learning the structure of the underlying data manifold [ 29 , 10 ]. However, this interpretation is imprecise, as such models focus on reconstructing normal samples, leaving their behavior in the ambient space largely unconstrained. Moreover, commonly proposed regularization strategies, including reduced bottleneck capacity or Jacobian penalties [ 2 ], are not sufficient to restrict near-identity reconstruction to the data manifold, a phenomenon frequently observed in the visual domain [ 6, 1]. As a result, these models often provide only a weak separation signal between normal and anomalous samples. In contrast, assuming the model accurately realizes the behavior prescribed by the inductive bias in 
+
+(2) , the residual mapping Φ( x) := f (x) − x fully captures the normal data manifold as 
+
+M = Φ −1(0). (3) If Φ is smooth and its Jacobian DΦ( x) has constant rank d − k in a neighborhood of M, then by the implicit function theorem, the level set Φ−1(0) locally defines a k-dimensional embedded 4submanifold of Rd. In this sense, the reconstruction mapping f admits a natural interpretation as a projection operator that implicitly captures the geometry of the normal manifold as its fixed-point set, thereby separating it from the ambient space and yielding a principled criterion for distinguishing between normal and anomalous samples. Notably, this perspective directly aligns with the core objective of anomaly detection, namely learning a notion of normality. In contrast to common approaches that only approximate this objective through surrogate losses, the proposed formulation explicitly defines normality via Eq. (3), while anomalous samples are implicitly characterized by their deviation from it. Indeed, this focus on normality is directly reflected in the projection behavior of a corresponding model, where large regions of the ambient space map to similar points on the manifold, rendering variation in off-manifold directions largely irrelevant. Importantly, this significantly reduces the effective complexity of the learning problem, which is governed by the intrinsic dimensionality of the normal manifold rather than that of the ambient space, thereby mitigating the curse of dimensionality and improving generalization. Beyond separating normal and anomalous samples, domains such as images (or time series) addition-ally require localization of anomalous regions at the pixel level. For this purpose, we leverage the residual mapping Φ, which provides a spatial discrepancy map enabling localization of anomalous regions, as introduced in Section 2. Given an anomalous sample identified with a vector ˆx ∈ Rd, we define the anomalous region as a minimal set of pixels S ⊂ { 1, ..., d } that must be corrected to produce a normal sample x ∈ M .That is, S is uniquely defined and ˆx ¯S = x ¯S , where ¯S := {1, ..., d } \ S denotes the complement of 
+
+S, and ˆxS , xS denote vector slices restricted to indices in S. It is worth noting that the uniqueness assumption does not generally hold, as discussed in [ 3]. However, the resulting ambiguity arising from the finite resolution of digitized images is typically limited in extent and can often be neglected in practice. Formally, this ambiguity vanishes in the limit of infinite resolution. Having established the formal definition of a structural anomaly as an off-manifold sample ˆx̸ ∈ M ,with uniquely localized anomalous part ˆxS , we now can derive an optimal projection operator for the task of SAD, given as 
+
+Πcon (x) := arg min  
+
+> y∈M
+
+∥x − y∥0, (4) which we refer to as a conservative projection. Here, ∥ · ∥ 0 denotes the so-called ℓ0 pseudo-norm, defined as the number of nonzero components of a vector ∥x∥0 = # {i : xi̸ = 0 }. In this context, minimizing ∥x−y∥0 enforces a conservative correction by minimizing the support of the modification, i.e., the number of altered components required to project x onto M.Unlike orthogonal projection, which minimizes geometric distance, the conservative projection minimizes correction support. Since the objective ∥x − y∥0 depends on support cardinality, the resulting operator is inherently non-smooth. Under uniqueness assumptions on the correction support, it may nevertheless exhibit piecewise-continuous or piecewise-differentiable behavior. Specifically, within regions where the optimal support remains unchanged, the mapping reduces to a constrained correction problem on the manifold, while non-smoothness arises at transitions between distinct supports. Consequently, such behavior may be locally approximated by a differentiable autoencoder that learns a smooth relaxation of conservative correction. Under uniqueness of the correction support, the conservative projection Πcon yields an optimal solution for SAD. First, it naturally satisfies Inductive Bias 1. Anomalous regions are then identified from the individual components of the discrepancy map Φ, such that a pixel i ∈ { 1, . . . , d } is anomalous if and only if |Φi(ˆ x)| > 0. In practice, however, deviations from the idealized assumptions, together with reconstruction inaccuracies and numerical noise, motivate the use of thresholds τ, ν > 0:specifically, ∥Φ(ˆ x)∥2 > τ for anomaly detection and |Φi(ˆ x)| > ν for pixel-wise localization. The conservative projection further reveals an additional inductive bias for projection operators required for accurate localization: minimal correction support. While the fixed-point condition ensures that anomalous samples are altered by the reconstruction mapping f , thereby enabling detection, accurate localization additionally requires preservation of normal regions. 
+
+Inductive Bias 2 (Minimal Correction Support) . A reconstruction mapping f : Rd → Rd must preserve all normal components while modifying only the anomalous regions. Formally, for any input 
+
+ˆx with anomalous support S ⊆ { 1, . . . , d },
+
+fi(ˆ x)̸ = ˆ xi ⇐⇒ i ∈ S. (5) 5It is worth noting that the requirement in (5) does not strictly imply f (ˆ x) ∈ M . While preservation of normal regions is necessary, alteration of the corrupted region is both necessary and sufficient for accurate localization. In particular, Inductive Bias 2 implies Inductive Bias 1. In our framework, these inductive biases are approximated by minimizing reconstruction loss on partially occluded images with varying opacity. Specifically, the objective in (1) directly promotes preservation of normal regions while replacing corrupted regions with manifold-consistent patterns. 
+
+3.2 On the Approximation of the Conservative Projection Operator 
+
+The following analysis clarifies how our training framework encodes the inductive biases discussed in the previous section by approximating the conservative projection operator. For this purpose, we define the set-valued mappings N : Rd → 2{1,...,d } and A : Rd → 2{1,...,d },which extract the indices corresponding to the normal and anomalous regions of an input, respectively. As discussed previously, we assume that these mappings are well-defined and that the assignment to normal versus anomalous regions is unique. In particular, N (ˆ x) = {1, ..., d } \ A(ˆ x) for all ˆx ∈ Rd.Furthermore, we assume that a regular conditional distribution p(xA | xN ) exists, that E[∥x∥2] < ∞,and that the distribution over corrupted samples q(ˆ x) is such that, for q-a.e. corrupted input ˆx, the conditioning values ˆxN (ˆ x) lie in the support of the marginal distribution of xN (ˆ x) under p. Finally, all conditional expectations below are also conditioned on the mechanism by which the corruption process generates patterns on A(ˆ x). We omit this dependence from the notation for simplicity. 
+
+Theorem 1. Let p(x) denote the distribution of normal data and let q(ˆ x) denote a distribution of corrupted samples, with k ∈ N. Consider the following unconstrained optimization problem: minimize 
+
+> θ∈Rk
+
+Eq(ˆ x)
+
+Ep(x)
+
+∥fθ (ˆ x) − x∥2 xN (ˆ x) = ˆ xN (ˆ x)
+
+ . (6) 
+
+Provided sufficient capacity of the hypothesis class {fθ }, every minimizer f ∗ := fθ∗ satisfies, for 
+
+q-a.e. ˆx,
+
+f ∗ 
+
+> N(ˆ x)
+
+(ˆ x) = ˆ xN (ˆ x) and f ∗
+
+> A(ˆ x)
+
+(ˆ x) = Ep(x)
+
+xA(ˆ x) xN (ˆ x) = ˆ xN (ˆ x)
+
+ . (7) The above characterization describes the Bayes-optimal correction operator f ∗. For a parameterized hypothesis class {fθ }, the conclusion holds whenever this class is sufficiently expressive to realize the mapping in (7). The training objective in (1) can be interpreted as an approximation of the optimization problem in (17), where the weighting parameter λ controls the relative emphasis placed on the two defining properties of an optimal correction operator in (7). As a result, a trained model tends to preserve normal regions while replacing corrupted regions with locally consistent patterns, thereby approximating the behavior of the conservative projection operator defined in (4). Theorem 1 highlights an important side effect of reconstruction-based methods. When correction of an anomalous region is ambiguous, the reconstruction loss drives the model to produce an average over all feasible restorations under the training distribution. Provided sufficient training data and model capacity, the approximation quality to the conservative projection is therefore primarily limited by reconstruction ambiguity within corrupted regions. Fortunately, in practice, this averaging effect is typically small due to sparse sampling of the training data. Moreover, for anomaly detection, perfect reconstruction is not strictly necessary, since deviation from the anomalous pattern is sufficient, as discussed in Section 3.1. We provide a formal proof of Theorem 1 in Supplementary Section A.1. Nevertheless, higher reconstruction fidelity in corrupted regions may be beneficial in practice, as it can sharpen the localization signal and improve visual interpretability. One potential solution is to replace the autoencoder with a diffusion model conditioned on the input image. This, however, introduces substantially higher computational cost. Instead, we propose an iterative approach that repeatedly applies the autoencoder to the input, eventually converging to a fixed point on the manifold. Convergence is guaranteed by the contractive behavior of the model toward the data manifold, according to 
+
+dist  f (ˆ x), M ≤ ρ · dist  ˆx, M (8) for 0 < ρ < 1, where the contraction emerges from the specific form of our corruption process based on partial occlusions with varying opacity levels. We provide a formal theorem and additional details in Supplementary Section A.2. Figure 3 illustrates several examples of convergence toward a fixed point under iterative model application, demonstrating progressively improved reconstruction fidelity. 6Figure 3: Illustration of improved reconstruction fidelity and varying convergence speeds to a fixed-point under iterative application of our model, separately trained on different categories of the MVTec AD dataset. Each example shows (from left to right) the input together with reconstruction results obtained through repeated model application, converging toward a fixed point on the manifold. 
+
+3.3 Generalization through Contraction toward the Data Manifold 
+
+The strong generalization ability of correction-based autoencoders can be understood as a consequence of an emergent contraction behavior toward the data manifold. Rather than learning separate responses to individual corruption patterns, the model acquires a correction behavior that is largely independent of the specific perturbation and instead restores normality by replacing irregularities with manifold-consistent content. In particular, this contraction provides a unified explanation for why the model (surprisingly well) generalizes from artificial corruptions introduced during training to naturally occurring anomalies present in real images, unlike supervised segmentation approaches, where the learned behavior is primarily driven by annotation-specific supervision. More precisely, two complementary directions of generalization must be distinguished. First, gen-eralization along the manifold refers to reconstructing unseen but valid samples. This behavior is well understood and can largely be attributed to the inductive bias of convolutional architectures, which are naturally aligned with the spatial structure of image data. Second, and more importantly, 
+
+generalization toward the manifold refers to correcting arbitrary off-manifold perturbations. This second direction cannot be explained purely through interpolation between training samples, but instead requires understanding how a global correction behavior emerges from local supervision. We argue that this contraction behavior arises through the interaction of three mutually reinforcing components. First, natural images exhibit strong index-induced regularity , meaning that valid image configurations are highly constrained by local context. Neighboring pixels contain predictive informa-tion about one another, making the content of corrupted or missing regions largely inferable from their surroundings. Second, convolutional architectures are inherently aligned with this regularity, as their learned features are local in nature and shared across spatial locations. Third, the training objective in (1) promotes the inductive biases established previously by preserving normal regions while restoring corrupted regions through locally consistent content. Collectively, these three components induce a specific contraction behavior toward the manifold, biased toward preserving normal content while replacing irregularities with locally consistent structure. As a consequence, this learned contraction transfers across samples and perturbations, allowing the model to generalize beyond the specific corruptions encountered during training. This contraction perspective also explains our empirical observation that overfitting, even after pro-longed training over many epochs, is comparatively difficult in this framework. While convolutional architectures and index-induced regularity provide the conditions under which contraction can emerge, they are not sufficient on their own, as segmentation models operate under similar architectural and data constraints. The decisive factor is therefore the training objective, as it selectively promotes the missing inductive biases introduced previously and thereby determines which solutions become preferential during optimization. By encouraging preservation of normal content together with restoration toward manifold-consistent structure, the objective favors shared correction behavior over sample-specific memorization. In contrast, segmentation objectives optimize agreement with annotation masks, which may contain ambiguity, noise, or policy-dependent biases. As a result, optimization can favor shortcut correlations tied to annotation statistics rather than to the intrinsic structure of the data, making overfitting substantially more likely. This also aligns with our empir-7ical observation that segmentation models may initially generalize well but increasingly overfit to annotation-specific corruption patterns as training progresses. 
+
+3.4 Outlook and Future Investigations 
+
+The primary goal of this paper is to motivate a new geometric perspective on structural anomaly detection. We argued that learning a non-linear projection operator onto the manifold of normal data provides a principled solution to the task by directly modeling normality through projection behavior. Building on this conceptual shift, the proposed perspective opens several promising directions for future research, supported by tools from geometric analysis. First, as discussed previously, the projection-based perspective naturally motivates iterative applica-tion of the model in the spirit of fixed-point theory. In particular, this view explains the shortcomings of training with reconstruction losses and provides a way of iteratively refining reconstruction fidelity in corrupted regions. We provide more details in Supplementary Section A.2 Second, it suggests new forms of geometry-motivated regularization. Future methods may explicitly enforce geometric properties by shaping the form and stability of the learned projection mapping. Examples include Jacobian-based regularization to promote contraction in off-manifold directions, as well as constraints encouraging projection-specific properties such as identity on the manifold and idempotency. See Supplementary Section A.3 for more details. Third, it provides a new interpretation of model generalization as a consequence of how well the learned mapping respects the geometry of the data. In our approach, this geometry is implicitly encoded through contraction toward the data manifold. In particular, this reduces the effective complexity of the learning problem to the intrinsic dimensionality of the underlying manifold. We believe this geometric perspective on generalization extends beyond anomaly detection and may provide a useful framework for understanding representation learning more broadly. 
+
+4 Experiments 
+
+In this section we evaluate the training framework introduced in Section 2. Based on our geometric motivation we refer to the resulting model as a projecting autoencoder (PAE). Our goal is not to establish marginal improvements on saturated benchmarks, but to empirically support the central hypothesis of this work: reconstruction-based methods that more closely approximate the inductive biases identified in Section 3 exhibit stronger and more robust anomaly detection performance. 
+
+Datasets. We evaluate the performance of our method on two established benchmarks for industrial anomaly detection: MVTec AD [ 4 ] and VisA [ 31 ]. Together, these datasets cover a broad range of industrial inspection scenarios, comprising 16,175 images across 27 categories. 
+
+Training setup. We apply category-specific augmentations such as random rotations and flips, while reserving 5% of the training data for validation. A separate model is trained per category using a modified U-Net [ 19 ] with dilated bottleneck convolutions and optimized with Adam [ 12 ]at a learning rate of 10 −4. We set λ = 0 .5 in Equation (1) and evaluate using the SSIM metric. Texture categories are resized to 512 × 512 , whereas object categories are downscaled to 256 × 256 .Accordingly, object categories use a larger dilation kernel ( 5 instead of 3). Several VisA categories contain substantial background clutter that is not annotated as anomalous. Where necessary, we apply foreground segmentation as a preprocessing step using a U-Net trained independently of the anomaly detection task. The resulting masks suppress irrelevant background regions prior to training, mitigating annotation noise that disproportionately affects projection-based methods. 
+
+Results and Conceptual Comparison. We report the Area Under the Receiver Operating Charac-teristic curve (AUROC) at the image level (I-AUROC) for anomaly detection and at the pixel level (P-AUROC) for anomaly segmentation in Table 1. In addition, we report the Per-Region Overlap (P-PRO) and Average Precision (P-AP), both computed at the pixel level. The reported scores for competing methods are taken from previously published results. The best and second-best results are highlighted in red and blue, respectively. Table 1 supports three observations consistent with our geo-metric interpretation. First, boundary-based approaches [ 18 ] built on pretrained ResNet backbones, including OC-SVM [ 23 ] and DeepSVDD (DSVDD) [ 21 ], are substantially outperformed by PAE. Second, among reconstruction-based methods, approaches that more closely approximate projection 8Table 1: Experimental results for image-level anomaly detection and pixel-level segmentation. Dataset Metric AE SSIM OC-SVM DSVDD RIAD CutPaste DRAEM SimpleNet PatchCore RealNet PBAS PMSR GLASS PAE                                                                                                                                                                
+
+> MVTec AD I-AUROC 63.0 70.8 77.9 91.7 95.2 98.0 99.6 99.2 99.7 99.8 99.9 99.9 99.9 P-AUROC 87.0 ––94.2 96.0 97.3 98.1 98.4 99.0 98.6 98.8 98.9 99.4 P-PRO 69.4 ––93.9 –91.3 91.1 92.4 93.5 97.3 96.6 96.3 96.5 P-AP –––48.2 –68.4 58.1 57.1 69.4 –––78.6 VisA I-AUROC –––––88.7 97.1 94.7 97.8 97.7 98.5 98.2 98.5 P-AUROC –––––93.5 98.2 98.5 98.8 98.8 98.0 98.6 98.9 P-PRO –––––72.4 90.7 91.8 –97.1 92.3 90.8 82.2 P-AP –––––26.6 37.3 ––47.6 ––53.8 Mean I-AUROC –––––93.4 98.4 97.0 98.8 98.8 99.2 99.1 99.2
+> P-AUROC –––––95.4 98.2 98.5 98.9 98.7 98.4 98.8 99.2
+> P-PRO –––––81.9 90.9 92.1 –97.2 94.5 93.6 89.4 P-AP –––––47.5 47.7 –––––66.2
+
+behavior, including RIAD [ 28 ], CutPaste [ 13 ], and DRAEM [ 27 ], achieve markedly stronger per-formance than standard autoencoder AE SSIM [5 ]. However, these methods either rely on simplistic perturbations or deviate from a reconstruction objective aligned with the projection goal, resulting in a weaker approximation of the desired inductive biases. Third, PAE remains competitive with engineered hybrid approaches, including SimpleNet [ 15 ], PatchCore [ 20 ], RealNet [ 30 ], PBAS [ 7 ], PMSR [ 14 ], and GLASS [ 8 ], which lack a clear geometric interpretation. While PAE performs on par with the strongest methods in terms of AUROC, it achieves higher AP scores. We note that the PRO metric is highly recall-oriented and therefore less trustworthy. This behavior is consistent with our interpretation of PAE as an approximation of a conservative projection operator that minimizes correction support, producing sharp and robust segmentation masks. Figure 5 in the supplementary material illustrates the segmentation quality of anomalous regions achieved by PAE. 
+
+5 Conclusion 
+
+We argued that classical decision-boundary approaches to AD are fundamentally misaligned with manifold-supported data, where normal samples occupy a low-dimensional subspace embedded in the ambient space. In high-dimensional settings, modeling normality through enclosing boundaries or density estimation becomes increasingly ill-posed and susceptible to the curse of dimensionality. Instead, we introduced a geometric perspective based on learning a non-linear projection operator onto the manifold of normal data. We identified the inductive biases required for SAD, namely the fixed-point condition and minimal correction support, and introduced the conservative projection operator as the corresponding optimal solution. Furthermore, the projection perspective explains the success of correction-based reconstruction methods through contraction toward the manifold. This contraction explains why models generalize from artificial corruptions introduced during training to naturally occurring anomalies in real images. Our training objective promotes preservation of normal content together with restoration toward locally consistent patterns. As a result, the learned mapping becomes increasingly determined by data geometry rather than by individual corruption patterns. Beyond enabling generalization, contraction toward the manifold effectively reduces the complexity of the learning problem to the intrinsic dimensionality of the manifold, thereby mitigating the curse of dimensionality. While the proposed formulation provides a principled framework for SAD, it relies on deviations in local predictive structure. In contrast, logical anomalies may fully preserve the appearance statistics of natural images, producing no projection residual and therefore cannot be fully addressed by our framework. The geometric perspective also opens several directions for future research. Projection operators naturally connect AD to fixed-point theory, enabling iterative refinement schemes and a dynamical interpretation of convergence toward the manifold. Moreover, the geometric formulation motivates new regularization strategies, including Jacobian-based constraints that encourage contraction in off-manifold directions while preserving variation along the manifold, offering a foundation for future theoretical and algorithmic developments. 
+
+References 
+
+[1] A. L. Aguila, P. Liu, O. Puonti, and J. E. Iglesias. Conditional diffusion models for guided anomaly detection in brain images using fluid-driven anomaly randomization. CoRR ,9abs/2506.10233, 2025. [2] G. Alain and Y. Bengio. What regularized auto-encoders learn from the data-generating distribution. J. Mach. Learn. Res. , 15(110):3563–3593, 2014. [3] A. Bauer, S. Nakajima, and K.-R. Müller. Self-supervised autoencoders for visual anomaly detection. Mathematics , 12(24):3988, 2024. [4] P. Bergmann, K. Batzner, M. Fauser, D. Sattlegger, and C. Steger. The mvtec anomaly detection dataset: A comprehensive real-world dataset for unsupervised anomaly detection. Int. J. Comput. Vis. , 129(4):1038–1059, 2021. [5] P. Bergmann, S. Löwe, M. Fauser, D. Sattlegger, and C. Steger. Improving unsupervised defect segmentation by applying structural similarity to autoencoders. In Proc. Int. Conf. Comput. Vis. Theory Appl. , pages 372–380, 2019. [6] A. Bhattad, J. Rock, and D. A. Forsyth. Detecting anomalous faces with “no peeking” autoen-coders. CoRR , abs/1802.05798, 2018. [7] Q. Chen, H. Luo, H. Gao, C. Lv, and Z. Zhang. Progressive boundary guided anomaly synthesis for industrial anomaly detection. IEEE Trans. Circuits Syst. Video Technol. , 35(2):1193–1208, 2025. [8] Q. Chen, H. Luo, C. Lv, and Z. Zhang. A unified anomaly synthesis strategy with gradient ascent for industrial anomaly detection and localization. In Proc. Eur. Conf. Comput. Vis. ,volume 15125 of Lect. Notes Comput. Sci. , pages 37–54, 2024. [9] M. Cimpoi, S. Maji, I. Kokkinos, S. Mohamed, and A. Vedaldi. Describing textures in the wild. In Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2014. [10] M. Connor, G. Canal, and C. Rozell. Variational autoencoder with learned latent structure. In 
+
+Proc. Int. Conf. Artif. Intell. Stat. , volume 130 of Proc. Mach. Learn. Res. , pages 2359–2367, 2021. [11] M. Kim, J. Kim, J. Yu, and J. K. Choi. Active anomaly detection based on deep one-class classification. Pattern Recognit. Lett. , 167:18–24, 2023. [12] D. P. Kingma and J. Ba. Adam: A method for stochastic optimization. In Proc. Int. Conf. Learn. Represent. , 2015. [13] C.-L. Li, K. Sohn, J. Yoon, and T. Pfister. Cutpaste: Self-supervised learning for anomaly detection and localization. In Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , pages 9664– 9674, 2021. [14] L. Li, C. Yan, D. Song, B. Wang, and C. Wang. A prototype correction multi-scale feature reconstruction network for industrial anomaly detection. Pattern Recognit. , 177:113331, 2026. [15] Z. Liu, Y. Zhou, Y. Xu, and Z. Wang. Simplenet: A simple network for image anomaly detection and localization. In Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , pages 20402–20411, 2023. [16] E. Parzen. On estimation of a probability density function and mode. Ann. Math. Stat. ,33(3):1065–1076, 1962. [17] J. Pirnay and K. Chai. Inpainting transformer for anomaly detection. In Proc. Int. Conf. Image Anal. Process. , volume 13232 of Lect. Notes Comput. Sci. , pages 394–406, 2022. [18] T. Reiss, N. Cohen, L. Bergman, and Y. Hoshen. PANDA: Adapting pretrained features for anomaly detection and segmentation. In Proc. IEEE Conf. Comput. Vis. Pattern Recognit. ,pages 2806–2814, 2021. [19] O. Ronneberger, P. Fischer, and T. Brox. U-net: Convolutional networks for biomedical image segmentation. In Proc. Med. Image Comput. Comput.-Assist. Interv. , volume 9351 of Lect. Notes Comput. Sci. , pages 234–241, 2015. 10 [20] K. Roth, L. Pemula, J. Zepeda, B. Schölkopf, T. Brox, and P. V. Gehler. Towards total recall in industrial anomaly detection. In Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , pages 14298–14308, 2022. [21] L. Ruff, N. Görnitz, L. Deecke, S. A. Siddiqui, R. A. Vandermeulen, A. Binder, E. Müller, and M. Kloft. Deep one-class classification. In J. G. Dy and A. Krause, editors, Proc. 35th Int. Conf. Mach. Learn. , volume 80 of Proc. Mach. Learn. Res. , pages 4390–4399, 2018. [22] L. Ruff, J. R. Kauffmann, R. A. Vandermeulen, W. Samek, M. Kloft, T. G. Dietterich, and K.-R. Müller. A unifying review of deep and shallow anomaly detection. Proc. IEEE , 109(5):756–795, 2021. [23] B. Schölkopf, J. C. Platt, J. Shawe-Taylor, A. J. Smola, and R. C. Williamson. Estimating the support of a high-dimensional distribution. Neural Comput. , 13(7):1443–1471, 2001. [24] J. Tack, S. Mo, J. Jeong, and J. Shin. CSI: Novelty detection via contrastive learning on distributionally shifted instances. In Adv. Neural Inf. Process. Syst. , 2020. [25] D. M. J. Tax and R. P. W. Duin. Support vector data description. Mach. Learn. , 54(1):45–66, 2004. [26] W. Xue, L. Zhang, X. Mou, and A. C. Bovik. Gradient magnitude similarity deviation: A highly efficient perceptual image quality index. IEEE Trans. Image Process. , 23(2):684–695, 2014. [27] V. Zavrtanik, M. Kristan, and D. Skocaj. Dræm – A discriminatively trained reconstruction embedding for surface anomaly detection. In Proc. IEEE Int. Conf. Comput. Vis. , pages 8310–8319, 2021. [28] V. Zavrtanik, M. Kristan, and D. Skocaj. Reconstruction by inpainting for visual anomaly detection. Pattern Recognit. , 112:107706, 2021. [29] D. Zhang, Y. Sun, B. Eriksson, and L. Balzano. Deep unsupervised clustering using mixture of autoencoders. CoRR , abs/1712.07788, 2017. [30] X. Zhang, M. Xu, and X. Zhou. Realnet: A feature selection network with realistic synthetic anomaly for anomaly detection. In Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , pages 16699–16708, 2024. [31] Y. Zou, J. Jeong, L. Pemula, D. Zhang, and O. Dabeer. Spot-the-difference self-supervised pre-training for anomaly detection and segmentation. In Proc. Eur. Conf. Comput. Vis. , volume 13690 of Lect. Notes Comput. Sci. , pages 392–408, 2022. 
+
+A Supplementary Material 
+
+This supplementary material provides additional theoretical analysis and proofs supporting the main paper. Section A.1 contains a formal proof for Theorem 1. Section A.2 discusses theoretical guarantees for convergence to a fixed-point on the manifold under iterative model application. Section A.3 provides additional discussion of Jacobian-based regularization. We note that the theorems and proofs presented here remain preliminary and may be refined in future revisions. 
+
+A.1 Proof of Theorem 1 
+
+We first prove a simpler claim. 
+
+Lemma 1. Let p(x) denote the probability distribution of normal data and ˆx ∈ Rd a fixed anomalous sample with normal region N (ˆ x). Consider the unconstrained optimization problem minimize 
+
+> θ∈Rd
+
+Ep(x)
+
+∥fθ (ˆ x) − x∥2 xN (ˆ x) = ˆ xN (ˆ x)
+
+
+
+(9) 
+
+Provided sufficient capacity of the hypothesis class {fθ }, every minimizer f ∗ := fθ∗ satisfies 
+
+f ∗ 
+
+> N(ˆ x)
+
+(ˆ x) = ˆ xN (ˆ x) and f ∗
+
+> A(ˆ x)
+
+(ˆ x) = Ep(x)
+
+xA(ˆ x) xN (ˆ x) = ˆ xN (ˆ x)
+
+ . (10) 11 Proof. We write S := A(ˆ x) and ¯S := N (ˆ x). Consider the following derivations: 
+
+Ep(x)
+
+∥f (ˆ x) − x∥2 | x ¯S = ˆ x ¯S
+
+
+
+=
+
+Z
+
+∥f (ˆ x) − x∥2p(x|x ¯S = ˆ x ¯S )d x
+
+=
+
+Z 
+
+∥f (ˆ x)∥2 − 2f (ˆ x)⊤x + ∥x∥2
+
+p(x|x ¯S = ˆ x ¯S )d x
+
+= ∥f (ˆ x)∥2
+
+Z
+
+p(x|x ¯S = ˆ x ¯S )d x
+
+| {z }
+
+> =1
+
+−2f (ˆ x)⊤
+
+Z
+
+xp(x|x ¯S = ˆ x ¯S )d x
+
+| {z }    
+
+> E[x|x¯S=ˆ x¯S]
+
++
+
+Z
+
+∥x∥2p(x|x ¯S = ˆ x ¯S )d x
+
+| {z }    
+
+> E[∥x∥2|x¯S=ˆ x¯S]
+
+= ∥f (ˆ x)∥2 − 2f (ˆ x)⊤E[x|x ¯S = ˆ x ¯S ] + E[∥x∥2|x ¯S = ˆ x ¯S ].
+
+Note that μ := f (ˆ x) in the above derivation is a constant with respect to the expectation. We now look for stationary points of the mapping g : μ 7 → ∥ μ∥2 − 2μ⊤E[x|x ¯S = ˆ x ¯S ] + E[∥x∥2|x ¯S = ˆ x ¯S ]
+
+by setting its gradient to zero and solving for μ. It follows: 
+
+∇μg = 2 μ⊤ − 2E[x|x ¯S = ˆ x ¯S ]⊤ = 0⊤.
+
+Since g(μ) is a convex function, this implies that f ∗(ˆ x) = Ep(x)[x|x ¯S = ˆ x ¯S ] is the unique optimal output. Note that f ∗ itself does not need to be unique. In particular, any miminizer f ∗ satisfies 
+
+f ∗ 
+
+> S
+
+(ˆ x) = Ep(x)[xS |x ¯S = ˆ x ¯S ] and f ∗ 
+
+> ¯S
+
+(ˆ x) = Ep(x)[x ¯S |x ¯S = ˆ x ¯S ] = ˆ x ¯S .
+
+We now prove Theorem 1. 
+
+Proof. For each fixed ˆx, define the conditional risk 
+
+Rˆx(f ) := Ep(x)
+
+∥f (ˆ x) − x∥2 xN (ˆ x) = ˆ xN (ˆ x)
+
+ .
+
+By Lemma 1, every function f ∗ satisfying (10) minimizes Rˆx(·) for the fixed input ˆx. Therefore, for any f and every admissible ˆx we have 
+
+Rˆx(f ) ≥ Rˆx(f ∗).
+
+Taking expectation with respect to ˆx ∼ q yields 
+
+Eq(ˆ x)[Rˆx(f )] ≥ Eq(ˆ x)[Rˆx(f ∗)] . (11) Moreover, since for every admissible ˆx the optimal output value f ∗(ˆ x) is unique, equality in (11) can hold only if the output f (ˆ x) equals this unique value for q-almost every ˆx. Hence, every minimizer 
+
+f ∗ of the optimization problem in Theorem 1 satisfies 
+
+f ∗ 
+
+> N(ˆ x)
+
+(ˆ x) = ˆ xN (ˆ x) and f ∗
+
+> A(ˆ x)
+
+(ˆ x) = Ep(x)
+
+xA(ˆ x) xN (ˆ x) = ˆ xN (ˆ x)
+
+
+
+for q-almost every ˆx.As mentioned in the main body of the paper in Section 3.2, the conditional expectations are also conditioned, beyond the values on N (ˆ x), on the mechanism by which the corruption process C
+
+generates patterns on A(ˆ x). Therefore, the precise form of the solution in (7) is 
+
+f ∗
+
+> A(ˆ x)
+
+(ˆ x) = Ep(x)
+
+xA(ˆ x) xN (ˆ x) = ˆ xN (ˆ x), CA(ˆ x)(x) = ˆ xA(ˆ x)
+
+ . (12) 
+
+A.2 Fixed-Point Convergence under Contraction toward the Manifold 
+
+The following theorem establishes convergence to a fixed point on the manifold under repeated application of the model, assuming a contraction property toward the data manifold. As a first simplifying modeling assumption, we assume that for any given anomalous sample ˆx ∈
+
+Rd \ M , the anomalous index set S := A(ˆ x) is uniquely identifiable, since ambiguous boundary cases occur with negligible probability in practice. As an additional simplifying assumption, we assume that for a given anomalous input ˆx, the anomaly index set S remains unchanged (up until convergence) under iterative application of the model. 12 Theorem 2. Let M ⊂ Rd be a closed manifold and let f : Rd → Rd be a non-linear operator satisfying: (i) (Conservativity) For every input ˆx ∈ Rd with anomaly index set S, the operator preserves the complementary coordinates corresponding to normal regions: 
+
+f ¯S (ˆ x) = ˆ x ¯S .
+
+(ii) (Slice Contraction) There exists ρ ∈ (0 , 1) such that for all u ∈ Rd,
+
+dist  fS (u), MS (u) ≤ ρ · dist  uS , MS (u),
+
+where the slice 
+
+MS (u) := {xS : x ∈ M , x ¯S = u ¯S }
+
+and 
+
+dist( z, A ) := inf  
+
+> y∈A
+
+∥z − y∥2 for z ∈ Rk, A ⊂ Rk, k = |S|.
+
+(iii) (Vanishing correction near the slice) There exists C > 0 such that for all u ∈ Rd,
+
+∥fS (u) − uS ∥2 ≤ C dist  uS , MS (u).
+
+Then the following statements hold: (a) A point x ∈ Rd belongs to M if and only if it is a fixed point of f .(b) For every anomalous sample ˆx with anomaly index set S, there exists x∗ ∈ M such that 
+
+x∗ 
+
+> ¯S
+
+= ˆ x ¯S and 
+
+lim  
+
+> n→∞
+
+f (n)(ˆ x) = x∗.
+
+Proof. We prove (a) and (b). 
+
+(a) (⇒) Let x ∈ M . By the convention, normal samples have empty anomaly index set, i.e. S = ∅
+
+and hence ¯S = {1, . . . , d }. Applying (i) yields 
+
+f (x) = f ¯S (x) = x ¯S = x,
+
+so x is a fixed point of f .
+
+(a) (⇐) Let x ∈ Rd be a fixed point, i.e. f (x) = x, and let S be its anomaly index set. If S = ∅,then x is normal by definition and hence x ∈ M .Assume S̸ = ∅. Using (ii) with u = x and fS (x) = xS gives 
+
+dist  xS , MS (x) = dist  fS (x), MS (x) ≤ ρ dist  xS , MS (x).
+
+Since ρ ∈ (0 , 1) , we obtain 
+
+dist( xS , MS (x)) = 0 .
+
+By definition of MS (x), there exists a sequence (y(n)) ⊂ M satisfying 
+
+y(n)¯S = x ¯S and y(n) 
+
+> S
+
+→ xS .
+
+Hence y(n) → x in Rd. Moreover, the set 
+
+{y ∈ M : y ¯S = x ¯S }
+
+is closed as the intersection of the closed set M with an affine subspace. Since each y(n) belongs to a closed set and y(n) → x, we conclude that the limit x doest also belongs to it. Therefore x ∈ M .
+
+(b) Fix an anomalous sample ˆx with anomaly index set S and define the iterates 
+
+x(0) := ˆ x, x(n+1) := f (x(n)).
+
+13 By (i), for all n ≥ 0,
+
+x(n)¯S = ˆ x ¯S .
+
+Consequently, the slice is constant along the iterates: 
+
+MS (x(n)) = {xS : x ∈ M , x ¯S = x(n)¯S } = {xS : x ∈ M , x ¯S = ˆ x ¯S } =: A.
+
+Define 
+
+δn := dist( x(n) 
+
+> S
+
+, A).
+
+Applying (ii) with u = x(n) yields 
+
+δn+1 = dist  x(n+1)  
+
+> S
+
+, A = dist  fS (x(n)), MS (x(n)) ≤ ρ dist  x(n) 
+
+> S
+
+, MS (x(n)) = ρ δ n,
+
+and hence 
+
+δn ≤ ρnδ0 for all n. 
+
+We now show that (x(n) 
+
+> S
+
+) is a Cauchy sequence. By (iii), 
+
+∥x(n+1)  
+
+> S
+
+− x(n) 
+
+> S
+
+∥2 = ∥fS (x(n)) − x(n) 
+
+> S
+
+∥2 ≤ C dist  x(n) 
+
+> S
+
+, MS (x(n)) = C δ n ≤ C ρ nδ0.
+
+Therefore, for m > n ,
+
+∥x(m) 
+
+> S
+
+− x(n) 
+
+> S
+
+∥2 ≤
+
+> m−1
+
+X
+
+> t=n
+
+∥x(t+1)  
+
+> S
+
+− x(t) 
+
+> S
+
+∥2 ≤ Cδ 0
+
+> m−1
+
+X
+
+> t=n
+
+ρt = Cδ 0
+
+> m−1
+
+X
+
+> t=0
+
+ρt −
+
+> n−1
+
+X
+
+> t=0
+
+ρt
+
+!
+
+= Cδ 0
+
+ 1 − ρm
+
+1 − ρ − 1 − ρn
+
+1 − ρ
+
+
+
+≤ Cδ 0
+
+1 − ρ ρn −−−−→ 
+
+> n→∞
+
+0.
+
+Thus (x(n) 
+
+> S
+
+) converges to some limit x∗ 
+
+> S
+
+∈ R|S|.Since all x(n) 
+
+> S
+
+∈ A and A is closed, the limit satisfies x∗ 
+
+> S
+
+∈ A .Moreover, x(n)¯S = ˆ x ¯S for all n, hence x(n) → x∗ where x∗ 
+
+> ¯S
+
+= ˆ x ¯S and x∗ 
+
+> S
+
+∈ A . By definition of A,this implies x∗ ∈ M , which concludes the proof. The remaining question is under which conditions the model satisfies assumptions (ii ) and (iii ) of the theorem. In the following, we provide an intuition together with a practical heuristic used in our experiments, while leaving a rigorous formal investigation to future work. Specifically, we rely on out-of-distribution images as a source of anomalous patterns. The main intuition is that the resulting perturbations are predominantly orthogonal to the manifold of normal data. 
+
+Corruption model. Let p(x) denote the distribution of normal data supported on a differentiable manifold M ⊂ Rd. A partially corrupted observation is generated as 
+
+ˆx = x + α δ, x ∼ p, α ∼ π, δN (ˆ x) = 0, (13) where π is a transparency distribution on (0 , 1] .We assume that the corruption vector is predominantly normal to the manifold. That is, there exists 
+
+η ∈ [0 , 1) such that, for typical pairs (x, δ),
+
+ΠTxM(δ) ≤ η ΠNxM(δ) , (14) where ΠTxM and ΠNxM denote the orthogonal projections onto the tangent and normal subspaces of the manifold at x, respectively. In practice, we approximate this condition by setting δA(ˆ x) =
+
+yA(ˆ x) − xA(ˆ x) for some out-of-distribution image y /∈ M that is sufficiently distant from the manifold. Informally, this corresponds to using images that look noticeably different from normal examples. Furthermore, we assume that π assigns nonzero probability to arbitrarily small values of α.14 <latexit sha1_base64="oTTnJqt9X2q/GkWbgheJx/OP4eo=">AAACGHicbZA7TwJBEMf3fCK+Ti1tNhITaPBODVoSaawMRnkkQMje3gIb9h7ZnTOQy30MG7+KjYXG2NL5bVzgCgUn2ewv/5nJzPydUHAFlvVtrKyurW9sZray2zu7e/vmwWFdBZGkrEYDEcimQxQT3Gc14CBYM5SMeI5gDWdYmeYbT0wqHviPMA5ZxyN9n/c4JaClrnnWBjaC2OXES/Jzrtw9aBwQiNtOIFw19vQXj5Kke1EodM2cVbRmgZfBTiGH0qh2zUnbDWjkMR+oIEq1bCuETkwkcCpYkm1HioWEDkmftTT6xGOqE88OS/CpVlzcC6R+PuCZ+rsjJp6a7qcrPQIDtZibiv/lWhH0rjsx98MImE/ng3qRwBDgqUvY5ZJREGMNhEqud8V0QCShoL3MahPsxZOXoX5etEvF0v1lrnyT2pFBx+gE5ZGNrlAZ3aIqqiGKntErekcfxovxZnwaX/PSFSPtOUJ/wpj8AAyBoQU=</latexit> 
+
+diam(CNS( ˆx3))  
+
+> <latexit sha1_base64="ZqaVCtKaiU4G2fpKUWbm19QHhm0=">AAACGHicbZBLT8JAEMe3+EJ8oR69NBITuGBrDHokcvFkMMojgabZbhfYsNs2u1MDafoxvPhVvHjQGK/c/DYuj4OCk2z2l//MZGb+XsSZAsv6NjJr6xubW9nt3M7u3v5B/vCoqcJYEtogIQ9l28OKchbQBjDgtB1JioXHacsb1qb51hOVioXBI4wj6gjcD1iPEQxacvPnXaAjSHyGRVqcc+3uQeMAQ9L1Qu6rsdBfMkpT1y6V3HzBKluzMFfBXkABLaLu5iddPySxoAEQjpXq2FYEToIlMMJpmuvGikaYDHGfdjQGWFDlJLPDUvNMK77ZC6V+AZgz9XdHgoWa7qcrBYaBWs5Nxf9ynRh6107CgigGGpD5oF7MTQjNqUumzyQlwMcaMJFM72qSAZaYgPYyp02wl09eheZF2a6UK/eXherNwo4sOkGnqIhsdIWq6BbVUQMR9Ixe0Tv6MF6MN+PT+JqXZoxFzzH6E8bkBwl1oQM=</latexit>
+
+diam(CNS( ˆx1))  
+
+> <latexit sha1_base64="ekO+LQkK0YH2pApqTnCAeqqSrHY=">AAACGHicbZA7TwJBEMf3fCK+Ti1tNhITaPCOGLQk0lgZjPJIgJC9vQU27D2yO2cgl/sYNn4VGwuNsaXz27jAFQpOstlf/jOTmfk7oeAKLOvbWFvf2Nzazuxkd/f2Dw7No+OGCiJJWZ0GIpAthygmuM/qwEGwVigZ8RzBms6oOss3n5hUPPAfYRKyrkcGPu9zSkBLPfOiA2wMscuJl+QXXL170DgkEHecQLhq4ukvHidJr1Qo9MycVbTmgVfBTiGH0qj1zGnHDWjkMR+oIEq1bSuEbkwkcCpYku1EioWEjsiAtTX6xGOqG88PS/C5VlzcD6R+PuC5+rsjJp6a7acrPQJDtZybif/l2hH0r7sx98MImE8Xg/qRwBDgmUvY5ZJREBMNhEqud8V0SCShoL3MahPs5ZNXoVEq2uVi+f4yV7lJ7cigU3SG8shGV6iCblEN1RFFz+gVvaMP48V4Mz6Nr0XpmpH2nKA/YUx/AAr7oQQ=</latexit>
+
+diam(CNS( ˆx2))  
+
+> <latexit sha1_base64="Q6XaziKelLWqV3wp9E02j7LMcRw=">AAAB8nicbVDLSgMxFM3UV62vqks3wSK4KjMi1WXRjRuhgn3AdCiZNNOGZpIhuSOUoZ/hxoUibv0ad/6NmXYW2nogcDjnXnLuCRPBDbjut1NaW9/Y3CpvV3Z29/YPqodHHaNSTVmbKqF0LySGCS5ZGzgI1ks0I3EoWDec3OZ+94lpw5V8hGnCgpiMJI84JWAlvx8TGFMisvvZoFpz6+4ceJV4BamhAq1B9as/VDSNmQQqiDG+5yYQZEQDp4LNKv3UsITQCRkx31JJYmaCbB55hs+sMsSR0vZJwHP190ZGYmOmcWgn84hm2cvF/zw/heg6yLhMUmCSLj6KUoFB4fx+POSaURBTSwjV3GbFdEw0oWBbqtgSvOWTV0nnou416o2Hy1rzpqijjE7QKTpHHrpCTXSHWqiNKFLoGb2iNwecF+fd+ViMlpxi5xj9gfP5A4YckW4=</latexit>
+
+MFigure 4: Illustration of the progressive reduction in the diameter of compatible normal sources under iterative application of the model. The manifold of normal data M is represented schematically by the horizontal black line. The leftmost triangle (blue) indicates the cone of compatible normal sources for the corrupted sample ˆx1, while the rightmost triangle (red) indicates the corresponding cone for ˆx2. The small triangle (lilac) illustrates that, as the corrected sample moves closer to M, the set of compatible normal sources becomes more restricted, resulting in a smaller diameter. 
+
+Compatible normal sources. For a partially corrupted input ˆx we define the set of normal samples compatible with ˆx as CNS (ˆ x) = 
+
+n
+
+x ∈ M : xN (ˆ x) = ˆ xN (ˆ x) and ∃ α ∈ (0 , 1] , δ s.t. ˆx = x + αδ
+
+o
+
+. (15) We measure ambiguity on the corrupted region by the diameter 
+
+diam  CNS (ˆ x) := sup 
+
+x,x′∈CNS (ˆ x)
+
+∥xA(ˆ x) − x′
+
+A(ˆ x)∥. (16) We now show how our corruption process induces the contraction toward the manifold that ensures properties (ii ) and (iii ) in Theorem 2. 
+
+Proposition 1. Consider the following unconstrained optimization problem: minimize 
+
+θ∈Rk
+
+Eq(ˆ x)
+
+Ep(x)
+
+∥fθ (ˆ x) − x∥2 C(x) = ˆ x , (17) 
+
+under the corruption model (13) –(14) denoted by C. Let f ∗ denote a Bayes-optimal solution of the above optimization problem. Then there exists a constant C ∈ (0 , 1) such that, for all admissible corrupted samples ˆx,
+
+diam  CNS( f ∗(ˆ x))  < C · diam  CNS(ˆ x). (18) 
+
+Proof. The assumption about the perturbations with normal-dominant components implies that locally the set CNS(ˆ x) is confined within a cone around the normal direction of M in the corrupted coordinates of δ. By Theorem 1, the Bayes-optimal mapping produces the conditional mean of the compatible normal sources, which lies near the center of this cone and therefore yields a blurry 
+
+single-step completion. Because the training distribution contains transparent perturbations, i.e., arbitrarily small values of α, the corrected sample ˆx+ := f ∗(ˆ x) can only be generated from normal samples in a strictly smaller neighborhood of M than ˆx.The corresponding reduction factor is controlled by the aperture of the local cone of compatible normal sources. This aperture is determined by the maximal deviation from the normal-dominance condition in (14) . Hence, under a uniform normal-dominance margin, there exists a constant C ∈ (0 , 1) 
+
+such that equation (18) holds for all admissible corrupted samples ˆx. This idea is illustrated in Figure 4. Together, Theorem 1 and Proposition 1 provide the geometric mechanism underlying assumptions 
+
+(ii ) and (iii ) of Theorem 2. Theorem 1 states that a Bayes-optimal solution f ∗ maps each corrupted input to the conditional mean of the compatible normal sources determined by the corruption process 15 C. Under the normal-dominance assumption, these compatible sources are confined to a cone around the normal direction of the manifold. Proposition 1 shows that, after applying f ∗, the diameter of this cone decreases by a uniform multiplicative factor. Since the compatible normal sources are defined by fixing the normal coordinates and varying only the corrupted coordinates, the diameter of this set directly measures the remaining ambiguity along the corresponding manifold slice. Therefore, the multiplicative reduction of this diameter induces the slice-contraction property (ii ). Moreover, because the Bayes-optimal correction is the conditional mean of the compatible normal sources, the magnitude of the remaining correction is controlled by the same cone diameter. As the cone diameter decreases, the correction magnitude vanishes near the corresponding manifold slice, yielding property (iii ). Thus, the decreasing diameter of the compatible normal sources explains why iterative application of f ∗ moves the sample progressively closer to M while producing corrections of decreasing magnitude. 
+
+Role of transparency and corruption geometry. Training with transparent corruptions, i.e., a continuum of perturbation magnitudes, exposes the model to inputs arbitrarily close to the normal-data manifold and therefore determines the local behavior of the learned mapping in a neighborhood of M. However, transparency alone is not sufficient to guarantee contractive behavior. A contraction bias is obtained only if the corruption directions that appear close to the manifold are predominantly normal to M. In this case, small-amplitude corruptions correspond to displacements away from the manifold, and minimizing the conditional reconstruction objective enforces corrections that reduce these displacements. Conversely, if small-amplitude corruptions are dominated by tangent components, they correspond to valid variations along the manifold and should not be removed. Thus, transparency restricts the perturbation directions that influence the local Jacobian of the learned mapping: near M, the model is exposed only to corruption patterns whose normal component dominates. Under this condition, the learned operator is biased toward contractive behavior in the corrupted coordinates. 
+
+A.3 Regularization based on Jacobian Penalties 
+
+Geometrically, our autoencoder f is designed to project corrupted inputs back onto the manifold of normal samples M while acting as the identity on M. Together, these requirements suggest that f
+
+should be idempotent, i.e. f (f (ˆ x)) = f (ˆ x). Instead of adding an explicit penalty to the objective we instead propose to constrain the Jacobian by adding the term ∥Jf (ˆ x) − Id∥F to the training objective (1), where Jf (ˆ x) and Id denote the Jacobian of the model and the identity mapping, respectively. To analyze how the regularizer promotes idempotency, we expand f at x ∈ M and evaluate it at 
+
+f (ˆ x), where ˆx is a corrupted version of x. We note that identity behavior is not enforced uniformly, but arises predominantly along tangent directions of the manifold due to its interaction with the reconstruction error, which in turn induces contraction toward the manifold. For the sake of argument, we consider the extreme case Jθ (x) = Id, yielding 
+
+f (f (ˆ x)) = f (x) + Jθ (x) f (ˆ x) − x + R2
+
+= f (ˆ x) + ( f (x) − x) + R2,
+
+where R2 is the second-order Taylor remainder. If the Jacobian is L-Lipschitz along the segment from x to f (ˆ x), then ∥R2∥ ≤ L∥f (ˆ x) − x∥2. Hence, 
+
+f (f (ˆ x)) − f (ˆ x)
+
+| {z }
+
+> idempotency residual
+
+= f (x) − x
+
+| {z } 
+
+> bias on M
+
++O  ∥f (ˆ x) − x∥2
+
+| {z }
+
+> reconstruction error
+
+. (19) Equation (19) thus links approximate idempotency directly to reconstruction accuracy and how well 
+
+f approximates the identity on the manifold. More generally, projection operators onto M satisfy three equivalent structural properties: (i) 
+
+Im( f ) = M, (ii) f (x) = x ⇔ x ∈ M , and (iii) f is idempotent, i.e. f (f (x)) = f (x). Any two of these properties imply the third and therefore characterize a projection operator onto M.Our result in Equation (19) reveals that the regularization term couples these properties in the trained model: (i) is reflected through reconstruction quality, (ii) corresponds to the residual bias on the manifold, and (iii) is captured by the idempotency residual. In other words, the identity-anchored 16 Jacobian regularization, together with a suitable corruption process that promotes contraction toward the data manifold, locally stabilizes the model toward behavior that approximates the defining properties of a projection operator. 
+
+Figure 5: Representative examples of anomaly heatmaps on the MVTec AD and VisA datasets produced by our model. Each column shows (top to bottom) the input image, its reconstruction, the corresponding human-annotated anomaly mask for reference, and the predicted anomaly heatmap. 17

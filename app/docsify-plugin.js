@@ -886,16 +886,60 @@ window.$docsify = {
           console.error('Zotero meta update failed:', e);
         });
 
+      // 公共工具：保护 LaTeX 公式不被 marked 破坏
+      // 在 beforeEach 阶段调用，将公式包裹成 HTML 标签（marked 不解析 HTML）
+      const protectLatex = (text) => {
+        if (!text) return text;
+        // 1) 将 \[...\] 转为 $$...$$，\(...\) 转为 $...$
+        //    注意：\[ 可能在行首也可能在行内
+        text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
+        text = text.replace(/\\\((.*?)\\\)/g, (_, inner) => `$${inner}$`);
+        // 2) 保护块级公式 $$...$$ → <div class="dpr-math" data-display="true">
+        text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => {
+          const escaped = inner.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `<div class="dpr-math" data-display="true">${escaped}</div>`;
+        });
+        // 3) 保护行内公式 $...$ → <span class="dpr-math" data-display="false">
+        //    不跨行，排除 $ 后紧跟空格或 $ 前紧跟空格的情况（减少误匹配）
+        text = text.replace(/\$([^\$\n]+?)\$/g, (match, inner) => {
+          // 排除明显不是公式的情况（如 $10 这种价格）
+          if (/^\d+$/.test(inner.trim())) return match;
+          const escaped = inner.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `<span class="dpr-math" data-display="false">${escaped}</span>`;
+        });
+        return text;
+      };
+
       // 公共工具：在指定元素上渲染公式
       const renderMathInEl = (el) => {
-        if (!window.renderMathInElement || !el) return;
-        window.renderMathInElement(el, {
-          delimiters: [
-            { left: '$$', right: '$$', display: true },
-            { left: '$', right: '$', display: false },
-          ],
-          throwOnError: false,
-        });
+        if (!el) return;
+        // 优先渲染 protectLatex 产生的 .dpr-math 标签
+        if (window.katex) {
+          el.querySelectorAll('.dpr-math').forEach((node) => {
+            const latex = node.textContent;
+            const displayMode = node.getAttribute('data-display') === 'true';
+            try {
+              window.katex.render(latex, node, {
+                displayMode,
+                throwOnError: false,
+              });
+            } catch (e) {
+              // 渲染失败保留原文
+            }
+          });
+        }
+        // 兜底：对纯文本中残留的 $...$ / $$...$$ 用 auto-render 处理
+        if (window.renderMathInElement) {
+          window.renderMathInElement(el, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '$', right: '$', display: false },
+              { left: '\\[', right: '\\]', display: true },
+              { left: '\\(', right: '\\)', display: false },
+            ],
+            throwOnError: false,
+          });
+        }
       };
 
       // 公共工具：简单表格 + 标记修正：
@@ -946,6 +990,10 @@ window.$docsify = {
         // 保护 LaTeX 公式：先用占位符替换，渲染后再恢复
         const latexBlocks = [];
         let protectedText = text;
+
+        // 先将 \[...\] → $$...$$ 和 \(...\) → $...$
+        protectedText = protectedText.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner}$$`);
+        protectedText = protectedText.replace(/\\\((.*?)\\\)/g, (_, inner) => `$${inner}$`);
 
         // 保护块级公式 $$...$$
         protectedText = protectedText.replace(/\$\$([\s\S]*?)\$\$/g, (match) => {
@@ -1757,14 +1805,30 @@ window.$docsify = {
           // 绑定点击：使用 capture 阶段，确保即使旧版本已有 handler 也能覆盖
           if (!wrapper.dataset.dprDayToggleBound) {
             wrapper.dataset.dprDayToggleBound = '1';
+
+            // --- 拖拽检测：记录 pointerdown 起始位置，click 时判断是否为拖拽 ---
+            let _dayTogglePtrStart = null;
+            wrapper.addEventListener('pointerdown', (pe) => {
+              _dayTogglePtrStart = { x: pe.clientX, y: pe.clientY };
+            }, true);
+
             wrapper.addEventListener(
               'click',
               (e) => {
-                // 点击菜单控件时，不触发日期折叠（否则 capture 阶段会先被 wrapper 拦截，导致菜单无响应）
+                // badge 正在拖拽中，吞掉 click
+                if (wrapper._dprBadgeDragging) return;
+                // 拖拽距离超过阈值时，视为拖拽操作，不触发折叠
+                if (_dayTogglePtrStart) {
+                  const dx = e.clientX - _dayTogglePtrStart.x;
+                  const dy = e.clientY - _dayTogglePtrStart.y;
+                  _dayTogglePtrStart = null;
+                  if (Math.abs(dx) > 5 || Math.abs(dy) > 5) return;
+                }
+                // 点击菜单控件或未读 badge 时，不触发日期折叠
                 try {
                   const target = e && e.target && e.target.closest
                     ? e.target.closest(
-                        '.sidebar-day-menu-trigger,.sidebar-day-menu,.sidebar-day-menu-item',
+                        '.sidebar-day-menu-trigger,.sidebar-day-menu,.sidebar-day-menu-item,.dpr-unread-badge',
                       )
                     : null;
                   if (target) return;
@@ -1782,7 +1846,7 @@ window.$docsify = {
                 state.__latestDay = latestDay;
                 ensureStateSaved();
                 // 先做一次即时同步（保证交互反馈），再在动画结束后做一次终态校准，
-                // 否则列表在 max-height 过渡中继续位移，会让高亮条“越开越往上偏”。
+                // 否则列表在 max-height 过渡中继续位移，会让高亮条”越开越往上偏”。
                 requestAnimationFrame(() => {
                   syncSidebarActiveIndicator({ animate: false });
                 });
@@ -1819,10 +1883,318 @@ window.$docsify = {
         });
       };
 
+      const setupCollapsibleConferenceSidebar = () => {
+        const nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+
+        const STORAGE_KEY = 'dpr_sidebar_conference_state_v1';
+        const ANIM_MS = 240;
+
+        const readState = () => {
+          try {
+            const raw = window.localStorage
+              ? window.localStorage.getItem(STORAGE_KEY)
+              : null;
+            return raw ? JSON.parse(raw) || {} : {};
+          } catch {
+            return {};
+          }
+        };
+
+        const state = readState();
+        const saveState = () => {
+          try {
+            if (window.localStorage) {
+              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        const getDirectTextNode = (li) => {
+          if (!li || typeof Node === 'undefined') return null;
+          return (
+            Array.from(li.childNodes || []).find((node) => {
+              return node && node.nodeType === Node.TEXT_NODE && String(node.textContent || '').trim();
+            }) || null
+          );
+        };
+
+        const getDirectLabelNode = (li) => {
+          if (!li) return null;
+          const textNode = getDirectTextNode(li);
+          if (textNode) return textNode;
+          return (
+            Array.from(li.children || []).find((node) => {
+              if (!node || node.tagName === 'UL') return false;
+              if (node.classList && node.classList.contains('sidebar-conference-content')) return false;
+              if (node.classList && node.classList.contains('sidebar-conference-toggle')) return true;
+              return !!String(node.textContent || '').trim();
+            }) || null
+          );
+        };
+
+        const getToggleLabel = (li) => {
+          if (!li) return '';
+          const label = li.querySelector(
+            ':scope > .sidebar-conference-toggle .sidebar-conference-toggle-label',
+          );
+          if (label) return String(label.textContent || '').trim();
+          const labelNode = getDirectLabelNode(li);
+          return String((labelNode && labelNode.textContent) || '').trim();
+        };
+
+        const normalizeKeyPart = (value) => {
+          return String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+        };
+
+        const getElementDepth = (el) => {
+          let depth = 0;
+          let current = el;
+          while (current && current.parentElement) {
+            depth += 1;
+            current = current.parentElement;
+          }
+          return depth;
+        };
+
+        const syncOpenDescendantHeights = (li) => {
+          if (!li) return;
+          Array.from(
+            li.querySelectorAll(
+              'li.sidebar-conference-node:not(.sidebar-conference-collapsed) > ul.sidebar-conference-content',
+            ),
+          )
+            .sort((a, b) => getElementDepth(b) - getElementDepth(a))
+            .forEach((ul) => {
+              ul.style.maxHeight = `${ul.scrollHeight}px`;
+              ul.style.opacity = '1';
+            });
+        };
+
+        const getConferenceContentHeight = (li) => {
+          if (!li) return 0;
+          syncOpenDescendantHeights(li);
+          const ul = li.querySelector(':scope > ul.sidebar-conference-content, :scope > ul');
+          return ul ? ul.scrollHeight : 0;
+        };
+
+        const updateOpenAncestorHeights = (li) => {
+          let parent = li ? li.parentElement : null;
+          while (parent) {
+            const parentLi = parent.closest('li.sidebar-conference-node');
+            if (!parentLi) break;
+            if (!parentLi.classList.contains('sidebar-conference-collapsed')) {
+              const ul = parentLi.querySelector(':scope > ul.sidebar-conference-content');
+              if (ul) ul.style.maxHeight = `${getConferenceContentHeight(parentLi)}px`;
+            }
+            parent = parentLi.parentElement;
+          }
+        };
+
+        const setConferenceCollapsed = (li, collapsed, options = {}) => {
+          const { animate = true } = options || {};
+          const ul = li.querySelector(':scope > ul');
+          if (!ul) return;
+          ul.classList.add('sidebar-conference-content');
+          const doAnimate = animate && !prefersReducedMotion();
+
+          if (!doAnimate) {
+            ul.style.transition = 'none';
+            ul.style.maxHeight = collapsed ? '0px' : `${getConferenceContentHeight(li)}px`;
+            ul.style.opacity = collapsed ? '0' : '1';
+            requestAnimationFrame(() => {
+              ul.style.transition = '';
+              updateOpenAncestorHeights(li);
+            });
+            return;
+          }
+
+          if (collapsed) {
+            ul.style.maxHeight = `${getConferenceContentHeight(li)}px`;
+            ul.style.opacity = '0';
+            requestAnimationFrame(() => {
+              ul.style.maxHeight = '0px';
+              updateOpenAncestorHeights(li);
+            });
+          } else {
+            ul.style.opacity = '1';
+            ul.style.maxHeight = '0px';
+            requestAnimationFrame(() => {
+              ul.style.maxHeight = `${getConferenceContentHeight(li)}px`;
+              updateOpenAncestorHeights(li);
+              requestAnimationFrame(() => {
+                updateOpenAncestorHeights(li);
+              });
+            });
+          }
+
+          setTimeout(() => {
+            try {
+              if (!li.classList.contains('sidebar-conference-collapsed')) {
+                ul.style.maxHeight = `${getConferenceContentHeight(li)}px`;
+              }
+              updateOpenAncestorHeights(li);
+              syncSidebarActiveIndicator({ animate: false });
+            } catch {
+              // ignore
+            }
+          }, ANIM_MS + 30);
+        };
+
+        const ensureToggle = (li, label, storageKey) => {
+          if (!li || !label || !storageKey) return;
+          const childUl = li.querySelector(':scope > ul');
+          if (!childUl) return;
+
+          li.classList.add('sidebar-conference-node');
+          childUl.classList.add('sidebar-conference-content');
+
+          let wrapper = li.querySelector(':scope > .sidebar-conference-toggle');
+          if (!wrapper) {
+            wrapper = document.createElement('div');
+            wrapper.className = 'sidebar-conference-toggle';
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'sidebar-conference-toggle-label';
+
+            const arrowSpan = document.createElement('span');
+            arrowSpan.className = 'sidebar-conference-toggle-arrow';
+            arrowSpan.setAttribute('aria-hidden', 'true');
+
+            wrapper.appendChild(labelSpan);
+            wrapper.appendChild(arrowSpan);
+
+            const labelNode = getDirectLabelNode(li);
+            if (labelNode && labelNode.parentNode === li) {
+              li.replaceChild(wrapper, labelNode);
+            } else {
+              li.insertBefore(wrapper, li.firstChild);
+            }
+          }
+
+          const labelSpan = wrapper.querySelector('.sidebar-conference-toggle-label');
+          const arrowSpan = wrapper.querySelector('.sidebar-conference-toggle-arrow');
+          if (labelSpan) labelSpan.textContent = label;
+
+          const collapsed = state[storageKey] === 'closed';
+          li.dataset.sidebarConferenceKey = storageKey;
+          li.classList.toggle('sidebar-conference-collapsed', collapsed);
+          if (arrowSpan) arrowSpan.textContent = collapsed ? '▸' : '▾';
+          wrapper.setAttribute('role', 'button');
+          wrapper.setAttribute('tabindex', '0');
+          wrapper.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+          setConferenceCollapsed(li, collapsed, { animate: false });
+
+          if (!wrapper.dataset.dprConferenceToggleBound) {
+            wrapper.dataset.dprConferenceToggleBound = '1';
+
+            // --- 拖拽检测：记录 pointerdown 起始位置，click 时判断是否为拖拽 ---
+            let _confTogglePtrStart = null;
+            wrapper.addEventListener('pointerdown', (pe) => {
+              _confTogglePtrStart = { x: pe.clientX, y: pe.clientY };
+            }, true);
+
+            const toggle = (event) => {
+              // badge 正在拖拽中，吞掉 click
+              if (wrapper._dprBadgeDragging) return;
+              // 拖拽距离超过阈值时，视为拖拽操作，不触发折叠
+              if (event && event.type === 'click' && _confTogglePtrStart) {
+                const dx = event.clientX - _confTogglePtrStart.x;
+                const dy = event.clientY - _confTogglePtrStart.y;
+                _confTogglePtrStart = null;
+                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) return;
+              }
+              if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+              }
+              const nowCollapsed = li.classList.toggle('sidebar-conference-collapsed');
+              const currentArrow = wrapper.querySelector('.sidebar-conference-toggle-arrow');
+              if (currentArrow) currentArrow.textContent = nowCollapsed ? '▸' : '▾';
+              wrapper.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+              state[storageKey] = nowCollapsed ? 'closed' : 'open';
+              saveState();
+              setConferenceCollapsed(li, nowCollapsed, { animate: true });
+              requestAnimationFrame(() => {
+                syncSidebarActiveIndicator({ animate: false });
+              });
+            };
+            wrapper.addEventListener('click', toggle, true);
+            wrapper.addEventListener('keydown', (event) => {
+              const keyName = event && event.key ? event.key : '';
+              if (keyName !== 'Enter' && keyName !== ' ') return;
+              toggle(event);
+            });
+          }
+        };
+
+        const buildNodeKey = (rootLi, li, label) => {
+          if (li === rootLi) return 'root:conference-papers';
+          const labels = [];
+          let current = li;
+          while (current && current !== rootLi) {
+            const currentLabel = getToggleLabel(current);
+            if (currentLabel) labels.unshift(normalizeKeyPart(currentLabel));
+            const parentUl = current.parentElement;
+            current = parentUl ? parentUl.closest('li.sidebar-conference-node, li') : null;
+          }
+          const path = labels.filter(Boolean).join('/');
+          return `conference:${path || normalizeKeyPart(label)}`;
+        };
+
+        const setupConferenceTree = (rootLi, li) => {
+          if (!li || !li.querySelector(':scope > ul')) return;
+          const label = li === rootLi ? 'Conference Papers' : getToggleLabel(li);
+          if (!label) return;
+          ensureToggle(li, label, buildNodeKey(rootLi, li, label));
+          Array.from(li.querySelectorAll(':scope > ul > li')).forEach((childLi) => {
+            setupConferenceTree(rootLi, childLi);
+          });
+        };
+
+        const rootItems = Array.from(nav.querySelectorAll('li')).filter((li) => {
+          if (!li.querySelector(':scope > ul')) return false;
+          return getToggleLabel(li) === 'Conference Papers';
+        });
+
+        rootItems.forEach((rootLi) => {
+          setupConferenceTree(rootLi, rootLi);
+        });
+
+        requestAnimationFrame(() => {
+          try {
+            Array.from(
+              nav.querySelectorAll(
+                'li.sidebar-conference-node:not(.sidebar-conference-collapsed) > ul.sidebar-conference-content',
+              ),
+            )
+              .sort((a, b) => getElementDepth(b) - getElementDepth(a))
+              .forEach((ul) => {
+                const prevTransition = ul.style.transition;
+                ul.style.transition = 'none';
+                ul.style.maxHeight = `${ul.scrollHeight}px`;
+                ul.style.opacity = '1';
+                requestAnimationFrame(() => {
+                  ul.style.transition = prevTransition || '';
+                });
+              });
+          } catch {
+            // ignore
+          }
+        });
+      };
+
       // 4. 论文“已阅读”状态管理（存储在 localStorage）
       const READ_STORAGE_KEY = 'dpr_read_papers_v1';
 
       const loadReadState = () => {
+        // 认证用户优先从 Supabase 缓存读取
+        if (window.DPRReadStateSync && window.DPRReadStateSync.isActive()) {
+          return window.DPRReadStateSync.getAll();
+        }
         try {
           if (!window.localStorage) return {};
           const raw = window.localStorage.getItem(READ_STORAGE_KEY);
@@ -1847,11 +2219,36 @@ window.$docsify = {
       };
 
       const saveReadState = (state) => {
+        // localStorage 始终保存（离线回退）
         try {
-          if (!window.localStorage) return;
-          window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(state));
+          if (window.localStorage) {
+            window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(state));
+          }
         } catch {
           // ignore
+        }
+      };
+
+      const markPaperRead = (paperId, status) => {
+        if (!paperId) return;
+        const st = status || 'read';
+        // 写 localStorage
+        const state = loadReadState();
+        state[paperId] = st;
+        saveReadState(state);
+        // 同步到 Supabase
+        if (window.DPRReadStateSync && window.DPRReadStateSync.isActive()) {
+          window.DPRReadStateSync.markRead(paperId, st);
+        }
+      };
+
+      const clearPaperRead = (paperId) => {
+        if (!paperId) return;
+        const state = loadReadState();
+        delete state[paperId];
+        saveReadState(state);
+        if (window.DPRReadStateSync && window.DPRReadStateSync.isActive()) {
+          window.DPRReadStateSync.clearRead(paperId);
         }
       };
 
@@ -2159,6 +2556,166 @@ window.$docsify = {
         showShareModal(url, preview ? `精美预览：${preview}` : '');
       };
 
+      // --- Sidebar 未读 badge 更新 ---
+      const updateSidebarUnreadBadges = () => {
+        const nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+        const state = loadReadState();
+
+        let badgeCount = 0;
+
+        // 找到所有一级和二级分组（Conference/Daily 下的日期或会议名）
+        nav.querySelectorAll('li').forEach((li) => {
+          // 跳过叶子节点（论文条目本身）
+          const childUl = li.querySelector('ul');
+          if (!childUl) return;
+
+          // 收集该 li 下所有论文链接（递归所有后代）
+          const paperLinks = li.querySelectorAll('a.dpr-sidebar-item-link[href*="#/"]');
+          if (!paperLinks.length) return;
+
+          let total = 0;
+          let readCount = 0;
+          paperLinks.forEach((a) => {
+            const href = a.getAttribute('href') || '';
+            const m = href.match(/#\/(.+)$/);
+            if (!m) return;
+            const paperId = m[1].replace(/\/$/, '');
+            total++;
+            if (state[paperId]) readCount++;
+          });
+
+          const unread = total - readCount;
+
+          // 找到该 li 的标题元素：尝试多种选择器
+          let titleEl = li.querySelector(':scope > p')
+            || li.querySelector(':scope > a')
+            || li.querySelector(':scope > div')
+            || li.querySelector(':scope > strong')
+            || li.querySelector(':scope > span');
+
+          // docsify 可能把分组头渲染为直接文本节点，没有包裹标签
+          // 这种情况需要创建一个包裹 span
+          if (!titleEl) {
+            // 检查 li 的第一个子节点是否是文本
+            const firstNode = li.childNodes[0];
+            if (firstNode && firstNode.nodeType === 3 && firstNode.textContent.trim()) {
+              const wrapper = document.createElement('span');
+              wrapper.className = 'dpr-sidebar-group-title';
+              wrapper.textContent = firstNode.textContent;
+              li.replaceChild(wrapper, firstNode);
+              titleEl = wrapper;
+            }
+          }
+
+          if (!titleEl) return;
+
+          // 找到或创建 badge — 放在 actions 按钮组的左边
+          let badge = li.querySelector(':scope > .sidebar-day-toggle > .dpr-unread-badge')
+            || titleEl.querySelector('.dpr-unread-badge');
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'dpr-unread-badge';
+            // 如果存在 sidebar-day-toggle-actions，插到它前面
+            const actions = titleEl.querySelector('.sidebar-day-toggle-actions');
+            if (actions) {
+              titleEl.insertBefore(badge, actions);
+            } else {
+              titleEl.appendChild(badge);
+            }
+          }
+          badge.textContent = unread > 0 ? String(unread) : '';
+          badge.setAttribute('data-count', String(unread));
+          if (unread > 0) {
+            badgeCount++;
+            if (!badge._dprDragBound) {
+              badge._dprDragBound = true;
+              badge.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return; // 只处理左键
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[DPR-badge] mousedown fired on badge', badge.textContent);
+
+                // 标记 badge 拖拽进行中 —— wrapper 的 click handler 检查此标志
+                const parentToggle = badge.closest('.sidebar-day-toggle,.sidebar-conference-toggle');
+                if (parentToggle) parentToggle._dprBadgeDragging = true;
+
+                const rect = badge.getBoundingClientRect();
+                const startX = e.clientX, startY = e.clientY;
+                const origLeft = rect.left + rect.width / 2;
+                const origTop = rect.top + rect.height / 2;
+
+                const ghost = document.createElement('span');
+                ghost.className = 'dpr-unread-badge-ghost';
+                ghost.textContent = badge.textContent;
+                ghost.style.left = (e.clientX - rect.width / 2) + 'px';
+                ghost.style.top = (e.clientY - rect.height / 2) + 'px';
+                document.body.appendChild(ghost);
+                console.log('[DPR-badge] ghost created and appended');
+
+                badge.style.opacity = '0';
+
+                const clearDragFlag = () => {
+                  setTimeout(() => {
+                    if (parentToggle) parentToggle._dprBadgeDragging = false;
+                  }, 80);
+                };
+
+                // --- 用 document 级别的 mousemove/mouseup，最可靠的拖拽模式 ---
+                const onMouseMove = (ev) => {
+                  ghost.style.left = (ev.clientX - rect.width / 2) + 'px';
+                  ghost.style.top = (ev.clientY - rect.height / 2) + 'px';
+                };
+
+                const onMouseUp = (ev) => {
+                  document.removeEventListener('mousemove', onMouseMove, true);
+                  document.removeEventListener('mouseup', onMouseUp, true);
+
+                  const dx = ev.clientX - startX, dy = ev.clientY - startY;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  console.log('[DPR-badge] mouseup: dist=' + dist.toFixed(1) + ' (threshold=60)');
+
+                  if (dist > 60) {
+                    // ── 拖远：标记已读并消失 ──
+                    console.log('[DPR-badge] distance > 60, marking as read...');
+                    const groupLi = badge.closest('li');
+                    const links = groupLi ? groupLi.querySelectorAll('a.dpr-sidebar-item-link[href*="#/"]') : [];
+                    console.log('[DPR-badge] found ' + links.length + ' paper links to mark read');
+                    links.forEach((a) => {
+                      const href = a.getAttribute('href') || '';
+                      const m = href.match(/#\/(.+)$/);
+                      if (m) {
+                        const paperId = m[1].replace(/\/$/, '');
+                        console.log('[DPR-badge] marking read:', paperId);
+                        markPaperRead(paperId, 'read');
+                      }
+                    });
+                    badge.style.opacity = '';
+                    updateSidebarUnreadBadges();
+                    clearDragFlag();
+                    if (ghost.parentNode) ghost.remove();
+                  } else {
+                    // ── 拖近：弹回原位 ──
+                    console.log('[DPR-badge] distance < 60, returning to origin');
+                    badge.style.opacity = '';
+                    clearDragFlag();
+                    if (ghost.parentNode) ghost.remove();
+                  }
+                };
+
+                document.addEventListener('mousemove', onMouseMove, true);
+                document.addEventListener('mouseup', onMouseUp, true);
+                console.log('[DPR-badge] document listeners attached');
+              });
+            }
+          }
+        });
+
+        if (badgeCount === 0) {
+          console.debug('[DPR] updateSidebarUnreadBadges: no badges added (0 groups with unread)');
+        }
+      };
+
 	      const markSidebarReadState = (currentPaperId) => {
 	        const nav = document.querySelector('.sidebar-nav');
 	        if (!nav) return;
@@ -2166,9 +2723,9 @@ window.$docsify = {
 	        const state = loadReadState();
         if (currentPaperId) {
           if (!state[currentPaperId]) {
+            markPaperRead(currentPaperId, 'read');
             state[currentPaperId] = 'read';
           }
-          saveReadState(state);
         }
 
         const applyLiState = (li, paperIdFromHref) => {
@@ -2355,6 +2912,9 @@ window.$docsify = {
 
 	          applyLiState(li, paperIdFromHref);
 	        });
+
+          // 更新分组未读 badge
+          updateSidebarUnreadBadges();
 	      };
 
       const scoreToStarRating = (scoreValue) => {
@@ -2383,9 +2943,13 @@ window.$docsify = {
       const hydrateStructuredSidebarItems = () => {
         const nav = document.querySelector('.sidebar-nav');
         if (!nav) return;
-        const links = nav.querySelectorAll('a.dpr-sidebar-item-link[href*="#/"]');
+        const links = nav.querySelectorAll('a.dpr-sidebar-item-link.dpr-sidebar-item-structured');
         links.forEach((a) => {
           if (a.dataset.sidebarStructuredHydrated === '1') return;
+          const li = a.closest('li');
+          if (li && li.classList) {
+            li.classList.add('sidebar-paper-item');
+          }
           const href = String(a.getAttribute('href') || '').trim();
           const routeMatch = href.match(/#\/(.+)$/);
           const routeId = routeMatch ? decodeURIComponent(routeMatch[1]).replace(/\/$/, '') : '';
@@ -2511,7 +3075,10 @@ window.$docsify = {
       // 侧边栏/正文的论文页标题条：英文右侧，中文左侧，中间竖线
       const isPaperRouteFile = (file) => {
         const f = String(file || '');
-        return /^(?:\d{6}\/\d{2}|\d{8}-\d{8})\/(?!README\.md$).+\.md$/i.test(f);
+        return (
+          /^(?:\d{6}\/\d{2}|\d{8}-\d{8})\/(?!README\.md$).+\.md$/i.test(f) ||
+          /^conference\/[^/]+\/(?!README\.md$).+\.md$/i.test(f)
+        );
       };
 
       const isReportRouteFile = (file) => {
@@ -2763,9 +3330,13 @@ window.$docsify = {
 
         // 只对论文条目启用（避免日期分组标题等）
         if (!li.classList || !li.classList.contains('sidebar-paper-item')) return;
-        // 若该条目在“折叠的日期”之下：隐藏高亮层，避免折叠后仍残留选中背景
+        // 若该条目在折叠分组之下：隐藏高亮层，避免折叠后仍残留选中背景
         try {
-          if (li.closest && li.closest('li.sidebar-day-collapsed')) {
+          if (
+            li.closest &&
+            (li.closest('li.sidebar-day-collapsed') ||
+              li.closest('li.sidebar-conference-collapsed'))
+          ) {
             hideSidebarActiveIndicator();
             return;
           }
@@ -2916,7 +3487,11 @@ window.$docsify = {
         // 匹配论文页：
         // - 传统路径：#/YYYYMM/DD/slug
         // - 区间路径：#/YYYYMMDD-YYYYMMDD/slug
-        return /^#\/(?:\d{6}\/\d{2}|\d{8}-\d{8})\/(?!README$).+/i.test(h);
+        // - 会议路径：#/conference/<conference-year>/slug
+        return (
+          /^#\/(?:\d{6}\/\d{2}|\d{8}-\d{8})\/(?!README$).+/i.test(h) ||
+          /^#\/conference\/[^/]+\/(?!README$).+/i.test(h)
+        );
       };
 
       const isReportHref = (href) => {
@@ -3571,8 +4146,8 @@ window.$docsify = {
           .replace(/"/g, '&quot;');
       };
 
-      const parseFiguresMeta = (meta) => {
-        const raw = meta && typeof meta.figures_json === 'string' ? meta.figures_json.trim() : '';
+      const parseMediaMeta = (meta, key) => {
+        const raw = meta && typeof meta[key] === 'string' ? meta[key].trim() : '';
         if (!raw) return [];
         try {
           const parsed = JSON.parse(raw);
@@ -3593,6 +4168,9 @@ window.$docsify = {
         }
       };
 
+      const parseFiguresMeta = (meta) => parseMediaMeta(meta, 'figures_json');
+      const parseTablesMeta = (meta) => parseMediaMeta(meta, 'tables_json');
+
       const resolveDocsAssetUrl = (value) => {
         const url = String(value || '').trim();
         if (!url) return '';
@@ -3603,46 +4181,256 @@ window.$docsify = {
         return `${safeBase}${url.replace(/^\/+/, '')}`;
       };
 
-      const renderFigureCarousel = (figures) => {
-        if (!figures || !figures.length) return '';
-        const slides = figures.map((figure, index) => {
-          const pageText = figure.page ? `PDF 第 ${figure.page} 页` : '';
-          const caption = figure.caption ? `<div class="paper-figure-caption">${escapePaperHtml(figure.caption)}</div>` : '';
+      const renderMediaCarousel = (items, options = {}) => {
+        if (!items || !items.length) return '';
+        const kind = options.kind || 'figure';
+        const title = options.title || 'Figures';
+        const label = options.label || 'Figure';
+        const labelCn = options.labelCn || '插图';
+        const slides = items.map((item, index) => {
+          const pageText = item.page ? `PDF 第 ${item.page} 页` : '';
+          const caption = item.caption ? `<div class="paper-figure-caption">${escapePaperHtml(item.caption)}</div>` : '';
           return [
             `<div class="paper-figure-slide${index === 0 ? ' is-active' : ''}" data-figure-slide="${index}">`,
-            `<img class="paper-figure-image" src="${escapePaperHtml(resolveDocsAssetUrl(figure.url))}" alt="Paper Figure ${index + 1}" loading="lazy">`,
+            '<div class="paper-figure-frame">',
+            `<img class="paper-figure-image" src="${escapePaperHtml(resolveDocsAssetUrl(item.url))}" alt="Paper ${label} ${index + 1}" loading="lazy">`,
+            '</div>',
             '<div class="paper-figure-meta">',
-            `<div class="paper-figure-badge">Figure ${index + 1}${pageText ? ` · ${escapePaperHtml(pageText)}` : ''}</div>`,
+            `<div class="paper-figure-badge">${label} ${index + 1}${pageText ? ` · ${escapePaperHtml(pageText)}` : ''}</div>`,
             caption,
             '</div>',
             '</div>',
           ].join('');
         }).join('');
 
-        const thumbs = figures.map((figure, index) => {
-          const thumbPageText = figure.page ? ` · PDF 第 ${figure.page} 页` : '';
+        const thumbs = items.map((item, index) => {
+          const thumbPageText = item.page ? ` · PDF 第 ${item.page} 页` : '';
           return [
-            `<button class="paper-figure-thumb${index === 0 ? ' is-active' : ''}" type="button" data-figure-thumb="${index}" aria-label="切换到第 ${index + 1} 张插图">`,
-            `<img class="paper-figure-thumb-image" src="${escapePaperHtml(resolveDocsAssetUrl(figure.url))}" alt="Thumbnail ${index + 1}" loading="lazy">`,
-            `<span class="paper-figure-thumb-label">Figure ${index + 1}${thumbPageText ? escapePaperHtml(thumbPageText) : ''}</span>`,
+            `<button class="paper-figure-thumb${index === 0 ? ' is-active' : ''}" type="button" data-figure-thumb="${index}" aria-label="切换到第 ${index + 1} 张${labelCn}">`,
+            `<img class="paper-figure-thumb-image" src="${escapePaperHtml(resolveDocsAssetUrl(item.url))}" alt="${label} Thumbnail ${index + 1}" loading="lazy">`,
+            `<span class="paper-figure-thumb-label">${label} ${index + 1}${thumbPageText ? escapePaperHtml(thumbPageText) : ''}</span>`,
             '</button>',
           ].join('');
         }).join('');
 
         return [
-          '<div class="paper-figure-section" data-paper-figure-carousel>',
+          `<div class="paper-figure-section paper-${escapePaperHtml(kind)}-section" data-paper-figure-carousel data-paper-media-kind="${escapePaperHtml(kind)}">`,
           '<div class="paper-figure-toolbar">',
-          `<div class="paper-figure-counter"><span data-figure-current>1</span> / ${figures.length}</div>`,
+          `<div class="paper-figure-title">${escapePaperHtml(title)}</div>`,
+          `<div class="paper-figure-counter"><span data-figure-current>1</span> / ${items.length}</div>`,
           '</div>',
           '<div class="paper-figure-stage">',
-          figures.length > 1 ? '<button class="paper-figure-nav paper-figure-nav-prev" type="button" data-figure-prev aria-label="上一张">‹</button>' : '',
+          '<div class="paper-figure-main">',
+          items.length > 1 ? '<button class="paper-figure-nav paper-figure-nav-prev" type="button" data-figure-prev aria-label="上一张">‹</button>' : '',
           `<div class="paper-figure-viewport">${slides}</div>`,
-          figures.length > 1 ? '<button class="paper-figure-nav paper-figure-nav-next" type="button" data-figure-next aria-label="下一张">›</button>' : '',
+          items.length > 1 ? '<button class="paper-figure-nav paper-figure-nav-next" type="button" data-figure-next aria-label="下一张">›</button>' : '',
           '</div>',
-          figures.length > 1 ? `<div class="paper-figure-thumbs">${thumbs}</div>` : '',
+          items.length > 1 ? [
+            '<div class="paper-figure-thumbs-wrap">',
+            '<button class="paper-figure-thumb-nav paper-figure-thumb-nav-prev" type="button" data-figure-thumb-prev aria-label="上一张缩略图">‹</button>',
+            `<div class="paper-figure-thumbs">${thumbs}</div>`,
+            '<button class="paper-figure-thumb-nav paper-figure-thumb-nav-next" type="button" data-figure-thumb-next aria-label="下一张缩略图">›</button>',
+            '</div>',
+          ].join('') : '',
+          '</div>',
           '</div>',
           '',
         ].join('');
+      };
+
+      const renderFigureCarousel = (figures) => renderMediaCarousel(figures, {
+        kind: 'figure',
+        title: 'Figures',
+        label: 'Figure',
+        labelCn: '插图',
+      });
+
+      const renderTableCarousel = (tables) => renderMediaCarousel(tables, {
+        kind: 'table',
+        title: 'Tables',
+        label: 'Table',
+        labelCn: '表格',
+      });
+
+      const renderPaperMediaCarousels = (figures, tables) => {
+        const hasFigures = Array.isArray(figures) && figures.length;
+        const hasTables = Array.isArray(tables) && tables.length;
+        if (!hasFigures && !hasTables) return '';
+        const defaultTab = hasFigures ? 'figures' : 'tables';
+        const figureButton = hasFigures ? [
+          `<button class="paper-media-card${defaultTab === 'figures' ? ' is-primary' : ''}" type="button" data-paper-media-open="figures">`,
+          '<span class="paper-media-card-kicker">Figures</span>',
+          `<span class="paper-media-card-title">${figures.length} 张论文插图</span>`,
+          '<span class="paper-media-card-action">打开轮播</span>',
+          '</button>',
+        ].join('') : '';
+        const tableButton = hasTables ? [
+          `<button class="paper-media-card${defaultTab === 'tables' ? ' is-primary' : ''}" type="button" data-paper-media-open="tables">`,
+          '<span class="paper-media-card-kicker">Tables</span>',
+          `<span class="paper-media-card-title">${tables.length} 张论文表格</span>`,
+          '<span class="paper-media-card-action">打开轮播</span>',
+          '</button>',
+        ].join('') : '';
+        const tabButtons = [
+          hasFigures ? `<button class="paper-media-tab${defaultTab === 'figures' ? ' is-active' : ''}" type="button" data-paper-media-tab="figures">Figures <span>${figures.length}</span></button>` : '',
+          hasTables ? `<button class="paper-media-tab${defaultTab === 'tables' ? ' is-active' : ''}" type="button" data-paper-media-tab="tables">Tables <span>${tables.length}</span></button>` : '',
+        ].join('');
+        const figurePanel = hasFigures ? [
+          `<div class="paper-media-pane${defaultTab === 'figures' ? ' is-active' : ''}" data-paper-media-pane="figures">`,
+          renderFigureCarousel(figures),
+          '</div>',
+        ].join('') : '';
+        const tablePanel = hasTables ? [
+          `<div class="paper-media-pane${defaultTab === 'tables' ? ' is-active' : ''}" data-paper-media-pane="tables">`,
+          renderTableCarousel(tables),
+          '</div>',
+        ].join('') : '';
+        return [
+          '<div class="paper-media-attachments" data-paper-media-root>',
+          '<div class="paper-media-summary">',
+          '<div>',
+          '<div class="paper-media-summary-kicker">Paper Media</div>',
+          '<div class="paper-media-summary-title">图表附件</div>',
+          '</div>',
+          '<div class="paper-media-summary-cards">',
+          figureButton,
+          tableButton,
+          '</div>',
+          '</div>',
+          '<div class="paper-media-modal" data-paper-media-modal aria-hidden="true">',
+          '<div class="paper-media-backdrop" data-paper-media-close></div>',
+          '<div class="paper-media-dialog" role="dialog" aria-modal="true" aria-label="论文图表附件" tabindex="-1">',
+          '<div class="paper-media-dialog-head">',
+          '<div>',
+          '<div class="paper-media-dialog-kicker">Paper Media</div>',
+          '<div class="paper-media-dialog-title">论文图表附件</div>',
+          '</div>',
+          '<div class="paper-media-dialog-actions">',
+          '<button class="paper-media-fullscreen" type="button" data-paper-media-fullscreen aria-pressed="false" aria-label="全屏查看">全屏</button>',
+          '<button class="paper-media-close" type="button" data-paper-media-close aria-label="关闭">×</button>',
+          '</div>',
+          '</div>',
+          `<div class="paper-media-tabs">${tabButtons}</div>`,
+          '<div class="paper-media-body">',
+          figurePanel,
+          tablePanel,
+          '</div>',
+          '</div>',
+          '</div>',
+          '</div>',
+          '',
+        ].join('');
+      };
+
+      const bindPaperMediaModals = () => {
+        document.querySelectorAll('[data-paper-media-root]').forEach((root) => {
+          if (root.dataset.mediaBound === '1') return;
+          root.dataset.mediaBound = '1';
+          const modal = root.querySelector('[data-paper-media-modal]');
+          const openButtons = Array.from(root.querySelectorAll('[data-paper-media-open]'));
+          if (!modal) return;
+          if (modal.parentElement !== document.body) {
+            document.body.appendChild(modal);
+          }
+          const dialog = modal.querySelector('.paper-media-dialog');
+          const closeButtons = Array.from(modal.querySelectorAll('[data-paper-media-close]'));
+          const fullscreenButton = modal.querySelector('[data-paper-media-fullscreen]');
+          const tabs = Array.from(modal.querySelectorAll('[data-paper-media-tab]'));
+          const panes = Array.from(modal.querySelectorAll('[data-paper-media-pane]'));
+          let savedScrollY = 0;
+          let closeTimer = 0;
+          let lastTrigger = null;
+          const setFullscreen = (enabled) => {
+            modal.classList.toggle('is-fullscreen', !!enabled);
+            if (fullscreenButton) {
+              fullscreenButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+              fullscreenButton.textContent = enabled ? '退出全屏' : '全屏';
+              fullscreenButton.setAttribute('aria-label', enabled ? '退出全屏查看' : '全屏查看');
+            }
+          };
+          const activate = (name) => {
+            tabs.forEach((tab) => tab.classList.toggle('is-active', tab.dataset.paperMediaTab === name));
+            panes.forEach((pane) => pane.classList.toggle('is-active', pane.dataset.paperMediaPane === name));
+          };
+          const restorePageScroll = () => {
+            const top = Number.isFinite(savedScrollY) ? savedScrollY : window.scrollY || 0;
+            try {
+              window.scrollTo({ top, left: 0, behavior: 'instant' });
+            } catch (_err) {
+              window.scrollTo(0, top);
+            }
+          };
+          const open = (name, trigger) => {
+            if (closeTimer) {
+              clearTimeout(closeTimer);
+              closeTimer = 0;
+            }
+            savedScrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            lastTrigger = trigger || document.activeElement || null;
+            if (name) activate(name);
+            setFullscreen(false);
+            modal.classList.remove('is-closing');
+            modal.classList.add('is-open');
+            modal.setAttribute('aria-hidden', 'false');
+            if (dialog) {
+              setTimeout(() => {
+                try {
+                  dialog.focus({ preventScroll: true });
+                } catch (_err) {
+                  dialog.focus();
+                  restorePageScroll();
+                }
+              }, 0);
+            }
+          };
+          const close = () => {
+            if (!modal.classList.contains('is-open')) return;
+            setFullscreen(false);
+            if (closeTimer) clearTimeout(closeTimer);
+            modal.classList.add('is-closing');
+            modal.classList.remove('is-open');
+            modal.setAttribute('aria-hidden', 'true');
+            closeTimer = setTimeout(() => {
+              modal.classList.remove('is-closing');
+              restorePageScroll();
+              if (lastTrigger && typeof lastTrigger.focus === 'function') {
+                try {
+                  lastTrigger.focus({ preventScroll: true });
+                } catch (_err) {
+                  // ignore focus failures; scroll restoration above is the important part.
+                }
+              }
+              closeTimer = 0;
+            }, 190);
+          };
+          openButtons.forEach((button) => {
+            button.addEventListener('click', () => open(button.dataset.paperMediaOpen || 'figures', button));
+          });
+          closeButtons.forEach((button) => button.addEventListener('click', (event) => {
+            if (modal.classList.contains('is-fullscreen') && event.currentTarget.classList.contains('paper-media-backdrop')) {
+              setFullscreen(false);
+              return;
+            }
+            close();
+          }));
+          if (fullscreenButton) {
+            fullscreenButton.addEventListener('click', () => {
+              setFullscreen(!modal.classList.contains('is-fullscreen'));
+            });
+          }
+          tabs.forEach((tab) => {
+            tab.addEventListener('click', () => activate(tab.dataset.paperMediaTab || 'figures'));
+          });
+          modal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+              if (modal.classList.contains('is-fullscreen')) {
+                setFullscreen(false);
+                return;
+              }
+              close();
+            }
+          });
+        });
       };
 
       const bindPaperFigureCarousels = () => {
@@ -3652,12 +4440,29 @@ window.$docsify = {
 
           const slides = Array.from(root.querySelectorAll('[data-figure-slide]'));
           const thumbs = Array.from(root.querySelectorAll('[data-figure-thumb]'));
+          const thumbsTrack = root.querySelector('.paper-figure-thumbs');
           const prevBtn = root.querySelector('[data-figure-prev]');
           const nextBtn = root.querySelector('[data-figure-next]');
+          const thumbPrevBtn = root.querySelector('[data-figure-thumb-prev]');
+          const thumbNextBtn = root.querySelector('[data-figure-thumb-next]');
           const counter = root.querySelector('[data-figure-current]');
           if (!slides.length) return;
 
           let current = 0;
+          const centerActiveThumb = () => {
+            if (!thumbsTrack || !thumbs[current]) return;
+            const activeThumb = thumbs[current];
+            const targetLeft =
+              activeThumb.offsetLeft -
+              (thumbsTrack.clientWidth - activeThumb.offsetWidth) / 2;
+            const maxLeft = Math.max(0, thumbsTrack.scrollWidth - thumbsTrack.clientWidth);
+            const left = Math.min(Math.max(0, targetLeft), maxLeft);
+            try {
+              thumbsTrack.scrollTo({ left, behavior: 'smooth' });
+            } catch (_err) {
+              thumbsTrack.scrollLeft = left;
+            }
+          };
           const render = () => {
             slides.forEach((slide, index) => {
               slide.classList.toggle('is-active', index === current);
@@ -3670,6 +4475,9 @@ window.$docsify = {
             }
             if (prevBtn) prevBtn.disabled = slides.length <= 1;
             if (nextBtn) nextBtn.disabled = slides.length <= 1;
+            if (thumbPrevBtn) thumbPrevBtn.disabled = slides.length <= 1;
+            if (thumbNextBtn) thumbNextBtn.disabled = slides.length <= 1;
+            centerActiveThumb();
           };
 
           if (prevBtn) {
@@ -3680,6 +4488,18 @@ window.$docsify = {
           }
           if (nextBtn) {
             nextBtn.addEventListener('click', () => {
+              current = (current + 1) % slides.length;
+              render();
+            });
+          }
+          if (thumbPrevBtn) {
+            thumbPrevBtn.addEventListener('click', () => {
+              current = (current - 1 + slides.length) % slides.length;
+              render();
+            });
+          }
+          if (thumbNextBtn) {
+            thumbNextBtn.addEventListener('click', () => {
               current = (current + 1) % slides.length;
               render();
             });
@@ -3695,6 +4515,75 @@ window.$docsify = {
         });
       };
 
+      const closePdfPreview = () => {
+        document.body.classList.remove('dpr-pdf-preview-open');
+        document.querySelectorAll('[data-pdf-preview-toggle]').forEach((btn) => {
+          btn.setAttribute('aria-expanded', 'false');
+          btn.textContent = '预览 PDF';
+        });
+      };
+
+      const buildEmbeddablePdfUrl = (url) => {
+        const raw = String(url || '').trim();
+        if (!raw) return '';
+        try {
+          const parsed = new URL(raw, window.location.href);
+          if (/openreview\.net$/i.test(parsed.hostname)) {
+            return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(parsed.href)}`;
+          }
+          return parsed.href;
+        } catch (_err) {
+          return raw;
+        }
+      };
+
+      const ensurePdfPreviewPanel = () => {
+        let panel = document.getElementById('dpr-pdf-preview-panel');
+        if (panel) return panel;
+        panel = document.createElement('aside');
+        panel.id = 'dpr-pdf-preview-panel';
+        panel.className = 'dpr-pdf-preview-panel';
+        panel.setAttribute('aria-label', 'PDF 预览');
+        panel.innerHTML = [
+          '<div class="dpr-pdf-preview-header">',
+          '<div class="dpr-pdf-preview-title">PDF 预览</div>',
+          '<div class="dpr-pdf-preview-actions">',
+          '<a class="dpr-pdf-preview-open-link" href="#" target="_blank" rel="noopener">新窗口打开</a>',
+          '<button class="dpr-pdf-preview-close" type="button" aria-label="关闭 PDF 预览">×</button>',
+          '</div>',
+          '</div>',
+          '<iframe class="dpr-pdf-preview-frame" title="PDF 预览"></iframe>',
+        ].join('');
+        document.body.appendChild(panel);
+        panel.querySelector('.dpr-pdf-preview-close')?.addEventListener('click', closePdfPreview);
+        return panel;
+      };
+
+      const bindPdfPreviewToggle = () => {
+        document.querySelectorAll('[data-pdf-preview-toggle]').forEach((btn) => {
+          if (btn.dataset.bound === '1') return;
+          btn.dataset.bound = '1';
+          btn.addEventListener('click', () => {
+            const url = String(btn.getAttribute('data-pdf-url') || '').trim();
+            if (!url) return;
+            const panel = ensurePdfPreviewPanel();
+            const frame = panel.querySelector('.dpr-pdf-preview-frame');
+            const openLink = panel.querySelector('.dpr-pdf-preview-open-link');
+            const previewUrl = buildEmbeddablePdfUrl(url);
+            if (frame && frame.getAttribute('src') !== previewUrl) {
+              frame.setAttribute('src', previewUrl);
+            }
+            if (openLink) {
+              openLink.setAttribute('href', url);
+            }
+            const nextOpen = !document.body.classList.contains('dpr-pdf-preview-open');
+            document.body.classList.toggle('dpr-pdf-preview-open', nextOpen);
+            btn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+            btn.textContent = nextOpen ? '关闭预览' : '预览 PDF';
+          });
+        });
+      };
+
       // 根据 front matter 生成论文页面 HTML
       const renderPaperFromMeta = (meta) => {
         if (!meta) return '';
@@ -3707,6 +4596,30 @@ window.$docsify = {
             const css = { keyword: 'tag-green', query: 'tag-blue', paper: 'tag-pink' }[kind] || 'tag-pink';
             return `<span class="tag-label ${css}">${escapeHtml(label)}</span>`;
           }).join(' ');
+        };
+        const renderSourceChips = (source) => {
+          const text = String(source || '').trim();
+          if (!text) return '';
+          const parts = text.split('-').map((item) => item.trim()).filter(Boolean);
+          if (parts.length >= 3 && /^\d{4}$/.test(parts[1])) {
+            const statusRaw = parts.slice(2).join('-');
+            const statusLower = statusRaw.toLowerCase();
+            let statusLabel = statusRaw;
+            let statusClass = 'tag-source';
+            if (statusLower.startsWith('accepted')) {
+              statusLabel = 'Accepted';
+              statusClass = 'tag-accepted';
+            } else if (statusLower.startsWith('rejected')) {
+              statusLabel = 'Rejected';
+              statusClass = 'tag-rejected';
+            }
+            return [
+              `<span class="tag-label tag-source">${escapeHtml(parts[0].toUpperCase())}</span>`,
+              `<span class="tag-label tag-source">${escapeHtml(parts[1])}</span>`,
+              `<span class="tag-label ${statusClass}">${escapeHtml(statusLabel)}</span>`,
+            ].join(' ');
+          }
+          return `<span class="tag-label tag-source">${escapeHtml(text)}</span>`;
         };
 
         const lines = [];
@@ -3739,7 +4652,7 @@ window.$docsify = {
         lines.push('<div class="paper-meta-right">');
         lines.push(`<p><strong>Authors</strong>: ${escapeHtml(meta.authors || 'Unknown')}</p>`);
         if (meta.source) {
-          lines.push(`<p><strong>Source</strong>: ${escapeHtml(meta.source)}</p>`);
+          lines.push(`<p><strong>Source</strong>: ${renderSourceChips(meta.source)}</p>`);
         }
         lines.push(`<p><strong>Date</strong>: ${escapeHtml(meta.date || 'Unknown')}</p>`);
         if (meta.pdf) {
@@ -3789,8 +4702,9 @@ window.$docsify = {
         }
 
         const figures = parseFiguresMeta(meta);
-        if (figures.length) {
-          lines.push(renderFigureCarousel(figures));
+        const tables = parseTablesMeta(meta);
+        if (figures.length || tables.length) {
+          lines.push(renderPaperMediaCarousels(figures, tables));
         }
 
         // 注意：在 Markdown 中插入 HTML block（如 <hr>）后，需要一个“空行”才能让后续的 `##` 等 Markdown 正常解析。
@@ -3818,12 +4732,97 @@ window.$docsify = {
         }
 
         // 生成论文页面 HTML + 正文
+        // ★ 保护正文中的 LaTeX 公式不被 marked 破坏
         const paperHtml = renderPaperFromMeta(meta);
-        return paperHtml + body;
+        return paperHtml + protectLatex(body);
+      });
+
+      const refreshDeferredPageEnhancements = () => {
+        try {
+          const paperId = getPaperId();
+          const routePath = vm.route && vm.route.path ? vm.route.path : '';
+          const lowerId = (paperId || '').toLowerCase();
+          const file = vm && vm.route ? vm.route.file : '';
+          const isHomePage =
+            !paperId ||
+            lowerId === 'readme' ||
+            routePath === '/' ||
+            routePath === '';
+          const isLandingLikePage = isHomePage || isReportRouteFile(file);
+          const mainContent = document.querySelector('.markdown-section');
+          if (mainContent) {
+            const root = isPaperRouteFile(file) ? ensurePageContentRoot() : null;
+            renderMathInEl(root || mainContent);
+          }
+          if (!isLandingLikePage && window.PrivateDiscussionChat) {
+            window.PrivateDiscussionChat.initForPage(paperId);
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      document.addEventListener(
+        'dpr-deferred-assets-ready',
+        refreshDeferredPageEnhancements,
+      );
+
+      // --- 阅读状态同步初始化 ---
+      // 用户解锁密钥后（mode=full），用 GitHub Token 获取用户名，初始化 Supabase 同步
+      const initReadStateSync = async () => {
+        try {
+          if (window.DPR_ACCESS_MODE !== 'full') return;
+          if (!window.DPRReadStateSync) return;
+          const secret = window.decoded_secret_private || {};
+          const token = (secret.github && secret.github.token) || '';
+          if (!token) return;
+          // 获取 GitHub 用户名
+          const resp = await fetch('https://api.github.com/user', {
+            headers: { Authorization: 'Bearer ' + token },
+          });
+          if (!resp.ok) return;
+          const user = await resp.json();
+          const username = (user && user.login) || '';
+          if (!username) return;
+          // 读取 Supabase 配置
+          const supabaseUrl = (window.$docsify && window.$docsify.supabaseUrl)
+            || (window.jsyaml ? '' : '')
+            || 'https://lyucdwgefyfbmaiopjbk.supabase.co';
+          const anonKey = 'sb_publishable_lX-oi64Uxyd7SIVv3_w2Uw_MTOojeKq';
+          await window.DPRReadStateSync.init(supabaseUrl, anonKey, username);
+          // 迁移 localStorage 已有数据
+          const localState = (() => {
+            try {
+              const raw = window.localStorage.getItem(READ_STORAGE_KEY);
+              return raw ? JSON.parse(raw) : null;
+            } catch { return null; }
+          })();
+          if (localState && Object.keys(localState).length) {
+            window.DPRReadStateSync.migrateFromLocalStorage(localState);
+          }
+          // 重新渲染 sidebar 状态
+          updateSidebarUnreadBadges();
+          markSidebarReadState(null);
+        } catch (e) {
+          console.warn('[DPR] ReadState init error:', e);
+        }
+      };
+      document.addEventListener('dpr-access-mode-changed', (e) => {
+        const mode = e && e.detail && e.detail.mode;
+        if (mode === 'full') initReadStateSync();
       });
 
       // --- Docsify 生命周期钩子 ---
       hook.doneEach(function () {
+        try {
+          if (typeof window.DPRHideInitialSplash === 'function') {
+            window.DPRHideInitialSplash();
+          }
+          document.dispatchEvent(new Event('dpr-docsify-ready'));
+        } catch {
+          // ignore
+        }
+
         // 路由统一：将 #/?id=%2f... 自动规整为 #/...
         try {
           const canonical = decodeLegacyIdHash(window.location.hash || '');
@@ -3851,6 +4850,11 @@ window.$docsify = {
         const isPaperPage = isPaperRouteFile(file);
         const isLandingLikePage = isHomePage || isReportPage;
         syncPageTypeClasses({ isHomePage, isReportPage, isPaperPage });
+        closePdfPreview();
+        document.querySelectorAll('[data-paper-media-modal]').forEach((modal) => {
+          modal.classList.remove('is-open', 'is-closing', 'is-fullscreen');
+          modal.setAttribute('aria-hidden', 'true');
+        });
 
         // A. 对正文区域进行一次全局公式渲染（支持 $...$ / $$...$$）
         const mainContent = document.querySelector('.markdown-section');
@@ -3862,6 +4866,7 @@ window.$docsify = {
 
         // 论文页标题条排版（只对 docs/YYYYMM/DD/*.md 生效）
         applyPaperTitleBar();
+        bindPdfPreviewToggle();
 
         // 论文页左右切换：更新导航列表并绑定事件（只绑定一次）
         updateNavState();
@@ -3902,6 +4907,7 @@ window.$docsify = {
         }
 
         bindPaperFigureCarousels();
+        bindPaperMediaModals();
 
         // ----------------------------------------------------
         // E. 小屏点击侧边栏条目后自动收起
@@ -3912,6 +4918,7 @@ window.$docsify = {
         // F. 侧边栏按日期折叠
         // ----------------------------------------------------
         setupCollapsibleSidebarByDay();
+        setupCollapsibleConferenceSidebar();
         hydrateStructuredSidebarItems();
         bindSidebarVirtualHashLinks();
         neutralizeSidebarNoactiveLinks();

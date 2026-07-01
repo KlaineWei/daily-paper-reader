@@ -6,68 +6,47 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-02 ~ 2026-07-01
-- 运行时间：2026-07-01 02:51:04 UTC
+- 最新运行日期：2026-07-01
+- 运行时间：2026-07-01 21:50:00 UTC
 - 运行状态：成功
-- 本次总论文数：16
-- 精读区：7
-- 速读区：9
+- 本次总论文数：9
+- 精读区：3
+- 速读区：6
 
 ### 今日简报（AI）
-本周期整理了16篇论文，精读7篇、速读9篇，重点聚焦安全日志智能分析和AI生成内容取证两大方向。最值得关注的是《NLLog》和《ForensicConcept》，前者用Log-to-Language重写实现轻量可解释的SOC异常检测，后者提出可迁移的取证概念用于AIGI检测，均获9.0高分。建议优先精读这两篇，速读可留意《DRIFT》对AI生成图像鲁棒性缺口的研究和《Sample-Efficient》中基于大语言模型的日志推理方法。
-- 详情：[/20260602-20260701/README](/20260602-20260701/README)
+今日聚焦9篇论文，精读视频异常检测与异常分割两大方向，速读涵盖持续异常检测与图像篡改定位。最值得关注弱监督视频异常检测的时空定位新方法（9.0分），以及基于测试时自适应的拓扑感知异常分割（8.0分）。建议优先深入这两篇精读，可重点关注其在复杂场景中的实际应用与代码开源情况。
+- 详情：[/202607/01/README](/202607/01/README)
 
 ### 精读区论文标签
-1. [NLLog: Lightweight, Explainable SOC Anomaly Detection via Log-to-Language Rewriting](/20260602-20260701/2606.04957v1-nllog-lightweight-explainable-soc-anomaly-detection-via-log-to-language-rewriting)  
+1. [Learning Where and When: Patch-Based Spatiotemporal Localization in Weakly Supervised Video Anomaly Detection](/202607/01/2606.29498v1-learning-where-and-when-patch-based-spatiotemporal-localization-in-weakly-supervised-video-anomaly-detection)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：使用TreeSHAP的可解释日志异常检测
-2. [ForensicConcept: Transferable Forensic Concepts for AIGI Detection](/20260602-20260701/2606.07034v1-forensicconcept-transferable-forensic-concepts-for-aigi-detection)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：可解释的AI生成图像检测与概念提取
-3. [SV-Detect: AI-generated Text Detection with Steering Vectors](/20260602-20260701/2606.07313v1-sv-detect-ai-generated-text-detection-with-steering-vectors)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：使用方向向量进行可解释的伪造文本检测，包含解释性分析
-4. [Differences in Detection: Explainability Where it Matters](/20260602-20260701/2606.07503v1-differences-in-detection-explainability-where-it-matters)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：用于比较目标检测模型的可解释性方法
-5. [ProtoX-AD: Self-Explainable Time Series Anomaly Detection and Characterization](/20260602-20260701/2606.13277v1-protox-ad-self-explainable-time-series-anomaly-detection-and-characterization)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：自解释时间序列异常检测
-6. [IBAD: Interpretable Behavioral Anomaly Detection on Human Mobility Data](/20260602-20260701/2606.16023v1-ibad-interpretable-behavioral-anomaly-detection-on-human-mobility-data)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：基于行为模板的可解释异常检测
-7. [Explainability-Aware Frustum Attack: Exposing Structural Vulnerabilities in LiDAR-Based 3D Object Detectors](/20260602-20260701/2606.29963v1-explainability-aware-frustum-attack-exposing-structural-vulnerabilities-in-lidar-based-3d-object-detectors)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：可解释性引导的LiDAR三维目标检测器脆弱性分析
+   evidence：基于补丁的时空异常定位，强调可解释性
+2. [Learning Topology-Aware Representations via Test-Time Adaptation for Anomaly Segmentation](/202607/01/2606.28268v1-learning-topology-aware-representations-via-test-time-adaptation-for-anomaly-segmentation)  
+   标签：评分：8.0/10、query:xai-objdet
+   evidence：拓扑测试时自适应用于异常分割，通过几何结构保持增强可解释性
+3. [Multi-Level Distributional Entropy for Explainable Network Intrusion Detection](/202607/01/2606.29797v1-multi-level-distributional-entropy-for-explainable-network-intrusion-detection)  
+   标签：评分：8.0/10、query:xai-objdet
+   evidence：利用可解释熵特征的可解释网络入侵检测
 
 ### 速读区论文标签
-1. [DRIFT: From Robustness Gaps to Invariance Manifolds for AI-Generated Image Detection](/20260602-20260701/2606.06918v1-drift-from-robustness-gaps-to-invariance-manifolds-for-ai-generated-image-detection)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：AI生成图像检测的可解释性子空间分解方法
-2. [Sample-Efficient LLM-Based Detection of Malicious Web Server Logs with Forensically Explainable Reasoning](/20260602-20260701/2606.08649v1-sample-efficient-llm-based-detection-of-malicious-web-server-logs-with-forensically-explainable-reasoning)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：使用LLM进行日志异常检测并提供可解释推理
-3. [Trustworthy Image Authentication using Forensic Knowledge Graphs](/20260602-20260701/2606.23917v1-trustworthy-image-authentication-using-forensic-knowledge-graphs)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：基于法医知识图谱的可解释伪造检测
-4. [Explainable Outlier Detection for Interval-valued Data](/20260602-20260701/2606.26307v1-explainable-outlier-detection-for-interval-valued-data)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：使用沙普利值进行可解释异常检测
-5. [Analyzing Training-Free Corruption Detection for Object Detection Datasets](/20260602-20260701/2606.10666v1-analyzing-training-free-corruption-detection-for-object-detection-datasets)  
+1. [DeCoFlow: Structural Decomposition of Normalizing Flows for Continual Anomaly Detection](/202607/01/2606.26687v1-decoflow-structural-decomposition-of-normalizing-flows-for-continual-anomaly-detection)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：可解释的目标检测数据集标注错误检测
-6. [Rethinking Structural Anomaly Detection: From Decision Boundaries to Projection Operators](/20260602-20260701/2606.15280v1-rethinking-structural-anomaly-detection-from-decision-boundaries-to-projection-operators)  
-   标签：评分：7.0/10、query:xai-objdet
-   evidence：使用投影算子的结构性异常检测；可解释的几何视角
-7. [Robust Onion: Peeling Open Vocab Object Detectors Under Noise](/20260602-20260701/2606.26734v1-robust-onion-peeling-open-vocab-object-detectors-under-noise)  
-   标签：评分：7.0/10、query:xai-objdet
-   evidence：对噪声下目标检测器进行逐层可解释性分析
-8. [TruEye: Fine-Grained Detection of AI-Generated Human Subjects in Images](/20260602-20260701/2606.27505v1-trueye-fine-grained-detection-of-ai-generated-human-subjects-in-images)  
-   标签：评分：7.0/10、query:xai-objdet
-   evidence：细粒度检测AI生成人像，提供合成类别区分，具有部分可解释性
-9. [GuavaVision AI: An Explainable Deep Learning Framework for Automated Classification, Lesion Localization, and Segmentation of Guava Diseases](/20260602-20260701/biorxiv-10-64898-2026-06-18-733093-v1-guavavision-ai-an-explainable-deep-learning-framework-for-automated-classification-lesion-localization-and-segmentation-of-guava-diseases)  
-   标签：评分：7.0/10、query:xai-objdet
-   evidence：可解释深度学习用于植物病害目标检测与定位
+   evidence：持续异常检测，使用可分解归一化流
+2. [ForensicsTok: Forensics-Guided Tokenized Modeling for Image Tampering Localization](/202607/01/2606.24538v1-forensicstok-forensics-guided-tokenized-modeling-for-image-tampering-localization)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：利用MLLM推理进行图像篡改定位，具有可解释性潜力
+3. [ForensicsTok: Forensics-Guided Tokenized Modeling for Image Tampering Localization](/202607/01/2606.24538v3-forensicstok-forensics-guided-tokenized-modeling-for-image-tampering-localization)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：图像篡改定位的取证方法
+4. [Hypergraph Normal World Models for Logical Visual Anomaly Detection](/202607/01/2606.25368v1-hypergraph-normal-world-models-for-logical-visual-anomaly-detection)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：超图正常世界模型用于逻辑异常检测
+5. [Perception, Verdict, and Evolution: Hindsight-Driven Self-Refining Forensics Agent for AI-Generated Image Detection](/202607/01/2606.26552v1-perception-verdict-and-evolution-hindsight-driven-self-refining-forensics-agent-for-ai-generated-image-detection)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：提出了自反思的取证智能体用于AI生成图像检测，与伪造检测可解释性相关
+6. [Distributed Hierarchical Temporal Memory with Shared Associative Memory for Cross-Entity Preemptive Warning](/202607/01/2606.31789v1-distributed-hierarchical-temporal-memory-with-shared-associative-memory-for-cross-entity-preemptive-warning)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：分布式HTM用于异常检测，引入共享联想记忆
 
 
 <div class="dpr-home-promo-card">

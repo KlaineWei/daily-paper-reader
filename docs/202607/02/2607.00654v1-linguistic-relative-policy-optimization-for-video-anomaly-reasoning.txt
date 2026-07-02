@@ -1,0 +1,906 @@
+Title: Linguistic Relative Policy Optimization for Video Anomaly Reasoning
+
+URL Source: https://arxiv.org/pdf/2607.00654v1
+
+Published Time: Thu, 02 Jul 2026 00:45:35 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+Jiaxu Leng 1 2 Jiankang Zheng 1 Mengjingcheng Mo 1 Zhanjie Wu 1 Haosheng Chen 1 Ji Gan 1 Xinbo Gao 1
+
+## Abstract 
+
+Video anomaly detection (VAD) with multimodal large language models has shown strong poten-tial, yet most existing methods still depend on large-scale annotations or expert-designed priors, limiting their ability to acquire anomaly knowl-edge with as little human intervention as possible. To address this, we propose Linguistic Relative Policy Optimization (LRPO), which distills group-relative semantic advantages from multiple rea-soning trajectories into a linguistically expressed anomaly experience prior, and adapts the model by injecting this prior into the context to steer its output distribution without any parameter updates. LRPO builds two complementary experience rep-resentations: general experience captures transfer-able anomaly preferences across scenarios, while scenario experience models context-dependent anomaly rules for targeted refinement. To further improve the learned experience, we introduce an anomaly alignment reward that guides trajectory optimization to match human risk preferences and reinforce temporally grounded reasoning. Exten-sive experiments on XD-Violence, UCF-Crime, and UBnormal demonstrate that LRPO signifi-cantly outperforms existing state-of-the-art meth-ods under tuning-free settings. 
+
+## 1. Introduction 
+
+Video Anomaly Detection (VAD) automatically detects and localizes rare, unexpected, or hazardous events in video streams, a capability that is critical for safety-sensitive video analysis (Sultani et al., 2018; Mo et al., 2024). Despite strong performance of conventional semi-supervised and weakly supervised VAD methods (Cao et al., 2024; Zhang et al., 2024c; Wu et al., 2024; Huang et al., 2025a; Meng 
+
+> 1
+
+School of Computer Science and Technology, Chongqing University of Posts and Telecommunications, Chongqing, China 
+
+> 2
+
+Chongqing College of Artificial Intelligence, Chongqing, China. Correspondence to: Xinbo Gao <gaoxb@cqupt.edu.cn >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). (a) Instruction -tuned Video Anomaly Detection Methods              
+
+> Domain expert
+> Detector
+> (b) Training -free Video Anomaly Detection Methods
+> Expert Anomaly Experience
+> Learner Learnable Anomaly Experience
+> Linguistic update
+> (c) LRPO -based Video Anomaly Detection Methods (Ours)
+> Limited
+> coarse annotations
+> Human annotators Large -scale fine -grained annotations
+> Detector
+> Parametric update
+
+Figure 1. Recent research in VAD can be categorized into two types: (a) instruction-tuned VAD, which aligns anomaly knowl-edge by updating model parameters with large-scale fine-grained annotations; and (b) training-free VAD, which freezes model pa-rameters and relies on expert priors to guide anomaly reasoning. We propose LRPO-based VAD: (c) it also freezes model parame-ters but learns linguistic anomaly experience from limited coarse annotations, substantially reducing human involvement. 
+
+et al., 2025) under the training distribution, real-world de-ployments are often highly diverse and commonly exhibit substantial domain shifts between training and test envi-ronments (Li et al., 2023; 2025b;a; Mo et al., 2026). Con-sequently, their performance typically degrades severely under out-of-distribution environments. Recently, multi-modal large language models (MLLMs) have demonstrated strong generalization across a broad range of challenging visual tasks, suggesting a promising direction for enhancing the generalization of VAD under distribution shifts. As illustrated in Figure 1, existing MLLM-based VAD meth-ods broadly fall into two paradigms: (1) Instruction-tuned VAD. These methods (Tang et al., 2024; Zhang et al., 2025) fine-tune MLLMs to align anomaly semantics with the VAD task; however, they typically require large-scale, fine-grained annotations and thus incur non-trivial human anno-tation costs. (2) Training-free VAD. These methods (Zanella et al., 2024; Li et al., 2026) freeze pretrained parameters to preserve the foundation model’s generalization; however, they typically depend on hand-crafted reasoning pipelines based on expert knowledge rather than data-driven feed-back, hindering automated iteration and necessitating man-ual tuning. Overall, both paradigms require substantial human intervention, either large-scale annotation or 
+
+1 
+
+> arXiv:2607.00654v1 [cs.CV] 1 Jul 2026 Linguistic Relative Policy Optimization for Video Anomaly Reasoning
+> Table 1. Performance impact of different experience types on XD-Violence using InternVL3 5-8B as the base model.
+
+Experience Type AP (%) 
+
+without experience 59.93 with manually designed experience 68.47 with single-trajectory learned experience 66.78 with LRPO-learned experience (Ours) 73.17 manual pipeline design and tuning, hindering generaliz-able anomaly knowledge acquisition under distribution shifts. 
+
+By contrast, humans can often learn anomaly discrimina-tion from limited data by leveraging broad commonsense knowledge, requiring only calibration of what constitutes an anomaly under task-specific risk preferences. Consis-tent with this, Table 1 compares several forms of anomaly-related experience, including human-written anomaly judg-ment rules and experience learned from correctness feed-back on a single reasoning trajectory. The results show that directly applying a frozen vision–language model (VLM) to VAD results in poor performance, whereas providing anomaly-related experience in the context improves per-formance markedly. These results indicate that pretrained VLMs already encode rich general knowledge, and that the main bottleneck is the lack of explicit anomaly experience rather than limited model capacity. Based on these observations, we propose Linguistic Rela-tive Policy Optimization (LRPO) , which learns linguisti-cally expressed anomaly experience from limited data and injects it into the model input context to improve anomaly reasoning in a tuning-free manner. A key challenge is that anomaly perception is inherently subjective and context-dependent: the same video may admit different judgments under different risk preferences, making optimization to-ward a single absolute label noisy and unstable. To address this, LRPO draws on relative optimization from reinforce-ment learning to iteratively learn and refine anomaly ex-perience. Concretely, a Learner VLM generates multiple reasoning trajectories per sample to cover diverse anomaly preferences. These trajectories are then assigned reward scores, and an Optimizer LLM performs group-wise reflec-tion to extract semantic advantages. The extracted advan-tages are distilled into anomaly experience and injected as a dynamically updated contextual signal, progressively steering the Learner’s outputs toward the target risk prefer-ences. Different from conventional reinforcement learning that optimizes model parameters, LRPO instantiates relative optimization in a language-editable experience space, where a persistent anomaly experience repository is updated by dis-tilling semantic differences between high- and low-reward reasoning trajectories. Within this framework, we build two complementary experi-ence representations: general experience , learned by LRPO to capture transferable anomaly preferences across scenar-ios, and scenario experience , constructed by the VLM with weak-label prompting to encode context-dependent anomaly rules and expand as more data become available. Together, they support effective scenario adaptation while preserving generalization. To further improve the learned anomaly experience, we introduce an anomaly alignment reward 
+
+with two complementary terms. The anomaly preference reward first aligns the learner’s judgments with human risk preferences by using the scenario experience of the cur-rent sample as a positive reference and contrasting it with LLM-generated perturbed outputs. Building on this, the anomaly temporal dependency reward further promotes tem-porally grounded reasoning by contrasting performance on temporally ordered frames with randomly permuted inputs, encouraging step-by-step inference based on temporal evi-dence. Our main contributions are summarized as follows: 1) We propose LRPO, a tuning-free framework for VAD that dis-tills group-relative semantic advantages from multiple rea-soning trajectories into a linguistically expressed anomaly experience prior, and adapts the model by injecting this prior into the context to steer its output distribution. 2) We build general and scenario experience to capture transfer-able anomaly preferences and context-dependent anomaly rules. 3) We introduce an anomaly alignment reward to optimize experience, aligning it with human risk prefer-ences and reinforcing temporally grounded reasoning. 4) We achieve state-of-the-art tuning-free performance on XD-Violence, UCF-Crime, and UBnormal, with strong general-ization across models and datasets. 
+
+## 2. Related Work 
+
+Tuning-based VAD. These methods update model parame-ters with supervision signals of varying granularity to align anomaly-related semantics with decision boundaries, in-cluding semi-supervised VAD (Yan et al., 2023; Cao et al., 2024; Zhang et al., 2024b;c; Zhu et al., 2024), weakly-supervised VAD (Sultani et al., 2018; Tian et al., 2021; Li et al., 2022; Lv et al., 2023; Shi et al., 2023; Chen et al., 2024; Wu et al., 2024; Huang et al., 2025a; Meng et al., 2025; Leng et al., 2025), and instruction-tuned VAD (Du et al., 2024; Tang et al., 2024; Zhang et al., 2024a; 2025). For example, (Rai et al., 2024) propose spatio-temporal pseudo-anomaly generation to synthesize hard cases and enhance anomaly representations and detection robustness; (Huang et al., 2025b) propose Ex-VAD, which performs explainable fine-grained anomaly detection based on vision-language models; (Zhang et al., 2025) combine an anomaly-oriented temporal sampler with an instruction-tuned MLLM 2Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+for anomaly recognition; (Huang et al., 2026) introduce Vad-R1, a representative framework that strengthens MLLM-based VAD with explicit anomaly reasoning and perception-to-cognition supervision. Although these methods typically perform strongly within the training domain, semi- and weakly-supervised methods can degrade substantially un-der out-of-distribution scenarios or unseen anomaly types; meanwhile, instruction-tuned methods often require large-scale fine-grained data and manually constructed instruc-tions, incurring high human annotation costs. 
+
+Tuning-free VAD. These methods freeze the parameters of foundation models and directly leverage the pretrained capabilities of MLLMs for anomaly inference (Zanella et al., 2024; Yang et al., 2024; Shao et al., 2025; Cai et al., 2026; 2025b; Li et al., 2026; Lin et al., 2026; Yang et al., 2026). For example, (Zanella et al., 2024) improve anomaly scoring via cross-modal alignment while suppressing noisy descrip-tions; (Shao et al., 2025) segment videos into semantically coherent events and adopt hierarchical prompting for LLMs to enable anomaly localization; (Yang et al., 2026) propose an agent-based generalist VAD method that adapts to new scenes and unseen anomaly types through a closed-loop reasoning process. As they avoid domain-specific tuning, these methods largely preserve the generalization of foun-dation models and can be deployed quickly. However, they typically depend on hand-crafted reasoning pipelines or pre-defined agentic procedures grounded in expert knowledge rather than data-driven feedback, which hinders automated iteration and often necessitates manual tuning. Motivated by recent verbalized learning techniques (Yuksekgonul et al., 2025; Xiao et al., 2024; Cai et al., 2025a), we propose LRPO to address the above limitations. Unlike existing verbalized-learning-based VAD (Ye et al., 2025), which mainly learns guiding questions and uses them at inference time to steer the model toward local cues of anomaly patterns, LRPO explicitly models and iteratively optimizes preference expe-riences for anomaly judgment, thereby elevating anomaly decisions from question-guided cue focusing to experience-driven anomaly reasoning. 
+
+## 3. Method 
+
+3.1. Problem Formulation 
+
+Given a video V , video anomaly detection (VAD) aims to predict frame-level anomaly scores and localize anomalous temporal segments. Since anomalies are rare and frame-level annotations are costly, training data are typically pro-vided with only video-level weak labels. We denote the train-ing set as D = {(V (j), Y (j))}Nj=1 , where Y (j) ∈ { 0, 1} in-dicates whether video V (j) contains anomalous events. To reduce computation while preserving key temporal evidence, we adopt the sampler in (Zhang et al., 2025) to convert each video into an M -frame key sequence ˜V (j), yielding 
+
+˜D = {( ˜V (j), Y (j))}Nj=1 . We optimize a vision-language model (VLM) on ˜D for VAD, where the optimization tar-get is not the model parameters but an editable linguistic anomaly experience repository. Concretely, given the sam-pled key-frame sequence ˜V and a task prompt P , a frozen VLM with fixed parameters θ0 induces a conditional out-put distribution o ∼ πθ0 (· | ˜V , P ), where o is a complete anomaly reasoning output. Unlike conventional paradigms that update parameters θ to directly modify πθ , we maintain an editable experience repository E and select an experience subset E( ˜V ) as injected context, thereby modulating the conditional distribution to o ∼ πθ0 (· | ˜V , P, E( ˜V )) . LRPO then iteratively updates E to continuously steer the output distribution of πθ0 , enabling adaptation to the VAD task and aligned risk preferences without updating any VLM parameters. 
+
+3.2. Two Complementary Experience Representations 
+
+Anomaly reasoning requires both general reasoning prin-ciples for guidance and scene-related experience for cali-brating specific anomaly decision boundaries. Therefore, LRPO adopts a two-level experience representation consist-ing of generic experience and scenario experience, which are maintained in an editable linguistic anomaly experi-ence repository E = {E gen , Esce }. The generic experience 
+
+Egen = {egen  
+
+> i
+
+} is iteratively distilled by LRPO during train-ing from multi-trajectory feedback, serving as a transfer-able prior for anomaly reasoning across scenes. In contrast, the scenario experience Esce = {esce  
+
+> i
+
+} explicitly character-izes scene-specific normal patterns and anomaly boundaries, complementing the generic prior when scene-dependent variations render the general experience insufficient. During optimization or inference, LRPO constructs an experience context E( ˜V ) for an input video via a selector Sel( ·), which injects the generic experience Egen together with relevant scenario experience selected from Esce , thereby achieving scene adaptivity while preserving transferability. (Details of the selector are provided in §3.5.) 
+
+Scenario Experience Construction. Scenario experience can be constructed at scale under weak supervision. Given a training sample ( ˜V (j), Y (j)), we use a predefined rule template Psce to prompt the frozen VLM to generate a corresponding entry, e.g., “When in <scene type >, if 
+
+<cue/event >happens (or <object >appears), you should judge it as <anomaly type >.” Here, the weak label pro-vides the target category, i.e., the normal class or a spe-cific anomaly category such as fire or explosion, while the VLM only supplements the scene type and visual/event cues from the sampled video to fill the remaining slots. In this way, scenario experience generation is constrained by weak supervision while avoiding manual enumeration of all combinations of scenes, cues, and anomaly categories. 3Linguistic Relative Policy Optimization for Video Anomaly Reasoning Learner 
+
+(Policy 𝜋 !! )
+
+𝑅 "## 
+
+𝑅 $%& 
+
+𝑅 '(% 
+
+Summarize 
+
+Extract 
+
+Experience 
+
+Optimizer 
+
+ADD +
+
+DELETE 
+
+MODIFY 
+
+KEEP 
+
+-
+
+> /
+
+Scenario Experience ℰ)#% General Experience ℰ*%+ 
+
+…
+
+…
+
+Selector Sel ())
+
+𝐺 trajectory 
+
+… …
+
+Anomaly Reasoning Experience 𝓔 
+
+Scalable Learnable                              
+
+> Pred
+> (0 ～1)
+> Label
+> (0/1)
+> v.s .
+> If :1L== P
+> P1-If :0==
+> Δ
+> 𝑅 !"# =exp (𝑠 $/𝜏 )
+> exp 𝑠 $/𝜏 /∑exp (𝑠 %/𝜏 )
+> 𝑠𝑖𝑚
+> embedding
+> positive
+> 𝑠 $
+> negative 𝑠 %
+> R
+> n rollout
+> ordered frames
+> R
+> n rollout
+> shuffled frames
+> Mean
+> −
+> 𝑅 &#' =g2max 0,Δ,𝑔 =clip Δ−𝜖 (
+> 𝜖 )−𝜖 (
+> ,0,1R
+> rollout
+> L
+> R
+> RRR
+> RRR
+
+Prompt 𝑃 
+
+Accuracy 
+
+Preference 
+
+Temporal 
+
+Anomaly 
+
+Alignment 
+
+Reward 
+
+> 𝑬 𝒕
+> encoder
+
+…        
+
+> When in a hockey game , if players from opposing teams engage ...
+> When in a training or fighting arena , if individuals exhibit …
+> When in a basketball game , if a player scores a basket …
+> When in an urban street scene at night , if individuals are …
+> When on a highway , if a vehicle is seen veering off the road …
+> When weapons appear without discharge, injury, or protective ...
+> When an on -scene authority figure visibly separates …
+> Emotional distress alone is insufficient; if distress co -occurs…
+> When reduced visibility persists , scan the next few seconds …
+> Active fighting requires aggressive physical contact persisting …
+
+…
+
+> 𝑅 =
+> 𝑅 =
+> *++
+> ,-.
+> *++
+> /"0
+
+∆ℰ
+
+{𝑠 ,}
+
+{𝑟 ,} 𝐴 !"# 
+
+> 𝑉
+
+Figure 2. Pipeline of LRPO. LRPO leverages linguistic interaction between a Learner VLM and an Optimizer LLM to iteratively optimize the general anomaly experience under reward constraints, and injects the experience as context to adjust the Learner’s output distribution, thereby adapting it to the video anomaly detection task. 
+
+Formally, we generate e(j)sce = Φ VLM ( ˜V (j), P sce , Y (j)) and write it into the repository via Esce ← E sce ∪ { e(j)sce }. To support subsequent retrieval, we build offline indices for each scenario experience entry. Let Ev (·) and Et(·) denote the visual and text encoders, respectively. For e(j)sce and its associated clip ˜V (j), we compute k(j)
+
+v = Ev ( ˜V (j)) and 
+
+k(j)
+
+t = Et(e(j)sce ), and store them in the scenario index set 
+
+Ksce = {(esce 
+
+i , kv,i , kt,i )}. As data accumulate, Esce can be incrementally expanded to cover more scenes and anomaly types. 
+
+3.3. LRPO Optimization Pipeline 
+
+As illustrated in Figure 2, LRPO iteratively updates lin-guistic anomaly experience through interactions between a learner VLM and an optimizer LLM, under the constraint of reward signals. This progressively modulates the learner’s output distribution and adapts it to the VAD task. For a theoretical analysis of LRPO’s optimization process, please refer to Appendix A. 
+
+Trajectory Sampling. To explore diverse plausible anomaly explanations and risk preferences for the same input, we perform group sampling to obtain G trajectories from the learner. These parallel trajectories provide comparable can-didates for reward-based ranking and subsequent semantic advantage distillation. Specifically, we denote the learner VLM as a policy πθ0 , where θ0 are fixed pretrained parame-ters kept frozen throughout LRPO. For the current sample 
+
+( ˜V (j), Y (j)), the selector constructs an experience context 
+
+E(j) = Sel( E, ˜V (j)) from the experience repository, and we sample a group of outputs from the conditional distribution 
+
+πθ0 (· | ˜V (j), P, E(j)):
+
+O(j) = {o(j)
+
+k }Gk=1 , o(j)
+
+k ∼ πθ0 (· | ˜V (j), P, E(j)), (1) where each o(j)
+
+k is a complete anomaly reasoning output. 
+
+Reward Computation. To constrain experience learn-ing and provide comparable supervision signals, we evalu-ate each trajectory in the output group with an anomaly alignment reward R(·), yielding scalar rewards r(j)
+
+k =
+
+R( ˜V (j), Y (j), o (j)
+
+k ). The reward design is detailed in §3.4. 
+
+Semantic Advantage Distillation. Although the reward induces an ordering over sampled outputs, it is a scalar sig-nal and does not specify what to change in the experience repository. We therefore use the optimizer to perform re-flective group-wise comparisons and distill semantic advan-tages. Concretely, the optimizer first produces a structured summary for each output using a summarization template 
+
+Psum : s(j)
+
+k = Φ opt ( ˜V (j), P sum , o (j)
+
+k ). Given the summaries 
+
+{s(j)
+
+k }Gk=1 , rewards {r(j)
+
+k }Gk=1 , and the current experience context E(j), it contrasts high- and low-reward outputs to extract semantic advantage items with a prompt Padv :
+
+A(j)adv = Φ opt ( ˜V (j), P adv , {s(j)
+
+k , r (j)
+
+k }Gk=1 , E(j)), (2) where A(j)adv is a compact natural-language list of anomaly cues, risk boundaries, and reasoning principles associated 4Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+with higher rewards, which directly guides subsequent ex-perience updates. 
+
+Experience Optimization. Given A(j)adv and the experience repository E, the optimizer further generates an executable edit instruction set ∆E(j) composed of operations such as ADD /M ODIFY /D ELETE /K EEP . Specifically, these opera-tions edit individual experience entries rather than rewriting the whole repository. A DD writes a newly distilled trans-ferable rule when the semantic advantages reveal missing anomaly cues or decision boundaries; M ODIFY updates a specified entry when it is partially useful but needs correc-tion or refinement; D ELETE removes duplicated entries or entries contradicted by reward feedback; and K EEP pre-serves useful entries to avoid unnecessary changes. We then update the repository via E ← Update( E, ∆E(j)) and proceed to the next iteration. Since experience is contin-uously injected as a contextual prior, the evolution of E
+
+directly changes the subsequent conditional distribution 
+
+πθ0 (· | ˜V , P, E), enabling continual adaptation without up-dating any model parameters. Meanwhile, the frozen learner 
+
+πθ0 serves as a strong prior that stabilizes the process and mitigates uncontrolled drift caused by experience updates. 
+
+3.4. Anomaly Alignment Reward 
+
+Anomaly judgment is subjective and scene-dependent, and updating experience solely from absolute supervision sig-nals can be easily biased by incidental preferences. Mean-while, anomaly judgment is also temporally dependent, since the same visual event may lead to different decisions under different preceding and subsequent temporal con-texts. Therefore, experience optimization cannot rely only on classification correctness, but should also consider align-ment with human risk preferences and reliance on temporal evidence. To this end, we design an anomaly alignment reward that evaluates trajectory quality from three aspects: 
+
+classification correctness , risk-preference alignment , and 
+
+temporal-dependent reasoning . We use it as the basis for the optimizer to conduct comparative reflection over output groups. 
+
+Accuracy Reward. The accuracy reward provides the most basic directional supervision. We parse an anomaly score 
+
+p(o) ∈ [0 , 1] from an output o, and use the video-level weak label Y ∈ { 0, 1} as supervision: 
+
+Racc (o) = Y · p(o) + (1 − Y ) · (1 − p(o)) . (3) This reward encourages higher anomaly scores when Y = 1 
+
+and lower anomaly scores when Y = 0 .
+
+Anomaly Preference Reward. Relying only on the ac-curacy reward may encourage shortcut learning based on spurious correlations in the training data, failing to align with human risk preferences. We therefore introduce an anomaly preference reward. Specifically, we take the sce-nario experience entry e(j)sce for the current sample as a pos-itive preference text e+, and ask an LLM to generate H
+
+semantically similar but preference-mismatched perturba-tions {e− 
+
+> h
+
+}Hh=1 as hard negatives (e.g., swapping anomaly types, removing key evidence, or altering scene conditions). Note that the positive preference text is not free-form model self-feedback; instead, it is constructed from the weak label of the current sample under a rule-based template, so its semantic direction is constrained by external supervisory signals. Let Et(·) denote a text encoder. We encode the output reasoning text and preference rules as z(o) = Et(o),
+
+f + = Et(e+), and f − 
+
+> h
+
+= Et(e− 
+
+> h
+
+), and compute cosine simi-larities s+(o) = cos( z(o), f +) and s− 
+
+> h
+
+(o) = cos( z(o), f − 
+
+> h
+
+).The preference reward is defined as the softmax probability of the positive preference within the contrastive set: 
+
+Rpre (o) = exp( s+(o)/τ )exp( s+(o)/τ ) + PHh=1 exp  s− 
+
+> h
+
+(o)/τ  , (4) where τ is a temperature hyperparameter. This reward en-courages outputs to be semantically consistent with the risk preferences and anomaly cues captured by scenario experience, while staying away from perturbed preferences, thereby improving robustness of preference alignment. 
+
+Anomaly Temporal Dependency Reward. However, pref-erence alignment alone may still lead the model to make anomaly decisions primarily based on static semantics, while neglecting critical temporal evidence. To encourage temporal-dependent reasoning, we introduce an anomaly temporal dependency reward. For the same video, we con-struct an ordered sampled sequence ˜V ord and a shuffled sampled sequence ˜V shf , and obtain two output groups Oord 
+
+and Oshf , respectively. The shuffled sequence uses the same sampled frames as the ordered sequence and only randomly permutes their temporal order. Notably, within LRPO, this ordered/shuffled comparison is used to form a reward signal for experience optimization, rather than to learn tempo-rally sensitive video representations. Next, we compare the group-wise mean of Racc and define ∆ = ¯Rord acc − μ · ¯Rshf acc ,where μ controls the suppression strength for shuffled per-formance. We only reward improvements where the ordered input outperforms the shuffled one, and apply a soft gate to reduce noise: 
+
+Rgrp tem = g · max(0 , ∆) , g = clip 
+
+ |∆| − ϵ0
+
+ϵ1 − ϵ0
+
+, 0, 1
+
+
+
+.
+
+(5) Finally, Rgrp tem is assigned only to outputs that are correct under the ordered input (and set to 0 otherwise), ensuring that the positive advantage is meaningful. This reward mea-sures the stable gain brought by temporal information at the group level, and encourages experience updates to rely on frame-order evidence rather than static semantics. 5Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+3.5. Inference with Experience Selection Selector. The selector uses a scenario experience retriever 
+
+Ret( ·) to return the Top-K relevant entries from the scenario experience index set Ksce = {(esce  
+
+> i
+
+, kv,i , kt,i )} constructed in §3.2 for an input video ˜V , and concatenates them with generic experience to form the conditional context:             
+
+> Sel( E,˜V) = Egen ⊕Ret( Ksce ,˜V),Ret( Ksce ,˜V)=K.
+
+(6) Here, ⊕ denotes concatenation and injection under a pre-defined itemized format. Since visual-only retrieval can be confounded by cluttered backgrounds, we complement it with textual semantics that describe the scene and ac-tions. Accordingly, Ret( ·) implements a dual-branch visual-semantic retriever. For a query video ˜V , we construct a visual query vector qv = Ev ( ˜V ) and a semantic query vector qt. During inference, we first let the VLM gener-ate a video description c = Φ VLM ( ˜V , P cap ) and then set 
+
+qt = Et(c); during optimization, qt is directly constructed from the scenario experience text associated with the cur-rent sample. For any indexed entry (esce  
+
+> i
+
+, kv,i , kt,i ) ∈ K sce ,we compute cosine similarities sv,i = cos( qv , kv,i ) and 
+
+st,i = cos( qt, kt,i ), normalize the two scores, and fuse them as ˜si = α Norm( sv,i ) + (1 − α) Norm( st,i ). Finally, 
+
+Ret( ·) ranks entries by ˜si and returns the Top-K scenario experiences. 
+
+Inference. Given a test video V , we partition it into seg-ments by sliding along the temporal axis with a fixed stride, where each segment Vs contains L consecutive frames. For each segment Vs, the selector constructs an experience con-text E(Vs) = Sel( E, V s), and we feed Vs, the task prompt 
+
+P , and E(Vs) into the frozen VLM (the same learner VLM used during training) to obtain the anomaly reasoning output 
+
+os = Φ VLM 
+
+ Vs, P, E(Vs).
+
+## 4. Experiments 
+
+4.1. Experimental Setup Datasets. We conduct experiments on three widely used VAD benchmarks. XD-Violence (Wu et al., 2020) contains 4,754 untrimmed videos spanning 217 hours and covering six types of violence events collected from diverse sources, such as surveillance, movies, and online videos. We use its official split with 3,954 training videos annotated with video-level labels and 800 testing videos annotated with frame-level annotations. UCF-Crime (Sultani et al., 2018) consists of 1,900 untrimmed surveillance videos spanning 128 hours and covering 13 real-world anomaly categories. We follow the standard weakly supervised split, using 1,610 videos for training with video-level labels and 290 videos for testing with frame-level annotations. UBnormal (Acsintoae et al., 2022) is an open-set virtual dataset generated by Cinema4D, containing 29 scenes with over 236k frames. Following the one-class setting in (Yang et al., 2024), we use the same protocol but evaluate only on its test set. Detailed normal/abnormal frame statistics for the evaluated splits are provided in Appendix B. 
+
+Evaluation Metrics. We adopt the standard evaluation metrics used in prior work. Specifically, we report the frame-level average precision (AP) on XD-Violence, and the area under the receiver operating characteristic curve (AUC) on UCF-Crime and UBnormal. Compared to AUC, AP is often more suitable for XD-Violence since the dataset is highly imbalanced, and AP places greater emphasis on the positive (violent) class. 
+
+Implementation Details. We use InternVL3 5-8B (Wang et al., 2025) as the Learner VLM and GPT-OSS-120B (Agar-wal et al., 2025) as the Optimizer LLM. We train LRPO for 3 epochs. For training-subset construction, we fix the annotation budget to 100 training videos for each dataset, corresponding to 2.5% of XD-Violence and 6% of UCF-Crime due to their different training-set sizes. We randomly sample these videos uniformly across categories to reduce category imbalance. During training, we sample M = 16 
+
+key frames for each video and draw a group of G = 4 rea-soning trajectories. We cap the size of the learned generic experience repository at |E gen | ≤ 30 . For experience injec-tion, we use CLIP4CLIP (Luo et al., 2022) as the text and visual encoders to retrieve the Top-K scenario experiences with K = 10 . During inference, we sparsely sample L = 4 
+
+frames per window with a temporal interval of 16 frames, and slide this window along the video stream. All experi-ments are conducted on two NVIDIA H800 GPUs. Addi-tional implementation details are provided in Appendix C. 
+
+4.2. Main Results Compare with SOTA Methods. Table 2 compares LRPO with state-of-the-art VAD methods under both tuning-based and tuning-free settings. The results show that LRPO con-sistently outperforms existing tuning-free baselines on all three datasets, demonstrating strong effectiveness and com-petitiveness. Notably, LRPO reaches 73.17% AP on XD-Violence and 85.36% AUC on UCF-Crime using only 100 training videos (corresponding to 2.5% and 6% of the train-ing set, respectively). We observe that using the full training set yields only marginal gains (74.09% AP on XD-Violence and 86.59% AUC on UCF-Crime), suggesting that LRPO is highly sample-efficient for experience learning. Rather than fitting the data distribution via parameter updates, LRPO distills linguistically expressed anomaly experiences, mak-ing a small, class-balanced set of representative samples sufficient. Moreover, compared to VERA (Ye et al., 2025), which optimizes guiding questions to drive binary decisions, LRPO distills reusable anomaly preferences and decision 6Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+Table 2. Comparison with state-of-the-art methods across the XD-Violence, UCF-Crime, and UBnormal datasets.                                                                                                                        
+
+> Methods Venue Supervision Explanation Training Data Multi-Scenario Open-Set XD-Violence / UCF-Crime XD-Violence (AP%) UCF-Crime (AUC%) UBnormal (AUC%)
+> Tuning-based Methods
+> AED-MAD (Ristea et al., 2024) CVPR’24 Semi ✗100% / 100% ––58.50 STPAG (Rai et al., 2024) CVPR’24 Semi ✗100% / 100% ––57.98 RFTM (Tian et al., 2021) ICCV’21 Weak ✗100% / 100% 77.81 84.30 64.94 PEL4VAD (Pu et al., 2024) TIP’24 Weak ✗100% / 100% 85.59 86.76 –VadCLIP (Wu et al., 2024) AAAI’24 Weak ✗100% / 100% 84.51 88.02 –Ex-VAD (Huang et al., 2025b) ICML’25 Weak ✓100% / 100% 86.52 88.29 –
+> Tuning-free Methods
+> ZS CLIP (Radford et al., 2021) ICML’21 Training-free ✓–17.83 53.16 46.20 LLaVA-1.5 (Liu et al., 2024) CVPR’24 Training-free ✓–50.26 72.84 53.71 LAVAD (Zanella et al., 2024) CVPR’24 Training-free ✓–62.01 80.28 64.23 AnomalyRuler (Yang et al., 2024) ECCV’24 Training-free ✓–––71.90 EventVAD (Shao et al., 2025) MM’25 Training-free ✓–64.04 82.03 –URF (Lin et al., 2026) NeurIPS’25 Training-free ✓–68.07 84.28 69.02 VADTree (Li et al., 2026) NeurIPS’25 Training-free ✓–68.85 84.74 –VERA (Ye et al., 2025) CVPR’25 Verbalized Learning ✓100% / 100% 70.11 86.55 71.65 *
+> LRPO (Ours) –Verbalized Learning ✓2.5% / 6% 73.17 85.36 75.81 *
+> ✓100% / 100% 74.09 86.59 76.24 *
+> *UBnormal results are obtained by directly applying the anomaly reasoning experience (ours) or the guiding questions (VERA) learned on XD-Violence to infer on UBnormal, using InternVL3 5-8B as the backbone for fair comparison.
+
+principles, reflecting a more cognition-driven adaptation. 
+
+Cross-Dataset Transfer and Generalization. As shown in Table 2, we evaluate generalization by directly transferring the anomaly reasoning experiences learned by LRPO on XD-Violence to UBnormal, without any additional train-ing. With experience transfer alone, LRPO achieves 76.24% AUC and sets a new state of the art, suggesting that it dis-tills reusable, language-form anomaly criteria rather than memorizing the source distribution. Under the same back-bone and transfer protocol, transferring VERA’s guiding questions attains only 71.65% AUC, indicating that LRPO’s anomaly-preference experiences capture more transferable decision principles than question-driven cue focusing. 
+
+Scalability and Stability Analysis. As shown in Fig-ure 3(a), with the general experience learned from 2.5% training data fixed, increasing the ratio of scenario experi-ence at inference (red curve) consistently improves perfor-mance (73.17% to 74.52% AP), indicating that LRPO con-tinues to benefit from scaling scenario experience. In con-trast, scaling scenario experience during experience learning (blue curve) degrades performance (73.17% to 71.20% AP). We attribute this to shortcut learning: excessive scenario experience encourages reliance on scenario-specific cues, weakening the induction of reusable general experience and harming robustness on rare cases where matching scenario experiences are hard to retrieve. This highlights the impor-tance of learning high-quality experience rather than simply accumulating more scenario-specific cues. To further assess stability, we independently sample five 2.5% training sub-sets with random seeds 42-46 to learn general experiences, and evaluate with 2.5% and 100% scenario experience at inference. As shown in Figure 3(b), the results are stable at 73.17% ± 0.51 and 74.52% ± 0.58, respectively, indicating that LRPO is robust to training-subset sampling. AP (%) 
+
+> AP (%)
+
+    
+
+  
+
+
+
+
+
+
+
+
+
+
+
+> 
+
+   
+
+   
+
+  
+
+ 
+
+ 
+
+   
+
+ 
+
+  
+
+    
+
+  
+
+
+
+
+
+
+
+
+
+
+
+> 
+
+   
+
+   
+
+  
+
+ 
+
+ 
+
+   
+
+ 
+
+  
+
+Proportion of Scenario Experience 
+
+(%)     
+
+  
+
+
+
+
+
+
+
+
+
+
+
+> 
+
+   
+
+   
+
+  
+
+ 
+
+ 
+
+ 
+
+Figure 3. Scalability and stability of LRPO. (a) Scaling scenario experience at inference improves performance, whereas scaling it during experience learning degrades it. (b) LRPO remains stable across five random 2.5% training-subset samples. 
+
+Effectiveness across Model Families and Scales. Table 3 evaluates LRPO across different model families and parame-ter scales. LRPO delivers consistent gains with both LLaVA-NeXT-7B (Liu et al., 2024) and InternVL3 5-8B (Wang et al., 2025) as the learner (13.83% and 13.24% AP im-provements), demonstrating strong cross-backbone appli-cability. The choice of optimizer is also flexible: using InternLM3-8B (Cai et al., 2024) improves InternVL3 5-8B from 59.93% AP to 72.77% AP, while a stronger GPT-OSS-120B (Agarwal et al., 2025) further reaches 73.17% AP, indicating that more capable reflection and experience opti-mization can yield additional gains. Meanwhile, this also indicates that LRPO does not rely on the strongest external model to remain effective. 
+
+4.3. Ablation Study Effect of General and Scenario Experiences. As shown in Table 4, we analyze the effects of general experience Egen 
+
+and scenario experience Esce . The learner achieves 59.93% AP without experience injection. Injecting Egen and learn-ing with the accuracy reward Racc improves performance to 68.48% AP, suggesting that LRPO distills general ex-7Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+Table 3. Effectiveness of the proposed LRPO under different learner-optimizer pairs.                    
+
+> Learner Optimizer Method AP (%)
+> LLaVA-NeXT-7B –Baseline 32.94 (+0.000)
+> GPT-OSS-120B LRPO (Ours) 46.77 (+13.83)
+> InternVL3 5-8B –Baseline 59.93 (+0.000)
+> InternLM3-8B LRPO (Ours) 72.77 (+12.84)
+> GPT-OSS-120B LRPO (Ours) 73.17 (+13.24)
+
+perience that effectively strengthens the learner’s anomaly-aware cognition. Further adding Esce under the same setting increases performance to 70.58% AP, indicating that sce-nario experience complements Egen by calibrating decisions with context-specific cues. 
+
+Table 4. Ablation study on XD-Violence.                                                 
+
+> Experience Reward AP(%)
+> Egen Esce Racc Rpre Rtem
+> ✗✗✗✗✗59.93 (+0.00)
+> ✓✗✓✗✗68.48 (+8.55)
+> ✓✓✓✗✗70.58 (+10.65)
+> ✓✗✓✓✗69.78 (+9.85)
+> ✓✗✓✗✓70.06 (+10.13)
+> ✓✗✓✓✓71.91 (+11.98)
+> ✓✓✓✓✓73.17 (+13.24)
+
+Effect of Reward Components. Table 4 examines how the anomaly alignment reward affects experience learning. With experience fixed to Egen , using only Racc achieves 68.48% AP. Adding anomaly preference reward Rpre im-proves to 69.78% AP, indicating that it discourages shortcut reasoning inconsistent with the desired anomaly preference (risk bias). Adding anomaly temporal dependency Rtem im-proves to 70.06% AP, suggesting that temporal-consistency constraints promote temporally grounded reasoning and yield more reliable experiences. Combining Racc , Rpre ,and Rtem further reaches 71.91% AP, demonstrating their complementarity. Finally, injecting Esce on top of the full re-ward design achieves 73.17% AP, showing that reward con-straints and scenario-experience injection jointly enhance the quality and utility of learned linguistic experiences. 
+
+Effect of Experience Optimization. To better separate the effect of optimization from that of richer textual experience augmentation, we keep the experience injection format fixed and examine performance as the experience is progressively refined during LRPO. As shown in Table 5, AP improves steadily from 67.63% to 73.17% across the initial, one-third, two-thirds, and final stages. This suggests that the gain comes not only from adding experience, but also from continually improving its quality through optimization. 
+
+Ablation of Scenario Experience Injection Strategy. 
+
+Keeping other settings unchanged, Table 6 ablates scenario 
+
+Table 5. Effect of experience optimization during LRPO.         
+
+> Experience stage Initial 1/3 2/3 Final AP (%) 67.63 70.04 72.96 73.17
+
+Table 6. Ablation on scenario experience injection strategies. 
+
+Scenario experience injection strategy AP (%) 
+
+No Injection 71.91 (+0.00) 
+
+Random Injection 71.61 (-0.30) 
+
+Visual-Retrieved Injection 72.54 (+0.63) 
+
+Visual-Semantic Retrieved Injection (Ours) 73.17 (+1.26) 
+
+experience injection strategies. Without injection, the model reaches 71.91% AP, while random injection drops to 71.61% AP due to noisy or irrelevant experiences. Visual retrieval improves to 72.54% AP, indicating that retrieval selects scenario-matched experiences for effective contextual con-straints. Our visual-semantic retrieval achieves the best 73.17% AP, showing that jointly modeling visual similar-ity and semantic matching yields more reliable scenario-boundary localization and experience utilization. 
+
+Sensitivity to Generator Quality. We further examine whether the preference reward is sensitive to generator qual-ity. As shown in Tables 7 and 8, replacing InternVL3 5-38B with weaker InternVL3 5-14B/8B for scenario expe-rience construction only slightly reduces AP from 73.17% to 73.02%/72.59%. Similarly, using GPT-OSS-20B in-stead of GPT-OSS-120B for negative sample generation still achieves 72.28% AP. These performance drops are smaller than the gains brought by the corresponding components in Table 4, indicating that generator quality mainly affects the performance ceiling, while the main improvements come from the core design of LRPO. 
+
+Table 7. Sensitivity of Rpre to scenario experience generator scale using InternVL3 5 (Wang et al., 2025).       
+
+> Scenario experience generator scale 8B 14B 38B AP (%) 72.59 73.02 73.17
+
+Table 8. Sensitivity of Rpre to negative sample generator scale using GPT-OSS (Agarwal et al., 2025).     
+
+> Negative sample generator scale 20B 120B AP (%) 72.28 73.17
+
+Sensitivity to Hyperparameters. As shown in Figure 4, we analyze LRPO’s sensitivity to key hyperparameters. (a) Increasing the rollout group size G improves performance and saturates at larger G, indicating that more trajectories enable more stable estimation of group-relative semantic advantages and better experience distillation. (b) The gen-eral experience memory size |E gen | exhibits a “moderate-is-8Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+best” trend: too small a memory limits coverage, whereas too large a memory may introduce redundancy and noise. (c) The Top-K used for scenario experience retrieval also presents a trade-off: moderate K is beneficial, while overly large K leads to saturated or slightly degraded performance due to increased noise and interference. Overall, LRPO remains stable across a wide range of hyperparameters, demonstrating strong robustness. 1 2 4 6 8             
+
+> (a) Rollouts G
+> 68
+> 70
+> 72
+> 74
+> AP (%)
+> 10 20 30 40 50
+> (b) GenExp Mem |gen |
+> 1510 15 20
+> (c) Top-KScenExp K
+
+Figure 4. Hyperparameter ablation of LRPO. We report AP (%) when varying (a) rollout group size G, (b) general experience memory size |E gen |, and (c) the number of retrieved scenario experiences (Top-K) K.Model Output General Experience (Excerpt)                      
+
+> Reasoning Process: The video frames depict a ...
+> The player in the white jersey is pushing the player
+> in the black jersey, and a referee is intervening.
+> -The referee's presence confirms the anomaly
+> as per Experience #10 …
+> -According to Scenario Experience #2 , in an ice
+> hockey game , if players are seen engaging in
+> physical altercations , it should be judged as a
+> Fighting anomaly.
+> Final Conclusion: Under Fighting, because players
+> from opposing teams are engaged in a physical
+> altercation with a referee intervening , it is judged as
+> Fighting .
+> Anomaly Score: [0.95]
+> #10 When an on -scene authority
+> figure visibly separates
+> combatants, treat as supporting
+> evidence for genuine Fighting
+> only if aggressive contact cues
+> already exist; ignore in staged
+> scenes without hostile intent .
+> …
+> Scenario Experience (Excerpt)
+> #2 When in an ice hockey game ,
+> if players are seen engaging in
+> physical altercations, you should
+> judge it as a Fighting anomaly .
+> …
+> Fighting
+> Anomaly
+
+Figure 5. Qualitative example on video “v=251 mEwZA”: by injecting learned general experience and retrieved scenario experi-ence, the model produces anomaly preference aligned reasoning. 
+
+4.4. Qualitative Analysis 
+
+Figure 5 presents a fighting anomaly example to illus-trate how LRPO performs interpretable anomaly reason-ing by combining shared general experiences with sample-specific retrieved scenario experiences. For clarity, we show one cited general experience and one retrieved scenario experience (more experience entries are provided in Ap-pendix D). The model cites a general experience (e.g., #10) that treats the authority figure as auxiliary evidence and re-quires aggressive-contact cues to confirm genuine fighting, and retrieves an ice-hockey scenario experience (e.g., #2) to calibrate the decision boundary. This example demonstrates that LRPO grounds predictions in human-readable experi-ences and aligns reasoning with human risk preferences, improving interpretability and decision consistency. (a) v=vv -MFJPi4Qs (b) Mission.Impossible.Ghost.Protocol 
+
+> PEL4VAD
+> VERA
+> Baseline
+> LRPO (Ours)
+
+Figure 6. Visualization of anomaly detection results. The gray horizontal line at 0.5 indicates the anomaly detection threshold. 
+
+We visualize per-frame anomaly scores on two videos in Figure 6, comparing a tuning-based method (PEL4VAD (Pu et al., 2024)), a tuning-free method (VERA (Ye et al., 2025)), the experience-free Baseline, and LRPO. The Baseline ex-hibits large score fluctuations and often responds strongly on non-anomalous segments, while VERA produces smoother curves but with limited discriminability. PEL4VAD cap-tures some anomalous events yet shows shifted boundaries or fragmented peaks. In contrast, LRPO concentrates high scores on true anomalous intervals while keeping normal segments low, indicating more consistent temporal localiza-tion and fewer false alarms. Additional qualitative analyses and visualizations are provided in the appendix E. 
+
+## 5. Limitations 
+
+Although LRPO can progressively learn and refine anomaly experience without manually enumerating all possible anomaly rules, the coverage of the learned repository re-mains dependent on the diversity of available training data. Rare scenes or unseen anomaly mechanisms absent from the training subset may therefore be insufficiently represented, motivating future work on automatic experience expansion and validation for open-world anomaly scenarios. 
+
+## 6. Conclusion 
+
+We propose LRPO, a novel tuning-free framework for VAD that distills group-relative semantic advantages from mul-tiple reasoning trajectories into a linguistically expressed anomaly experience prior. To support both transferability and contextual calibration, LRPO constructs general and scenario experiences, capturing transferable anomaly pref-erences and context-dependent anomaly rules, respectively. We further introduce an anomaly alignment reward to opti-mize experiences, encouraging consistency with human risk preferences while reinforcing temporally grounded reason-ing. Extensive experimental results validate the effective-ness and strong competitiveness of LRPO. 9Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+## Impact Statement 
+
+The proposed LRPO framework can support video anomaly detection in safety-critical scenarios by improving the local-ization and interpretation of abnormal events, such as vio-lence, accidents, or other emergency situations. Its tuning-free and language-editable experience mechanism may also reduce the cost of adapting vision-language models to new surveillance environments. Meanwhile, video anomaly detection systems may raise privacy, surveillance, and false-alarm concerns if deployed without appropriate safeguards. Responsible use requires lawful data collection, privacy protection, careful evaluation across diverse scenarios, and human oversight in high-stakes decision-making. 
+
+## Acknowledgements 
+
+This work was supported in part by the New Generation Artificial Intelligence-National Science and Technology Ma-jor Project under Grant No. 2025ZD0123601, in part by the National Natural Science Foundation of China under Grants No. 62472060 and 62221005, in part by the Sci-ence and Technology Innovation Key R&D Program of Chongqing under Grant No. CSTB2023TIAD-STX0016, in part by the Natural Science Foundation of Chongqing under Grants No. CSTB2024NSCQ-QCXMX0060, in part by the China Postdoctoral Science Foundation under Grant No. 2025MD774186, in part by the Chongqing Special Postdoctoral Research Funding under Grant No. 2024CQB-SHTB2002, and in part by the Chongqing University of Posts and Telecommunications Ph.D. Innovative Talents Project under Grant No. BYJS202404. 
+
+## References 
+
+Acsintoae, A., Florescu, A., Georgescu, M.-I., Mare, T., Sumedrea, P., Ionescu, R. T., Khan, F. S., and Shah, M. Ubnormal: New benchmark for supervised open-set video anomaly detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 20143–20153, 2022. Agarwal, S., Ahmad, L., Ai, J., Altman, S., Applebaum, A., Arbus, E., Arora, R. K., Bai, Y., Baker, B., Bao, H., et al. gpt-oss-120b & gpt-oss-20b model card. arXiv preprint arXiv:2508.10925 , 2025. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models are few-shot learners. 
+
+Advances in neural information processing systems , 33: 1877–1901, 2020. Cai, Y., Cai, S., Shi, Y., Xu, Z., Chen, L., Qin, Y., Tan, X., Li, G., Li, Z., Lin, H., et al. Training-free group relative policy optimization. arXiv preprint arXiv:2510.08191 ,2025a. Cai, Z., Cao, M., Chen, H., Chen, K., Chen, K., Chen, X., Chen, X., Chen, Z., Chen, Z., Chu, P., et al. Internlm2 technical report. arXiv preprint arXiv:2403.17297 , 2024. Cai, Z., Li, F., Zheng, Z., and Qin, Y. Hiprobe-vad: Video anomaly detection via hidden states probing in tuning-free multimodal llms. In Proceedings of the 33rd ACM International Conference on Multimedia , pp. 592–601, 2025b. Cai, Z., Li, F., Zheng, Z., Bi, H., and He, L. Headhunt-vad: Hunting robust anomaly-sensitive heads in mllm for tuning-free video anomaly detection. In Proceed-ings of the AAAI Conference on Artificial Intelligence ,volume 40, pp. 19835–19843, 2026. Cao, C., Lu, Y., and Zhang, Y. Context recovery and knowl-edge retrieval: A novel two-stream framework for video anomaly detection. IEEE Transactions on Image Process-ing , 33:1810–1825, 2024. Chen, J., Li, L., Su, L., Zha, Z.-j., and Huang, Q. Prompt-enhanced multiple instance learning for weakly super-vised video anomaly detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 18319–18329, 2024. Du, H., Zhang, S., Xie, B., Nan, G., Zhang, J., Xu, J., Liu, H., Leng, S., Liu, J., Fan, H., et al. Uncovering what why and how: A comprehensive benchmark for causation understanding of video anomaly. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 18793–18803, 2024. Huang, C., Huang, W., Jiang, Q., Wang, W., Wen, J., and Zhang, B. Multimodal evidential learning for open-world weakly-supervised video anomaly detection. IEEE Trans-actions on Multimedia , 2025a. Huang, C., Shi, Y., Wen, J., Wang, W., Xu, Y., and Cao, X. Ex-vad: Explainable fine-grained video anomaly detec-tion based on visual-language models. In Forty-second International Conference on Machine Learning , 2025b. Huang, C., Wang, B., Wang, W., Wen, J., Liu, C., Shen, L., and Cao, X. Vad-r1: Towards video anomaly reasoning via perception-to-cognition chain-of-thought. Advances in neural information processing systems , 38:118486– 118518, 2026. Langley, P. Crafting papers on machine learning. In Langley, P. (ed.), Proceedings of the 17th International Conference on Machine Learning (ICML 2000) , pp. 1207–1216, Stan-ford, CA, 2000. Morgan Kaufmann. 10 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+Leng, J., Wu, Z., Tan, M., Liu, Y., Gan, J., Chen, H., and Gao, X. Beyond euclidean: Dual-space representation learning for weakly supervised video violence detection. 
+
+Advances in Neural Information Processing Systems , 37: 17373–17397, 2024. Leng, J., Wu, Z., Tan, M., Mo, M., Zheng, J., Li, Q., Gan, J., and Gao, X. Piercingeye: Dual-space video violence de-tection with hyperbolic vision-language guidance. IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 2025. Li, G., Cai, G., Zeng, X., and Zhao, R. Scale-aware spatio-temporal relation learning for video anomaly detection. In 
+
+European Conference on Computer Vision , pp. 333–350. Springer, 2022. Li, S., Li, F., Li, J., Li, H., Zhang, B., Tao, D., and Gao, X. Logical relation inference and multiview information interaction for domain adaptation person re-identification. 
+
+IEEE Transactions on Neural Networks and Learning Systems , 35(10):14770–14782, 2023. Li, S., Leng, J., Gan, J., Mo, M., and Gao, X. Shape-centered representation learning for visible-infrared per-son re-identification. Pattern Recognition , pp. 111756, 2025a. Li, S., Leng, J., Kuang, C., Tan, M., and Gao, X. Video-level language-driven video-based visible-infrared per-son re-identification. IEEE Transactions on Information Forensics and Security , 2025b. Li, W., Xu, Y., Rao, Y., Wang, Z., and Deng, S. Vadtree: Explainable training-free video anomaly detection via hierarchical granularity-aware tree. Advances in Neu-ral Information Processing Systems , 38:148372–148404, 2026. Lin, D., Qu, M., Han, K., Jiao, J., Jin, X., and Wei, Y. A unified reasoning framework for holistic zero-shot video anomaly analysis. Advances in Neural Information Pro-cessing Systems , 38:29713–29744, 2026. Liu, H., Li, C., Li, Y., and Lee, Y. J. Improved baselines with visual instruction tuning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 26296–26306, 2024. Luo, H., Ji, L., Zhong, M., Chen, Y., Lei, W., Duan, N., and Li, T. Clip4clip: An empirical study of clip for end to end video clip retrieval and captioning. Neurocomputing ,508:293–304, 2022. Lv, H., Yue, Z., Sun, Q., Luo, B., Cui, Z., and Zhang, H. Unbiased multiple instance learning for weakly super-vised video anomaly detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 8022–8031, 2023. Meng, J., Tian, H., Lin, G., Hu, J.-F., and Zheng, W.-S. Audio-visual collaborative learning for weakly supervised video anomaly detection. IEEE Transactions on Multime-dia , 2025. Mo, M., Wang, J., Wang, L., Chen, H., Gu, C., Leng, J., and Gao, X. Nexusad: Exploring the nexus for multi-modal perception and comprehension of corner cases in autonomous driving. In ECCV 2024 Workshop on Multi-modal Perception and Comprehension of Corner Cases in Autonomous Driving , 2024. Mo, M., Tong, X., Tan, M., Leng, J., Zheng, J., Liu, Y., Chen, H., Gan, J., Li, W., and Gao, X. A2seek: Towards reasoning-centric benchmark for aerial anomaly under-standing. Advances in Neural Information Processing Systems , 38, 2026. Pu, Y., Wu, X., Yang, L., and Wang, S. Learning prompt-enhanced context features for weakly-supervised video anomaly detection. IEEE Transactions on Image Process-ing , 33:4923–4936, 2024. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PmLR, 2021. Rai, A. K., Krishna, T., Hu, F., Drimbarean, A., McGuin-ness, K., Smeaton, A. F., and O’connor, N. E. Video anomaly detection via spatio-temporal pseudo-anomaly generation: A unified approach. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 3887–3899, 2024. Ristea, N.-C., Croitoru, F.-A., Ionescu, R. T., Popescu, M., Khan, F. S., Shah, M., et al. Self-distilled masked auto-encoders are efficient video anomaly detectors. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 15984–15995, 2024. Shao, Y., He, H., Li, S., Chen, S., Long, X., Zeng, F., Fan, Y., Zhang, M., Yan, Z., Ma, A., et al. Eventvad: Training-free event-aware video anomaly detection. In Proceedings of the 33rd ACM International Conference on Multimedia ,pp. 2586–2595, 2025. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al. Deepseekmath: Push-ing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Shi, H., Wang, L., Zhou, S., Hua, G., and Tang, W. Abnor-mal ratios guided multi-phase self-training for weakly-supervised video anomaly detection. IEEE Transactions on Multimedia , 26:5575–5587, 2023. 11 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+Sultani, W., Chen, C., and Shah, M. Real-world anomaly de-tection in surveillance videos. In Proceedings of the IEEE conference on computer vision and pattern recognition ,pp. 6479–6488, 2018. Tang, J., Lu, H., Wu, R., Xu, X., Ma, K., Fang, C., Guo, B., Lu, J., Chen, Q., and Chen, Y.-C. Hawk: Learning to understand open-world video anomalies. Advances in Neural Information Processing Systems , 37:139751– 139785, 2024. Tian, Y., Pang, G., Chen, Y., Singh, R., Verjans, J. W., and Carneiro, G. Weakly-supervised video anomaly detec-tion with robust temporal feature magnitude learning. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pp. 4975–4986, 2021. Wang, W., Gao, Z., Gu, L., Pu, H., Cui, L., Wei, X., Liu, Z., Jing, L., Ye, S., Shao, J., et al. Internvl3. 5: Advancing open-source multimodal models in versatility, reasoning, and efficiency. arXiv preprint arXiv:2508.18265 , 2025. Wu, P., Liu, J., Shi, Y., Sun, Y., Shao, F., Wu, Z., and Yang, Z. Not only look, but also listen: Learning multimodal violence detection under weak supervision. In European conference on computer vision , pp. 322–339. Springer, 2020. Wu, P., Zhou, X., Pang, G., Zhou, L., Yan, Q., Wang, P., and Zhang, Y. Vadclip: Adapting vision-language models for weakly supervised video anomaly detection. In Pro-ceedings of the AAAI conference on artificial intelligence ,volume 38, pp. 6074–6082, 2024. Xiao, T. Z., Bamler, R., Sch ¨olkopf, B., and Liu, W. Ver-balized machine learning: Revisiting machine learning with language models. arXiv preprint arXiv:2406.04344 ,2024. Yan, C., Zhang, S., Liu, Y., Pang, G., and Wang, W. Feature prediction diffusion model for video anomaly detection. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 5527–5537, 2023. Yang, Y., Lee, K., Dariush, B., Cao, Y., and Lo, S.-Y. Fol-low the rules: reasoning for video anomaly detection with large language models. In European Conference on Computer Vision , pp. 304–322. Springer, 2024. Yang, Z., Gao, C., and Shou, M. Z. Panda: Towards gen-eralist video anomaly detection via agentic ai engineer. 
+
+Advances in Neural Information Processing Systems , 38: 83182–83211, 2026. Ye, M., Liu, W., and He, P. Vera: Explainable video anomaly detection via verbalized learning of vision-language mod-els. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 8679–8688, 2025. Yu, J., Liu, J., Cheng, Y., Feng, R., and Zhang, Y. Modality-aware contrastive instance learning with self-distillation for weakly-supervised audio-visual violence detection. In 
+
+Proceedings of the 30th ACM international conference on multimedia , pp. 6278–6287, 2022. Yuksekgonul, M., Bianchi, F., Boen, J., Liu, S., Lu, P., Huang, Z., Guestrin, C., and Zou, J. Optimizing gener-ative ai by backpropagating language model feedback. 
+
+Nature , 639(8055):609–616, 2025. Zanella, L., Menapace, W., Mancini, M., Wang, Y., and Ricci, E. Harnessing large language models for training-free video anomaly detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 18527–18536, 2024. Zhang, H., Xu, X., Wang, X., Zuo, J., Han, C., Huang, X., Gao, C., Wang, Y., and Sang, N. Holmes-vad: To-wards unbiased and explainable video anomaly detection via multi-modal llm. arXiv preprint arXiv:2406.12235 ,2024a. Zhang, H., Xu, X., Wang, X., Zuo, J., Huang, X., Gao, C., Zhang, S., Yu, L., and Sang, N. Holmes-vau: Towards long-term video anomaly understanding at any granular-ity. In Proceedings of the computer vision and pattern recognition conference , pp. 13843–13853, 2025. Zhang, M., Wang, J., Qi, Q., Ren, P., Sun, H., Zhuang, Z., Wang, H., Zhang, L., and Liao, J. Video anomaly detec-tion via progressive learning of multiple proxy tasks. In 
+
+Proceedings of the 32nd ACM International Conference on Multimedia , pp. 4719–4728, 2024b. Zhang, M., Wang, J., Qi, Q., Sun, H., Zhuang, Z., Ren, P., Ma, R., and Liao, J. Multi-scale video anomaly detection by multi-grained spatio-temporal representation learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 17385–17394, 2024c. Zhou, H., Yu, J., and Yang, W. Dual memory units with un-certainty regulation for weakly supervised video anomaly detection. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 37, pp. 3769–3777, 2023. Zhou, X., Peng, X., Wen, H., Luo, Y., Yu, K., Yang, P., and Wu, Z. Learning weakly supervised audio-visual violence detection in hyperbolic space. Image and Vision Computing , 151:105286, 2024. Zhu, L., Wang, L., Raj, A., Gedeon, T., and Chen, C. Ad-vancing video anomaly detection: A concise review and a new dataset. Advances in Neural Information Processing Systems , 37:89943–89977, 2024. 12 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+## A. Theoretical Analysis 
+
+Following (Brown et al., 2020), we provide a first-order analysis showing that updating linguistic experience can serve as an approximate surrogate for parameter updates. LRPO keeps the VLM parameters fixed at θ0 and modulates the conditional output distribution πθ0 (o | C) by editing the experience text, where C = [ P, ˜V , E( ˜V )] . Let h(C) denote the continuous representation of the context (e.g., input embeddings/hidden states). When the experience is updated from E to E′, the context becomes C′ = [ P, ˜V , E′( ˜V )] , inducing a perturbation ∆h = h(C′) − h(C). Under a local linearization assumption, for any output o we have the first-order approximation 
+
+log πθ0 (o | C′) − log πθ0 (o | C) ≈ ∇ h log πθ0 (o | C)⊤∆h. (7) Similarly, a small parameter update ∆θ also induces a first-order change in log πθ (o | C). Therefore, in a first-order sense, the context perturbation ∆h caused by experience editing can induce a distribution shift analogous to that of a small parameter update ∆θ, thereby changing the relative propensity of different outputs. This offers theoretical intuition for why LRPO can effectively steer the model distribution without updating any parameters. We next interpret why LRPO can iteratively improve experience from a group-relative optimization perspective (Shao et al., 2024). For the same sample ( ˜V (j), Y (j)), we draw a group of outputs {o(j) 
+
+> k
+
+}Gk=1 under the old experience E(j)old and obtain rewards {r(j) 
+
+> k
+
+}Gk=1 , where o(j) 
+
+> k
+
+∼ πθ0 (· | ˜V (j), P, E(j)old ). The within-group normalized advantage is defined as ˆA(j) 
+
+> k
+
+=    
+
+> r(j)
+> k−mean( {r(j)
+> i})std( {r(j)
+> i})
+
+. For a candidate experience E(j), we define the sequence-level likelihood ratio ρ(j) 
+
+> k
+
+= πθ0 (o(j)         
+
+> k|˜V(j),P, E(j))
+> πθ0(o(j)
+> k|˜V(j),P, E(j)old )
+
+,and write the group-relative objective as 
+
+JLRPO = E
+
+"
+
+1
+
+G
+
+> G
+
+X
+
+> k=1
+
+min 
+
+
+
+ρ(j) 
+
+> k
+
+ˆA(j) 
+
+> k
+
+, clip( ρ(j) 
+
+> k
+
+, 1 − ϵ, 1 + ϵ) ˆA(j)
+
+> k
+
+
+
+− β KL 
+
+
+
+πθ0 (· | ˜V (j), P, E(j)) ∥ πθ0 (· | ˜V (j), P )
+
+ #
+
+.
+
+(8) Here the clipping term and the KL regularizer jointly bound the per-step distribution change, keeping each experience update in a “small-step” regime and thus enabling stable policy improvement under the strong prior induced by the frozen base model πθ0 .
+
+## B. Dataset Statistics 
+
+Because test videos in VAD benchmarks usually contain highly imbalanced normal and abnormal frames, quantifying this distribution is important for clarifying the experimental setting and improving evaluation transparency. Therefore, we summarize the normal/abnormal video counts and, when frame-level annotations are available, the corresponding frame distributions in Table 9. For UCF-Crime and XD-Violence, the training splits are annotated only at the video level, whereas frame-level annotations are provided for testing; therefore, their training statistics are reported only by video count. In contrast, UBnormal provides frame-level annotations for all splits, allowing frame statistics to be reported for the train, validation, and test sets. 
+
+Table 9. Dataset-level video counts and frame-level normal/abnormal statistics.                                                    
+
+> Dataset Split # Normal Videos # Abnormal Videos # Total Videos # Normal Frames # Abnormal Frames Abnormal Frame Ratio
+> UCF-Crime Train 800 810 1,610 N/A N/A N/A Test 150 140 290 1,027,477 84,331 7.59% XD-Violence Train 2,049 1,905 3,954 N/A N/A N/A Test 300 500 800 1,806,004 529,797 22.68% UBnormal Train 186 82 268 90,860 25,227 21.73% Validation 26 38 64 14,237 13,938 49.47% Test 53 158 211 42,790 49,850 53.81%
+
+## C. Additional Implementation Details 
+
+For the anomaly preference reward, we use InternVL3 5-38B to generate perturbed preference texts as hard negatives, with 
+
+H = 3 per sample, and set the temperature to τ = 0 .1. To ensure stable and lightweight experience editing, we restrict the optimizer to perform at most 3 experience operations per update step. We cap the general experience repository at 13 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+|E gen | ≤ 30 and require each retained item to describe transferable anomaly judgment principles rather than sample specific details, which keeps the repository compact and helps reduce redundancy and uncontrolled drift. For the anomaly temporal dependency reward, we set the suppression coefficient to μ = 0 .8 and use ϵ0 = 0 .05 and ϵ1 = 0 .20 for the soft gate in Eq. (5). During inference, we follow (Ye et al., 2025) to incorporate both scene context and temporal context into the reasoning process. Overall, although LRPO uses a three-stage pipeline, the workflow remains lightweight in practice, with the complete training process taking only about 2.3 hours. 
+
+## D. Experience Library Showcases 
+
+D.1. Showcase of General Experience Learned by LRPO 
+
+We provide the complete list of general anomaly preference experiences learned by LRPO. These experiences are learned on the XD-Violence dataset using only 2.5% of the training set. Each item is a natural-language rule that captures transferable decision criteria across scenarios, mainly covering temporal constraints, evidence composition, and conflict-resolution priorities, and can be directly injected as a contextual prior at inference time. 
+
+1. Active fighting requires aggressive physical contact persisting ≥3 consecutive frames; weapons do not preclude Fighting if intent to harm is clear, otherwise apply Abuse when coercive handling appears without contact. 2. When weapons appear, also label Shooting if a bright or muzzle flash is followed within 3 frames by injury, distress, or protective reaction, even when the weapon is not yet visible. 3. When someone is lying on the ground, label Abuse if coercive or restraint cues appear within 2-3 frames and no weapon is visible; otherwise defer to Shooting. 4. When law-enforcement appears before civilians, label Riot if within 5 s at least two aggression cues emerge, or if a single cue persists ≥2 s after the police appearance. 5. Emotional distress alone is insufficient; if distress co-occurs with discharge or protective reaction within 2-3 frames, label Shooting. If distress appears with a weapon aimed at a vulnerable person without discharge, label Abuse. 6. When multiple cues appear, label each only if its rule holds in separate segments; resolve overlaps with priority: Explosion >
+
+Shooting > Riot > Fighting > Abuse > Car-accident > Normal. 7. When restrained and another actor forcibly applies an object or substance (e.g., pours, sprays, pushes) onto the person, and visible distress follows within ≤3 frames, label Abuse. 8. When reduced visibility persists, scan early, middle, and late checkpoints; if no high-severity or restraint/forced-handling cues appear and the setting looks benign, label Normal. 9. When only aftermath artifacts like lingering smoke or debris appear, no high-severity explosion cue occurred in the prior 5 seconds, and artifacts show no rapid growth, label Normal; otherwise treat as ongoing Explosion. 10. When an on-scene authority figure visibly separates combatants, treat as supporting evidence for genuine Fighting only if aggressive contact cues already exist; ignore in staged scenes without hostile intent. 11. When a crowd shifts from passive to aggressive, label Riot if two of: density rise, chanting, aggression cues (projectiles, tear-gas, protest symbols, fire, smoke, flares) appear within 5 seconds; cue persisting ≥1 frame. 12. When a vulnerable individual is restrained by a dominant aggressor and visible distress appears, label Abuse; weapon presence does not downgrade unless a discharge flash or weapon-caused injury occurs within two frames. 13. When a sudden bright flash is large and sustained, and within the next few frames smoke, fire, debris, shockwave, or damage appear, prioritize Explosion over Shooting, even if a weapon is present. 14. When reduced visibility persists, scan the next few seconds for abrupt motion, sudden light or sound cues, emergency vehicles, or rapid crowd shifts; if detected, invoke the matching specific anomaly rule. 15. When weapons appear but no discharge cue in 2-3 frames, run the flash-explosion scan; if Explosion is detected, label Explosion, else do not label Shooting and monitor or consider Abuse. 16. When a sudden bright flash is detected, scan the next five frames for explosion cues (smoke, debris, fire, shockwave, damage); if found, label Explosion, overriding other cues. 17. When law-enforcement and civilians confront and officers wear riot gear, treat megaphones, banners, chanting, raised fists, coordinated gestures, or density surge as Riot cues persisting ≥1 frame. 
+
+14 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+18. When a vulnerable individual shows visible injury and a dominant aggressor is present, require a coercive action (e.g., grip, push) within ≤2 frames followed by distress within ≤3 frames to label Abuse. 19. When a sudden bright flash occurs without explosion cues, label Shooting only if a weapon-related cue appears or injury/distress directly follows the flash within 2-3 frames; otherwise continue scanning. 20. When a sudden bright flash (e.g., flare or fireworks) occurs with law-enforcement and a hostile crowd, and any aggression cue appears within 3 seconds, label Riot with elevated confidence. 21. When an anomaly cue appears and any label is assigned, always continue scanning remaining frames for independent cues of other categories, applying each rule and resolving overlaps by priority. 22. When a vehicle abruptly changes motion, and within five seconds any of: damage, smoke, fire, debris, emergency-response lights, or clear traffic disruption (stopped vehicles, congestion, lane blockage) appear, label Car-accident, overriding lower-severity cues. 23. When weapons appear, prioritize Shooting over Fighting unless the weapon is sport equipment in a recognized sport context; then evaluate aggressive contact under the Fighting rule if no discharge or injury cues. 24. When weapons appear without discharge, injury, or protective reaction in 3-5 frames, prioritize Abuse labeling if restraint or distress cues exist; only label Shooting with a discharge flash or direct weapon-injury link. 25. When an anomaly cue appears and no high-severity cues are detected across early, middle, and late segments, and behavior is ordinary for the setting, assign the Normal label. 26. When a sudden bright flash is large and smoke plumes, flames, or fireballs persist for three or more frames, especially with shockwave or debris, label Explosion regardless of weapon. 27. When law-enforcement appears before civilians wearing riot gear, label Riot if two aggression cues span ≥3 seconds, boosting confidence as strong temporal evidence. 
+
+D.2. Showcase of Selected Scenario Experience 
+
+We provide an excerpt of the scenario experience entries. Each entry is a natural-language rule that specifies context-dependent anomaly cues, triggering conditions, and decision boundaries, and can be retrieved and injected as an in-context prior during inference. • Explosion. – When in an urban combat scene, if a person aims and fires a weapon from a rooftop, causing an explosion inside a building, you should judge it as a shooting and explosion anomaly. 
+
+– When in a combat scene, if gunfire and explosions are visible, you should judge it as a shooting and explosion anomaly. 
+
+– When in a battlefield scene, if soldiers are seen aiming and firing weapons at surrendering individuals, and there are signs of explosions and fire, you should judge it as a shooting and explosion anomaly. 
+
+– When in an industrial or high-tension scene, if an explosion occurs (fire, smoke, debris), you should judge it as an explosion anomaly. • Shooting. – When in a street scene, if a person points a gun at another person and fires, you should judge it as a shooting anomaly. 
+
+– When in an indoor scene, if a person is holding a gun and a muzzle flash is visible, you should judge it as a shooting anomaly. 
+
+– When in a combat scene, if people are aiming rifles and firing, you should judge it as a shooting anomaly. 
+
+– When in a robbery-like scene, if a weapon is brandished and a shot is fired, you should judge it as a shooting anomaly. • Riot. – When in a street protest scene, if a crowd confronts law enforcement and aggressive actions occur, you should judge it as a riot anomaly. 15 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+– When in a public disturbance scene, if people are throwing objects or clashing with police, you should judge it as a riot anomaly. 
+
+– When in an outdoor crowd scene, if a mob becomes violent and pushes or attacks, you should judge it as a riot anomaly. 
+
+– When in a protest scene, if tear gas, shields, or riot gear appears with hostile crowd behavior, you should judge it as a riot anomaly. • Fighting. – When in a street scene, if two or more people are punching or kicking each other, you should judge it as a fighting anomaly. 
+
+– When in an indoor scene, if a physical fight breaks out with sustained aggressive contact, you should judge it as a fighting anomaly. 
+
+– When in a public place, if multiple individuals engage in a brawl, you should judge it as a fighting anomaly. 
+
+– When in a hallway scene, if people grapple and strike each other, you should judge it as a fighting anomaly. • Abuse. – When in a domestic scene, if a person forcibly restrains or drags another person and distress is visible, you should judge it as an abuse anomaly. 
+
+– When in an indoor scene, if a vulnerable individual is restrained and coerced, you should judge it as an abuse anomaly. 
+
+– When in a street scene, if an aggressor holds down a person and applies coercive force, you should judge it as an abuse anomaly. 
+
+– When in a room scene, if a person is being tied up or held captive, you should judge it as an abuse anomaly. • Car accident. – When in a road scene, if vehicles collide and damage is visible, you should judge it as a car accident anomaly. 
+
+– When in a highway scene, if a vehicle crashes and smoke or debris appears, you should judge it as a car accident anomaly. 
+
+– When in an intersection, if a sudden collision causes traffic disruption, you should judge it as a car accident anomaly. 
+
+– When in a street scene, if a car hits an object or another vehicle and people react, you should judge it as a car accident anomaly. • Normal. – When in a sports competition scene, if the actions are consistent with play and no harm cues appear, you should judge it as normal. 
+
+– When in a stage performance scene, if violence-like gestures appear but are clearly choreographed, you should judge it as normal. 
+
+– When in a training or drill scene, if weapons appear without hostile intent or discharge cues, you should judge it as normal. 
+
+– When in a construction scene, if sparks or bright lights occur as part of work activity, you should judge it as normal. 
+
+## E. Additional qualitative analyses 
+
+Figure 7 provides a normal-case example illustrating how LRPO combines learned general experience with retrieved scenario experience to support preference-aligned reasoning. The general experience items (e.g., #22 and #25) act as transferable decision criteria, prompting the model to verify whether abrupt motion changes, high-severity cues, or other accident evidence emerge across temporally separated segments. Meanwhile, the retrieved scenario experience (e.g., #1) supplies a context-dependent trigger rule for highway driving, calibrating what constitutes a car-accident boundary under this scene. Since the frames exhibit orderly driving and lack the required evidence (no abrupt motion, disruption, or damage cues), 16 Linguistic Relative Policy Optimization for Video Anomaly Reasoning 
+
+the model consistently rules out anomalies and outputs a normal conclusion with a low anomaly score. Overall, this case suggests that general experience provides reusable anomaly preferences and conflict-resolution principles, while scenario experience anchors these preferences to scene-specific boundaries, jointly improving reasoning consistency. Model Output (Example 2)                 
+
+> Reasoning Process: The video frames depict a
+> typical highway driving scene... The vehicles are
+> moving in an orderly manner...
+> -Experience #22 : This experience indicates
+> that if a vehicle abruptly... Again, there are
+> no signs of abrupt motion or disruption.
+> -Experience #25 : This experience states that
+> if no high -severity cues are detected ... The
+> driving scene here fits this description .
+> -Scenario Experience #1 : This experience
+> suggests that if a vehicle veers off .. .
+> However, there is no evidence of such
+> behavior in the frames .
+> Final Conclusion: Under normal highway
+> driving conditions, because vehicles are moving
+> in an orderly manner… judged as normal.
+> Anomaly Score: [0.0]
+
+Normal 
+
+Example          
+
+> General Experience (Excerpt)
+> #22 When a vehicle abruptly changes motion ,
+> and within five seconds any of: damage, smoke,
+> fire, debris, emergency -response lights, or clear
+> traffic disruption appear, label Car -accident,
+> overriding lower -severity cues.
+> #25 When an anomaly cue appears and no
+> high -severity cues are detected across early,
+> middle, and late segments, and behavior is
+> ordinary for the setting, assign the Normal label .
+> …
+> Scenario Experience ( Excerpt)
+> #1 When on a highway , if a vehicle is seen
+> veering off the road or colliding with another
+> vehicle, you should judge it as a car accident
+> anomaly .
+> …
+
+Figure 7. Qualitative example on video “v=y7JEq-kf2I”. General experience provides transferable criteria (e.g., checking abrupt motion and high-severity cues), while scenario experience supplies scene-specific triggers and boundary calibration for the highway-driving context, leading to a consistent normal conclusion. 
+
+Figure 8 visualizes several frame-level anomaly score curves on the XD-Violence dataset. We compare LRPO with represen-tative tuning-based methods, including HyperVD (Zhou et al., 2024), MACIL SD (Yu et al., 2022), UR-DMU (Zhou et al., 2023), PEL4VAD (Pu et al., 2024), and DSRL (Leng et al., 2024), as well as tuning-free methods such as LAVAD (Zanella et al., 2024) and VERA (Ye et al., 2025). Across these examples, LRPO produces score trajectories that better align with the temporal extent of ground-truth anomalous intervals: it yields clearer separation between normal and abnormal regions, assigns higher confidence within anomalous segments while suppressing spurious spikes in normal frames, and exhibits more stable temporal consistency near boundaries. These qualitative results suggest that injecting and iteratively optimizing anomaly experience helps LRPO form more reliable temporally grounded anomaly evidence, complementing both training-based detectors and existing tuning-free approaches. 17 Linguistic Relative Policy Optimization for Video Anomaly Reasoning LRPO (Ours)  VERA  LAVAD  DSRL  VadCLIP  PEL4VAD  UR -DMU  MACIL_SD  HyperVD  GT 
+
+> LRPO (Ours)  VERA  LAVAD  DSRL  VadCLIP  PEL4VAD  UR -DMU  MACIL_SD  HyperVD  GT
+> LRPO (Ours)  VERA  LAVAD  DSRL  VadCLIP  PEL4VAD  UR -DMU  MACIL_SD  HyperVD  GT
+> LRPO (Ours)  VERA  LAVAD  DSRL  VadCLIP  PEL4VAD  UR -DMU  MACIL_SD  HyperVD  GT
+
+Figure 8. Additional visualization of frame-level anomaly detection results on XD-Violence. The gray horizontal line at 0.5 indicates the anomaly detection threshold. 
+
+18

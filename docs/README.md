@@ -6,47 +6,41 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-01
-- 运行时间：2026-07-01 21:50:00 UTC
+- 最新运行日期：2026-07-02
+- 运行时间：2026-07-02 21:42:07 UTC
 - 运行状态：成功
-- 本次总论文数：9
-- 精读区：3
-- 速读区：6
+- 本次总论文数：7
+- 精读区：2
+- 速读区：5
 
 ### 今日简报（AI）
-今日聚焦9篇论文，精读视频异常检测与异常分割两大方向，速读涵盖持续异常检测与图像篡改定位。最值得关注弱监督视频异常检测的时空定位新方法（9.0分），以及基于测试时自适应的拓扑感知异常分割（8.0分）。建议优先深入这两篇精读，可重点关注其在复杂场景中的实际应用与代码开源情况。
-- 详情：[/202607/01/README](/202607/01/README)
+今日推荐7篇论文，精读聚焦LiDAR 3D检测器漏洞攻击与语言引导的工业异常理解。最值得关注的方向是Explainability-Aware攻击暴露传感器漏洞，以及GenAU用视觉语言模型实现工业异常检测。建议重点研读这两篇高分论文，思考如何将可解释性攻击与防御机制结合到实际系统中。
+- 详情：[/202607/02/README](/202607/02/README)
 
 ### 精读区论文标签
-1. [Learning Where and When: Patch-Based Spatiotemporal Localization in Weakly Supervised Video Anomaly Detection](/202607/01/2606.29498v1-learning-where-and-when-patch-based-spatiotemporal-localization-in-weakly-supervised-video-anomaly-detection)  
+1. [Explainability-Aware Frustum Attack: Exposing Structural Vulnerabilities in LiDAR-Based 3D Object Detectors](/202607/02/2606.29963v2-explainability-aware-frustum-attack-exposing-structural-vulnerabilities-in-lidar-based-3d-object-detectors)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：基于补丁的时空异常定位，强调可解释性
-2. [Learning Topology-Aware Representations via Test-Time Adaptation for Anomaly Segmentation](/202607/01/2606.28268v1-learning-topology-aware-representations-via-test-time-adaptation-for-anomaly-segmentation)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：拓扑测试时自适应用于异常分割，通过几何结构保持增强可解释性
-3. [Multi-Level Distributional Entropy for Explainable Network Intrusion Detection](/202607/01/2606.29797v1-multi-level-distributional-entropy-for-explainable-network-intrusion-detection)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：利用可解释熵特征的可解释网络入侵检测
+   evidence：可解释性引导的3D目标检测器对抗分析
+2. [GenAU: Language-Grounded Industrial Anomaly Understanding with Vision-Language Models](/202607/02/2607.01049v1-genau-language-grounded-industrial-anomaly-understanding-with-vision-language-models)  
+   标签：评分：9.0/10、query:xai-objdet
+   evidence：统一异常检测、定位和缺陷分析，并提供可解释视觉证据
 
 ### 速读区论文标签
-1. [DeCoFlow: Structural Decomposition of Normalizing Flows for Continual Anomaly Detection](/202607/01/2606.26687v1-decoflow-structural-decomposition-of-normalizing-flows-for-continual-anomaly-detection)  
+1. [Identifying the Unknown: Prompt-Free Open Vocabulary Anomaly Recognition for Robot-Object Interaction](/202607/02/2606.26829v1-identifying-the-unknown-prompt-free-open-vocabulary-anomaly-recognition-for-robot-object-interaction)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：持续异常检测，使用可分解归一化流
-2. [ForensicsTok: Forensics-Guided Tokenized Modeling for Image Tampering Localization](/202607/01/2606.24538v1-forensicstok-forensics-guided-tokenized-modeling-for-image-tampering-localization)  
+   evidence：结合MAE异常检测与开放词汇分类，用于机器人异常识别
+2. [Linguistic Relative Policy Optimization for Video Anomaly Reasoning](/202607/02/2607.00654v1-linguistic-relative-policy-optimization-for-video-anomaly-reasoning)  
+   标签：评分：7.0/10、query:xai-objdet
+   evidence：基于语言相对策略优化的视频异常推理，实现可解释异常检测
+3. [LogiCo: A Unified Framework for Logical and Structural Anomaly Detection](/202607/02/2606.28688v1-logico-a-unified-framework-for-logical-and-structural-anomaly-detection)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：利用MLLM推理进行图像篡改定位，具有可解释性潜力
-3. [ForensicsTok: Forensics-Guided Tokenized Modeling for Image Tampering Localization](/202607/01/2606.24538v3-forensicstok-forensics-guided-tokenized-modeling-for-image-tampering-localization)  
+   evidence：通过组件级特征重建实现异常检测，方法具有可解释性
+4. [Forensic-Oriented Intrusion Detection Using Synthetic Network Traffic Data and Explainable Artificial Intelligence](/202607/02/2607.00763v1-forensic-oriented-intrusion-detection-using-synthetic-network-traffic-data-and-explainable-artificial-intelligence)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：图像篡改定位的取证方法
-4. [Hypergraph Normal World Models for Logical Visual Anomaly Detection](/202607/01/2606.25368v1-hypergraph-normal-world-models-for-logical-visual-anomaly-detection)  
+   evidence：结合可解释人工智能的取证入侵检测，提供实例级解释
+5. [Interpretable compositional computation with recurrent neural networks](/202607/02/biorxiv-10-64898-2026-06-23-733979-v1-interpretable-compositional-computation-with-recurrent-neural-networks)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：超图正常世界模型用于逻辑异常检测
-5. [Perception, Verdict, and Evolution: Hindsight-Driven Self-Refining Forensics Agent for AI-Generated Image Detection](/202607/01/2606.26552v1-perception-verdict-and-evolution-hindsight-driven-self-refining-forensics-agent-for-ai-generated-image-detection)  
-   标签：评分：6.0/10、query:xai-objdet
-   evidence：提出了自反思的取证智能体用于AI生成图像检测，与伪造检测可解释性相关
-6. [Distributed Hierarchical Temporal Memory with Shared Associative Memory for Cross-Entity Preemptive Warning](/202607/01/2606.31789v1-distributed-hierarchical-temporal-memory-with-shared-associative-memory-for-cross-entity-preemptive-warning)  
-   标签：评分：6.0/10、query:xai-objdet
-   evidence：分布式HTM用于异常检测，引入共享联想记忆
+   evidence：神经网络可解释组合计算理论
 
 
 <div class="dpr-home-promo-card">

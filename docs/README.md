@@ -6,27 +6,29 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-03
-- 运行时间：2026-07-03 21:44:42 UTC
+- 最新运行日期：2026-07-04
+- 运行时间：2026-07-04 20:13:25 UTC
 - 运行状态：成功
-- 本次总论文数：2
-- 精读区：2
-- 速读区：0
+- 本次总论文数：3
+- 精读区：1
+- 速读区：2
 
 ### 今日简报（AI）
-今日精读2篇论文，核心聚焦工业异常理解与开放词汇目标检测两大前沿方向。重点推荐《GenAU》的工业异常多模态理解方案（9.0分），以及《Robust Onion》对检测器噪声鲁棒性的突破（8.0分）。建议优先阅读前者的Vision-Language框架，后者为实际部署中的噪声问题提供了实用解法。
-- 详情：[/202607/03/README](/202607/03/README)
+今日精读语言引导的工业异常理解新方法，速读自动驾驶视频异常检测与对抗鲁棒性研究。最值得关注的是Vision-Language模型在工业异常理解上展现潜力（评分9.0/10）。建议关注多模态模型在工业质检领域的应用前景。
+- 详情：[/202607/04/README](/202607/04/README)
 
 ### 精读区论文标签
-1. [GenAU: Language-Grounded Industrial Anomaly Understanding with Vision-Language Models](/202607/03/2607.01049v1-genau-language-grounded-industrial-anomaly-understanding-with-vision-language-models)  
+1. [GenAU: Language-Grounded Industrial Anomaly Understanding with Vision-Language Models](/202607/04/2607.01049v1-genau-language-grounded-industrial-anomaly-understanding-with-vision-language-models)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：统一目标检测、异常分割和缺陷分析，提供可解释视觉证据
-2. [Robust Onion: Peeling Open Vocab Object Detectors Under Noise](/202607/03/2606.26734v2-robust-onion-peeling-open-vocab-object-detectors-under-noise)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：通过逐层剖析和特征崩溃分析开放词汇目标检测器的可解释性
+   evidence：基于语言引导的工业异常理解并提供可解释视觉证据
 
 ### 速读区论文标签
-- 本次无速读推荐。
+1. [SENSE-VAD: Sentient and Semantic Video Anomaly Detection for Autonomous Driving](/202607/04/2606.31875v1-sense-vad-sentient-and-semantic-video-anomaly-detection-for-autonomous-driving)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：面向自动驾驶的合成视频异常检测基准，包含社交上下文
+2. [Beyond Gradient-Based Attacks: Adversarial Robustness and Explainability Stability in Cybersecurity Classifiers](/202607/04/2607.01679v1-beyond-gradient-based-attacks-adversarial-robustness-and-explainability-stability-in-cybersecurity-classifiers)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：攻击下分类器的可解释性稳定性指标
 
 
 <div class="dpr-home-promo-card">

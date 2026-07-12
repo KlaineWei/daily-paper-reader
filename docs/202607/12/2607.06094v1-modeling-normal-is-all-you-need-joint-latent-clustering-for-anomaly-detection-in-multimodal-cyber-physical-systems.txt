@@ -1,0 +1,1207 @@
+Title: 2607.06094v1.pdf
+
+URL Source: https://arxiv.org/pdf/2607.06094v1
+
+Published Time: Wed, 08 Jul 2026 00:48:38 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+1
+
+# Modeling Normal Is All You Need: Joint Latent Clustering for 
+
+# Anomaly Detection in Multimodal Cyber -Physical Systems 
+
+## Alexander Apartsin  Yehudit Aperstein 
+
+Holon Institute of Technology (HIT), Holon, Israel  Afeka Academic College of Engineering, Tel Aviv, Israel 
+
+Abstract 
+
+Faults on a cyber -physical system (CPS) are too rare and unrepresentative to characterise, 
+
+or even to select a model on, so detection must instead model normal behaviour; the stand-
+
+ard point -adjusted evaluation, however, rewards detectors that never do. CPS normal be-
+
+haviour is the union of many imbalanced, curved, thin -fringed operating regimes rather 
+
+than a single blob; we state this structure as ten assumptions (A1 –A10) abbreviated Mas-
+
+sive, Implicit, Imbalanced Multimodality (MIIM). We model the normal law with a jointly 
+
+learned latent representation plus explicit Gaussian -mixture mode clustering, scored in the 
+
+latent rather than by a global density or a reconstruction residual, and evaluate under a 
+
+deliberately fair protocol: raw point -wise metrics with no point adjustment, a trivial -detec-
+
+tor difficulty split, prev alence -matched F1, and train -normal -only calibration. On three real 
+
+CPS datasets (WADI, HAI, SKAB) the detector wins both the combined column and the 
+
+difficult correlation/dynamics -fault column on all three , reaching difficult -subset AU-
+
+ROC 0.831 on HAI, 0.726 on WADI, and 0.610 on SKAB. The margin is largest on the 
+
+two multimodal datasets the MIIM assumptions target and slimmest on the near -unimodal 
+
+one, tracking multimodality as the thesis predicts, and it holds against three deep detectors 
+
+(USAD, TranAD, GDN) re -computed with the same raw metrics, all of which collapse on 
+
+the difficult subset. The methodological contributions are the MIIM assumption set, the 
+
+difficulty -stratified fair protocol, and a latent -only score that drops reconstruction because 
+
+a flexible decoder rebuilds the hard faults faithfully. 
+
+## 1 Introduction 
+
+A modern cyber -physical system (CPS), whether a water -treatment plant, an industrial control loop, or a 
+
+rotating machine, integrates hundreds of sensors, embedded controllers, and physical actuators into a single 
+
+tightly coupled unit that continuously sens es its own state and acts upon it. This complexity puts its faults 
+
+beyond enumeration: the combinations of component, control mode, and operating condition in which a 
+
+fault can arise cannot be predefined, tested, or exhaustively sampled before deployment, and many faults 
+
+develop slowly, as wear, drift, or degradation that shows no obvious symptom until it is well advanced and 
+
+can escalate into unplanned downtime or a safety -critical failure. Because the faults cannot be specified in 
+
+advance, they must be di scovered from the system’s own behaviour as it operates, which is the task of 
+
+anomaly detection [ 22 ]. That behaviour is richly observable: high -frequency measurements of vibration, 
+
+current, temperature, pressure, and position, together with internal control signals, are recorded continu-
+
+ously and, in principle, carry an early signature of almost any deve loping fault. 
+
+The task is commonly framed as characterising the anomalies, but that framing is misleading. Were a 
+
+representative set of labelled faults available, the task would reduce to supervised classification; in practice 
+
+genuine faults are rare and the few on reco rd seldom span the ways a system can fail [ 24 ], so scarce faults 
+
+cannot define the decision boundary and, as revisited below, cannot even be spent reliably on model selec-2
+
+tion. The information lies on the other side of the boundary, in the normal data, which is abundant and 
+
+rarely exploited in full. Modelling that normal law faithfully is therefore the hard part of the problem, and 
+
+cyber -physical normal is a law of a partic ular kind. Shaped by deterministic physics, hard actuator and 
+
+setpoint limits, and engineered control, it is the union of many bounded, curved operating regimes, some 
+
+common and many rare, each with legitimately low -density fringes, rather than a single st atistical blob. A 
+
+detector that mis -models this structure fails however it thresholds. 
+
+A fault is anything that leaves this union of normal regimes, and the interesting ones stay inside the 
+
+marginal envelope of every channel while breaking the joint structure: a correlation break, a between -mode 
+
+pocket, a history -inconsistent state. These faults are invisible to any per -channel range rule, and, as we 
+
+show, to a reconstruction residual as well. 
+
+Two problems make progress on this task hard to measure. The first is evaluation. The dominant metric 
+
+in the literature, point -adjusted F1, inflates scores so severely that a random anomaly score can beat every 
+
+published deep model [ 1, 2]; and even under raw metrics, public CPS benchmarks are dominated by anom-
+
+alies that a one -line univariate rule already separates [ 3], so a high headline number certifies little. The 
+
+second is modelling. If normal is a union of many imbalanced modes, then a global anomaly model cannot 
+
+represent it (a single blob under -fits the regime structure), a single deep autoencoder alarms on rare -but -
+
+valid modes (the trust -eroding false positive), and a reconstruction residual is b lind to exactly the joint -
+
+structure faults that matter because a flexible decoder reconstructs them faithfully. 
+
+This paper makes three contributions. (1) We state the structural assumptions of CPS normal data as an 
+
+explicit list, A1 –A10, that we abbreviate MIIM ( Massive, Implicit, Imbalanced Multimodality ) and tie each 
+
+assumption to a concrete choice for modeling normal (§3). (2) We build a detector whose whole design is 
+
+faithfully modeling that normal law: a jointly learned latent plus explicit Gaussian -mixture mode clustering 
+
+(VaDE), scored in the latent by a mixture density head and a rare -mode -safe nearest -component likelihood ,
+
+with two optional heads auto -gated on training -normal signals; a key mechanism inside it is dropping the 
+
+reconstruction term, which is blind to the hard faults (§4). (3) We evaluate under a fair protocol (raw point -
+
+wise metrics, difficulty stratification, prevalence -matched comparisons, train -normal -only calibration) on 
+
+three real CPS datasets, and compare against classical baselines and against three deep detectors, USAD ,
+
+TranAD and GDN, re -computed with the same raw metrics (§5 –6). The detector wins the combined column 
+
+and the difficult column on all three datasets, with the largest margins precisely where the MIIM structure 
+
+is strongest and the slimmest on the one near -unimodal set. 
+
+We are explicit about scope. This study covers three datasets with a single trained model per dataset; 
+
+several results are single -seed and the best -F1 threshold is an oracle (disclosed in §5). We report only raw 
+
+metrics and we treat the difficult subset, n ot the headline, as the discriminative test. 
+
+## 2 Related work 
+
+Anomaly detection is the unsupervised or semi -supervised task of flagging departures from a model of 
+
+normal behaviour, adopted precisely because labelled anomalies are too scarce to train a classifier 
+
+[22 , 23 , 24 ]. On time series it must additionally respect temporal and cross -channel dependence [ 25 ], and 
+
+on cyber -physical and industrial control systems it underpins physics -aware intrusion and fault detection 
+
+[26 ]. LatAD sits squarely in this line: unsupervised, trained on normal only, and specialised to the multi-
+
+modal structure of cyber -physical normal behaviour. 3
+
+2.1 The illusion of progress in time -series anomaly -detection evaluation 
+
+A line of critical work shows that the standard evaluation of time -series anomaly detection is unreliable. 
+
+Kim et al. [ 1] demonstrate that the ubiquitous point -adjustment protocol (marking an entire ground -truth 
+
+anomaly segment as detected if any single point in it is flagged) inflates F1 so drastically that a random 
+
+anomaly score achieves higher point -adjusted F1 than every state -of -the -art model on SWaT and WADI. 
+
+Garg et al. [ 2] independently reproduce this inflation and show that simple baselines (PCA, channel -wise 
+
+autoencoders) beat elaborate deep models once metrics are made rigorous, and that deep methods often fail 
+
+to detect even simple anomalies. Doshi et al. [ 4] diagnose the point -adjustment reward structure and propose 
+
+a rectified evaluation. The critique now spans metrics and benchmarks alike. Wu and Keogh [ 3] argue that 
+
+many popular benchmarks are flawed (triviality, mislabelling and unrealistic anomaly density) creating an 
+
+illusion of progress; and a recent benchmark analysis [ 5] finds that anomaly segments in multivariate CPS 
+
+benchmarks are mostly univariate (SWaT and WADI sit among the datasets whose anomalies deviate uni-
+
+variately on close to all timesteps, with no long cross -channel -only segments), so a flat univariate model 
+
+matches channel -dependent deep detectors. 
+
+A parallel critique targets the dominant scoring mechanism itself. Reconstruction -based detectors as-
+
+sume that a model trained to reconstruct normal data reconstructs anomalies worse; Bouman and Heskes 
+
+[16 ] show this assumption is unreliable, because anomalies lying far from normal data can be reconstructed 
+
+perfectly in practice, and Gong et al. [ 17 ] earlier showed that a deep autoencoder generalises well enough 
+
+to rebuild anomalies and miss them. This is the theoretical counterpart of our Table 2 result that the recon-
+
+struction residual is at or below chance on correlation -break faults, and it motiva tes scoring in a clustered 
+
+latent rather than through a reconstruction residual. A position paper by Sarfraz et al. [ 18 ] draws the two 
+
+threads together, characterising the field as plagued by flawed evaluation metrics, inconsistent benchmark-
+
+ing, and unjustified design choices, and showing that state -of -the -art deep detectors effectively learn linear 
+
+mappings that simple ba selines reproduce; Wagner et al. [ 19 ] re -audit the widely used multivariate bench-
+
+marks, discard the ones with erroneous labels, and note the absence of any standard evaluation metric. 
+
+LatAD responds to these critiques directly. We report raw point -wise AUROC, F1 and FPR with no 
+
+point adjustment for any method; we stratify by a trivial -detector difficulty split so that the discriminative 
+
+difficult subset is reported separately from the easy majority that carries headline numbers; we match prev-
+
+alence before comparing F1 across subsets; and we re -compute the deep SOTA baselines (USAD, TranAD, 
+
+GDN) with the same raw metrics rather than quoting their point -adjusted published figures. Under this 
+
+protocol the SOTA methods lose most of their apparent advantage on the difficult subset, which is exactly 
+
+the phenomenon the critique predicts. 
+
+2.2 Latent and clustering models for anomaly detection 
+
+Our representation is Variational Deep Embedding (VaDE) [ 8], a VAE with a Gaussian -mixture latent prior 
+
+that learns representation and clusters jointly. DAGMM [ 9] similarly couples an autoencoder with a Gauss-
+
+ian -mixture energy for anomaly detection; we borrow its variance -collapse regularisation but find, on these 
+
+datasets, that scoring against explicit per -mode Gaussians in a jointly learned latent outperforms a learned -
+
+Gaussian energy. Our whitened residual uses the Ledoit –Wolf shrinkage covariance estimator [ 12 ]. Classi-
+
+cal baselines are Isolation Forest [ 11 ] and a deep autoencoder [ 21 ], both fitted on the same window features, 
+
+together with a trivial per -channel range detector that also defines the easy/difficult split. 4
+
+2.3 Deep multivariate CPS anomaly detection 
+
+USAD [ 6] couples two adversarially trained autoencoders; TranAD [ 7] uses deep transformer networks 
+
+with adversarial and self -conditioning training; GDN [ 10 ] learns a graph over channels and detects devia-
+
+tions from learned inter -channel relations. These define the modern SOTA on SWaT/WADI -style bench-
+
+marks. We compare against all three under raw metrics (GDN on WADI, where the graph -attention model 
+
+fits our co mpute budget). Re -scored this way, all three collapse on the difficult subset (on WADI, USAD 
+
+0.554, TranAD 0.547 and GDN 0.582, against our 0.726), confirming that their apparent strength does not 
+
+survive a raw, difficulty -stratified metric. 
+
+2.4 Benchmark datasets 
+
+We evaluate on three real CPS testbeds chosen to span the modality axis of the MIIM thesis. WADI [ 13 ] is 
+
+a 123 -channel water -distribution testbed from iTrust, and SWaT [ 20 ] is its 51 -channel water -treatment sib-
+
+ling; the two are the de facto standard multivariate CPS benchmarks and the primary targets of the evalua-
+
+tion critique above [ 1, 3]. HAI [ 14 ] is a 59 -channel hardware -in -the -loop industrial control testbed spanning 
+
+several coupled processes, the most strongly multimodal of the three. SKAB [ 15 ] is a smaller, contaminated 
+
+8-channel rotor and water -circulation benchmark, near -unimodal and, by our analysis, the only genuinely 
+
+subtle set (a trivial univariate rule is near chance on it). We report WADI, HAI and SKAB, which contrast 
+
+a large multimoda l distribution network, a strongly multimodal plant and a near -unimodal rotor, so the 
+
+difficulty -stratified results read directly against the MIIM structure of each dataset. 
+
+## 3 The MIIM assumptions about CPS normal data 
+
+We model the normal law of a CPS as a mixture over reachable operating modes,  𝑝 (𝑥 ) = ∑ 𝜋 𝑘  
+
+> 𝐾
+> 𝑘 =1
+
+𝑝 𝑘 (𝑥 )
+
+where each component  𝑝 𝑘  is a bounded, oriented, curved patch of observation space. The ten assumptions 
+
+of Table 1 describe the qualitative structure of this mixture; each is grounded in a physical property of CPS 
+
+operation and each motivates a specific design choice in the detec tor of §4. We call the resulting property 
+
+MIIM : the sample is Massive, the mode structure is Implicit (unlabelled and only approximately recovera-
+
+ble), the mode occupancy is Imbalanced, and normal is Multimodal.            
+
+> Table 1. The ten CPS normal -data assumptions, their physical origin, and the detector design choice each motivates.
+> A1 –A8 shape the instantaneous window; A9 –A10 shape the trajectory.
+> ID Assumption CPS rationale Motivates (design choice)
+> A1 Regime mixture
+> (multimodality)
+> A plant or vehicle cycles through discrete
+> operating regimes (idle, cruise, load
+> steps); normal is their union, not one
+> blob.
+> Model normal as an explicit mixture,
+> not a global density: the latent
+> GMM prior of VaDE.
+> A2
+> Mode explosion (ex-
+> ponential mode
+> growth)
+> A CPS is built from many interacting sub-
+> systems; each added element multiplies
+> reachable regimes, so mode count grows
+> with complexity.
+> Use a high number of components K
+> (and a high -Kdensity head) ra-
+> ther than a handful.
+> A3
+> Hard envelopes
+> (bounded modes;
+> thin between -
+> mode pockets)
+> Controllers hold each regime within set-
+> point/actuator bands; the space between
+> regimes is passed through, rarely dwelt
+> in, leaving thin anomalous pockets.
+> A between -mode point must score
+> anomalous even when every
+> channel is in range: the basin -
+> agreement head (v).
+> A4 Thin fringes (intra -
+> mode sparsity)
+> Within a mode the system dwells near a typ-
+> ical operating point and reaches the
+> edges only occasionally; each mode
+> holds legitimate low -density regions near
+> its boundary.
+> Density inside a mode is non -Gauss-
+> ian → a parametric high -Kmix-
+> ture density head, not one Gauss-
+> ian per mode.
+
+5
+
+ID  Assumption  CPS rationale  Motivates (design choice) 
+
+A5  Few levers (low in-
+
+trinsic dimension) 
+
+The independent control variables are far 
+
+fewer than the observed channels; the 
+
+rest follow deterministically or probabil-
+
+istically. 
+
+A low -dimensional learned latent 
+
+(dim 10) suffices; faults appear 
+
+as departures within that latent. 
+
+A6  Heavy tail (Zipf im-
+
+balance) 
+
+Machines spend most of the record in a few 
+
+steady regimes; startup, shutdown and 
+
+rare manoeuvres occupy little of it, so an 
+
+infrequent -but -normal point is easily 
+
+mistaken for a fault. 
+
+Score against the nearest compo-
+
+nent, never the π -weighted mix-
+
+ture, so a rare -but -valid mode is 
+
+not penalised (iii). 
+
+A7 
+
+Hidden regimes (la-
+
+tent, implicit 
+
+modes) 
+
+True regimes are an emergent artifact of 
+
+coupling and are not logged; modes must 
+
+be discovered approximately from raw 
+
+streams. 
+
+Discover modes jointly with the rep-
+
+resentation (VaDE), unsuper-
+
+vised; never use mode labels. 
+
+A8 
+
+Mixed signals (heter-
+
+ogeneous, typed 
+
+channels) 
+
+The bus carries sensors, actuators, discrete 
+
+states and setpoints, each with its own 
+
+range, resolution and correlated noise. 
+
+Per -feature standardisation on train -
+
+normal; a whitened (Mahalano-
+
+bis) residual that respects per -
+
+channel scale and cross -channel 
+
+correlation (iv). 
+
+A9  Many clocks (mul-
+
+tiscale dynamics) 
+
+Physical inertia sets per -channel time con-
+
+stants (thermal slow, electrical fast); only 
+
+some regime→regime transitions are le-
+
+gal, each with a characteristic dwell. 
+
+Fixed -length windows with per -
+
+channel statistics as features; mo-
+
+tivates (but, empirically, does not 
+
+require) explicit temporal fea-
+
+tures. 
+
+A10 
+
+Path dependence 
+
+(history -condi-
+
+tioned normality) 
+
+A fault is defined relative to operational his-
+
+tory: the same instantaneous state can be 
+
+normal or faulty depending on how the 
+
+system arrived there. 
+
+In principle a trajectory branch; on 
+
+these snapshot -detectable public 
+
+benchmarks it is inert (see §7), so 
+
+the reported model is window -
+
+only. 
+
+Two standing qualifiers apply throughout: the sample is massive (𝑁  large) and the mixture is approxi-
+
+mately stationary within a run. An exploratory analysis of the three datasets (§5) confirms that the MIIM 
+
+structure is present but implicit (A7): cluster sizes are heavy -tailed and Bayesian -information -criterion 
+
+(BIC) mode counts keep improving past several dozen components on HAI and WADI, yet the modes 
+
+overlap (silhouette 0.08 –0.19) rather than separating crisply. This is precisely the regime in which a jointly 
+
+learned latent, scor ed in the latent by a mixture density, pays off, and in which a global detector or a raw 
+
+reconstruction residual does not. 
+
+## 4 Method 
+
+The main model is VaDE‑hard+resid(auto) . It has a representation stage (a VaDE that jointly learns a 
+
+latent and a Gaussian -mixture prior) and a scoring stage (a stack of heads computed in the latent, all cali-
+
+brated on train -normal). We describe each in turn. 
+
+4.1 Representation: Variational Deep Embedding (VaDE) 
+
+VaDE [ 8] is a variational autoencoder whose latent prior is a Gaussian mixture, so the representation and 
+
+the operating -mode clusters are learned together (A1, A7) rather than one after the other. An encoder maps 
+
+a window feature vector  𝑥  to a latent Gaussian  𝑞 (𝑧 ∣ 𝑥 ) = 𝑁 (𝜇 ,diag 𝜎 2 ); a decoder reconstructs  𝑥 ̂ ; and the 
+
+prior is 
+
+𝑝 (𝑧 ) = ∑ 𝜋 𝑐 
+
+> 𝐾
+> 𝑐 =1
+
+𝑁 (𝑧 ∣ 𝜇 𝑐 ,diag 𝜎 𝑐  
+
+> 2
+
+),6
+
+with mixture parameters {𝜋 𝑐 , 𝜇 𝑐 , 𝜎 𝑐 } learned jointly with the networks. The training objective is the nega-
+
+tive evidence lower bound; per window it is 
+
+ℒ = ∑ (𝑥 𝑗 − 𝑥 ̂𝑗 )2
+
+> 𝑗
+
++ 𝛽 ∑ 𝛾 𝑐 
+
+> 𝑐
+
+[KL (𝑞 ∣∣ 𝑁 (𝜇 𝑐 , 𝜎 𝑐  
+
+> 2
+
+)) + log 𝛾 𝑐 
+
+𝜋 𝑐 
+
+] + H(𝑞 ),
+
+where  𝛾 𝑐 ∝ 𝜋 𝑐 𝑁 (𝑧 ∣ 𝜇 𝑐 , 𝜎 𝑐  
+
+> 2
+
+) are the responsibilities. Three standard measures prevent the well -known clus-
+
+ter collapse in which many components are abandoned during joint training: a KL/cluster warm -up that 
+
+anneals  𝛽  from 0 to 1 so the encoder settles on the pretrained mixture initialisation before the prior is pulled 
+
+around; a DAGMM -style [ 9] penalty on tiny component variances (a variance floor plus a ∑ 𝜎 𝑐  
+
+> −2
+> 𝑐
+
+term); 
+
+and a slower learning rate on the mixture parameters so the GMM initialisation (fitted on the pretrained 
+
+latent) is refined, not destroyed. Training proceeds as plain -VAE pretraining, GMM initialisation on the 
+
+encoded means, then joint optimisation of the full objective. 
+
+4.2 Scoring: why we drop reconstruction 
+
+The natural VaDE anomaly score is the joint negative log -likelihood: a whitened reconstruction residual 
+
+plus a latent term. On the difficult faults (correlation breaks and between -mode pockets) this is exactly 
+
+wrong. Table 2 decomposes the two terms by their difficult -subset AUROC on a single trained model per 
+
+dataset.       
+
+> Table 2. Difficult -subset AUROC of the two natural score terms. The reconstruction residual is at or below chance on
+> the correlation -break faults, and when summed it drags the joint score down; the latent likelihood carries the signal but a
+> single diagonal Gaussia n per mode is coarse.
+> Score term WADI HAI SKAB
+> (a) reconstruction residual 1
+> 2
+
+𝑟 ⊤Σ−1 𝑟  0.490  0.689  0.457       
+
+> (b) latent NLL (nearest diagonal component) 0.663 0.760 0.553
+> (a)+(b) joint NLL (naive VaDE score) 0.494 0.689 0.457
+
+The mechanism is that a flexible decoder reconstructs the fault faithfully : a correlation -break window 
+
+has in -range marginals, so the decoder rebuilds it and the residual is near chance or reversed. Dropping 
+
+reconstruction is a universal difficult -subset improvement and also lifts the combined and easy columns on 
+
+HAI and SKAB. The remaining scoring stack works entirely in the jointly learned latent. 
+
+4.3 The scoring stack 
+
+Let  𝑧 = 𝜇 (𝑥 ) be the encoder mean. The base score sums two latent heads, each z -normalised against its 
+
+train -normal mean and standard deviation, so the operating scale is set by normal, not by the test batch. 
+
+(i) –(ii) Latent mixture -density head (parametric KDE for non -Gaussian pockets) 
+
+Because each mode has a non -uniform interior with thin fringes (A4), one Gaussian per mode is too coarse. 
+
+We fit a high -K diagonal Gaussian mixture on the train -normal latent ( 𝐾 = 80  by default) as a parametric 
+
+kernel -density estimate, and score a window by its density negative log -likelihood: 
+
+𝑠 dens (𝑥 ) = −log ∑ 𝑤 𝑚 
+
+> 80
+> 𝑚 =1
+
+𝑁 (𝑧 ∣ 𝑎 𝑚 ,diag 𝑏 𝑚  
+
+> 2
+
+).
+
+(iii) Nearest -component NLL (rare -mode -safe) 
+
+Under heavy -tailed imbalance (A6) a valid point in a rare, low -𝜋  mode must not be flagged solely for being 
+
+rare. We therefore use the closest component, not the π -weighted mixture: 7
+
+𝑠 near (𝑥 ) = −max  
+
+> 𝑐
+
+log 𝑁 (𝑧 ∣ 𝜇 𝑐 ,diag 𝜎 𝑐  
+
+> 2
+
+).
+
+Using the maximum over components rather than the Bayesian mixture sum matters on between -mode 
+
+faults (SKAB): the mixture sum washes out a between -mode signal, whereas the nearest -component dis-
+
+tance retains it. The base score is the sum of the two z -normal ised heads,  𝑠 0 = z(𝑠 dens ) + z(𝑠 near ).
+
+(iv) Optional responsibility -weighted whitened residual, auto -gated 
+
+On some datasets the fault does surface in reconstruction. The optional residual head reduces the per -chan-
+
+nel residual  𝑟  to  30  dimensions, fits a Ledoit –Wolf -shrunk [ 12 ] precision per mode, and combines the per -
+
+mode whitened energies by responsibility: 
+
+𝑠 resid (𝑥 ) = ∑ 𝛾 𝑘 
+
+> 𝐾
+> 𝑘 =1
+
+𝑟 𝑘 
+
+> ⊤
+
+Σ𝑘  
+
+> −1
+
+𝑟 𝑘 .
+
+The head is auto -gated by a held -out -normal generalisation test: per -mode precisions are fitted on the first 
+
+80% of train -normal and scored on the last 20%; if held -out normal scores much higher (the residual overfits 
+
+/ drifts), the ratio  𝑞 95 (𝐵 )/𝑞 95 (𝐴 ) is large and the head is switched off. Empirically the ratio is 5.24 on 
+
+WADI (off) and 1.17 on HAI (on): the residual carries the fault on HAI but is dead on WADI, and the gate 
+
+recovers exactly this pattern from train -normal alone. 
+
+(v) Optional basin -agreement rescue, auto -scaled 
+
+Between -mode pockets (A3) are the dangerous false negative on datasets whose modes overlap. We perturb 
+
+the latent with Gaussian noise  𝑅  times and measure agreement , the fraction of perturbed copies that keep 
+
+the clean argmax mode. A rare -but -valid point sits deep in one basin (high agreement, demote); a between -
+
+mode point flips modes under perturbation (low agreement, keep). The rescue subtracts a scaled, train -
+
+normal -calibrated agreement: 
+
+𝑠 (𝑥 ) = 𝑠 0 + 𝑠 resid − 𝜆 z(agree (𝑥 )), 𝜆 = 𝜆 0 ⋅ max (0, 𝜌 − 𝛿 ),
+
+where  𝜌  is the fraction of train -normal windows that are ambiguous (maximum responsibility below 0.5) 
+
+and  𝛿  a dead -zone. On crisp -mode data (WADI, HAI)  𝜌 ≈ 0.05  gives  𝜆 = 0 and the rescue is an exact no -
+
+op; on SKAB (50% ambiguous normals) it fires. Thus the reported model configures its two optional heads 
+
+purely from training -normal statistics, with no test -set tuning: the residual head fires on HAI, the basin head 
+
+on SKAB, and neither on WADI. 
+
+Auto -gating summary. Base heads (i –iii) run on every dataset. The residual head (iv) fires when it 
+
+generalises to held -out normal (HAI: on; WADI: off; SKAB: negligible on). The basin head (v) fires when 
+
+train -normal modes overlap (SKAB: on; WADI/HAI: exact no -op). All calibration uses train -normal only. 
+
+## 5 Experimental methodology 
+
+5.1 Datasets 
+
+We use three real CPS datasets and no synthetic data in the results tables. 
+
+• WADI [13 ], a water -distribution testbed, 123 sensor/actuator channels. Roughly a quarter of channels 
+
+are near -constant in normal operation; these are attack carriers , not noise, and are kept. A few channels 
+
+carry physically impossible standardised values (a channel constant at zero in the 14 -day normal record, 
+
+another recalibrated between files); standardised features are clipped to ±10σ to cap such sensor 
+
+glitches. WAD I is downsampled 10× on both streams, with the train and test horizons matched. 
+
+• HAI [14 ], a hardware -in -the -loop industrial control system testbed (HAI 20.07), 59 channels, a multi -
+
+process plant. No clipping (its large excursions are real attack signal). 8
+
+• SKAB [15 ], the Skoltech Anomaly Benchmark, an 8 -channel rotor/water -circulation testbed, contam-
+
+inated and near -unimodal; the only genuinely subtle set (a trivial univariate rule is near chance). 
+
+5.2 Windows and features 
+
+Each raw channel is standardised to zero mean and unit variance using train -normal statistics only (A8). 
+
+We then slide a fixed window of length  𝑊 = 60  with stride 30 across the standardised stream. Each win-
+
+dow is summarised by six per -channel statistics (mean (level), standard deviation (variability), minimum, 
+
+maximum, first -to -last difference (net trend) and range) concatenated into one flat feature ve ctor, so a  𝐶 -
+
+channel window becomes a  6𝐶 -dimensional input. A window is labelled anomalous if more than 5% of its 
+
+timesteps are attack timesteps. Model inputs are additionally per -feature standardised on train -normal be-
+
+fore the encoder. The window size and stride are unified across all three datasets, so the numbers match the 
+
+sweep harness ( 𝑊 = 60  is also the empirically best SKAB window: 0.671 vs 0.66 at  𝑊 = 30  and 0.61 at 
+
+𝑊 = 120 ). We also tested explicit multiscale temporal features (slope, velocity, spectral band power) mo-
+
+tivated by A9; they did not improve the difficult column on any dataset and are not used in the reported 
+
+model. 
+
+5.3 Difficulty stratification 
+
+A trivial detector scores each window by the maximum absolute standardised per -channel window mean, 
+
+max  
+
+> 𝑐 ℎ
+
+∣ 𝑧 ∣, the simplest “is any channel out of its normal range” rule. An anomaly window is labelled easy 
+
+if this trivial score exceeds the 99th percentile of train -normal, and difficult otherwise. Difficult windows 
+
+are therefore the correlation/dynamics faults that no univariate range rule separates. We report all methods 
+
+on three subsets: Easy , Difficult , and All . The difficult column is the discriminative one. 
+
+5.4 Comparable metrics 
+
+We report three raw, point -wise metrics and are explicit about their comparability across subsets. 
+
+• AUROC is prevalence -independent, hence directly comparable across Easy/Difficult/All, and requires 
+
+no threshold. It is our primary cross -subset metric. 
+
+• F1 is prevalence -dependent. Because the three subsets share the same normals but differ in positive 
+
+count, raw F1 is not comparable across them; we therefore report F1 prevalence -matched by subsam-
+
+pling normals to the All -subset anomaly ratio, and we disclose the matched normal count per subset. 
+
+The threshold is the F1 -maximising one (an oracle, field -standard), which we disclose plainly. 
+
+• FPR is reported at a fixed operating point. It shares the oracle -threshold caveat. 
+
+All model fitting and all calibration (density head, nearest -component reference, residual precisions and 
+
+gate, basin scale and reference, and every z -normalisation) use train -normal data only. Test data never 
+
+enters training or calibration. AUROC is leak -free; only the F1/FPR thresholds use the test -swept oracle, 
+
+which we flag. 
+
+5.5 Baselines and SOTA re -computation 
+
+Classical baselines are Isolation Forest [ 11 ] and a deep autoencoder, both on the same window features, 
+
+plus a plain VaDE with the naive whitened -residual -plus -latent -NLL score. For modern SOTA we re -run 
+
+USAD [ 6], TranAD [ 7] and GDN [ 10 ] through the TranAD evaluation harness and score them with the 
+
+same raw point -wise metrics , aggregating their per -timestep scores onto our window grid (with an integer -
+
+ratio upsampling correction for HAI's downsampling). GDN, whose graph -attention model does not fit 
+
+HAI/SKAB within our compute budget, is reported on WADI. We do not apply point adjustment to any 9
+
+method. This is deliberate: point adjustment inflates F1 so severely that a random score outscores every 
+
+deep model (§2), so a fair comparison must use raw metrics for all methods, including the published SOTA. 
+
+We also report a pedagogical trivial baseline, the maximum absolute standardised per -channel window 
+
+mean, the same score that defines the difficulty split (§5.3), whose behaviour by construction is strong on 
+
+Easy and near chance on Difficult. 
+
+## 6 Results 
+
+Table 3 reports AUROC, prevalence -matched F1 and FPR for every method on all three datasets and all 
+
+three subsets. The main model is VaDE‑hard+resid(auto) . Bold marks the best AUROC within a column 
+
+across all methods. 
+
+Table 3. Per -dataset, per -subset results: [AUROC, F1, FPR]. F1 is prevalence -matched; the F1/FPR threshold is a 
+
+disclosed oracle; AUROC is leak -free. Higher AUROC/F1 and lower FPR are better. Bold = best AUROC in that da-
+
+taset×subset column (ties bolded jointly). “O urs” = VaDE family; the headline model is VaDE -hard+resid(auto). The 
+
+trivial max|z| row is the univariate range rule that defines the difficulty split (§5.3): near -perfect on Easy (SKAB 1.000, 
+
+HAI 0.966), near chance on Difficult (0.31 –0.39), which is exac tly what makes the split meaningful. GDN is reported on 
+
+WADI only (§5.5); “n/a” marks a cell not run. 
+
+Method  Group  All  Easy  Difficult 
+
+AUROC  F1  FPR  AUROC  F1  FPR  AUROC  F1  FPR 
+
+WADI (test 575; normal 519; anom 56 = 37 easy + 19 difficult; matched normals: all 519 / easy 343 / difficult 176) 
+
+trivial max|z|  Base-
+
+line  0.558  0.219  0.738  0.687  0.287  0.738  0.307  0.204  0.738 
+
+Isolation Forest  Base-
+
+line  0.730  0.380  0.139  0.748  0.444  0.139  0.696  0.292  0.139 
+
+AutoEncoder  Base-
+
+line  0.745  0.614  0.010  0.907  0.749  0.010  0.430  0.257  0.010 
+
+USAD  SOTA  0.686  0.288  0.304  0.754  0.344  0.304  0.554  0.234  0.304 
+
+TranAD  SOTA  0.709  0.307  0.264  0.791  0.359  0.264  0.547  0.242  0.264 
+
+GDN  SOTA  0.700  0.301  0.262  0.760  0.348  0.262  0.582  0.242  0.262 
+
+VaDE  Ours  0.787  0.653  0.015  0.938  0.798  0.015  0.494  0.257  0.015 
+
+VaDE -
+
+hard+resid(auto)  Ours  0.803  0.543  0.006  0.842  0.697  0.006  0.726  0.327  0.006 
+
+HAI (test 14819; normal 14167; anom 652 = 485 easy + 167 difficult; matched normals: all 14167 / easy 10538 / difficult 3629; 
+
+GDN not run on HAI) 
+
+trivial max|z|  Base-
+
+line  0.806  0.627  0.001  0.966  0.786  0.001  0.340  0.040  0.001 
+
+Isolation Forest  Base-
+
+line  0.854  0.445  0.024  0.933  0.533  0.024  0.625  0.129  0.024 
+
+AutoEncoder  Base-
+
+line  0.923  0.742  0.005  0.979  0.828  0.005  0.758  0.412  0.005 
+
+USAD  SOTA  0.845  0.700  0.007  0.968  0.830  0.007  0.487  0.100  0.007 
+
+TranAD  SOTA  0.842  0.704  0.004  0.971  0.838  0.004  0.467  0.105  0.004 
+
+GDN  SOTA  n/a  n/a  n/a  n/a  n/a  n/a  n/a  n/a  n/a 
+
+VaDE  Ours  0.894  0.757  0.002  0.965  0.849  0.002  0.688  0.337  0.002 
+
+VaDE -
+
+hard+resid(auto)  Ours  0.941  0.742  0.005  0.979  0.820  0.005  0.831  0.443  0.005 
+
+SKAB (test 631; normal 377; anom 254 = 69 easy + 185 difficult; matched normals: all 377 / easy 102 / difficult 275; GDN not run 
+
+on SKAB) 
+
+trivial max|z|  Base-
+
+line  0.554  0.469  0.011  1.000  0.996  0.011  0.388  0.331  0.011 
+
+Isolation Forest  Base-
+
+line  0.640  0.509  0.454  0.941  0.885  0.454  0.528  0.472  0.454 
+
+AutoEncoder  Base-
+
+line  0.614  0.530  0.422  0.910  0.795  0.422  0.504  0.447  0.422 
+
+USAD  SOTA  0.651  0.537  0.416  0.812  0.714  0.416  0.591  0.497  0.416 10                                                     
+
+> Method Group All Easy Difficult
+> AUROC F1 FPR AUROC F1 FPR AUROC F1 FPR
+> TranAD SOTA 0.622 0.549 0.358 0.932 0.864 0.358 0.507 0.452 0.358
+> GDN SOTA n/a n/a n/a n/a n/a n/a n/a n/a n/a
+> VaDE Ours 0.579 0.479 0.294 0.946 0.853 0.294 0.442 0.381 0.294
+> VaDE -
+> hard+resid(auto) Ours 0.685 0.568 0.408 0.883 0.795 0.408 0.610 0.514 0.408
+
+Figure 1. Difficult -subset AUROC by method. Our detector wins the difficult column on all three datasets: WADI 
+
+0.726 and HAI 0.831 by wide margins, SKAB 0.610 narrowly (vs USAD 0.591). All three deep SOTA methods (USAD, 
+
+TranAD, and, on WADI, GDN) sit well below. The margin is largest on HAI and WADI, the two multimodal datasets the 
+
+MIIM assumptions target; SKAB, the near -unimodal set, is the tightest. GDN was run on WADI only. 
+
+## 7 Discussion 
+
+Executive summary. Under a fair protocol (raw point -wise metrics, difficulty stratification, prevalence -
+
+matched F1, and train -normal -only calibration) on three real CPS datasets, the VaDE -based latent -plus -
+
+clustering detector wins the combined (All) column and the difficult column on all three datasets 
+
+(WADI, HAI, SKAB) . The win is largest exactly on the multimodal datasets that the MIIM thesis predicts 
+
+(HAI difficult 0.831 vs 0.49 SOTA; WADI difficult 0.726 vs 0.55 –0.58 SOTA), and it narrows to a slim 
+
+but genuine margin on SKAB (difficult 0.610 vs USAD 0.591), the single near -unimodal set where MIIM 
+
+structure is weakest. That the advantage tracks multimodality, rather than being uniform, is the strongest 
+
+single piece of evidence for th e thesis: modelling normal via a jointly learned latent plus explicit mode 
+
+clustering helps precisely when normal is many modes. 
+
+Why the naive VaDE score underperforms and dropping reconstruction fixes it. The reconstruc-
+
+tion term does more than fail to help on difficult faults; it actively harms, because a flexible decoder recon-
+
+structs correlation -break windows faithfully (Table 2). Dropping it and scoring entirely in the jointly learned 
+
+latent (with a high -K density head for non -Gaussian fringes (A4) and a nearest -component NLL that is safe 
+
+for rare modes (A6)) converts the joint representation from a liability into the source of the win. Scored by 
+
+the diagonal high -K mixture density head, the jointly learned latent is the stronger representation, which 
+
+confirms the “encode and cluster together” premise. 
+
+Auto -gating is what makes one architecture win three different datasets. The winning mechanism 
+
+is dataset -dependent: latent density for WADI's in -mode pockets, a responsibility -weighted whitened re-
+
+sidual for HAI where the fault surfaces in reconstruction, and basin agreement for SKAB's between -mode 
+
+faults. Rather than hand -select, both optional heads are gated by a purely train -normal signal (held -out -11 
+
+normal generalisation for the residual; ambiguous -normal ratio for the basin), so the single configuration 
+
+VaDE -hard+resid(auto) adapts itself: residual on for HAI, basin on for SKAB, both off for WADI. 
+
+Robustness of the WADI result. WADI is the one dataset downsampled 10×, leaving only 56 anomaly 
+
+windows (19 difficult) in the test split, so its numbers could in principle be a small -sample artifact. To rule 
+
+this out we kept the same trained model and re -scored the full -resolution WADI test at all ten phase offsets, 
+
+pooling to 560 anomaly windows, a tenfold larger evaluation with no retraining. The numbers are essen-
+
+tially unchanged: VaDE -hard+resid(auto) reaches All 0.804, Easy 0.846 and Difficult 0.722 (vs 
+
+0.803/0.842/0.726 on the downsampled test), and still clears Isolation Forest (0.725) and the AutoEncoder 
+
+(0.748) on the difficult subset. The WADI advantage is therefore statistically robust, not a thin -sample 
+
+fluke. 
+
+Where the hardest faults resist snapshot detection. SKAB's difficult subset sits near 0.61 for latent -
+
+scored detection; the model leads it (0.610 vs USAD 0.591), and its subtle vibration faults would need a 
+
+raw -waveform or spectral representation to move much further. On WADI, an inspection of the difficul t
+
+misses shows that many are attack -onset/offset edge windows whose fault content is near -absent (2 –3σ dips 
+
+on a few correlated channels, sitting inside the normal tail); no snapshot or temporal detector, including 
+
+SOTA, separates these at a low false -alarm budget, an intrinsic difficulty compounded by window/label 
+
+granularity. False alarms, in turn, are rare -but -val id windows in tiny modes; the basin rescue is the response, 
+
+and it helps where modes overlap. 
+
+On the trajectory assumptions A9 –A10. The reported model is window -only. A trajectory branch 
+
+designed to catch history -dependent faults (A10) added essentially nothing on these public benchmarks, 
+
+because their attacks are snapshot -detectable rather than history -dependent. We regard this as an empirical 
+
+finding about the benchmarks, not a re futation of A10: demonstrating a history -dependent fault requires 
+
+data that contains one, which these three do not. 
+
+Limitations. Three boundary conditions apply: three datasets, one trained model per dataset, and sev-
+
+eral single -seed comparisons; multi -seed confidence intervals are still pending. The F1/FPR operating point 
+
+is an oracle best -F1 threshold, disclosed as such; only AUROC is threshold -free. SKAB is contaminated. 
+
+The easy/difficult split itself depends on one choice, the trivial detector's 99th -percentile -of -train -normal 
+
+threshold, which is 6σ on these datasets (median trivial score 2.3σ); the split is a property of that cut, and a 
+
+different percentile would re -draw the boundary between the subsets, though the qualitative gap between 
+
+the trivial rule's Easy and Difficult performance is large enough that the split is not knife -edge. We report 
+
+only raw metrics, which makes o ur numbers look lower than point -adjusted leaderboard figures by design. 
+
+## 8 Conclusion 
+
+We restated the structural assumptions of CPS normal data as an explicit MIIM list (A1 –A10) and used 
+
+them to motivate a detector that models normal as a jointly learned latent plus explicit mode clustering, 
+
+scored in the latent by a mixture density and a rare -mode -safe nearest -component likelihood, with recon-
+
+struction dropped and two optional heads auto -gated on training -normal signals. Under a deliberately fair, 
+
+raw -metric, difficulty -stratified protocol on three real CPS datasets, this detector wins the combined column 
+
+and the difficult column on all three, with the margin largest exactly where the MIIM thesis predicts (the 
+
+multimodal HAI and WADI) and slimmest on the near -unimodal SKAB. The result is a small but clean 
+
+piece of evidence that the failure of standard detectors on CPS data is a modelling failure (treating multi-
+
+modal normal as a single blob or a reconstruction target) and that jointly learning the latent and its modes, 
+
+then scoring in that latent, is the fix. Next steps are multi -seed confidence intervals, a raw -waveform rep-12 
+
+resentation for SKAB, and a dataset that actually contains a history -dependent fault to exercise the trajec-
+
+tory assumptions. 
+
+# References 
+
+1. S. Kim, K. Choi, H. -S. Choi, B. Lee, and S. Yoon. “Towards a Rigorous Evaluation of Time -Series Anomaly 
+
+Detection.” Proceedings of the AAAI Conference on Artificial Intelligence , 2022, pp. 7194 –7201. 
+
+arXiv:2109.05257 , AAAI .
+
+2. A. Garg, W. Zhang, J. Samaran, R. Savitha, and C. -S. Foo. “An Evaluation of Anomaly Detection and Diagnosis 
+
+in Multivariate Time Series.” IEEE Transactions on Neural Networks and Learning Systems , 33(6):2508 –2517, 
+
+2022.  arXiv:2109.11428 , doi:10.1109/TNNLS.2021.3105827. 
+
+3. R. Wu and E. J. Keogh. “Current Time Series Anomaly Detection Benchmarks are Flawed and are Creating the 
+
+Illusion of Progress.” IEEE Transactions on Knowledge and Data Engineering , 2023.  arXiv:2009.13807 ,
+
+doi:10.1109/TKDE.2021.3112126. 
+
+4. K. Doshi, S. Abudalou, and Y. Yilmaz. “Reward Once, Penalize Once: Rectifying Time Series Anomaly Detection.” 
+
+International Joint Conference on Neural Networks (IJCNN) , 2022.  arXiv:2203.05167 .
+
+5. M. Pinet, J. Cumin, S. Berlemont, and D. Vaufreydaz. “Anomalies in Multivariate Time Series Benchmarks Are 
+
+Mostly Univariate.” arXiv preprint, 2026.  arXiv:2606.02670 .
+
+6.  J. Audibert, P. Michiardi, F. Guyard, S. Marti, and M. A. Zuluaga.  “USAD: UnSupervised Anomaly Detection on 
+
+Multivariate Time Series.” Proceedings of the 26th ACM SIGKDD International Conference on Knowledge 
+
+Discovery & Data Mining (KDD) , 2020.  doi:10.1145/3394486.3403392 .
+
+7. S. Tuli, G. Casale, and N. R. Jennings. “TranAD: Deep Transformer Networks for Anomaly Detection in Multivar-
+
+iate Time Series Data.” Proceedings of the VLDB Endowment , 15(6), 2022.  arXiv:2201.07284 .
+
+8. Z. Jiang, Y. Zheng, H. Tan, B. Tang, and H. Zhou. “Variational Deep Embedding: An Unsupervised and Generative 
+
+Approach to Clustering.” Proceedings of the 26th International Joint Conference on Artificial Intelligence 
+
+(IJCAI) , 2017.  arXiv:1611.05148 .
+
+9. B. Zong, Q. Song, M. R. Min, W. Cheng, C. Lumezanu, D. Cho, and H. Chen. “Deep Autoencoding Gaussian 
+
+Mixture Model for Unsupervised Anomaly Detection.” International Conference on Learning Representations 
+
+(ICLR) , 2018.  OpenReview .
+
+10. A. Deng and B. Hooi. “Graph Neural Network -Based Anomaly Detection in Multivariate Time Series.” Proceed-
+
+ings of the AAAI Conference on Artificial Intelligence , 2021.  arXiv:2106.06947 .
+
+11. F. T. Liu, K. M. Ting, and Z. -H. Zhou. “Isolation Forest.” IEEE International Conference on Data Mining (ICDM) ,
+
+2008, pp. 413 –422.  doi:10.1109/ICDM.2008.17 .
+
+12. O. Ledoit and M. Wolf. “A Well -Conditioned Estimator for Large -Dimensional Covariance Matrices.” Journal of 
+
+Multivariate Analysis , 88(2):365 –411, 2004.  doi:10.1016/S0047 -259X(03)00096 -4.
+
+13. C. M. Ahmed, V. R. Palleti, and A. P. Mathur. “WADI: A Water Distribution Testbed for Research in the Design 
+
+of Secure Cyber Physical Systems.” Proceedings of the 3rd International Workshop on Cyber -Physical Systems 
+
+for Smart Water Networks (CySWATER) , 2017.  doi:10.1145/3055366.3055375 .
+
+14. H. -K. Shin, W. Lee, J. -H. Yun, and H. Kim. “HAI 1.0: HIL -based Augmented ICS Security Dataset.” 13th USE-
+
+NIX Workshop on Cyber Security Experimentation and Test (CSET) , 2020.  USENIX .
+
+15. I. D. Katser and V. O. Kozitsin. “Skoltech Anomaly Benchmark (SKAB).” Kaggle dataset, 2020. 
+
+doi:10.34740/kaggle/dsv/1693952 .
+
+16. R. Bouman and T. Heskes. “Autoencoders for Anomaly Detection are Unreliable.” arXiv preprint, 2025. 
+
+arXiv:2501.13864 .13 
+
+17. D. Gong, L. Liu, V. Le, B. Saha, M. R. Mansour, S. Venkatesh, and A. van den Hengel. “Memorizing Normality 
+
+to Detect Anomaly: Memory -augmented Deep Autoencoder for Unsupervised Anomaly Detection.” Proceed-
+
+ings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2019.  arXiv:1904.02639 .
+
+18. M. S. Sarfraz, M. -Y. Chen, L. Layer, K. Peng, and M. Koulakis. “Position: Quo Vadis, Unsupervised Time Series 
+
+Anomaly Detection?” Proceedings of the 41st International Conference on Machine Learning (ICML) , 2024. 
+
+arXiv:2405.02678 .
+
+19. D. Wagner, T. Michels, F. C. F. Schulz, A. Nair, M. Rudolph, and M. Kloft. “TimeSeAD: Benchmarking Deep 
+
+Multivariate Time -Series Anomaly Detection.” Transactions on Machine Learning Research (TMLR) , 2023. 
+
+OpenReview .
+
+20. A. P. Mathur and N. O. Tippenhauer. “SWaT: A Water Treatment Testbed for Research and Training on ICS 
+
+Security.” 2016 International Workshop on Cyber -physical Systems for Smart Water Networks (CySWater) ,
+
+2016.  doi:10.1109/CySWater.2016.7469060 .
+
+21. M. Sakurada and T. Yairi. “Anomaly Detection Using Autoencoders with Nonlinear Dimensionality Reduction.” 
+
+Proceedings of the MLSDA 2014 2nd Workshop on Machine Learning for Sensory Data Analysis , 2014, pp. 4 –
+
+11.  doi:10.1145/2689746.2689747 .
+
+22. V. Chandola, A. Banerjee, and V. Kumar. “Anomaly Detection: A Survey.” ACM Computing Surveys , 41(3):Ar-
+
+ticle 15, 2009.  doi:10.1145/1541880.1541882 .
+
+23. G. Pang, C. Shen, L. Cao, and A. van den Hengel. “Deep Learning for Anomaly Detection: A Review.” ACM 
+
+Computing Surveys , 54(2):Article 38, 2021.  arXiv:2007.02500 , doi:10.1145/3439950. 
+
+24. L. Ruff, J. R. Kauffmann, R. A. Vandermeulen, G. Montavon, W. Samek, M. Kloft, T. G. Dietterich, and K. -R. 
+
+Müller. “A Unifying Review of Deep and Shallow Anomaly Detection.” Proceedings of the IEEE , 109(5):756 –
+
+795, 2021.  arXiv:2009.11732 , doi:10.1109/JPROC.2021.3052449. 
+
+25. A. Blázquez -García, A. Conde, U. Mori, and J. A. Lozano. “A Review on Outlier/Anomaly Detection in Time 
+
+Series Data.” ACM Computing Surveys , 54(3):Article 56, 2021.  arXiv:2002.04236 , doi:10.1145/3444690. 
+
+26. Y. Hu, A. Yang, H. Li, Y. Sun, and L. Sun. “A Survey of Intrusion Detection on Industrial Control Systems.” 
+
+International Journal of Distributed Sensor Networks , 14(8), 2018.  doi:10.1177/1550147718794615 .

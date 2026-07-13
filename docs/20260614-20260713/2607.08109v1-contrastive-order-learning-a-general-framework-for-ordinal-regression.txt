@@ -1,0 +1,1758 @@
+Title: Contrastive Order Learning: A General Framework for Ordinal Regression
+
+URL Source: https://arxiv.org/pdf/2607.08109v1
+
+Published Time: Fri, 10 Jul 2026 00:27:21 GMT
+
+Number of Pages: 31
+
+Markdown Content:
+# Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Chaewon Lee 1 BeomJun Shim 1 Kwang Pyo Choi 2 Chang-Su Kim 1
+
+## Abstract 
+
+We propose contrastive order learning (ConOrd), a contrastive learning framework for ordinal re-gression that integrates the strengths of contrastive learning and order learning. While contrastive learning effectively leverages all samples in a batch, it typically ignores the inherent ordering among rank labels. Conversely, order learning explicitly models label ordinality but often re-lies on local, margin-based comparisons, limit-ing its ability to capture global ordinal structure. ConOrd addresses these limitations by introduc-ing a contrastive order loss with soft affinity and disparity weights based on rank differences, en-abling fine-grained modeling of ordinal relation-ships across all sample pairs within a batch. Ex-tensive experiments on a range of ordinal regres-sion tasks, including facial age estimation, blind image quality assessment, and blind video qual-ity assessment, demonstrate that ConOrd consis-tently achieves state-of-the-art performance and generalizes well across diverse ordinal regres-sion scenarios. The source code is available at https://github.com/cwlee00/ConOrd. 
+
+## 1. Introduction 
+
+Ordinal regression is a task to estimate the discrete or con-tinuous rank of an object instance. For example, facial age estimation aims to predict a person’s age given their facial photograph, while image quality assessment predicts the quality score for an image. It is a fundamental problem frequently arising in many real-world scenarios, including facial age estimation (Moschoglou et al., 2017), health sta-tus scoring (Engemann et al., 2022), image and video quality assessment (Ying et al., 2021; Hosu et al., 2017), and gaze direction estimation (Wang et al., 2022). Despite its wide applicability, ordinal regression poses in-     
+
+> 1School of Electrical Engineering, Korea University, Seoul, Korea 2Samsung Electronics, Seoul, Korea. Correspondence to: Chang-Su Kim <changsukim@korea.ac.kr >.
+> Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s).
+
+herent challenges: there is no clear distinction between adjacent ranks, and the semantic gap between neighboring labels can be subtle or ambiguous. It is hence difficult for a machine to learn discriminative representations that accu-rately reflect the underlying ordinal structure. To address these challenges, various methods have been proposed (Li & Lin, 2007; Rothe et al., 2018; Geng et al., 2013; Diaz & Marathe, 2019). Recently, order learning techniques (Lim et al., 2020; Lee & Kim, 2021; Lee et al., 2022) have achieved notable success. Among them, geometric order learning (GOL) (Lee et al., 2022) enforces metric and order constraints to arrange instances according to their ranks in an embedding space. However, as a margin-based pairwise approach, GOL generates no gradient once the margin is satisfied and cannot fully exploit the richer ordinal context available at the batch level, limiting its ability to capture fine-grained ordinal relationships. Meanwhile, supervised contrastive learning (Khosla et al., 2020) has also been extended to ordinal regression, most notably in the RnC algorithm (Zha et al., 2023). While supervised contrastive learning relies on categorical labels to define positive and negative pairs, RnC constructs rank-aware pairs by comparing relative rank differences within a batch. Specifically, RnC selects an anchor and a positive sample, and treats samples whose rank differences from the anchor exceed that of the positive as negatives. However, this hard thresholding collapses ordinal distances into binary decisions, treating samples with both moderately and sub-stantially larger rank gaps equally as negatives. As a result, RnC under-utilizes the full spectrum of ordinal information available within a batch. In this paper, we propose contrastive order learning (ConOrd), which integrates the complementary strengths of order learning and contrastive learning while alleviat-ing their respective limitations. Order learning explicitly models ordinal structure in an embedding space by encour-aging attraction between samples with similar ranks and repulsion between dissimilar ones (Lee et al., 2022), but it typically relies on local supervision such as pairwise or margin-based losses, which can be insufficient for learning a globally consistent embedding. In contrast, contrastive learning effectively exploits batch-level relationships among samples, yet often ignores the ordered nature of labels and treats ordinal differences in a categorical manner. ConOrd bridges this gap by introducing a contrastive order loss that 1arXiv:2607.08109v1 [cs.LG] 9 Jul 2026 Contrastive Order Learning: A General Framework for Ordinal Regression (a)  SupCon    
+
+> anchor
+> 24
+> 24
+> 14 75
+> 18 27 32
+> 60
+> positive negative
+
+(b)  RnC    
+
+> positive negative neglected
+> anchor
+> 24
+> 75 60 14
+> 24 18 32 27
+
+(c)  ConOrd        
+
+> positive negative
+> anchor
+> 24
+> 75 60 14
+> 18 32 27
+> Figure 1. Comparison of three contrastive learning techniques: (a) supervised contrastive learning (SupCon) (Khosla et al., 2020), (b) Rank-N-Contrast (RnC) (Zha et al., 2023), and (c) the proposed ConOrd. SupCon considers the augmented view of an anchor as the only positive and treats all the others as negatives. RnC selects one sample as a positive and defines negatives as those with rank differences greater than the anchor–positive pair. Different from these existing techniques, ConOrd compares all samples in a batch by defining positive and negative samples in a soft manner.
+
+assigns soft affinity and disparity weights based on rank differences, enabling all samples in a batch to contribute to learning with strengths modulated by their ordinal relation-ships. As illustrated in Figure 1, this design introduces soft, rank-aware interactions into a contrastive learning frame-work. By combining soft ordinal supervision with all-pairs contrastive comparison, ConOrd captures fine-grained or-dinal structure while maintaining global consistency in the embedding space. Extensive experiments demonstrate that ConOrd achieves strong performance across a variety of ordinal regression tasks. Our contributions are summarized as follows: • We introduce contrastive order learning (ConOrd), a con-trastive learning framework for ordinal regression that integrates ordinal structure into batch-wise representation learning. • We propose a contrastive order loss that contrasts all sam-ple pairs in a batch using soft affinity and disparity weights based on rank differences, enabling fine-grained ordinal supervision and the construction of a globally consistent embedding space. • ConOrd achieves state-of-the-art performance on multi-ple ordinal regression benchmarks, including facial age estimation, blind image quality assessment (BIQA), and blind video quality assessment (BVQA), and demonstrates strong generalization across diverse regression tasks. 
+
+## 2. Related Work 
+
+2.1. Ordinal Regression 
+
+Ordinal regression aims to predict the ordinal labels or ranks of object instances, which have an inherent order. It has been used in various applications, including medical diag-nosis (Wu et al., 2019; Liu et al., 2018), depth estimation (Fu et al., 2018), and facial age estimation (Rothe et al., 2018; Zhu et al., 2021). Early approaches either reformu-lated the problem as multiple binary classification tasks (Frank & Hall, 2001; Li & Lin, 2007) or dealt with it as a regression problem by adapting traditional classification loss functions (Rennie & Srebro, 2005; Rothe et al., 2018). To better exploit the ordinal properties of labels, subsequent methods have employed label distribution learning (Geng et al., 2013), mean-variance loss (Pan et al., 2018), soft ordinal labels (Diaz & Marathe, 2019), and probabilistic embeddings (Li et al., 2021). However, many of these methods fail to capture inter-class relationships effectively, which may limit performance (Niu et al., 2016; Chen et al., 2017). To address this issue, distance-aware label embeddings (Shi et al., 2016), rank learning (Chen et al., 2017), and monotonic loss functions (Zhu et al., 2021) have been proposed. Also, Zhang et al. (2023) introduced an ordinal entropy regularizer, which promotes higher-entropy feature spaces while maintaining ordinal relationships. Meanwhile, evaluation metrics and loss designs that consider class proximity have been ex-plored (Amig ´o et al., 2020), along with methods that tackle class imbalance (Nachmani et al., 2025). Through this pro-gression, ordinal regression has come to be recognized — distinct from ordinary classification — as a predictive task that requires modeling both the order and the relative dis-tances between classes. 
+
+2.2. Order Learning 
+
+Recently, order learning (Lim et al., 2020) has emerged as a promising approach to ordinal regression or rank esti-mation. In order learning, ordering relationships between object instances are learned, and the rank of an instance 2Contrastive Order Learning: A General Framework for Ordinal Regression Training  
+
+> Reference point Feature vector
+
+Embedding space  
+
+> 𝜇 1
+> 𝜇 2
+> 𝜇 3
+> 𝜇 4
+> 𝜇 𝑀 −1
+> 𝜇 𝑀
+> Encoder ℎ
+
+Batch of instances 
+
+𝑥 1 𝑥 2 
+
+> 𝑟 1𝑟 2
+
+𝑥 𝑁 
+
+> 𝑟 𝑁
+
+𝑥 𝑁 +1 𝑥 𝑁 +2 
+
+> 𝑟 𝑁 +1𝑟 𝑁 +2
+
+𝑥 2𝑁     
+
+> 𝑟 2𝑁
+> Rank 𝑟
+> Center loss ConOrd loss
+> Anchor 𝑖
+> Attraction
+> Repulsion
+> c
+> 𝜇 𝑟 𝑖
+> Attraction
+> Figure 2. Overview of the proposed ConOrd framework for ordinal regression.
+
+is estimated by comparing it with reference instances of known ranks. For reliable reference selection, Lee & Kim (2021) decomposed object embeddings into order and iden-tity features and selected references with similar identity features. Shin et al. (2022) proposed a regression-based for-mulation to estimate a continuous relative rank between two references. Lee & Kim (2022) extended order learning to a weakly-supervised setting to cope with limited annotations, and Lee et al. (2024) proposed unsupervised order learning, which optimizes ordered clustering and embedding space construction alternately. However, the direct comparison methods (Lim et al., 2020; Lee & Kim, 2021; Shin et al., 2022) should compare a test instance with multiple references, demanding considerable testing complexity, and do not consider metric relations between instances. To overcome these issues, Lee et al. (2022) proposed GOL that exploits metric, as well as order, relations to construct an embedding space and enables effi-cient rank estimation through a simple k-NN search in the embedding space. 
+
+2.3. Contrastive Learning 
+
+Contrastive learning aims to learn discriminative representa-tions by modeling similarities and dissimilarities between object instances. It encourages the representations of simi-lar (or positive) pairs to be pulled closer in an embedding space, while those of dissimilar (or negative) pairs to be pushed apart. Early methods (Chen et al., 2020; He et al., 2020) were largely explored in self-supervised scenarios, in which positive and negative pairs were constructed without requiring explicit labels. To further leverage label information, supervised contrastive learning (Khosla et al., 2020) was introduced. Instead of solely relying on data augmentations to construct positive pairs, it also defines positive pairs from samples of the same class. The extension of contrastive learning to the fully supervised setting allows the learned feature space to reflect semantic structures more effectively, improving per-formance significantly in downstream tasks, such as image classification. Although contrastive learning has achieved strong perfor-mance in various tasks, such as semantic segmentation (Liu et al., 2021), object detection (Xie et al., 2021), and medical imaging (Basak & Yin, 2023), its extension to regression and ordinal settings remains challenging. As contrastive ob-jectives are primarily designed for categorical supervision, they often fail to capture the continuous ordering between samples. To address this, RnC (Zha et al., 2023) introduced rank-based pairings, but it relies only on relative ordering and ignores the magnitude of rank differences. Subsequent methods explored adaptive temperatures (Baek et al., 2024), data augmentation (Zheng et al., 2024), or multi-margin formulations (Pitawela et al., 2025), yet these approaches introduce additional hyperparameters or optimization com-plexity and may suffer from training instability. Building on these advances, we propose a soft-weighted contrastive scheme that explicitly incorporates rank differences to pro-vide more stable and expressive ordinal supervision. 
+
+## 3. Proposed Algorithm 
+
+3.1. Problem Formulation and Overview 
+
+The objective of ordinal regression is to estimate the rank 
+
+r of a given instance x. Unlike classification, in ordinal regression, rank labels are naturally ordered and associated with inherent distance information (Lee et al., 2022). For example, consider three instances xi, xj , and xk with ranks 
+
+ri = 10 , rj = 12 , and rk = 30 . In this case, there exists a natural ordering ri < r j < r k, and the rank difference between ri and rj is smaller than that between rj and rk,
+
+i.e., |ri − rj | < |rj − rk|. This observation highlights that effective learning for ordinal regression should account not only for relative ordering, but also for the magnitude of rank differences. Motivated by this property, we aim to construct an embed-ding space in which instances are organized according to their ordinal relationships. To this end, we employ an en-coder h that maps each instance x ∈ X to a feature vector 3Contrastive Order Learning: A General Framework for Ordinal Regression 𝑟 1                  
+
+> 𝑟 2
+> 𝑟 3
+> 𝑟 𝑁
+> 𝑟 1𝑟 2𝑟 3𝑟 𝑁
+> Disparity weight 𝑏 𝑖𝑗 Affinity weight 𝑎 𝑖𝑗 Embedding space
+> 𝑟 𝑖 −𝑟 𝑗
+> 𝑎 𝑖𝑗
+> 𝑟 𝑖 −𝑟 𝑗
+> 𝑏 𝑖𝑗
+> Rank 𝑟
+> Attraction
+> Repulsion
+> Attract similar samples based on 𝑎 𝑖𝑗
+> Repel dissimilar samples based on 𝑏 𝑖𝑗
+> 𝑟 1
+> 𝑟 2
+> 𝑟 3
+> 𝑟 𝑁
+> 𝑟 1𝑟 2𝑟 3𝑟 𝑁 High
+> Low
+> High
+> Low
+> Anchor 𝑖
+
+Figure 3. The ConOrd loss LConOrd encourages the attraction of similar samples and the repulsion of dissimilar samples in the embedding space, by employing affinity weights aij and disparity weights bij , respectively. 
+
+z = h(x) in the embedding space, where features are ℓ2-normalized to lie on the unit sphere. Suppose that a training set X contains M distinct ranks. We introduce M learnable reference points {μm}Mm=1 , where each μm represents a prototype associated with rank m. Building on this embed-ding space with reference points, we consider a contrastive formulation that can capture rank-dependent attraction and repulsion among instances, which guides the encoder to pro-duce features that are both order-aware and well-structured. An overview of the proposed learning framework is illus-trated in Figure 2. We refer to a set of 2N training instances {xi}2Ni=1 as a batch. Unlike supervised contrastive learning (Khosla et al., 2020), which relies on data augmentation to define positive pairs, the proposed formulation operates directly on a batch of in-dependently sampled instances and constructs the objective over all pairwise relationships without predefined positive or negative roles. Let I = {1, . . . , 2N } be the index set of samples within a batch, and zi be the embedding vector of xi. Also, κij 
+
+denotes the similarity between zi and zj (e.g., κij = zTi zj ), and τ is a temperature parameter controlling the sharpness of the similarity. Then, the SupCon loss is given by 
+
+LSupCon = − 12N
+
+P2Ni=1 1 
+
+> |P(i)|
+
+P  
+
+> p∈P(i)
+
+log eκip /τ  
+
+> P
+> j∈A(i)eκij /τ
+
+(1) where i is the index of an anchor, A(i) = I − { i} is the set of the remaining indices, and P (i) is the set of the indices of positive samples in the batch distinct from i.In (1), the ratio eκip /τ / P 
+
+> j
+
+eκij /τ can be interpreted as the probability that the anchor i is matched to the positive sam-ple p among all other samples in the embedding space. By minimizing the negative logarithm in (1), the matching prob-ability is maximized. This suits the purpose of classification. On the other hand, in ordinal regression, it is desirable to match the anchor i to another sample j such that the rank estimation error |ri − rj | is minimized. Thus, we can define the mean absolute error (MAE) loss for ordinal regression as 
+
+LMAE = 12N
+
+P2Ni=1 1 
+
+> |A(i)|
+
+log     
+
+> P
+> j∈A(i)|ri−rj|eκij /τ
+> P
+> j∈A(i)eκij /τ
+
+. (2) Note that LMAE involves the positive logarithm because it attempts to minimize the expected rank estimation error P 
+
+> j
+
+|ri − rj | × (eκij /τ / P 
+
+> k
+
+eκik /τ ).
+
+3.2. Contrastive Order Learning 
+
+The naive loss LMAE in (2), however, makes the encoder training less reliable, for its positive logarithm tends to increase the magnitudes of gradients as the training goes on. To address this training issue while retaining its goal of matching the anchor to another sample of a similar rank in the embedding space, we design the ConOrd loss as 
+
+LConOrd = − 12N
+
+P2Ni=1 1 
+
+> |A(i)|
+
+log      
+
+> P
+> j∈A(i)aij eκij /τ
+> P
+> j∈A(i)bij eκij /τ
+
+, (3) where aij is an affinity weight, and bij is a disparity weight. This formulation is designed to satisfy three key require-ments for ordinal contrastive learning: (i) attraction should decrease and repulsion should increase with the rank gap to preserve ordinal consistency (Lee et al., 2022), (ii) the weighting functions should vary smoothly with respect to the rank gap to promote stable optimization, and (iii) among multiple monotonic choices satisfying these requirements, a simple and robust instantiation is preferred in practice. Following the above requirements, we instantiate the affinity and disparity weights as simple monotonic functions of the rank gap |ri − rj |. In particular, the affinity weight aij is defined to decrease with the rank gap in order to promote similarity between samples of similar ranks, and is set as 
+
+aij = 1(ri−rj )2+ϵ , (4) where ϵ is a small constant to prevent division by zero. Conversely, the disparity weight bij is designed to increase with the rank gap to encourage separation between samples with distant ranks, and is instantiated as 
+
+bij = ( ri − rj )2. (5) We further set κij = −∥ zi − zj ∥22. Alternative choices of κij , aij , and bij are systematically evaluated in Ap-pendix C.4. The proposed ConOrd loss has the following properties. 4Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Table 1. MAE comparison on age estimation datasets. ALGORITHM MORPH II CLAP2015 AGE DB-DIR UTK CACD ADIENCE 
+
+POE (L I ET AL ., 2021) 2.35 3.75 6.41 4.64 4.68 0.47 PML (D ENG ET AL ., 2021) 2.15 2.91 6.78 4.63 4.87 0.47 MWR-G (S HIN ET AL ., 2022) 2.24 2.82 6.18 4.49 4.76 0.46 GOL (L EE ET AL ., 2022) 2.17 3.38 6.21 4.35 4.52 0.43 RANK SIM (G ONG ET AL ., 2022) 3.10 5.55 6.51 4.93 4.68 0.60 ORDINAL CLIP (L I ET AL ., 2022 B) 2.32 3.20 5.85 4.53 4.36 0.47 ORDINAL ENTROPY (Z HANG ET AL ., 2023) 3.08 5.66 6.47 4.95 4.73 0.53 RANK NC ONTRAST (Z HA ET AL ., 2023) 2.47 4.72 6.14 4.74 5.14 0.40 L2RCLIP (W ANG ET AL ., 2023) 2.13 2.62 - - - 0.36 NUM CLIP (D U ET AL ., 2024) 2.08 2.55 5.42 4.24 4.11 0.31 CLOC (P ITAWELA ET AL ., 2025) 2.84 4.14 6.87 4.81 4.66 0.41 SLACE (N ACHMANI ET AL ., 2025) 2.18 2.49 5.25 3.98 4.23 0.26 
+
+CON ORD (P ROPOSED ) 1.96 2.46 5.15 3.92 4.18 0.26 
+
+Table 2. Performance comparison on five BIQA datasets. BID CLIVE KON IQ10 K SPAQ FLIVE ALGORITHM SRCC PCC SRCC PCC SRCC PCC SRCC PCC SRCC PCC BMPRI (M IN ET AL ., 2018) 0.515 0.458 0.487 0.523 0.658 0.655 0.750 0.754 0.274 0.315 SFA (L I ET AL ., 2018) 0.820 0.825 0.804 0.821 0.888 0.897 0.906 0.907 0.542 0.626 DB-CNN (Z HANG ET AL ., 2018) 0.845 0.859 0.844 0.862 0.878 0.887 0.910 0.913 0.554 0.652 PAQ-2-P IQ (Y ING ET AL ., 2020) - - 0.840 0.850 0.870 0.880 - - 0.571 0.623 HYPER IQA (S U ET AL ., 2020) 0.869 0.878 0.859 0.882 0.906 0.917 0.916 0.919 0.535 0.623 UNIQUE (Z HANG ET AL ., 2021) 0.858 0.873 0.854 0.890 0.896 0.901 - - - -MUSIQ (K E ET AL ., 2021) - - - - 0.905 0.919 0.917 0.920 0.640 0.721 TR ES (G OLESTANEH ET AL ., 2022) - - 0.846 0.877 0.915 0.928 - - 0.554 0.625 CONRTIQUE (M ADHUSUDANA ET AL ., 2022) - - 0.845 0.857 0.894 0.906 0.914 0.919 0.580 0.641 RE-IQA (S AHA ET AL ., 2023) - - 0.840 0.854 0.914 0.923 0.918 0.925 0.645 0.733 QPT (Z HAO ET AL ., 2023) 0.842 0.852 0.857 0.881 0.912 0.927 0.916 0.921 0.551 0.635 LQM AMBA -B (G UAN ET AL ., 2024) - - 0.837 0.875 0.895 0.913 0.912 0.914 - -LODA (X U ET AL ., 2024) - - 0.876 0.899 0.932 0.944 0.925 0.928 0.578 0.679 QCN (S HIN ET AL ., 2024) 0.892 0.890 0.875 0.893 0.934 0.945 0.923 0.928 0.644 0.741 VISGA (S HI ET AL ., 2025) 0.904 0.923 0.882 0.912 0.931 0.940 - - - -UNQA (C AO ET AL ., 2025) 0.881 0.914 0.874 0.903 0.893 0.915 0.913 0.917 - -RICH IQA (M IN ET AL ., 2025) 0.900 0.909 0.894 0.912 0.938 0.950 0.923 0.929 0.583 0.684 CON ORD (P ROPOSED ) 0.913 0.925 0.900 0.921 0.947 0.958 0.927 0.931 0.651 0.752 
+
+• Rank-aware attraction and repulsion: In Appendix A, the gradient of LConOrd is derived as  
+
+> ∂L ConOrd
+> ∂z i
+
+= 1 
+
+> N τ |A(i)|
+
+P 
+
+> j∈A(i)
+
+eκij /τ ( aij  
+
+> αi
+
+− bij  
+
+> βi
+
+)( zi − zj )
+
+(6) where αi = P 
+
+> j
+
+aij eκij /τ and βi = P 
+
+> j
+
+bij eκij /τ . The factor ( aij  
+
+> αi
+
+− bij  
+
+> βi
+
+) in (6) determines whether gradient de-scent moves zi toward or away from zj . Since the affinity weight aij is large for small rank gaps and the disparity weight bij is large for large rank gaps, ConOrd attracts samples with similar ranks and repels samples with distant ranks, as illustrated in Figure 3. This provides a smooth ordinal interaction mechanism that generalizes the margin-based attraction and repulsion forces in GOL (Lee et al., 2022). • Locality induced by the exponential kernel: The fac-tor eκij /τ in (6) further modulates each pairwise con-tribution according to embedding proximity, because 
+
+κij = −∥ zi − zj ∥22. Pairs that are already close in the embedding space receive stronger weights, whereas dis-tant pairs are exponentially suppressed. Consequently, ConOrd focuses its updates on the most informative ordi-nal relations — pairs that are close in rank and close in the embedding space — leading to fine-grained ordinal discrimination. • Contrasting all samples with soft weights: A key strength of LConOrd lies in its ability to contrast all sam-ples in a batch through soft weighting, rather than relying on hard assignment of positives and negatives. Tradi-tional contrastive losses (Chen et al., 2020; He et al., 2020; Khosla et al., 2020; Caron et al., 2020) select a positive sample and contrast it with all other samples in a batch, as in (1). In contrast, ConOrd assigns continuous affin-ity and disparity weights aij and bij to all sample pairs based on the rank difference |ri − rj |, allowing every pair 
+
+(i, j ) to contribute to the loss with an influence modulated by ordinal similarity. By retaining all pairwise compar-isons, ConOrd can exploit the full spectrum of ordinal relationships present within a batch. • Connection to RnC loss: LConOrd is conceptually related to the RnC loss (Zha et al., 2023), which also incorporates rank information into a contrastive framework. However, 5Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Table 3. Comparison of BVQA results in the intra-dataset evaluation on LSVQ and in the cross-dataset evaluation on KonViD-1k, LIVE-VQC, CVD2014, and YouTube-UGC. LSVQ-TEST LSVQ-1080 P KONV ID-1 K LIVE-VQC CVD2014 YOU TUBE -UGC ALGORITHM SRCC PCC SRCC PCC SRCC PCC SRCC PCC SRCC PCC SRCC PCC TVLQM (K ORHONEN , 2019) 0.772 0.774 0.589 0.616 0.732 0.724 0.670 0.691 - - - -VSFA (L I ET AL ., 2019) 0.801 0.796 0.675 0.704 0.810 0.811 0.753 0.795 0.756 0.760 0.718 0.721 VIDEVAL (T U ET AL ., 2021) 0.794 0.783 0.545 0.554 0.751 0.741 0.630 0.640 - - - -PVQ (Y ING ET AL ., 2021) 0.827 0.828 0.711 0.739 0.791 0.795 0.770 0.807 - - - -LI22 (L I ET AL ., 2022 A) 0.852 0.854 0.772 0.788 0.843 0.835 0.793 0.811 0.817 0.811 0.802 0.792 SIMPLE VQA (S UN ET AL ., 2022) 0.866 0.863 0.750 0.793 0.826 0.820 0.749 0.789 0.780 0.802 0.802 0.806 FAST VQA (W U ET AL ., 2022) 0.876 0.877 0.779 0.814 0.859 0.855 0.823 0.844 0.805 0.814 0.730 0.747 DOVER (W U ET AL ., 2023) 0.888 0.889 0.795 0.830 0.884 0.883 0.832 0.855 0.829 0.832 - -KSVQE (L U ET AL ., 2024) 0.886 0.888 0.790 0.823 - - - - - - - -MODULAR BVQA (W EN ET AL ., 2024) 0.895 0.895 0.809 0.844 0.878 0.884 0.806 0.844 0.823 0.839 0.788 0.804 CON ORD (P ROPOSED ) 0.904 0.904 0.818 0.851 0.889 0.892 0.836 0.865 0.839 0.845 0.805 0.828 
+
+similar to traditional contrastive losses, RnC relies on hard decisions to define positive and negative samples and employs binary weighting. The RnC loss is defined as 
+
+LRnC = − 12N
+
+P2Ni=1 1
+
+> |A(i)|
+
+P 
+
+> j∈A(i)
+
+log eκij /τ    
+
+> P
+> k∈N (i,j )eκik /τ
+
+,
+
+(7) where N (i, j ) = {k : |ri −rk| ≥ | ri −rj |} . In RnC, each positive sample j is contrasted against negatives k satisfy-ing |ri − rk| ≥ | ri − rj |, which are aggregated equally in the denominator regardless of their rank gaps. As a result, RnC enforces relative ordering but does not distinguish how much farther negatives are from the anchor, limiting its ability to capture fine-grained ordinal structure. In contrast, ConOrd assigns continuous affinity and dispar-ity weights aij and bij to all sample pairs, which can be viewed as a soft relaxation of the hard rank thresholds in RnC, enabling finer-grained ordinal supervision. • Choice of affinity and disparity weights: The affinity and disparity weights depend only on the rank gap dij =
+
+|ri − rj |. In this work, we adopt quadratic forms, aij =1/(d2 
+
+> ij
+
++ ϵ) and bij = d2 
+
+> ij
+
+, which are simple, smooth, symmetric, and strictly monotonic functions of dij . This choice yields a balanced interaction between attraction and repulsion, assigning stronger attractive weights to small rank gaps while emphasizing repulsion for larger gaps. This design represents a stable instantiation within a broader class of monotonic weighting functions, and our experiments indicate that ConOrd is not sensitive to the specific functional form. Additional properties and gradient analysis of LConOrd are provided in Appendix A. 
+
+3.3. Training and Inference 
+
+In addition to LConOrd , we introduce the center loss (Nguyen et al., 2018) as a regularization term to further structure the embedding space. The center loss, which seeks to locate each reference point μm at the center of all instances with rank m, is defined as 
+
+Lcenter = P 
+
+> i
+
+∥zi − μri ∥2. (8) This encourages the encoder to produce a compact cluster in the embedding space for each rank. Overall, we optimize the encoder parameters and reference points by minimizing the following total loss: 
+
+Ltotal = LConOrd + Lcenter . (9) In the inference phase, we estimate the rank of an unseen test instance based on the k-NN rule, as done in (Lee et al., 2022). We first extract the feature vector zt = h(xt) of a test instance xt. Then, in the embedding space, we find a set 
+
+N of its k nearest neighbors among all training instances in 
+
+X . Finally, the rank of xt is estimated by 
+
+ˆrt = 1
+
+> k
+
+P   
+
+> i:xi∈N
+
+ri. (10) 
+
+## 4. Experimental Results 
+
+We apply ConOrd to three different ordinal regression tasks: facial age estimation, image quality assessment, and video quality assessment. Due to the space limitation, datasets and implementation details for each task are specified in Appendix B. Results on additional regression tasks, includ-ing temperature prediction and gaze direction estimation, as well as comparisons against deep imbalanced regres-sion(DIR) methods on standard DIR benchmarks are also presented in Appendix C. 
+
+4.1. Facial Age Estimation Datasets: We use six datasets of MORPH II (Ricanek & Tesafaye, 2006), CLAP2015 (Escalera et al., 2015), AgeDB-DIR (Moschoglou et al., 2017; Yang et al., 2021), UTK (Zhang et al., 2017c), CACD (Chen et al., 2015), and Adience (Levi & Hassner, 2015), as detailed in Ap-pendix B.1. 6Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Comparison with state-of-the-art methods: Recent state-of-the-art age estimation methods (Wang et al., 2023; Du et al., 2024) adopt a ViT-B backbone (Radford et al., 2021) due to its strong representational capacity. For fair com-parison, ConOrd employs the same ViT-B encoder. As reported in Table 1, ConOrd achieves the best performance on all datasets except CACD under the MAE metric, demon-strating strong generalization across diverse age estimation benchmarks. Notably, ConOrd outperforms OrdinalCLIP and Num-CLIP, which employ the same backbone but additionally leverage textual information to guide learning. It also achieves better or comparable performance compared with SLACE, an imbalance-aware ordinal regression loss that uses class-distribution information, under the same ViT-B backbone. Although the default ConOrd does not use explicit label-frequency statistics, it remains competitive with such imbalance-aware methods; Appendix C.4 further shows that a frequency-aware configuration of ConOrd can provide additional gains when such statistics are available. 
+
+4.2. Blind Image Quality Assessment Datasets: We conduct BIQA experiments on five datasets of BID (Ciancio et al., 2010), CLIVE (Ghadiyaram & Bovik, 2015), KonIQ10k (Hosu et al., 2020), SPAQ (Fang et al., 2020), and FLIVE (Ying et al., 2020). The details are avail-able in Appendix B.2. 
+
+Comparison with state-of-the-art methods: We use Spear-man’s rank order correlation coefficient (SRCC) and Pear-son’s linear correlation coefficient (PCC) to assess percep-tual ranking and linearity. In Table 2, ConOrd outperforms the existing methods in terms of both metrics on all five datasets with no exception. Note that recent transformer-based techniques QPT (Zhao et al., 2023), LoDa (Xu et al., 2024), and QCN (Shin et al., 2024), as well as the Mamba-based method VISGA (Shi et al., 2025), the uni-fied multi-modal quality assessment method UNQA (Cao et al., 2025), and the rich subjective information-based method RichIQA (Min et al., 2025) achieve high perfor-mance through large-scale pretraining, sophisticated net-work designs, or additional supervision. Nevertheless, the proposed algorithm consistently outperforms these tech-niques meaningfully, confirming the effectiveness of con-trastive order learning. 
+
+4.3. Blind Video Quality Assessment Datasets: We evaluate ConOrd on five widely used BVQA benchmarks — LSVQ (Ying et al., 2021), KoNViD-1k (Hosu et al., 2017), LIVE-VQC (Sinno & Bovik, 2018), CVD2014 (Nuutinen et al., 2016), and YouTube-UGC (Wang et al., 2019). For training, the LSVQ dataset is used. For evaluation, intra-dataset tests on LSVQ-test and 
+
+Table 4. Comparison of different contrastive losses on the CLAP2015 and LSVQ-1080p datasets under a controlled setting. All methods use the same ViT-B backbone, identical training pro-tocol, and unified k-NN inference scheme. CLAP2015 LSVQ-1080 P                                        
+
+> MAE ( ↓)SRCC ( ↑)PCC ( ↑)
+> LSUP CON IN (1) (K HOSLA ET AL ., 2020) 2.625 0.614 0.682
+> LOC (B AEK ET AL ., 2024) 2.597 0.697 0.687
+> LMMNP +LCE (P ITAWELA ET AL ., 2025) 2.777 0.716 0.727
+> LRNCIN (7) (Z HA ET AL ., 2023) 2.531 0.812 0.843
+> LCON ORD +LCENTER IN (9) 2.461 0.818 0.851 High
+> Low
+> Feature similarity
+> (a) 𝐿 SupCon
+> 73
+> 03
+> 28
+> 23
+> 38
+> 73 328 23 38
+> (b) 𝐿 RnC
+> 73
+> 03
+> 28
+> 23
+> 38
+> 73 328 23 38
+> (c) 𝐿 ConOrd +𝐿 center
+> 73
+> 03
+> 28
+> 23
+> 38
+> 73 328 23 38
+
+Figure 4. Visualization of feature ordinality (Zha et al., 2023) on the CLAP2015 dataset. 
+
+LSVQ-1080p, as well as cross-dataset evaluations on the remaining four datasets, are conducted. More details on the datasets are in Appendix B.3. 
+
+Comparison with state-of-the-art methods: Table 3 presents a comprehensive comparison of ConOrd with state-of-the-art BVQA methods. Performance is measured using SRCC and PCC, as in BIQA. Again, ConOrd consistently outperforms all conventional methods across all datasets, achieving the best SRCC and PCC scores. While Modular-BVQA uses three distinct backbone networks of ResNet-18, SlowFast, and ViT-B, ConOrd relies on only two backbones of SlowFast and ViT-B. Despite the usage of fewer back-bones, ConOrd outperforms ModularBVQA meaningfully. This indicates that ConOrd is capable of extracting more discriminative features with fewer computational resources, demonstrating its potential for practical deployment in real-world BVQA applications. 
+
+4.4. Ablations and Analyses Comparison of contrastive learning schemes: In Ta-ble 4, we conduct a comparative analysis of both general-purpose (Khosla et al., 2020) and ordinal-regression-oriented (Zha et al., 2023; Baek et al., 2024; Pitawela et al., 2025) contrastive losses on the CLAP2015 and LSVQ-1080p datasets under a fully controlled setting. Specifically, all methods use the same ViT-B backbone, identical training protocol, and unified k-NN inference scheme, so that the performance differences can be attributed to the loss formu-lation rather than architectural or evaluation discrepancies. 
+
+LSupCon yields weak performance, as it disregards the ordi-nal property of rank labels. LOC shows slight improvements but remains limited, as it was primarily designed for medical 7Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Table 5. Ablation study for the loss function in (9) on CLAP2015 and LSVQ-1080p. CLAP2015 LSVQ-1080 P                        
+
+> METHOD LConOrd Lcenter MAE ( ↓)SRCC ( ↑)PCC ( ↑)I✓2.509 0.815 0.848 II ✓2.842 0.753 0.793 III ✓✓2.461 0.818 0.851 (c) 𝐿 ConOrd +𝐿 center (a) 𝐿 ConOrd (b) 𝐿 center
+> 0
+> 100
+> MOS
+
+Figure 5. t-SNE (Van der Maaten & Hinton, 2008) plots of the embedding spaces on LSVQ-1080p. 
+
+diagnostic datasets with relatively few ordinal levels. It does not scale effectively to tasks with many ordinal levels, e.g., 
+
+age estimation or BVQA. LMMNP + LCE achieves moderate correlation gains; however, its performance is inconsistent across metrics due to the complexity of joint margin opti-mization. LRnC benefits from its ordinal-aware contrastive formulation and substantially outperforms these other ex-isting losses. Finally, the proposed loss in (9) achieves the best results overall, showing that the all-pairs comparison through soft weighting helps learn better representations for ordinal regression. These findings are further supported by the feature simi-larity matrices in Figure 4. As in Zha et al. (2023), the matrices are computed using the negative L2 norm between learned features on the CLAP2015 dataset. Representations are sorted by ground-truth ranks, so entries farther from the diagonal indicate larger rank differences. Compared to LSupCon and LRnC , the proposed loss produces a clearer high-similarity band along the diagonal, confirming that the learned representations reflect the underlying ordinal structure more faithfully. 
+
+Ablation study of loss function: To assess the contribution of each component in (9), we conduct an ablation study in Table 5 and visualize the embedding space for each ablated method in Figure 5. Lcenter alone fails to capture the ordinal nature of the task. While LConOrd alone provides better results, its combination with Lcenter further improves the results as the intra-class compactness is also considered. Both quantitatively and visually, the combined loss yields the most favorable results. 
+
+Alternative choices for loss function: We compare the behavior of the naive loss formulation LMAE in (2) with that of the proposed LConOrd in (3). As shown in Figure 6, the positive logarithm in LMAE may make the training less 𝐿 ConOrd  in  (3)𝐿 MAE  in  (2)                   
+
+> 𝐿 =log 𝑓 (𝑥 )
+> ∇𝐿 ∝1/𝑓 (𝑥 )
+> Loss value 𝑓 (𝑥 )
+> 2.519 5.232
+> CLAP2015 AgeDB
+> MAE
+> 𝐿 =−log 𝑓 (𝑥 )
+> ∇𝐿 ∝−1/𝑓 (𝑥 )
+> Loss value 𝑓 (𝑥 )
+> 2.461 5.145
+> CLAP2015 AgeDB
+> MAE
+
+Figure 6. Comparison of the losses in (2) and (3) on CLAP2015 and AgeDB-DIR. 
+
+Table 6. Comparison of alternative configurations of LConOrd in (3) on CLAP2015. METHOD κij aij bij MAE (↓)                                                                                                                      
+
+> IziTzj(|ri−rj|+ϵ)−112.516 II ziTzj(|ri−rj|+ϵ)−1|ri−rj|2.494 III ziTzj(( ri−rj)2+ϵ)−112.483 IV ziTzj(( ri−rj)2+ϵ)−1(ri−rj)22.518 V−∥ zi−zj∥22(|ri−rj|+ϵ)−112.497 VI −∥ zi−zj∥22(|ri−rj|+ϵ)−1|ri−rj|2.490 VII −∥ zi−zj∥22(( ri−rj)2+ϵ)−112.472 VIII −∥ zi−zj∥22(( ri−rj)2+ϵ)−1(ri−rj)22.461
+> IX −∥ zi−zj∥22(∆ 2+ϵ)−1∆22.536 X−∥ zi−zj∥22LEARNABLE aij LEARNABLE bij 2.880
+
+reliable, since the gradient magnitude may increase as the loss decreases. It means that the optimization process may become unstable over time, ultimately degrading the ef-fectiveness of learning. Empirically, LConOrd outperforms 
+
+LMAE on CLAP2015 and AgeDB-DIR, confirming its im-proved stability. Also, to investigate the impacts of different design choices in (3), we perform an ablation study on CLAP2015 by varying the components of LConOrd . The following observations can be made from the results in Table 6. First, negative squared Euclidean distance for κij consistently outperforms cosine similarity, suggesting that explicit distance-based measures better reflect ordinal relations in the embedding space. Sec-ond, method VIII, which incorporates squared differences into both aij and bij , achieves the lowest MAE of 2.461. This indicates that emphasizing larger ordinal gaps during the contrastive optimization enhances model sensitivity to ordinal labels and improves regression accuracy. Method IX sets ∆ to 0 if ri = rj , and to a positive threshold of 5 oth-erwise; these coarser approximations of ordinal differences are less effective than the proposed fine-grained modeling of rank gaps. Method X employs fully learnable aij and bij 
+
+and yields poor results, suggesting that explicit encoding of ordinal structure is more effective than unconstrained learn-able parameters. Appendix A provides a gradient-based justification for these configurations, while Appendix C.4 reports an extended table with additional configurations and results. 8Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+## 5. Conclusions 
+
+In this paper, we introduced contrastive order learning (ConOrd) as a general framework for ordinal regression that unifies order learning and contrastive learning within a single batch-wise formulation. By revisiting contrastive learning from an ordinal perspective, ConOrd incorporates rank-aware attraction and repulsion through soft affinity and disparity weights, enabling all sample pairs in a batch to contribute to learning in a principled and stable manner. We presented a simple yet effective instantiation of this framework. Through extensive experiments on diverse ordi-nal regression tasks, including facial age estimation, blind image quality assessment, and blind video quality assess-ment, we demonstrated that ConOrd consistently achieves strong performance and competitive generalization across benchmarks. We believe that contrastive order learning pro-vides a flexible foundation for future advances in ordinal representation learning. 
+
+## Impact Statement 
+
+This work proposes a general method for ordinal regression that demonstrates strong performance across tasks, includ-ing facial age estimation, blind image quality assessment, and blind video quality assessment. However, caution is needed when deploying such models in sensitive domains. If used without appropriate safeguards, predictions involv-ing human or facial attributes may raise ethical concerns, especially in the presence of biases within the training data. We recommend that future deployments incorporate fair evaluations and that the model be used as a decision-support tool rather than as an autonomous system. 
+
+## Acknowledgements 
+
+This work was supported by the National Research Foun-dation of Korea (NRF) funded by the Korea Government (MSIT) (No. RS-2024-00397293, RS-2022-NR068986), and by the AI Computing Infrastructure Enhancement (GPU Rental Support) User Support Program funded by MSIT (No. RQT-25-090187). 
+
+## References 
+
+Amig ´o, E., Gonzalo, J., Mizzaro, S., and Carrillo-de Al-bornoz, J. An effectiveness metric for ordinal classifica-tion: Formal properties and experimental results. arXiv preprint arXiv:2006.01245 , 2020. Baek, S., Sim, J., Wu, G., and Kim, W. H. OCL: Ordinal contrastive learning for imputating features with progres-sive labels. In Proc. MICCAI , 2024. Basak, H. and Yin, Z. Pseudo-label guided contrastive learning for semi-supervised medical image segmentation. In Proc. CVPR , 2023. Berg, A., Oskarsson, M., and O’Connor, M. Deep ordinal regression with label diversity. In Proc. ICPR , 2021. Cao, Y., Min, X., Gao, Y., Sun, W., Ye, L., Lin, W., and Zhai, G. UNQA: Unified no-reference quality assessment for audio, image, video, and audio-visual content. IEEE Trans. Circuits Syst. Video Technol. , 2025. Caron, M., Misra, I., Mairal, J., Goyal, P., Bojanowski, P., and Joulin, A. Unsupervised learning of visual features by contrasting cluster assignments. In Proc. NeurIPS ,2020. Cer, D., Diab, M., Agirre, E., Lopez-Gazpio, I., and Spe-cia, L. SemEval-2017 task 1: Semantic textual similarity multilingual and crosslingual focused evaluation. In Pro-ceedings of the 11th international workshop on semantic evaluation , 2017. Chang, K.-Y., Chen, C.-S., and Hung, Y.-P. Ordinal hyper-planes ranker with cost sensitivities for age estimation. In 
+
+Proc. CVPR , 2011. Chen, B.-C., Chen, C.-S., and Hsu, W. H. Face recognition and retrieval using cross-age reference coding with cross-age celebrity dataset. IEEE Trans. Multimedia , 2015. Chen, S., Zhang, C., Dong, M., Le, J., and Rao, M. Using ranking-CNN for age estimation. In Proc. CVPR , 2017. Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. Asimple framework for contrastive learning of visual rep-resentations. In Proc. ICML , 2020. Chu, W.-T., Ho, K.-C., and Borji, A. Visual weather tem-perature prediction. In Proc. WACV , 2018. Ciancio, A., Targino da Costa, A. L. N. T., da Silva, E. A. B., Said, A., Samadani, R., and Obrador, P. No-reference blur assessment of digital pictures based on multifeature classifiers. IEEE Trans. Image Proc. , 2010. Deng, Z., Liu, H., Wang, Y., Wang, C., Yu, Z., and Sun, X. PML: Progressive margin loss for long-tailed age classification. In Proc. CVPR , 2021. Diaz, R. and Marathe, A. Soft labels for ordinal regression. In Proc. CVPR , 2019. Dong, Z., Wu, Y., Chen, C., Zou, Y., Zhang, Y., and Zhou, J. H. Improve representation for imbalanced regression through geometric constraints. In Proc. CVPR , 2025. Du, Y., Zhai, Q., Dai, W., and Li, X. Teach CLIP to develop a number sense for ordinal regression. In Proc. ECCV ,2024. 9Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Engemann, D. A., Mellot, A., H ¨ochenberger, R., Banville, H., Sabbagh, D., Gemein, L., and Gramfort, A. Areusable benchmark of brain-age prediction from M/EEG resting-state signals. NeuroImage , 2022. Escalera, S., Fabian, J., Pardo, P., Bar ´o, X., Gonz `alez, J., Escalante, H. J., Misevic, D., Steiner, U., and Guyon, I. ChaLearn looking at people 2015: Apparent age and cultural event recognition datasets and results. In Proc. ICCV Workshops , 2015. Fang, Y., Zhu, H., Zeng, Y., Ma, K., and Wang, Z. Percep-tual quality assessment of smartphone photography. In 
+
+Proc. CVPR , 2020. Feichtenhofer, C., Fan, H., Malik, J., and He, K. Slowfast networks for video recognition. In Proc. ICCV , 2019. Frank, E. and Hall, M. A simple approach to ordinal classi-fication. In Proc. ECML , 2001. Fu, H., Gong, M., Wang, C., Batmanghelich, K., and Tao, D. Deep ordinal regression network for monocular depth estimation. In Proc. CVPR , 2018. Gao, B.-B., Zhou, H.-Y., Wu, J., and Geng, X. Age estima-tion using expectation of label distribution learning. In 
+
+Proc. IJCAI , 2018. Geng, X., Yin, C., and Zhou, Z.-H. Facial age estimation by learning from label distributions. IEEE Trans. Pattern Anal. Mach. Intell. , 2013. Ghadiyaram, D. and Bovik, A. C. Massive online crowd-sourced study of subjective and objective picture quality. 
+
+IEEE Trans. Image Proc. , 2015. Golestaneh, S. A., Dadsetan, S., and Kitani, K. M. No-reference image quality assessment via transformers, rela-tive ranking, and self-consistency. In Proc. WACV , 2022. Gong, Y., Mori, G., and Tung, F. RankSim: Ranking simi-larity regularization for deep imbalanced regression. In 
+
+Proc. ICML , 2022. Guan, F., Li, X., Yu, Z., Lu, Y., and Chen, Z. Q-Mamba: On first exploration of vision Mamba for image quality assessment. arXiv preprint arXiv:2406.09546 , 2024. Gustafsson, F. K., Danelljan, M., Bhat, G., and Sch ¨on, T. B. Energy-based models for deep probabilistic regression. In Proc. ECCV , 2020. He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learning for image recognition. In Proc. CVPR , 2016. He, K., Fan, H., Wu, Y., Xie, S., and Girshick, R. Mo-mentum contrast for unsupervised visual representation learning. In Proc. CVPR , 2020. Hendrycks, D. and Dietterich, T. Benchmarking neural network robustness to common corruptions and perturba-tions. In ICLR , 2019. Hosu, V., Hahn, F., Jenadeleh, M., Lin, H., Men, H., Szir ´anyi, T., Li, S., and Saupe, D. The Konstanz nat-ural video database (KoNViD-1k). In Proc. QoMEX ,2017. Hosu, V., Lin, T., Sziranyi, T., and Saupe, D. KonIQ-10k: An ecologically valid database for deep learning of blind image quality assessment. IEEE Trans. Image Proc. ,2020. Hu, J., Ozay, M., Zhang, Y., and Okatani, T. Revisiting single image depth estimation: Toward higher resolution maps with accurate object boundaries. In Proc. WACV ,2019. Huang, G., Li, Y., Pleiss, G., Liu, Z., Hopcroft, J. E., and Weinberger, K. Q. Snapshot ensembles: Train 1, get m for free. In Proc. ICLR , 2017. Ke, J., Wang, Q., Wang, Y., Milanfar, P., and Yang, F. MUSIQ: Multi-scale image quality transformer. In Proc. ICCV , 2021. Keramati, M., Meng, L., and Evans, R. D. ConR: Con-trastive regularizer for deep imbalanced regression. In 
+
+Proc. ICLR , 2024. Khosla, P., Teterwak, P., Wang, C., Sarna, A., Tian, Y., Isola, P., Maschinot, A., Liu, C., and Krishnan, D. Supervised contrastive learning. In Proc. NeurIPS , 2020. Kingma, D. P. and Ba, J. Adam: A method for stochastic optimization. In Proc. ICLR , 2015. Korhonen, J. Two-level approach for no-reference consumer video quality assessment. IEEE Trans. Image Proc. , 2019. Lee, S.-H. and Kim, C.-S. Deep repulsive clustering of ordered data based on order-identity decomposition. In 
+
+Proc. ICLR , 2021. Lee, S.-H. and Kim, C.-S. Order learning using partially ordered data via chainization. In Proc. ECCV , 2022. Lee, S.-H., Shin, N.-H., and Kim, C.-S. Geometric order learning for rank estimation. In Proc. NeurIPS , 2022. Lee, S.-H., Shin, N.-H., and Kim, C.-S. Unsupervised order learning. In Proc. ICLR , 2024. Levi, G. and Hassner, T. Age and gender classification using convolutional neural networks. In Proc. CVPR , 2015. Li, B., Zhang, W., Tian, M., Zhai, G., and Wang, X. Blindly assess quality of in-the-wild videos via quality-aware pre-training and motion perception. IEEE Trans. Circuits Syst. Video Technol. , 2022a. 10 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Li, D., Jiang, T., Lin, W., and Jiang, M. Which has better visual quality: the clear blue sky or a blurry animal? 
+
+IEEE Trans. Multimedia , 2018. Li, D., Jiang, T., and Jiang, M. Quality assessment of in-the-wild videos. In Proc. ACM Multimedia , 2019. Li, L. and Lin, H.-T. Ordinal regression by extended binary classification. In Proc. NeurIPS , 2007. Li, W., Huang, X., Lu, J., Feng, J., and Zhou, J. Learning probabilistic ordinal embeddings for uncertainty-aware regression. In Proc. CVPR , 2021. Li, W., Huang, X., Zhu, Z., Tang, Y., Li, X., Zhou, J., and Lu, J. OrdinalCLIP: learning rank prompts for language-guided ordinal regression. In Proc. NeurIPS , 2022b. Lim, K., Shin, N.-H., Lee, Y.-Y., and Kim, C.-S. Order learning and its application to age estimation. In Proc. ICLR , 2020. Liu, W., Ferstl, D., Schulter, S., Zebedin, L., Fua, P., and Leistner, C. Domain adaptation for semantic segmenta-tion via patch-wise contrastive learning. arXiv preprint arXiv:2104.11056 , 2021. Liu, X., Zou, Y., Song, Y., Yang, C., You, J., and Vijaya Ku-mar, B. K. Ordinal regression with neuron stick-breaking for medical diagnosis. In Proc. ECCV , 2018. Loshchilov, I. and Hutter, F. SGDR: Stochastic gra-dient descent with warm restarts. arXiv preprint arXiv:1608.03983 , 2016. Loshchilov, I. and Hutter, F. Decoupled weight decay regu-larization. arXiv preprint arXiv:1711.05101 , 2017. Lu, Y., Li, X., Pei, Y., Yuan, K., Xie, Q., Qu, Y., Sun, M., Zhou, C., and Chen, Z. KVQ: Kwai video quality assessment for short-form videos. In Proc. CVPR , 2024. Madhusudana, P. C., Birkbeck, N., Wang, Y., Adsumilli, B., and Bovik, A. C. Image quality assessment using contrastive learning. IEEE Trans. Image Proc. , 2022. Mihail, R.-P., Workman, S., Bessinger, Z., and Jacobs, N. Sky segmentation in the wild: an empirical study. In Proc. WACV , 2016. Min, X., Zhai, G., Gu, K., Liu, Y., and Yang, X. Blind image quality estimation via distortion aggravation. IEEE Trans. Broadcasting , 2018. Min, X., Gao, Y., Cao, Y., Zhai, G., Zhang, W., Sun, H., and Chen, C. W. Exploring rich subjective quality information for image quality assessment in the wild. IEEE Trans. Circuits Syst. Video Technol. , 2025. Moschoglou, S., Papaioannou, A., Sagonas, C., Deng, J., Kotsia, I., and Zafeiriou, S. AgeDB: The first manually collected, in-the-wild age database. In Proc. CVPR , 2017. Nachmani, I., Genossar, B., Scharf, C., Shraga, R., and Gal, A. SLACE: A monotone and balance-sensitive loss function for ordinal regression. In Proc. AAAI , 2025. Nguyen, B., Morell, C., and De Baets, B. Distance metric learning for ordinal classification based on triplet con-straints. Knowledge-Based Systems , 2018. Niu, Z., Zhou, M., Wang, L., Gao, X., and Hua, G. Ordinal regression with multiple output CNN for age estimation. In Proc. CVPR , 2016. Nuutinen, M., Virtanen, T., Vaahteranoksa, M., Vuori, T., Oittinen, P., and H ¨akkinen, J. CVD2014—A database for evaluating no-reference video quality assessment al-gorithms. IEEE Trans. Image Proc. , 2016. Pan, H., Han, H., Shan, S., and Chen, X. Mean-variance loss for deep age estimation from a face. In Proc. CVPR ,2018. Pitawela, D., Carneiro, G., and Chen, H.-T. CLOC: Con-trastive learning for ordinal classification with multi-margin n-pair loss. In Proc. CVPR , 2025. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., and Sutskever, I. Learning transferable visual models from natural language supervision. In Proc. ICML , 2021. Rennie, J. D. and Srebro, N. Loss functions for preference levels: regression with discrete ordered labels. In Proc. IJCAI Workshop on Advances in Preference Handling ,2005. Ricanek, K. and Tesafaye, T. MORPH: A longitudinal image database of normal adult age-progression. In Proc. IEEE Int. Conf. on Automatic Face and Gesture Recognition ,2006. Rothe, R., Timofte, R., and Van Gool, L. DEX: Deep expectation of apparent age from a single image. In Proc. ICCV , 2015. Rothe, R., Timofte, R., and Van Gool, L. Deep expectation of real and apparent age from a single image without facial landmarks. Int. J. Comput. Vis. , 2018. Saha, A., Mishra, S., and Bovik, A. C. Re-IQA: Unsuper-vised learning for image quality assessment in the wild. In Proc. CVPR , 2023. 11 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Shi, H., Xie, W., Qin, H., Li, Y., and Fang, L. Visual state space model with graph-based feature aggregation for blind image quality assessment. IEEE Trans. Circuits Syst. Video Technol. , 2025. Shi, X., Cao, W., and Raschka, S. Deep neural networks for rank-consistent ordinal regression based on conditional probabilities. Pattern Analysis and Applications , 2023. Shi, Y., Li, W., and Sha, F. Metric learning for ordinal data. In Proc. AAAI , 2016. Shin, N.-H., Lee, S.-H., and Kim, C.-S. Moving window regression: A novel approach to ordinal regression. In 
+
+Proc. CVPR , 2022. Shin, N.-H., Lee, S.-H., and Kim, C.-S. Blind image quality assessment based on geometric order learning. In Proc. CVPR , 2024. Silberman, N., Hoiem, D., Kohli, P., and Fergus, R. Indoor segmentation and support inference from rgbd images. In 
+
+Proc. ECCV , 2012. Sinno, Z. and Bovik, A. C. Large-scale study of perceptual video quality. IEEE Trans. Image Proc. , 2018. Su, S., Yan, Q., Zhu, Y., Zhang, C., Ge, X., Sun, J., and Zhang, Y. Blindly assess image quality in the wild guided by a self-adaptive hyper network. In Proc. CVPR , 2020. Sun, W., Min, X., Lu, W., and Zhai, G. A deep learning based no-reference quality assessment model for UGC videos. In Proc. ACM Multimedia , 2022. Thomee, B., Shamma, D. A., Friedland, G., Elizalde, B., Ni, K., Poland, D., Borth, D., and Li, L.-J. YFCC100M: The new data in multimedia research. Communications of the ACM , 2016. Tu, Z., Wang, Y., Birkbeck, N., Adsumilli, B., and Bovik, A. C. UGC-VQA: Benchmarking blind video quality assessment for user generated content. IEEE Trans. Image Proc. , 2021. Van der Maaten, L. and Hinton, G. Visualizing data using t-SNE. Journal of machine learning research , 2008. Wang, A., Singh, A., Michael, J., Hill, F., Levy, O., and Bowman, S. R. GLUE: A multi-task benchmark and anal-ysis platform for natural language understanding. 2018. Wang, R., Li, P. P., Huang, H., Cao, C., He, R., and He, Z. Learning-to-Rank meets language: Boosting language-driven ordering alignment for ordinal classification. In 
+
+Proc. NeurIPS , 2023. Wang, Y., Inguva, S., and Adsumilli, B. Youtube UGC dataset for video compression research. In Proc. MMSP ,2019. Wang, Y., Jiang, Y., Li, J., Ni, B., Dai, W., Li, C., and Li, T. Contrastive regression for domain adaptation on gaze estimation. In Proc. CVPR , 2022. Wang, Z. and Wang, H. Variational imbalanced regression: Fair uncertainty quantification via probabilistic smooth-ing. Proc. NeurIPS , 2023. Wen, W., Li, M., Zhang, Y., Liao, Y., Li, J., Zhang, L., and Ma, K. Modular blind video quality assessment. In Proc. CVPR , 2024. Wu, B., Sun, X., Hu, L., and Wang, Y. Learning with unsure data for medical image diagnosis. In Proc. ICCV , 2019. Wu, H., Chen, C., Hou, J., Liao, L., Wang, A., Sun, W., Yan, Q., and Lin, W. FAST-VQA: Efficient end-to-end video quality assessment with fragment sampling. In 
+
+Proc. ECCV , 2022. Wu, H., Zhang, E., Liao, L., Chen, C., Hou, J., Wang, A., Sun, W., Yan, Q., and Lin, W. Exploring video quality assessment on user generated contents from aesthetic and technical perspectives. In Proc. ICCV , 2023. Xie, E., Ding, J., Wang, W., Zhan, X., Xu, H., Sun, P., and Luo, P. DetCo: Unsupervised contrastive learning for object detection. In Proc. ICCV , 2021. Xu, K., Liao, L., Xiao, J., Chen, C., Wu, H., Yan, Q., and Lin, W. Boosting image quality assessment through effi-cient transformer adaptation with local feature enhance-ment. In Proc. CVPR , 2024. Yang, Y., Zha, K., Chen, Y., Wang, H., and Katabi, D. Delving into deep imbalanced regression. In Proc. ICML ,2021. Ying, Z., Niu, H., Gupta, P., Mahajan, D., Ghadiyaram, D., and Bovik, A. From patches to pictures (PaQ-2-PiQ): Mapping the perceptual space of picture quality. In Proc. CVPR , 2020. Ying, Z., Mandal, M., Ghadiyaram, D., and Bovik, A. Patch-VQ: ‘patching up’ the video quality problem. In Proc. CVPR , 2021. Zha, K., Cao, P., Son, J., Yang, Y., and Katabi, D. Rank-N-Contrast: Learning continuous representations for regres-sion. In Proc. NeurIPS , 2023. Zhang, S., Yang, L., Mi, M. B., Zheng, X., and Yao, A. Improving deep regression with ordinal entropy. In Proc. ICLR , 2023. Zhang, W., Ma, K., Yan, J., Deng, D., and Wang, Z. Blind image quality assessment using a deep bilinear convolu-tional neural network. IEEE Trans. Circuits Syst. Video Technol. , 2018. 12 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Zhang, W., Ma, K., Zhai, G., and Yang, X. Uncertainty-aware blind image quality assessment in the laboratory and wild. IEEE Trans. Image Proc. , 2021. Zhang, X., Sugano, Y., Fritz, M., and Bulling, A. MPI-IGaze: Real-world dataset and deep appearance-based gaze estimation. IEEE Trans. Pattern Anal. Mach. Intell. ,2017a. Zhang, X., Sugano, Y., Fritz, M., and Bulling, A. It’s written all over your face: Full-face appearance-based gaze estimation. In Proc. CVPR Workshops , 2017b. Zhang, Z., Song, Y., and Qi, H. Age progression/regression by conditional adversarial autoencoder. In Proc. CVPR ,2017c. Zhao, K., Yuan, K., Sun, M., Li, M., and Wen, X. Quality-aware pre-trained models for blind image quality assess-ment. In Proc. CVPR , 2023. Zheng, J., Yao, Y., Han, B., Wang, D., and Liu, T. Enhancing contrastive learning for ordinal regression via ordinal content preserved data augmentation. In Proc. ICLR ,2024. Zhu, H., Shan, H., Zhang, Y., Che, L., Xu, X., Zhang, J., and Wang, F.-Y. Convolutional ordinal regression forest for image ordinal estimation. IEEE Trans. Neural Netw. Learn. Syst. , 2021. 13 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+## A. Properties and Gradient Analysis of LConOrd in (3) 
+
+We analyze the gradient of LConOrd with respect to the embedding zi. Using the chain rule, we have 
+
+∂L ConOrd 
+
+∂z i
+
+= X
+
+> j∈A(i)
+
+∂L ConOrd 
+
+∂κ ij 
+
+· ∂κ ij 
+
+∂z i
+
+. (11) For simplicity, let αi = P 
+
+> j∈A(i)
+
+aij exp( κij /τ ) and βi = P 
+
+> j∈A(i)
+
+bij exp( κij /τ ) in (3). Then, 
+
+LConOrd = − 12N
+
+> 2N
+
+X
+
+> i=1
+
+1
+
+|A(i)| log αi
+
+βi
+
+. (12) Computing the first term in the chain rule expression in (11), 
+
+∂L ConOrd 
+
+∂κ ij 
+
+= − 12N |A(i)|
+
+ 1
+
+αi
+
+∂α i
+
+∂κ ij 
+
+− 1
+
+βi
+
+∂β i
+
+∂κ ij 
+
+
+
+(13) 
+
+= − 12N |A(i)|
+
+ 1
+
+αi
+
+· aij 
+
+τ exp( κij /τ ) − 1
+
+βi
+
+· bij 
+
+τ exp( κij /τ )
+
+
+
+(14) 
+
+= − 12N τ |A(i)| exp( κij /τ )
+
+ aij 
+
+αi
+
+− bij 
+
+βi
+
+
+
+. (15) Assuming that the similarity κij is defined as the negative squared Euclidean distance, i.e., κij = −∥ zi − zj ∥22,
+
+∂κ ij 
+
+∂z i
+
+= −2( zi − zj ). (16) Thus, we have the gradient 
+
+∂L ConOrd 
+
+∂z i
+
+= X
+
+> j∈A(i)
+
+− 12N τ |A(i)| exp( κij /τ )
+
+ aij 
+
+αi
+
+− bij 
+
+βi
+
+
+
+· − 2( zi − zj ) (17) 
+
+= 1
+
+N τ |A(i)|
+
+X
+
+> j∈A(i)
+
+exp( κij /τ )
+
+ aij 
+
+αi
+
+− bij 
+
+βi
+
+
+
+· (zi − zj ). (18) The following observations can be made from this gradient expression. • Attraction and repulsion induced by affinity and disparity weights: The scalar factor   aij  
+
+> αi
+
+− bij 
+
+> βi
+
+ in (18) determines whether gradient descent pulls zi toward or pushes it away from zj . Since the affinity weight aij is large for small rank differences and the disparity weight bij is large for large rank differences, pairs with similar ranks tend to yield positive factors (attraction), whereas pairs with distant ranks tend to yield negative factors (repulsion). • Locality induced by the exponential kernel: The factor exp( κij /τ ) in (18) modulates each pairwise contribution according to the current embedding distance, since κij = −∥ zi − zj ∥22. Pairs that are already close in the embedding space receive larger weights, while distant pairs are exponentially downweighted. Consequently, the gradient places greater emphasis on sample pairs that are both close in rank and close in the embedding space, enabling ConOrd to capture fine-grained ordinal distinctions more effectively. • Selective emphasis on informative pairwise relations: Because strong forces arise only when two samples are close in the embedding space, the optimization primarily updates zi using pairs that the model already considers relevant. Combined with the affinity and disparity weights, this suppresses uninformative interactions with very distant ranks and allows ConOrd to adjust embeddings where ordinal information is most meaningful, without introducing instability as training progresses. 14 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+• Choice of affinity and disparity weights: The affinity and disparity weights depend only on the rank gap dij =
+
+|ri − rj |. We adopt the quadratic forms aij = 1 /(d2 
+
+> ij
+
++ ϵ) and bij = d2 
+
+> ij
+
+because they are the simplest smooth, symmetric, and strictly monotonic functions of the ordinal distance. Quadratic growth provides a natural balance between near and far ranks — small gaps yield strong attractive weights, whereas large gaps contribute more to the repulsive term. While alternative monotonic choices ( e.g., linear or higher-order functions) are possible, we found that ConOrd is not highly sensitive to the exact form of these weights. Across the variants evaluated in Table 6, the quadratic form offers a good trade-off between stability and performance and performs consistently well across datasets. This observation can be further understood from the gradient behavior of LConOrd . From (18), pair (i, j ) contributes attraction if aij  
+
+> αi
+
+> bij  
+
+> βi
+
+, i.e., a(dij )  
+
+> b(dij )
+
+> αi 
+
+> βi
+
+, and repulsion otherwise. Since αi 
+
+> βi
+
+is a shared threshold for anchor i, a key condition for the desired ordinal behavior is that a(d) 
+
+> b(d)
+
+decreases monotonically with d. This induces a single crossover rank gap, below which pairs are encouraged to attract and above which they are encouraged to repel, yielding a consistent ordinal interaction pattern for each anchor.              
+
+> Table 7. Interpretation of different affinity and disparity weight configurations. Category Methods CLAP2015 MAE ( ↓)Monotone transition Valid function class I–VIII 2.461–2.518 ◦
+> Coarse approximation IX 2.536 ×
+> Unconstrained X2.880 ×
+
+From this perspective, the configurations in Table 6 can be interpreted according to whether they satisfy this monotone transition property. As summarized in Table 7, weightings that satisfy it (Methods I–VIII) all perform comparably well, whereas configurations that break it (Method IX and Method X) show degraded performance. Thus, the residual variation within Methods I–VIII is better interpreted as a secondary effect of how each valid function emphasizes different rank gaps (and the choice of κij ), rather than evidence that the quadratic form is uniquely special. 15 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+## B. Experimental Details 
+
+B.1. Facial Age Estimation Datasets: Here, we provide more descriptions of each facial age estimation dataset. • MORPH II (Ricanek & Tesafaye, 2006): As in Chang et al. (2011), we use 5,492 Caucasian images divided into training and test sets with a ratio of 8:2. • CLAP2015 (Escalera et al., 2015): This dataset provides 4,691 facial images in total that are split into 2,476 for training, 1,136 for validation, and 1,079 for testing. • AgeDB-DIR (Moschoglou et al., 2017; Yang et al., 2021): It contains 12.2K images for training, and the validation and test sets are balanced with 2.1K images. The age value ranges from 0 to 101. • UTK (Zhang et al., 2017c): It consists of 20,000 facial images in a wide age range of [0,116]. We adopt the evaluation protocol in (Gustafsson et al., 2020; Berg et al., 2021). • CACD (Chen et al., 2015): It provides 160k images of 2000 celebrities, which have an age range of [14, 62]. We use the training set specified in (Shin et al., 2022). • Adience (Levi & Hassner, 2015): It has 26,580 facial images that are grouped into 8 ordinal classes: 0-2, 4-6, 8-13, 15-20, 25-32, 38-43, 48-53, and over 60-year-olds. 
+
+Implementation details: For age estimation, ViT-B in the CLIP algorithm (Radford et al., 2021) is employed as the encoder 
+
+h. The model is trained using the Adam optimizer (Kingma & Ba, 2015) with a weight decay of 0.0005. We employ a cosine annealing scheduler (Huang et al., 2017) to adjust the learning rate. For data augmentation, only random horizontal flipping is applied. 
+
+B.2. Blind Image Quality Assessment Datasets: We evaluate the performance of the proposed ConOrd algorithm on the BIQA task using five datasets. For all datasets except FLIVE, we randomly split each dataset into train and test sets with a ratio of 4:1. Then, we repeat the training and evaluation over 10 different splits and report the median evaluation scores as done in previous methods (Zhao et al., 2023; Shin et al., 2024). For FLIVE, we employ the same evaluation protocol as in (Ying et al., 2020), where 30K images are used for training and 1.8K for testing. • BID (Ciancio et al., 2010): It contains 586 images degraded by various types of realistic distortion ( e.g. , motion blur, out-of-focus), with mean opinion scores (MOS) in the range [0 , 5] .• CLIVE (Ghadiyaram & Bovik, 2015): It consists of 1,169 natural images collected in diverse environments, annotated with MOS in the range [1, 100]. • KonIQ10k (Hosu et al., 2020): This dataset provides 10,073 images sampled from YFCC100M (Thomee et al., 2016), with MOS ranging from 1 to 100. • SPAQ (Fang et al., 2020): Smartphone Photography Attribute and Quality (SPAQ) database includes 11,125 images taken with 66 different smartphones. Each image is assigned image attribute scores, but we use only the overall image quality scores in the range [0, 100]. • FLIVE (Ying et al., 2020): It is a large-scale BIQA dataset comprising approximately 40,000 images and 120,000 patches in the range [0, 100]. Following Ying et al. (2020), we only use the full-resolution images for training and testing, not the patches. 
+
+Implementation details: For BIQA, we also employ ViT-B from the CLIP algorithm (Radford et al., 2021) as the encoder 
+
+h. The AdamW optimizer (Loshchilov & Hutter, 2017) is used with a weight decay of 2 × 10 −3. We use a cosine annealing scheduler (Loshchilov & Hutter, 2016) with a 5-epoch warm-up phase, during which the learning rate increases gradually to five times the initial value. For data augmentation, we use top-left, bottom-right, and center crops during training and use the average feature of the three cropped images. 16 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+B.3. Blind Video Quality Assessment Datasets: The following five BVQA datasets are used to train and evaluate the proposed algorithm. • LSVQ (Ying et al., 2021): It is one of the largest datasets consisting of 39K videos, split into 28K for training and 11K for testing. The resolutions of videos are from 99p to 4K. • KoNViD-1k (Hosu et al., 2017): It contains 1200 videos selected from YFCC-100M (Thomee et al., 2016) to cover various contents and distortions. All videos have a resolution of 540p. • LIVE-VQC (Sinno & Bovik, 2018): It consists of 585 videos with various resolutions from 240p to 1080p. • CVD2014 (Nuutinen et al., 2016): It is composed of 234 videos in five distinct scene types, filmed using 78 different cameras. • YouTube-UGC (Wang et al., 2019): It provides about 1K video samples from user-generated contents on YouTube. The video resolutions range from 360p to 4K. 
+
+Implementation details: Recent state-of-the-art approaches in the BVQA task employ multiple backbone networks to capture diverse aspects of a video signal. Following this trend, we adopt a dual-backbone architecture in Figure 7. Specifically, we utilize ViT-B for the spatial feature extractor, which encodes N sampled frames I1 
+
+> i
+
+, I 2 
+
+> i
+
+, ..., I Ni into spatial feature vectors zI1 
+
+> i
+
+, z I2 
+
+> i
+
+, ..., z IN 
+
+> i
+
+. These are then averaged to obtain a compact spatial representation zsi . For the temporal feature extractor, we adopt the Fast pathway network of the SlowFast video recognizer (Feichtenhofer et al., 2019) to extract temporal feature maps zP1 
+
+> i
+
+, z P2 
+
+> i
+
+, ..., z PM 
+
+> i
+
+from M sampled clips P 1 
+
+> i
+
+, P 2 
+
+> i
+
+, ..., P Mi . To enhance the temporal representations, we further refine the extracted temporal feature maps using a transformer module. This module performs inter-frame and intra-frame attention for each temporal feature map, yielding refined temporal features ˜zP1 
+
+> i
+
+, ˜zP2 
+
+> i
+
+, ..., ˜zPM 
+
+> i
+
+. The refined features are then averaged to obtain the final temporal representation zti . Finally, the spatial and temporal representations are fused to generate the final feature vector zi, which is used to compute the proposed ConOrd loss. 𝐂  𝑧 𝑖 
+
+𝐼 𝑖 
+
+> 1
+
+, 𝐼 𝑖 
+
+> 2
+
+, … , 𝐼 𝑖       
+
+> 𝑁
+> [N×𝐻 ×𝑊 ×3]
+
+Spatial Encoder 
+
+𝑃 𝑖 
+
+> 1
+
+, 𝑃 𝑖 2, … , 𝑃 𝑖 𝑀         
+
+> [M×𝐿 ×𝐻 ×𝑊 ×3]
+
+Temporal Encoder 
+
+𝑧 𝑖 
+
+> 𝑠
+
+Average 
+
+Inter -frame 
+
+Attention 
+
+Intra -frame 
+
+Attention 
+
+𝑧 𝑖 
+
+> 𝐼 1
+
+𝑧 𝑖 
+
+> 𝐼 2
+
+𝑧 𝑖 
+
+> 𝐼 𝑁
+
+⋮
+
+𝑧 𝑖 
+
+> 𝑃 1
+
+𝑧 𝑖 
+
+> 𝑃 2
+
+𝑧 𝑖 
+
+> 𝑃 𝑀
+
+⋮
+
+ǁ
+
+𝑧 𝑖 
+
+> 𝑃 1
+
+ǁ
+
+𝑧 𝑖 
+
+> 𝑃 2
+
+ǁ
+
+𝑧 𝑖 
+
+> 𝑃 𝑀
+
+⋮ 𝑧 𝑖 
+
+> 𝑡
+
+Average 
+
+Fuse 
+
+Figure 7. Network architecture for BVQA. 
+
+B.4. Training and inference configurations 
+
+Table 8 summarizes the training and inference configurations for the proposed ConOrd algorithm. 
+
+Table 8. Training and inference configurations. Dataset MORPH II CLAP2015 AgeDB-DIR UTK CACD Adience BID CLIVE KonIQ10k SPAQ FLIVE LSVQ Learning rate 5 × 10 −6 5 × 10 −6 5 × 10 −6 5 × 10 −7 5 × 10 −7 2 × 10 −6 2 × 10 −6 2 × 10 −6 2 × 10 −6 2 × 10 −6 1 × 10 −6 5 × 10 −6                                                   
+
+> Batch size 128 128 128 128 128 128 32 32 64 64 64 16
+> τin (3) 0.07 0.07 0.07 0.07 0.07 0.07 0.07 0.07 0.07 0.07 0.07 0.07
+> ϵin (3) 10 −710 −710 −710 −710 −710 −710 −710 −710 −710 −710 −710 −7
+> kin (10) 4460 60 60 60 10 10 10 10 10 30
+
+17 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+## C. More Experimental Results 
+
+C.1. More Comparison on Additional Benchmarks Datasets: We evaluate the performance of ConOrd on two additional regression datasets previously used in the evaluation of RnC (Zha et al., 2023). • SkyFinder (Mihail et al., 2016; Chu et al., 2018): It is a dataset for predicting ambient temperatures from outdoor webcam images. It consists of 35,417 images taken by 44 different cameras under diverse weather and lighting conditions. The corresponding temperature values range from −20 ◦C to 49 ◦C. Following Zha et al. (2023), we split the dataset into 28,373 training and 3,522 test images. • MPIIFaceGaze (Zhang et al., 2017a;b): It is a dataset for estimating gaze directions from face images, containing 213,659 face images collected from 15 participants during natural laptop use. We divide the dataset to construct a training set of 33,000 images and a test set of 6,000 images, ensuring no participant overlap across splits. Each image is annotated with a 2D gaze vector of pitch and yaw angles, where pitch angles range from −40 ◦ to 10 ◦, and yaw from 
+
+−45 ◦ to 45 ◦.For a fair comparison, we adopt the ResNet-18 backbone (He et al., 2016) as done in RnC (Zha et al., 2023). Table 9 shows that ConOrd achieves the best performance, outperforming all prior methods on both datasets. 
+
+Table 9. Performance comparison on the SkyFinder and MPIIFaceGaze datasets. SkyFinder MPIIFaceGaze Algorithm MAE ( ↓) Angular MAE ( ↓)DEX (Rothe et al., 2015) 3.58 5.72 OR (Niu et al., 2016) 2.92 5.86 DLDL-v2 (Gao et al., 2018) 2.99 5.47 CORN (Shi et al., 2023) 3.24 5.88 RnC (Zha et al., 2023) 2.86 5.27 ConOrd (Proposed) 2.65 4.98 
+
+Regression examples : We provide examples of regression results on the SkyFinder and MPIIFaceGaze datasets in Figure 8 and Figure 9, respectively. (a) Successful cases  (b) Failure case           
+
+> 22℃ [34℃] 1℃[1℃] 11 ℃[11 ℃] 17 ℃[17 ℃] 21 ℃[2 1℃] 30℃ [30℃]
+
+Figure 8. Examples of regression results on the SkyFinder dataset. The estimated and ground-truth values are specified under each image: estimated [true]. (a) Successful cases  (b) Failure case                                  
+
+> pitch: -3.0 [1-2.0]
+> yaw: -2.5 [-14.0]
+> pitch: -12.0 [-19.5]
+> yaw: 1-5.0 [1-3.5]
+> pitch: -8.0 [-8.0]
+> yaw: -7.5 [-7.5]
+> pitch: -12.0 [-12.0]
+> ya w:1-5.0 [1-5.5]
+> pitc h:-12.0 [-11.0]
+> yaw: -11.0 [-11.0]
+> pitch: -5.0 [-5.0]
+> yaw: -2.5 [-2.5]
+> pitch: -4.0 [-4.0]
+> yaw: -2.0 [-2.5]
+> pitch: -12.0 [-11.0]
+> yaw: -12.0 [-12.0]
+
+Figure 9. Examples of regression results on the MPIIFaceGaze dataset. The estimated and ground-truth values are specified under each image: estimated [true]. 
+
+18 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+C.2. More Comparison with DIR Methods 
+
+To further examine the effectiveness of ConOrd, we compare it with representative deep imbalanced regression (DIR) methods on standard DIR benchmarks under controlled settings. This evaluation uses the same backbone and evaluation protocol for all competing methods within each benchmark, thereby isolating the effect of the learning objective. 
+
+Datasets: Following DIR methods, we evaluate ConOrd on IMDB-WIKI-DIR, STS-B-DIR, and NYUD2-DIR, in addition to AgeDB-DIR. These benchmarks cover age estimation, text similarity prediction, and depth estimation, while containing imbalanced training distributions. • IMDB-WIKI-DIR: It is an age estimation benchmark derived from IMDB-WIKI (Rothe et al., 2018), consisting of face images with age labels. It contains 191,509 training images, 11,022 validation images, and 11,022 test images. • STS-B-DIR: It is a natural language regression benchmark derived from the Semantic Textual Similarity Benchmark (STS-B) (Cer et al., 2017), where the task is to predict a continuous similarity score between sentence pairs. Following Yang et al. (2021), it contains 5,249 training pairs, 1,000 validation pairs, and 1,000 test pairs. • NYUD2-DIR: It is a depth estimation benchmark constructed from the NYU Depth Dataset V2 (Silberman et al., 2012), which provides RGB images and depth maps for indoor scenes. Following standard practice (Hu et al., 2019), 50K images are used for training and 654 images are used for testing. 
+
+Experimental protocol and results: For AgeDB-DIR and IMDB-WIKI-DIR, we use ResNet-50 as the backbone. For STS-B-DIR, we use a BiLSTM with GloVe embeddings following Wang et al. (2018), and for NYUD2-DIR, we use a ResNet-50-based encoder–decoder (Hu et al., 2019). As shown in Table 10, ConOrd consistently outperforms competing DIR methods under identical conditions, confirming that the observed gains stem from the proposed objective.                                     
+
+> Table 10. Comparison with ordinal and DIR methods on standard DIR benchmarks under matched settings. Method AgeDB-DIR IMDB-WIKI-DIR STS-B-DIR NYUD2-DIR MAE ( ↓)MAE ( ↓)MSE ( ↓)RMSE ( ↓)RankSim (Gong et al., 2022) 7.02 7.50 0.903 –Ordinal Entropy (Zhang et al., 2023) 7.46 –––Rank-n-Contrast (Zha et al., 2023) 6.14 –––VIR (Wang & Wang, 2023) 6.99 7.19 0.892 1.305 ConR (Keramati et al., 2024) 7.20 7.33 –1.304 SRL (Dong et al., 2025) 7.22 7.69 0.877 –ConOrd 6.02 7.06 0.868 1.294
+
+Comparison on BIQA and BVQA benchmarks: We additionally compare ConOrd with DIR methods on BIQA and BVQA benchmarks. To ensure a fair comparison, all methods are implemented under the same backbone, training protocol, and evaluation pipeline as ConOrd. As shown in Table 11, ConOrd outperforms representative DIR methods on both BID and LSVQ-1080p. These results further confirm that the performance gains of ConOrd are attributable to the proposed objective rather than architectural or evaluation differences.                               
+
+> Table 11. Comparison with DIR methods on BID and LSVQ-1080p. Method BID LSVQ-1080p SRCC ( ↑)PCC ( ↑)SRCC ( ↑)PCC ( ↑)RankSim (Gong et al., 2022) 0.892 0.909 0.814 0.848 Ordinal Entropy (Zhang et al., 2023) 0.886 0.909 0.809 0.845 Rank-n-Contrast (Zha et al., 2023) 0.892 0.906 0.812 0.843 ConR (Keramati et al., 2024) 0.885 0.909 0.812 0.846 SRL (Dong et al., 2025) 0.900 0.921 0.814 0.847 ConOrd 0.913 0.925 0.818 0.851
+
+19 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+C.3. Hyperparameter Analysis Performance according to temperature τ in (3): Table 12 reports the performance of the proposed algorithm according to the temperature parameter τ in (3), which controls the smoothness of the representation distribution. We observe that the performance is relatively stable within a range 0.05 ≤ τ ≤ 0.10 , achieving the best results when τ = 0 .07 , with the minimal MAE on CLAP2015 and consistently high correlation scores on BID and LSVQ. With larger values ( e.g., τ ≥ 1.0), the performance degrades gradually across all datasets, indicating that excessively large temperature values reduce the effectiveness of the proposed contrastive learning objective. 
+
+Table 12. Performance of the proposed algorithm according to τ .CLAP2015 (Age) BID (BIQA) LSVQ-test (BVQA) 
+
+τ MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)
+
+0.05 2.475 0.910 0.925 0.904 0.904 
+
+0.06 2.462 0.912 0.926 0.903 0.903 
+
+0.07 2.461 0.913 0.925 0.904 0.904 
+
+0.08 2.480 0.913 0.931 0.903 0.904 
+
+0.09 2.466 0.911 0.921 0.903 0.903 
+
+0.10 2.530 0.911 0.924 0.903 0.903 
+
+0.50 2.576 0.901 0.913 0.897 0.893 
+
+1.00 2.591 0.888 0.905 0.897 0.894 
+
+1.50 2.589 0.883 0.901 0.895 0.892 
+
+2.00 2.770 0.888 0.900 0.892 0.890 
+
+We further visualize how the performance varies with the temperature parameter τ . As shown in Figure 10, both SRCC and PCC remain stable within a practical range ( 0.05 ≤ τ ≤ 0.10 ) and begin to deteriorate only when τ becomes excessively large. The corresponding training curves also indicate consistent convergence behavior across all settings. (a) Effect of  𝜏  on SRCC                                             
+
+> SRCC
+> 𝜏
+> 0.910
+> 0.905
+> 0.900
+> 0.895
+> 0.890
+> 0.885
+> 0.05 0.06 0.07 0.08 0.09 0.1 0.5 1.0 1.5 2.0 𝜏
+> PCC
+> 0.930
+> 0.925
+> 0.920
+> 0.915
+> 0.910
+> 0.900
+> 0.05 0.06 0.07 0.08 0.09 0.1 0.5 1.0 1.5 2.0
+> (b) Effect of 𝜏 on PCC (c) Effect of 𝜏 on training loss
+> Loss
+> 250
+> 50
+> 150
+> 200
+> Iteration
+> 010 20 30 40 50
+> 100
+> x
+> 𝜏 =0.05
+> 𝜏 =0.07
+> 𝜏 =0.1
+> 𝜏 =0.2
+> 𝜏 =0.5
+> 𝜏 =1.0
+> 𝜏 =2.0
+
+Figure 10. Sensitivity of ConOrd to the temperature parameter τ on the BID dataset. 
+
+Performance according to ϵ in (4): Table 13 presents the results for varying values of ϵ in (4), which is used to prevent division by zero in the affinity weight computation. The model yields stable performance across a wide range of ϵ values, indicating that it is robust to the choice of ϵ.
+
+Table 13. Performance of the proposed algorithm according to ϵ.CLAP2015 (Age) BID (BIQA) LSVQ-test (BVQA) 
+
+ϵ MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)
+
+10 −3 2.494 0.915 0.928 0.904 0.904 
+
+10 −4 2.483 0.925 0.926 0.904 0.904 
+
+10 −5 2.485 0.914 0.929 0.903 0.903 
+
+10 −6 2.472 0.914 0.930 0.902 0.903 
+
+10 −7 2.461 0.921 0.925 0.904 0.904 
+
+10 −8 2.484 0.910 0.928 0.903 0.903 
+
+10 −9 2.483 0.911 0.925 0.904 0.904 
+
+To complement the quantitative results in Table 13, we additionally visualize the effect of ϵ in Figure 11, showing its 20 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+influence on BID performance and training behavior. SRCC and PCC remain nearly unchanged across a wide range of ϵ,indicating strong robustness to this parameter. Training loss curves also show consistent convergence for all tested values. (a) Effect of  𝜀  on SRCC                                     
+
+> SRCC
+> 𝜀
+> 0.94
+> 0.93
+> 0.92
+> 0.91
+> 0.90
+> 0.89
+> 10 −910 −810 −710 −610 −510 −410 −3
+> 0.88
+> (c) Effect of 𝜀 on training loss
+> Loss
+> Iteration
+> 10.0
+> 4.0
+> 010 20 30 40 50
+> (b) Effect of 𝜀 on PCC
+> PCC
+> 𝜀
+> 0.94
+> 0.93
+> 0.92
+> 0.91
+> 0.90
+> 0.89
+> 10 −910 −810 −710 −610 −510 −410 −3
+> 0.88
+> 6.0
+> 8.0 x
+> 𝜀 =10 −3
+> 𝜀 =10 −4
+> 𝜀 =10 −5
+> 𝜀 =10 −6
+> 𝜀 =10 −7
+> 𝜀 =10 −8
+> 𝜀 =10 −9
+
+Figure 11. Sensitivity of ConOrd to ϵ on the BID dataset. 
+
+Performance according to k in (10): Table 14 reports the results for varying values of k used during k-NN inference. The performance remains stable across a broad range of k, with only marginal fluctuations across all datasets. The detailed configuration of the k values is provided in Table 8. 
+
+Table 14. Performance across different values of k used for k-NN inference. CLAP2015 (Age) AgeDB-DIR (Age) BID (BIQA) LSVQ-test (BVQA) 
+
+k MAE ( ↓) MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)4 2.461 5.232 0.910 0.924 0.894 0.892 10 2.483 5.159 0.913 0.925 0.901 0.900 20 2.496 5.158 0.909 0.923 0.903 0.903 30 2.503 5.158 0.910 0.924 0.904 0.904 40 2.496 5.154 0.910 0.923 0.904 0.904 50 2.487 5.158 0.910 0.923 0.904 0.904 60 2.486 5.145 0.910 0.923 0.904 0.904 
+
+C.4. Additional analysis Performance according to loss balancing factors in (9): Table 15 reports the impact of varying the weights of Lcenter 
+
+relative to LConOrd across three benchmark datasets. The results indicate that the model is relatively robust to changes in the loss balancing factor, with only minor variations in MAE, SRCC, and PCC. Notably, setting both weights to 1.0 yields the best MAE on CLAP2015, suggesting that equal emphasis on the ordinal contrastive term and the intra-class compactness term provides the most effective trade-off for stable and accurate learning. 
+
+Table 15. Performance according to loss balancing factors. CLAP2015 (Age) BID (BIQA) LSVQ-test (BVQA) Loss combination MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)
+
+1.0 × LConOrd + 0 .5 × Lcenter 2.484 0.9127 0.9182 0.903 0.904 
+
+1.0 × LConOrd + 0 .8 × Lcenter 2.488 0.9023 0.9170 0.903 0.903 
+
+1.0 × LConOrd + 1 .2 × Lcenter 2.487 0.9005 0.9158 0.904 0.904 
+
+1.0 × LConOrd + 1 .5 × Lcenter 2.485 0.9036 0.9173 0.902 0.903 
+
+1.0 × LConOrd + 1 .0 × Lcenter 2.461 0.9025 0.9165 0.904 0.904 
+
+21 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Additional configurations for loss in (3): Table 16 extends the analysis presented in Table 6 by including additional configurations of κij , aij , and bij , as well as results on datasets beyond CLAP2015. These additional configurations explore alternative formulations, such as square-root and logarithmic scaling (methods XI and XII) and truncated weights (method XIII). The table provides a comprehensive view of how different design choices influence results. Overall, it reaffirms the effectiveness of the proposed configuration (method VIII) in accurately capturing ordinal relationships. 
+
+Table 16. Performance according to different configurations of κij , a ij , b ij in (3). Note that method IX sets ∆ to 0 if ri = rj , and to a positive threshold of 5 otherwise. CLAP2015 (Age) BID (BIQA) LSVQ-test (BVQA) Method κij aij bij MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)I zTi zj 1                                                                                                                                                                                         
+
+> |ri−rj|+ϵ12.516 0.9095 0.9263 0.902 0.901 II zTizj1
+> |ri−rj|+ϵ|ri−rj|2.494 0.9044 0.9180 0.904 0.904 III zTizj1(ri−rj)2+ϵ12.483 0.9078 0.9235 0.903 0.903 IV zTizj1(ri−rj)2+ϵ(ri−rj)22.518 0.9088 0.9241 0.904 0.903 V−∥ zi−zj∥221
+> |ri−rj|+ϵ12.497 0.9086 0.9246 0.903 0.902 VI −∥ zi−zj∥221
+> |ri−rj|+ϵ|ri−rj|2.490 0.9096 0.9257 0.903 0.902 VII −∥ zi−zj∥221(ri−rj)2+ϵ12.472 0.9105 0.9242 0.902 0.902 VIII −∥ zi−zj∥221(ri−rj)2+ϵ(ri−rj)22.461 0.9128 0.9250 0.904 0.904 IX −∥ zi−zj∥22(∆ 2+ϵ)−1∆22.536 0.6951 0.6948 0.834 0.830 X−∥ zi−zj∥22Learnable aij Learnable bij 2.880 0.6679 0.6854 0.882 0.881 XI −∥ zi−zj∥221√|ri−rj|+ϵ
+> p|ri−rj|2.473 0.9099 0.9240 0.901 0.900 XII −∥ zi−zj∥221log(1+ |ri−rj|)+ ϵlog(1 + |ri−rj|)2.500 0.9038 0.9199 0.901 0.900 XIII −∥ zi−zj∥22
+> (1
+> |ri−rj|+ϵ,if |ri−rj|<10 ,
+> 110 ,otherwise ,
+> (
+> |ri−rj|,if |ri−rj|<10 ,
+> 10 ,otherwise .2.500 0.8958 0.9143 0.900 0.899
+
+Effect of Lcenter : We evaluate the impact of the center loss by applying Lcenter to LSupCon , LRnC , and LConOrd . As shown in Table 17, ConOrd performs strongly even without the center term, confirming that its gains mainly arise from the loss design itself. Adding Lcenter yields small improvements and does not alter the relative ranking among methods. Overall, the center loss acts as a mild stabilizer rather than a key performance factor. 
+
+Table 17. Ablation of the effect of the center loss Lcenter .CLAP2015 (Age) BID (BIQA) LSVQ-1080p (BVQA) Method MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)
+
+LSupCon 2.625 0.819 0.876 0.614 0.682 
+
+LSupCon + Lcenter 2.610 0.815 0.875 0.622 0.689 
+
+LRnC 2.531 0.892 0.906 0.812 0.843 
+
+LRnC + Lcenter 2.745 0.892 0.906 0.808 0.839 
+
+LConOrd 2.509 0.909 0.925 0.815 0.848 
+
+LConOrd + Lcenter 2.461 0.913 0.925 0.818 0.851 
+
+Initialization of reference points μm: We assess several initialization strategies for μm. On the BID dataset, random, zero, truncated normal, and Kaiming normal initializations yield nearly identical results, indicating that the method is largely insensitive to initialization. 
+
+Table 18. Performance across different initialization schemes for μm on BID. Init. method Random Zeros Trunc. Normal Kaiming Normal SRCC 0.913 0.910 0.913 0.910 PCC 0.925 0.922 0.925 0.925 
+
+We further test initializing μm with the per-rank mean feature. Although this variant offers a small performance gain, it incurs a substantial overhead due to the extra dataset pass. Thus, random initialization is a more efficient choice. 
+
+Table 19. Random initialization versus mean-feature initialization. Method SRCC PCC Time (s) Random init. 0.913 0.925 1.21 ×10 −3
+
+Mean-feature init. 0.915 0.932 5.25 
+
+22 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Resilience to reduced training data: To assess robustness under limited ordering information, we progressively subsample the AgeDB-DIR training set and compare the resulting MAE performance — evaluated on the full test set — of ConOrd with SupCon and RnC. As shown in Table 20, ConOrd consistently outperforms both baselines across all sampling ratios. The advantage is most pronounced in low-data settings ( e.g., ratios of 0.1 and 0.3), suggesting that ConOrd learns more sample-efficient and stable ordinal representations when supervision is scarce. 
+
+Table 20. MAE results on AgeDB under different training-set sampling ratios, where each ratio denotes the proportion of training data used. Sampling ratio LSupCon LRnC LConOrd + Lcenter 
+
+0.1 6.948 6.953 6.690 0.3 6.022 6.009 5.881 0.5 5.855 5.655 5.574 0.8 5.457 5.287 5.261 1.0 5.361 5.192 5.145 
+
+Robustness to data corruption: We adopt the corruption process defined in the ImageNet-C protocol (Hendrycks & Dietterich, 2019) and apply it to the AgeDB-DIR test set to evaluate robustness under data degradation. All methods are trained on the clean AgeDB-DIR training data, and MAE is measured on corrupted versions of the test images across 19 corruption types and severity levels 0–5. As shown in Table 21, ConOrd achieves the best performance under clean conditions (severity 0) and exhibits the slowest degradation as severity increases. Even at the highest corruption level (severity 5), ConOrd maintains a lower MAE than SupCon and RnC, indicating stronger robustness to corrupted inputs. 
+
+Table 21. MAE results on AgeDB-DIR under test-time data corruptions. Corruption severity level LSupCon LRnC LConOrd + Lcenter 
+
+0 5.361 5.192 5.145 1 6.454 6.253 5.993 2 7.273 7.127 6.718 3 8.196 7.957 7.430 4 9.648 9.311 8.589 5 11.577 11.165 10.187 
+
+While Tables 20 and 21 summarize the numerical results, the corresponding visualizations in Figure 12 help illustrate the relative performance trends. In both reduced-data and corruption scenarios, ConOrd shows a consistently favorable margin over the baselines. Sampling ratio       
+
+> MAE
+> 0.1 0.3 0.5 0.8 1.0
+> 7.00
+> 6.75
+> 6.50
+> 6.25
+> 6.00
+> 5.75
+> 5.50
+> 5.25
+> 5.00
+> 𝐿 SupCon
+> 𝐿 RnC
+> 𝐿 ConOrd +𝐿 center
+
+(a) Resilience to reduced training data. MAE        
+
+> Corruption severity level
+> 12
+> 11
+> 9
+> 8
+> 6
+> 5
+> 01235
+> 𝐿 SupCon
+> 𝐿 RnC
+> 𝐿 ConOrd +𝐿 center
+> 4
+> 10
+> 7
+
+(b) Robustness to data corruption. 
+
+Figure 12. Comparison of SupCon, RnC, and ConOrd under reduced supervision and test-time corruptions. 
+
+23 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Standard deviation of performance: To assess the reliability of ConOrd, we report the mean and standard deviation across multiple random seeds. We use five seeds for the age estimation (CLAP2015) and BVQA (LSVQ-test) benchmarks, and ten seeds for the BIQA (BID) task. Table 22 summarizes the resulting variability. ConOrd exhibits stable performance across datasets. 
+
+Table 22. Mean and standard deviation of ConOrd across multiple random seeds. CLAP2015 (Age) BID (BIQA) LSVQ-test (BVQA) MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)
+
+LSupCon 2.6058 ± 0.0121 0.8182 ± 0.0052 0.8754 ± 0.0035 0.7576 ± 0.0034 0.7660 ± 0.0032 
+
+LRnC 2.5324 ± 0.0202 0.8901 ± 0.0260 0.9041 ± 0.0237 0.9024 ± 0.0006 0.9004 ± 0.0011 
+
+ConOrd 2.4698 ± 0.0122 0.9118 ± 0.0243 0.9255 ± 0.0183 0.9040 ± 0.0007 0.9036 ± 0.0009 
+
+t-SNE visualization of learned embeddings: Figure 13 provides a qualitative t-SNE comparison of embeddings learned by 
+
+LSupCon , LRnC , and LConOrd + Lcenter on the BID dataset. While t-SNE does not preserve global geometry and should be interpreted with caution, some overall trends can be observed. SupCon yields largely mixed points with no apparent ordering, and RnC shows a coarse progression but with some overlap between neighboring quality levels. ConOrd produces a more coherent progression of points along a smooth trajectory, suggesting that its embedding space reflects ordinal structure more clearly under this visualization. 0.0
+
+5.0
+
+MOS 
+
+c 𝐿 ConOrd + 𝐿 center b 𝐿 RnC a 𝐿 SupCon 
+
+Figure 13. t-SNE visualization of embeddings learned by SupCon, RnC, and ConOrd on the BID dataset. Colors denote MOS scores. 
+
+Training stability and gradient dynamics: Figure 14 compares the optimization behavior of the first eight weighting configurations listed in Table 6. All configurations show smooth, monotonic decreases in training loss without signs of instability or divergence, indicating that the ConOrd formulation remains robust across a wide range of affinity-disparity designs. The gradient norms differ moderately in scale but remain consistently bounded and settle quickly into steady ranges. These results confirm that all eight variants exhibit well-behaved gradients and stable training dynamics, demonstrating the resilience of the proposed contrastive order formulation. -6           
+
+> (b) Gradient norm curves
+> Loss
+> (a) Training loss curves
+> -8
+> -10
+> -12
+> -14
+> 020 40 60 80 100
+> 350
+> Gradient norm
+> 300
+> 250
+> 200
+> 0500
+> Method I
+> Method II
+> Method III
+> Method IV
+> Method V
+> Method VI
+> Method VII
+> Method VIII
+> 1000 1500 2000 2500 3000
+> 150
+> 50
+> 100
+> Epochs Iterations
+> Method I
+> Method II
+> Method III
+> Method IV
+> Method V
+> Method VI
+> Method VII
+> Method VIII
+
+Figure 14. Training loss and gradient-norm dynamics across different weighting configurations, showing stable convergence and controlled gradients in all cases. 
+
+24 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Label frequency-aware weighting: Incorporating label frequency can further improve performance in highly imbalanced settings. Letting fr denote the frequency of rank r, using frequency-aware reweighting reduces AgeDB-DIR MAE from 5.15 to 5.06, as shown in Table 23. 
+
+Table 23. Effect of label frequency-aware weighting on AgeDB-DIR. Method aij bij AgeDB-DIR Proposed 1(ri − rj )2 + ϵ (ri − rj )2 5.15 Frequency-aware 1(ri − rj )2 + ϵ · 1
+
+pfri frj
+
+(ri − rj )2 ·
+
+q
+
+fri frj 5.06 
+
+Beyond k-NN inference: Since ConOrd learns a metric-structured ordinal embedding space, k-NN serves as a natural nonparametric readout rather than a disconnected inference rule. However, ConOrd is not restricted to k-NN inference and also performs well with classification or regression heads, as shown in Table 24. 
+
+Table 24. Compatibility of ConOrd with classification and regression heads. CLAP2015 BID LSVQ-test Method MAE ( ↓) SRCC ( ↑) PCC ( ↑) SRCC ( ↑) PCC ( ↑)
+
+LCE 2.605 0.742 0.762 0.902 0.901 
+
+LCE + LConOrd + Lcenter 2.599 0.876 0.881 0.904 0.903 
+
+LMAE 2.506 0.881 0.900 0.903 0.902 
+
+LMAE + LConOrd + Lcenter 2.481 0.899 0.914 0.904 0.904 
+
+Effectiveness as an auxiliary loss: We further examine whether ConOrd can be used as a plug-and-play auxiliary loss for an existing ordinal regression model. Specifically, we add LConOrd to LoDa(Xu et al., 2024) without architectural modifications. As shown in Table 25, adding ConOrd improves both SRCC and PCC on the CLIVE dataset, demonstrating that the proposed loss can complement existing task-specific objectives. 
+
+Table 25. Effectiveness of ConOrd as an auxiliary loss on LoDa(Xu et al., 2024) for the CLIVE dataset. Method SRCC ( ↑) PCC ( ↑)
+
+Lplcc (Original LoDa) 0.876 0.896 
+
+Lplcc + LConOrd 0.880 0.900 
+
+Subgroup analysis: We conduct subgroup analysis on the AgeDB-DIR test set to examine potential demographic bias. As shown in Table 26, ConOrd shows comparable performance across gender groups, with slightly higher MAE for female samples. Across age groups, the MAE is higher for the youngest and oldest groups, particularly for the 80+ group, likely due to fewer samples and larger appearance variation. 
+
+Table 26. Subgroup analysis on the AgeDB-DIR test set. Analysis Group # samples MAE ( ↓)Gender Female 867 5.51 Gender Male 1273 4.90 Age 0–19 158 5.70 Age 20–39 600 4.50 Age 40–59 600 5.09 Age 60–79 595 5.19 Age 80+ 187 6.77 
+
+25 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+C.5. Complexity 
+
+We use PyTorch and NVIDIA GeForce RTX 4090 GPUs for all experiments. 
+
+Training time: Table 27 compares the average training times required for training one epoch on the SPAQ dataset. The proposed algorithm achieves the fastest training time per epoch. This efficiency is attributed to its design, which eliminates the need for data augmentation and pairwise sample construction. Unlike LSupCon and LRnC , which should generate augmented sample pairs during training, the proposed ConOrd eliminates this step and improves efficiency. The RnC loss incurs the longest training time because it needs to dynamically select negative samples based on label distances for each anchor-positive pair. This conditional filtering introduces computational overhead and hinders parallelization. In contrast, ConOrd uses fixed weight masks, allowing more efficient and parallel computations. Thus, the proposed ConOrd loss requires the shortest computation time.           
+
+> Table 27. Comparison of processing times required for training one epoch on SPAQ. Algorithm Time (s)
+> LSupCon in (1) 41.7
+> LRnC in (7) 65.5
+> LConOrd +Lcenter in (9) 31.8
+
+Testing time on SPAQ: We also report the average testing time on the SPAQ dataset. The whole process takes only 
+
+5.0 × 10 −3 seconds to test an image on average: 10 .0 seconds for the full test feature extraction, and 1.5 × 10 −4 seconds for the score estimation. Hence, ConOrd provides a computationally efficient solution for practical deployment. 
+
+Testing time on CLAP2015, BID, and LSVQ-test: To further evaluate the reliability of the k-NN inference, we measure the end-to-end test-time latency for processing each full test dataset. We repeat this measurement over multiple runs and report the mean and standard deviation in Table 28. Compared with the state-of-the-art baselines for each task — NumCLIP for age estimation, LoDa for BIQA, and DOVER for BVQA — ConOrd achieves consistently faster and stable test-time performance across all datasets. While the k-NN inference complexity grows linearly with the training set size, the empirical results in Table 28 indicate that test-time latency remains low and stable at practical dataset scales.                           
+
+> Table 28. Mean and standard deviation of end-to-end test-time latency, measuring the variability of k-NN inference, on the CLAP2015, BID, and LSVQ-test datasets. Method CLAP2015 (Age) BID (BIQA) LSVQ-test (BVQA) SOTA baseline NumCLIP: 5.15 ±0.42 sLoDa: 5.63 ±0.31 sDOVER: 1222 .36 ±9.04 sConOrd ( k-NN) 2.16 ±0.14 s0.88 ±0.05 s253 .70 ±7.65 s
+
+Loss complexity: To provide a clearer comparison of efficiency, we report the per-batch loss computation time and the GPU memory usage associated with computing LConOrd , LRnC , and the BIQA loss used in QCN. As summarized in Tables 29 and 30, LConOrd is the most computationally efficient in terms of runtime, while also maintaining low memory usage compared to prior methods.             
+
+> Table 29. Loss-level computation time on BID (batch size = 32). Method LConOrd LRnC QCN Loss computation time (batch size = 32) 4.6ms 8.7ms 8.5ms
+> Table 30. GPU memory usage for loss computation on BID. Algorithm Memory
+> LConOrd 2.17MB
+> LRnC 1.17MB QCN 273.78MB
+
+26 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+Training time per epoch: To further evaluate scalability beyond per-batch loss computation time, we report the training time per epoch on both the smaller BID dataset and the larger KonIQ-10k dataset. As shown in Table 31, despite all-pair interactions, ConOrd has training cost comparable to RnC (Zha et al., 2023) and is far more efficient than QCN (Shin et al., 2024), while scaling well to larger datasets.           
+
+> Table 31. Training time per epoch on BID and KonIQ-10k. Dataset LConOrd LRnC QCN (Shin et al., 2024) BID 5.69s 5.65s 46.7s KonIQ-10k 24.5s 27.5s 287.4s
+
+Model efficiency: Table 32 compares the model complexity of the proposed BIQA algorithm with those of other recent algorithms. The proposed algorithm adopts ViT-B as the encoder, resulting in a complexity of 86M. While this is not the smallest among the compared models, the proposed algorithm consistently outperforms others across multiple BIQA benchmarks. In particular, it achieves better performance than LoDa, which uses a larger model, and LQMamba, which employs the same encoder architecture.        
+
+> Table 32. Comparison with BIQA algorithms in terms of network complexity. Algorithm # parameters (M) ReIQA (Saha et al., 2023) 47 LQMamba (Guan et al., 2024) 86 QCN (Shin et al., 2024) 30 LoDa (Xu et al., 2024) 95 ConOrd ( Proposed) 86
+
+27 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+## D. Regression Results 
+
+Figures 15, 16, and 17 show regression results of the proposed ConOrd on the facial age estimation, BIQA, and BVQA tasks, respectively. 
+
+D.1. Facial Age Estimation MORPHII 
+
+16  [16] 
+
+18  [17] 
+
+21  [21] 
+
+20  [20] 
+
+30  [30] 
+
+29  [29] 
+
+34  [34] 
+
+33  [33] 
+
+50  [50] 
+
+42  [42] 
+
+56  [56] 
+
+50  [50] 
+
+45  [44] 
+
+39  [39] 
+
+41  [41] 
+
+35  [35] 
+
+38  [45] 
+
+23  [33] 
+
+> UTK
+
+24  [24]  29  [29]  36  [36]  42  [42]  45  [45]  55  [55]  56  [56] 50  [50]  32  [45] 
+
+24  [24]  29  [29]  34  [34]  42  [42]  47  [46]  55  [55]  53  [55] 52  [52]  35  [23] 
+
+> CLAP2015
+
+17  [17] 
+
+8 [8] 
+
+21  [21] 
+
+19  [19] 
+
+25  [25] 
+
+30  [30] 
+
+32  [32] 
+
+36  [36] 
+
+52  [51] 
+
+58  [58] 
+
+53  [53] 
+
+68  [68] 
+
+46  [46] 
+
+45  [45] 
+
+37  [37] 
+
+41  [42] 
+
+42  [50] 
+
+38  [31] 
+
+> AgeDB
+
+15  [15 ]
+
+12  [12] 
+
+20  [20] 
+
+24  [24] 
+
+34  [34] 
+
+31  [31] 
+
+39  [39] 
+
+38  [38] 
+
+60  [60] 
+
+67  [67] 
+
+80  [80] 
+
+71  [71] 
+
+45  [45] 
+
+48  [48] 
+
+42  [42] 
+
+40  [40] 
+
+47  [36] 
+
+25  [16] 
+
+> CACD
+
+23  [23] 
+
+22  [22] 
+
+27  [27] 
+
+24  [24] 
+
+32  [32] 
+
+30  [30] 
+
+35  [35] 
+
+33  [33] 
+
+41  [41] 
+
+43  [43] 
+
+50  [50] 
+
+50  [50] 
+
+39  [39] 
+
+38  [38] 
+
+36  [36] 
+
+36  [36] 
+
+54  [42] 
+
+34  [22] 
+
+> Adience
+
+0 [0] 
+
+0 [0] 
+
+1 [1] 
+
+1 [1] 
+
+2 [2] 
+
+2 [2] 
+
+3 [3] 
+
+3 [3] 
+
+6 [6] 
+
+6 [6] 
+
+7 [7] 
+
+7 [7] 
+
+5 [5] 
+
+5 [5] 
+
+4 [4] 
+
+4 [4] 
+
+3 [0] 
+
+4 [6] 
+
+(a) Successful cases  (b) Failure cases 
+
+Figure 15. (a) Success and (b) failure cases of regression results on the facial age estimation datasets. Under each image, the estimated age is specified with the ground-truth in brackets. 
+
+28 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+D.2. Blind Image Quality Assessment (a)  Successful cases  (b) Failure case 
+
+> BID
+
+4.02  [4.76 ]1.19  [1.23]  2.91  [2.99 ] 3.43  [3.49 ]2.21  [2.30] 
+
+1.3 3 [1.25]  1.68  [1.6 8] 0.7 1 [0.29 ]2.33  [2.17]  3.20  [3.07 ]
+
+1.63  [1.70] 
+
+2.70  [2.57 ]
+
+0.94  [0.97] 
+
+1.9 9 [1.85] 
+
+> CLIVE
+
+19.2  [21.6]  41.3  [41.3]  65.1  [66.6 ] 72.2  [72.7 ] 77.5  [80.9 ]
+
+23.3  [21.7]  74.7  [73.4 ]45.6  [43.6]  63.7  [62.3 ] 70.9  [70.3 ]
+
+55.2  [56.2 ]
+
+56.5  [53.9]  21.7  [9.5 ]
+
+79.9  [90.3 ]
+
+> KonIQ10k
+
+81.3  [86.4 ]
+
+15.7  [9.7 ]
+
+59.0  [61.3 ] 70.9  [71.0 ]19. 5 [21.2]  35.3  [36.9]  54.1  [55.3 ]
+
+23.0  [23.0]  30.2  [29.4]  47.3  [45.7 ] 65.1  [64.3 ] 80. 0 [78.2 ]
+
+42.2  [43.5 ]
+
+39.3  [38.1] 
+
+> SPAQ
+
+14.2  [4.2 ]78.9  [78.0 ]19.2  [18.3]  29.6  [28.1]  60.6  [60.3 ] 70.3  [68.0 ]
+
+78.7  [88.7 ]54.1  [56.9]  68.8  [70.2 ]21.5  [22.1]  48.8  [49.0 ]35.7  [36.5] 
+
+43.0  [40.3] 
+
+42.1  [44.2] 
+
+> FLIVE
+
+71.3  [72.7 ] 72.0  [72.5 ]63.3  [65.7]  70.8  [71.6]  78.0  [78.3 ] 76.2  [89.8 ]
+
+35.3  [13.6 ]42.4  [41.7]  67.8  [67.3]  75.2  [75.0 ]69.2  [67.4 ] 70.5  [69.5 ]
+
+57.5  [59.0] 
+
+57.5  [56.5] 
+
+Figure 16. (a) Success and (b) failure cases of regression results on the BIQA datasets. Under each image, the estimated quality score is specified with the ground-truth in brackets. 
+
+29 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+D.3. Blind Video Quality Assessment (a)  Successful cases  (b) Failure case 
+
+> LSVQ -test
+
+81.58  [87.44 ]
+
+30.66  [24.13 ]
+
+> LSVQ -1080p
+
+76.19  [86.54 ]
+
+35.06  [21.95 ]
+
+> KoNViD -1k
+
+3.39  [4.12 ]
+
+2.11  [1.42 ]
+
+> LIVE -VQC
+
+71.60  [85.21 ]
+
+75.79  [90.33 ]
+
+> CVD2014
+
+52.90  [17.96 ]
+
+79.02  [93.38 ]
+
+> YouTube -UGC
+
+2.04  [1.4 8]
+
+3.98  [4.6 4]3.20  [3.22 ]
+
+57.97  [58.00] 
+
+52.46  [52.66] 
+
+65.62  [65.57 ]
+
+58.75  [58.81] 
+
+2.44  [2.4 4]
+
+2.40  [2.40 ]
+
+58.70  [58.61 ]
+
+60.14  [60.06] 
+
+64.35  [64.28] 
+
+71.85  [69.37] 
+
+2.33  [2.32] 
+
+2.37  [2.37] 
+
+70.20  [70.19 ]
+
+64.30  [64.32 ]
+
+75.97  [75.92 ]
+
+67.22  [67.21 ]
+
+3.20  [3.2 0]
+
+3.0 6 [3.08 ]
+
+66.61  [66.54] 
+
+67.48  [67.61] 
+
+67.21  [67.29] 
+
+75.15  [72.57 ]
+
+3.09  [3.09 ]
+
+63.69  [63.63 ]
+
+63.58  [63.50 ]
+
+71.78  [71.77 ]
+
+60.61  [60.69] 
+
+2.74  [2.7 4]
+
+2.79  [2.78] 
+
+61.50  [61.43] 
+
+62.87  [62.36] 
+
+66.93  [66.67] 
+
+76.63  [77.09] 
+
+2.57  [2.59 ]
+
+2. 81 [2.80] 
+
+53.41  [53.35] 
+
+49.40  [49.44] 
+
+52.56  [52.60] 
+
+47.24  [47.19] 
+
+1.78  [1.7 8]
+
+1.85  [1.8 4]
+
+52.79  [52.94 ]
+
+43.25  [43.73] 
+
+62.62  [62.54] 
+
+69.08  [68.36] 
+
+1.79  [1.7 9]
+
+1.99  [1.97] 
+
+78.91  [78.97 ]
+
+67.45  [67.38 ]
+
+79.72  [79.76 ]
+
+78.09  [78.05 ]
+
+3.45  [3.48 ]
+
+3.7 1 [3.74 ]
+
+71.73  [71.48 ]
+
+75.01.  [75.22 ]
+
+71.81  [72.46 ]
+
+77.77  [80.15 ]
+
+3.71  [3. 70]
+
+3.61  [3.58 ]
+
+66.81  [66.73 ]
+
+76.72  [76.66] 
+
+76.11  [76.16 ]
+
+71.98  [71.92 ]
+
+3.39  [3.40 ]
+
+3.26  [3.26 ]
+
+70.70  [70.84 ]
+
+68.79  [69.51 ]
+
+71.85  [71.29 ]
+
+77.78  [76.79 ]
+
+3.48  [3.4 5]
+
+3.28  [3.28 ]
+
+Figure 17. (a) Success and (b) failure cases of regression results on the BVQA datasets. Under each image, the estimated quality score is specified with the ground-truth in brackets. 
+
+30 Contrastive Order Learning: A General Framework for Ordinal Regression 
+
+## E. Limitations 
+
+As shown in Appendix D, the proposed algorithm generally demonstrates strong predictive performance across a variety of regression tasks and dataset types. However, along with successful cases, failure cases are also illustrated in Figures 15(b), 16(b), and 17(b). It is observed from Figure 15(b) that for the task of facial age estimation, the model may under- or over-estimate ages when age-related visual cues are ambiguous or degraded, such as under atypical lighting conditions, strong shadows, or reduced texture contrast. From the BIQA and BVQA results in Figures 16(b) and 17(b), we observe that prediction errors are more frequent when MOS values are extremely low or high. This appears to stem from the limited representation of such samples in the training data, suggesting that the performance could be further improved by adopting learning strategies that better handle imbalanced data distributions. 31

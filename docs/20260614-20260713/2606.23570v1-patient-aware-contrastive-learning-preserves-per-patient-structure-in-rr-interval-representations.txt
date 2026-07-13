@@ -1,0 +1,434 @@
+Title: Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations
+
+URL Source: https://arxiv.org/pdf/2606.23570v1
+
+Published Time: Tue, 23 Jun 2026 03:29:28 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+Yasantha Niroshana * 1 Weijith Wimalasiri * 1 Chathuranga Hettiarachchi 1
+
+## Abstract 
+
+Contrastive representation learning struggles on physiological signals when each subject con-tributes a distinct baseline pattern. If class dif-ferences overlap with subject differences, class-level objectives such as supervised contrastive learning tend to merge per-subject structure into a single per-class cluster, removing the individ-ual variation that a model needs to generalize to unseen patients. We study this problem in the setting of Paroxysmal Atrial Fibrillation (PAF) detection from RR-interval (RRI) sequences and propose a patient-aware contrastive objective that forms positive pairs only from same-patient, same-class segments, preserving each patient’s own sinus rhythm (SR) baseline while still pushing the two classes apart. Examining the learned embeddings directly, our objective achieves the most consistent per-patient SR structure (cohe-sion 0.850 vs. 0.800 for supervised contrastive loss (SupCon) and 0.772 for binary cross-entropy (BCE)). We also identify that BCE produces the cleanest global class separation yet the most disor-dered per-patient structure. This is precisely why a linear probe trained on its features breaks down on unseen patients. On the IRIDIA-AF dataset, the resulting representation reaches a patient-independent Area Under the Receiver Operating Characteristic Curve (AUROC) of 0.989 ± 0.003 
+
+with 2.6× lower seed variance than supervised contrastive baselines. These results highlight that per-subject geometric consistency, rather than global class separability, is key to robust cross-patient generalization. 
+
+> 1
+
+Department of Computer Science, University of Moratuwa, Sri Lanka. Correspondence to: Yasantha Niroshana <yasan-tha.21@cse.mrt.ac.lk >.
+
+Preprint. June 23, 2026. 
+
+> 0
+
+Code - github.com/EML-Labs/pacl-rri-af 
+
+## 1. Introduction 
+
+Contrastive representation learning is now the default for unlabeled and weakly-labeled time-series and physiological signals (Chen et al., 2020; Le-Khac et al., 2020; Wang & Isola, 2020; Khosla et al., 2021). However, its standard for-mulations assume that every same-class example is equally suitable as a positive. This assumption breaks down on data where each example carries both a class label y and a subject identifier p. When class differences are partly aligned with subject differences, instance-level objectives blend class and identity together. While class-level objectives such as supervised contrastive learning fold each subject’s distinct physiology into a single shared class cluster. The resulting embeddings look well-separated overall yet are inconsistent within each subject. Therefore, a linear probe trained on one cohort fails to transfer to another. Our position is that what generalizes across subjects is not how cleanly classes are separated overall, but how consistently each subject is represented. We study how to build this property directly into the con-trastive objective. We instantiate this question on RRI se-quences for Atrial Fibrillation (AF) detection: every patient has a distinct SR baseline, AF dynamics vary across in-dividuals, and generalizing to unseen patients is the main bottleneck. Andersen et al. reported sensitivity dropping from 98 .98% to 86 .04% on held-out patients (Andersen et al., 2019; De With et al., 2020; Joglar et al., 2024). Self-supervised and contrastive methods have shown promise for Electrocardiogram (ECG) signals (Grill et al., 2020; Liu et al., 2023; Hu et al., 2025; Sun et al., 2025; Chen et al., 2025), and patient-level objectives have been studied for unsupervised ECG pre-training (Kiyasseh et al., 2021; Diamant et al., 2022). What is missing is a positive-pair construction that is simultaneously class-aware and subject-aware, so it directly targets the per-class, per-subject struc-ture that governs cross-patient transfer. 
+
+Contributions. 
+
+• A patient-aware contrastive objective that, for each anchor, treats only same-patient, same-class segments as positives, preserving each subject’s individual struc-ture while still pulling apart classes. 1
+
+> arXiv:2606.23570v1 [cs.LG] 22 Jun 2026 Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations
+
+• An embedding geometry analysis that explains the mechanism: our objective attains the highest per-patient SR cohesion among the compared losses. We also identify that BCE gives the cleanest global class separation yet the most disordered per-patient struc-ture. This is consistent with its weaker transfer to new patients. • Downstream validation on AF detection via frozen-encoder linear probing on IRIDIA-AF, reaching AU-ROC 0.989 ±0.003 with 2.6× lower seed variance than supervised contrastive baselines. 
+
+Related work. Contrastive representation learning has pro-gressed from instance discrimination objectives (Chen et al., 2020; Grill et al., 2020) to label-aware extensions (Khosla et al., 2021), with Wang & Isola (2020) describing the geometry of the learned representations through align-ment and uniformity on the hypersphere. In the cardiac domain, several patient-level contrastive variants exist: 
+
+CLOCS (Kiyasseh et al., 2021) contrasts ECG segments across space, time, and patients but is unsupervised and treats any same-patient pair as a positive; PCLR (Diamant et al., 2022) uses same-patient recordings as positives in a SimCLR-style instance task; PMQ (Sun et al., 2025) adds a patient memory queue to enrich intra-patient comparisons during pre-training. All three are unsupervised pre-training methods that use patient identity to define positives without using class labels. Our objective, in contrast, is a supervised 
+
+one whose positive set is the intersection of class label and patient identity—it relies on class supervision to prevent su-pervised contrastive learning from collapsing each subject into a shared class cluster, while using subject identity to prevent unsupervised methods from blending class and iden-tity. To our knowledge, no prior work applies this combined class-and-subject construction to PAF detection or analyses the resulting embedding geometry at the per-subject level. 
+
+## 2. Methodology 
+
+2.1. Dataset and Preprocessing 
+
+We use IRIDIA-AF (Gilon et al., 2023), comprising long-term single-lead ECG recordings from 167 patients with paroxysmal AF. Episodes are retained when AF duration 
+
+≥ 1 hr and the immediately preceding SR duration ≥ 4 hr. Splits are patient-level (119/24/24 train/val/test); after qual-ity filtering, 154/27/24 episodes remain. RRI sequences are RobustScaler normalized per-patient using the first SR hour as the fit window, with classification windows drawn from a strictly disjoint subsequent hour (Appendix A and Figure 3 therein). The normalized stream is segmented with a sliding window of W = 200 beats and stride S = 50 beats. Physi-ologically implausible beats ( < 200 ms or > 2000 ms) are discarded. Normal  AFib ABCNormal AFib  
+
+> Figure 1. Standard supervised contrastive learning (left) treats all same-class segments as positives regardless of subject. The proposed patient-aware formulation (right) restricts positives to same-patient, same-class segments.
+
+2.2. Patient-Aware Mini-Batch Sampling 
+
+Each mini-batch samples P patients, each contributing n
+
+SR and n AF windows ( B = 2 nP ). A patient is eligible only if both its SR and AF pools contain at least n windows, guaranteeing intra-patient, intra-class positive pairs in every batch and enforcing class balance across patients. 
+
+2.3. A Patient-Aware Contrastive Objective 
+
+We formulate the objective as a generic template for subject-structured data, where each sample carries a class label 
+
+y and a subject identifier p. The positive set is defined to be intra-class and intra-subject . SR/AF (PAF detection) is the instantiation used here. The construction applies wherever samples are grouped by subject and the within-subject variation is informative. For an anchor i with class 
+
+yi and subject pi, the positive P(i) and negative N (i) sets are, 
+
+P(i) =  j̸ = i pj = pi ∧ yj = yi , (1) 
+
+N (i) =  j̸ = i yj̸ = yi . (2) Critically, same-class segments from different subjects are excluded from P(i), preventing the encoder from collapsing distinct individual SR baselines into a single shared proto-type. This is the key departure from supervised contrastive learning (Khosla et al., 2021) (Figure 1). The per-anchor loss is the standard InfoNCE formulation, 
+
+Li = − log 
+
+P 
+
+> j∈P (i)
+
+exp( sij )
+
+P 
+
+> j∈P (i)
+
+exp( sij ) + P  
+
+> k∈N (i)
+
+exp( sik ) , (3) with sij = ˆ z⊤ 
+
+> i
+
+ˆzj /τ and learnable temperature τ ; the batch loss is L = 1
+
+> B
+
+P 
+
+> i
+
+Li.
+
+2.4. Encoder and Training 
+
+We use a lightweight multi-branch CNN backbone to demon-strate that the gains come from the loss, not from model capacity. This is to remain compatible with edge wearable hardware. The encoder consists of three parallel 1D-CNN 2Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+branches ( k ∈ { 3, 5, 7}) with stride convolutions (channels 16, 32, 64) (Szegedy et al., 2015), Group Normalization (Wu & He, 2018), and ReLU. Branch outputs are fused by a 
+
+1×1 convolution and pooled by a softmax temporal atten-tion module (Shashikumar et al., 2018). A two-layer MLP projects to R128 , and both projection and pooled outputs are 
+
+ℓ2-normalized to the unit hypersphere (Wang & Isola, 2020). The contrastive loss acts on the projected embedding ˆe. The linear probe is trained on the pooled output ˆz. All three loss functions (Proposed, SupCon, BCE) are trained with the identical patient-aware sampler described in Section 2.3. The sampler is not varied across conditions. Training uses AdamW with a cosine scheduler. We use Optuna-TPE hy-perparameter optimization (Akiba et al., 2019) to select the hyperparameters on the validation split (full configuration in Appendix B). 
+
+## 3. Experiments 
+
+Protocol. We adopt frozen encoder linear probing, a stan-dard representation quality readout in contrastive learn-ing (Wang & Isola, 2020; Chen et al., 2020; Khosla et al., 2021). Probe performance reflects the embedding geometry rather than classifier capacity. All experiments are repeated over five independent seeds and reported as mean ± std on the held-out patient-independent test split. 
+
+3.1. Embedding Geometry 
+
+We probe the embedding geometry directly. We compare the proposed objective against SupCon (Khosla et al., 2021) and BCE baselines, fixing the encoder, sampler, and probe. Only the temperature (when applicable) τ and learning rate is varied to find the best performance. We measure, • Per-patient class cohesion , the mean cosine similarity of same-patient same-class embeddings. • Global class separability via centroid distance, centroid cosine similarity, and compactness ratio • Per-patient compactness ratio. Full definitions are in Appendix C. Results are summarized in Table 1. SR cohesion is the primary metric because sinus rhythm is each patient’s individual baseline which is the reference point a cross-patient linear probe must extrapolate from when it encounters a new subject.High AF cohesion without corresponding transfer improvement confirms that SR placement consistency, not AF compactness, is the bot-tleneck. 
+
+Per-patient SR cohesion confirms the design. The pro-posed objective achieves the highest SR cohesion ( 0.850 vs. 
+
+0.800 SupCon vs. 0.772 BCE), evidence that intra subject positives preserve each subject’s own SR baseline rather 
+
+Table 1. Embedding-space metrics on the test set (mean ± std, 5 seeds). Per-patient SR cohesion is the primary metric. It directly measures the per-subject geometric consistency the objective tar-gets. The bottom row reports downstream linear-probe AUROC. Bold = best per row. ↑ higher is better, ↓ lower is better.                                
+
+> Metric Proposed SupCon BCE
+> SR cohesion ↑0.850 ±0.044 0.800 ±0.029 0.772 ±0.049
+> AF cohesion ↑0.846 ±0.048 0.921 ±0.035 0.955 ±0.019
+> Centroid sim. ↓+0 .238 ±0.200 +0 .155 ±0.123 −0.717 ±0.029
+> Centroid dist. ↑1.034 ±0.100 1.120 ±0.095 1.603 ±0.045
+> Global compact. ↑1.192 ±0.124 1.313 ±0.465 2.427 ±0.226
+> Per-pt. compact. ↑3.273 ±0.433 2.178 ±1.148 6.396 ±0.590
+> AUROC ↑0.989 ±0.003 0.983 ±0.009 0.980 ±0.012
+
+than collapsing them into a shared class prototype. The AF cohesion remains balanced ( 0.846 , vs. 0.921 SupCon, 
+
+0.955 BCE), indicating that the SR gains do not come at the cost of disordering the AF cluster. The objective preserves both classes’ per subject structure, in contrast to SupCon’s lopsided trade-off. 
+
+The BCE paradox. BCE produces the most clearly sepa-rated class means in the embedding space (centroid distance 
+
+1.603 , cosine similarity −0.717 ) and the highest global com-pactness ratio ( 2.427 ). However, it gives the worst down-stream AUROC on unseen patients (Section 3.2). The reason becomes clear once we look inside each patient. Those well separated class means coexist with disorganized per-patient SR placement ( 0.772 cohesion). A linear probe trained on seen patients has no consistent SR direction to extrapolate from when it meets a new one. This is consistent with the hypothesis that what governs transfer to new subjects is per-subject consistency, not how cleanly the classes are separated overall.. BCE achieves the highest per-patient 
+
+compactness ratio ( 6.396 ). However, it is only because its denominator, the within-patient spread of each class shrinks toward zero. The positions of those tight clusters then drift unpredictably from one patient to the next, which is what the linear probe actually has to follow. 
+
+SupCon over-compacts AF, under-aligns SR. SupCon achieves the tightest AF cohesion ( 0.921 ) by pulling all AF segments together regardless of subject, at the direct cost of SR cohesion ( 0.800 vs. 0.850 ). This is the predicted failure mode. Standard supervised contrastive learning trades per-patient SR structure for global AF compactness, precisely the tradeoff that hurts patients with atypical SR baselines. 
+
+3.2. Downstream PAF Detection 
+
+The geometric ordering is preserved on the downstream task (Figure 2). AUROC orders the three losses identically to per-patient SR cohesion (Section 3.1). The most strik-ing effect is on stability. Seed to seed AUROC variance is reduced by 2.6× over SupCon and 3.4× over BCE. A geometrically consistent embedding space is less sensitive 3Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations ROC-AUC 
+
+> AF Precision
+> AF Recall
+> AF F1
+> SR F1
+> Accuracy
+> 0.800
+> 0.825
+> 0.850
+> 0.875
+> 0.900
+> 0.925
+> 0.950
+> 0.975
+> 1.000
+> Score
+> Per-metric comparison (mean ± std, 5 seeds)
+> Proposed Loss
+> SupCon
+> BCE
+
+Figure 2. Per-metric linear-probe comparison of the proposed patient-aware objective, SupCon, and BCE on the held-out patient-independent test split (5 seeds). Bars show the seed mean and error bars show ± one standard deviation. 
+
+to weight initialization, which is a desirable property for any deployment that must reproduce model behaviour. AUROC improvements of +0 .006 over SupCon and +0 .009 over BCE each exceed one standard deviation of the correspond-ing baseline. Per-class precision/recall and a comparison to prior RRI-based AF detectors are reported in Appendix E (Tables 3 and 5). The proposed representations exceed An-dersen et al.’s patient-holdout sensitivity (Andersen et al., 2019) by over 11 percentage points despite using only a frozen encoder and a logistic-regression probe. 
+
+## 4. Discussion 
+
+Per-subject consistency, not global separability, governs transfer. The BCE paradox is the clearest demonstration of our central claim. Class separability metrics tell us how far the class means have been pushed apart, but a linear probe trained on seen patients can only generalize to new ones if the embedding space provides a consistent direction along which to extrapolate. When the per-patient SR structure is disorganized, that direction is no longer well-defined even if the class means themselves are far apart. The proposed objective targets this consistency directly by forming posi-tives only from same-patient, same-class segments, and its 
+
++0 .050 SR-cohesion advantage over SupCon translates into a 2.6× reduction in AUROC variance across seeds. Geo-metrically, the loss maintains a per subject balance between alignment and uniformity. Each patient’s class-conditional cluster is tightly aligned while clusters from different pa-tients remain spread out on the hypersphere. This avoids both SupCon’s collapse into a single shared class prototype and BCE’s cross-patient inconsistency. 
+
+Generality and clinical relevance. The construction does not depend on the encoder and only requires subject identi-fiers and class labels in each batch. The mechanism applies wherever (a) class labels are available at training time and (b) within-subject variation is informative. Whether the same gains transfer to other physiological signals organized by subject (EEG, EMG, PPG) remains an open empirical question and a direction for future work. On the clinical side, the consistent AF recall ( 0.974 ± 0.008 ) across seeds matters. A missed AF episode may delay anticoagulation and elevate stroke risk, so seed-stable sensitivity is a deploy-ment advantage. The gain is in the representation, not the classifier. This downstream performance is achieved with a frozen encoder and a logistic regression probe and exceeds Andersen et al.’s patient-holdout sensitivity (Andersen et al., 2019) by over 11 percentage points (Appendix E, Table 5). 
+
+Limitations. Our analysis is on a single dataset (IRIDIA-AF) with a frozen-probe protocol. Prospectively, multi-centre validation and end-to-end fine-tuning remain open. Three concrete next steps follow from the geometric find-ings. • A per-subject decomposition of alignment and unifor-mity to verify the mechanism formally. • Few shot adaptation that uses each patient’s preserved SR structure as a personal prior. • Applying the same class and subject positive construc-tion to other physiological signals where between sub-ject variability is the main barrier to generalization. 
+
+## 5. Conclusion 
+
+We proposed a patient-aware contrastive objective for physi-ological signals that are organized by subject. Positives are restricted to same-patient, same-class pairs, preserving each subject’s own structure while still pushing the two classes apart. On IRIDIA-AF, the construction attains the most consistent per-patient SR cohesion among the losses we compared, uncovers a BCE paradox. Overall class separa-bility is a misleading indicator of how well a representation transfers to unseen subjects. Validated downstream, the construction reaches AUROC 0.989 ± 0.003 for PAF detec-tion on unseen patients with 2.6× lower seed variance than supervised contrastive baselines. The objective does not depend on the encoder and only requires subject IDs at train-ing time. This suggests same-class, same-subject positive construction as a broadly useful primitive for representation learning on signals that are organized by subject. 
+
+## Acknowledgements 
+
+We thank Joshua Pranjeevan Kulasingham for his support. 
+
+## References 
+
+Akiba, T., Sano, S., Yanase, T., Ohta, T., and Koyama, M. Optuna: A Next-generation Hyperparameter Opti-mization Framework, July 2019. URL http://arxiv. org/abs/1907.10902 . arXiv:1907.10902 [cs]. 4Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+Andersen, R. S., Peimankar, A., and Puthussery-pady, S. A deep learning approach for real-time detection of atrial fibrillation. Expert Sys-tems with Applications , 115:465–473, January 2019. ISSN 0957-4174. doi: 10.1016/j.eswa.2018.08. 011. URL https://www.sciencedirect.com/ science/article/pii/S0957417418305190 .Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. A sim-ple framework for contrastive learning of visual represen-tations. In Proceedings of the 37th International Confer-ence on Machine Learning , volume 119 of ICML’20 , pp. 1597–1607. JMLR.org, July 2020. URL https://dl. acm.org/doi/10.5555/3524938.3525087 .Chen, W., Wang, H., Zhang, L., and Zhang, M. Temporal and spatial self supervised learning methods for electro-cardiograms. Sci Rep , 15(1):6029, February 2025. ISSN 2045-2322. doi: 10.1038/s41598-025-90084-2. De With, R. R., Erk ¨uner, O., Rienstra, M., Nguyen, B.-O., K ¨orver, F. W. J., Linz, D., Cate Ten, H., Spronk, H., Kroon, A. A., Maass, A. H., Blaauw, Y., Tiele-man, R. G., Hemels, M. E. W., de Groot, J. R., El-van, A., de Melis, M., Scheerder, C. O. S., Al-Jazairi, M. I. H., Schotten, U., Luermans, J. G. L. M., Cri-jns, H. J. G. M., and Van Gelder, I. C. Temporal pat-terns and short-term progression of paroxysmal atrial fibrillation: data from RACE V. Europace , 22(8):1162– 1172, August 2020. ISSN 1099-5129. doi: 10.1093/ europace/euaa123. URL https://pmc.ncbi.nlm. nih.gov/articles/PMC7400474/ .Diamant, N., Reinertsen, E., Song, S., Aguirre, A. D., Stultz, C. M., and Batra, P. Patient contrastive learn-ing: A performant, expressive, and practical approach to electrocardiogram modeling. PLoS Comput Biol , 18 (2):e1009862, February 2022. ISSN 1553-7358. doi: 10.1371/journal.pcbi.1009862. Faust, O., Shenfield, A., Kareem, M., San, T. R., Fu-jita, H., and Acharya, U. R. Automated detection of atrial fibrillation using long short-term memory net-work with RR interval signals. Comput Biol Med , 102: 327–335, November 2018. ISSN 1879-0534. doi: 10.1016/j.compbiomed.2018.07.001. Gilon, C., Gr ´egoire, J.-M., Mathieu, M., Carlier, S., and Bersini, H. IRIDIA-AF, a large parox-ysmal atrial fibrillation long-term electrocardiogram monitoring database. Sci Data , 10(1):714, Oc-tober 2023. ISSN 2052-4463. doi: 10.1038/ s41597-023-02621-1. URL https://www.nature. com/articles/s41597-023-02621-1 .Grill, J.-B., Strub, F., Altch ´e, F., Tallec, C., Richemond, P., Buchatskaya, E., Doersch, C., Avila Pires, B., Guo, Z., Gheshlaghi Azar, M., Piot, B., kavukcuoglu, k., Munos, R., and Valko, M. Bootstrap Your Own Latent - A New Approach to Self-Supervised Learning. In Advances in Neural Information Processing Systems , volume 33, pp. 21271–21284. Curran Associates, Inc., 2020. Hu, J., Li, C., Cao, J., and Kou, B. A novel mul-timodal self-supervised framework for ECG ar-rhythmia classification. Computers in Biology and Medicine , 198:111137, November 2025. ISSN 0010-4825. doi: 10.1016/j.compbiomed.2025.111137. URL https://www.sciencedirect.com/ science/article/pii/S0010482525014908 .Joglar, J. A., Chung, M. K., Armbruster, A. L., Benjamin, E. J., Chyou, J. Y., Cronin, E. M., Deswal, A., Eckhardt, L. L., Goldberger, Z. D., Gopinathannair, R., Gorenek, B., Hess, P. L., Hlatky, M., Hogan, G., Ibeh, C., Indik, J. H., Kido, K., Kusumoto, F., Link, M. S., Linta, K. T., Marcus, G. M., McCarthy, P. M., Patel, N., Patton, K. K., Perez, M. V., Piccini, J. P., Russo, A. M., Sanders, P., Streur, M. M., Thomas, K. L., Times, S., Tisdale, J. E., Valente, A. M., Van Wagoner, D. R., and Peer Review Committee Members. 2023 ACC/AHA/ACCP/HRS Guideline for the Diagnosis and Management of Atrial Fibrillation: A Report of the American College of Cardiology/American Heart Association Joint Committee on Clinical Practice Guidelines. Circulation , 149(1):e1–e156, January 2024. ISSN 1524-4539. doi: 10.1161/CIR.0000000000001193. Khosla, P., Teterwak, P., Wang, C., Sarna, A., Tian, Y., Isola, P., Maschinot, A., Liu, C., and Krishnan, D. Super-vised Contrastive Learning, March 2021. URL http:// arxiv.org/abs/2004.11362 . arXiv:2004.11362 [cs]. Kiyasseh, D., Zhu, T., and Clifton, D. A. CLOCS: Contrastive Learning of Cardiac Signals Across Space, Time, and Patients. In Proceedings of the 38th Interna-tional Conference on Machine Learning , pp. 5606–5615. PMLR, July 2021. URL https://proceedings. mlr.press/v139/kiyasseh21a.html .Le-Khac, P. H., Healy, G., and Smeaton, A. F. Contrastive Representation Learning: A Framework and Review. 
+
+IEEE Access , 8:193907–193934, 2020. ISSN 2169-3536. doi: 10.1109/ACCESS.2020.3031549. URL https:// ieeexplore.ieee.org/document/9226466 .Liu, W., Li, Z., Zhang, H., Chang, S., Wang, H., He, J., and Huang, Q. Dense lead contrast for self-supervised representation learning of multilead electro-cardiograms. Information Sciences , 634:189–205, July 2023. ISSN 0020-0255. doi: 10.1016/j.ins.2023.03. 099. URL https://www.sciencedirect.com/ science/article/pii/S002002552300422X .5Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+Shashikumar, S. P., Shah, A. J., Clifford, G. D., and Ne-mati, S. Detection of Paroxysmal Atrial Fibrillation using Attention-based Bidirectional Recurrent Neural Networks. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining , KDD ’18, pp. 715–723, New York, NY, USA, July 2018. Association for Computing Machin-ery. ISBN 978-1-4503-5552-0. doi: 10.1145/3219819. 3219912. URL https://dl.acm.org/doi/10. 1145/3219819.3219912 .Sun, X., Yang, Y., and Dong, X. Enhancing Contrastive Learning-based Electrocardiogram Pretrained Model with Patient Memory Queue. May 2025. doi: 10.48550/arXiv. 2506.06310. URL http://arxiv.org/abs/2506. 06310 . arXiv:2506.06310 [eess]. Szegedy, C., Liu, W., Jia, Y., Sermanet, P., Reed, S., Anguelov, D., Erhan, D., Vanhoucke, V., and Rabinovich, A. Going deeper with convolutions. In 2015 IEEE Conference on Computer Vision and Pattern Recogni-tion (CVPR) , pp. 1–9, June 2015. doi: 10.1109/CVPR. 2015.7298594. URL https://ieeexplore.ieee. org/document/7298594 . ISSN: 1063-6919. Udawat, A. S. and Singh, P. An automated detection of atrial fibrillation from single-lead ECG using HRV features and machine learning. J Electrocardiol , 75:70–81, 2022. ISSN 1532-8430. doi: 10.1016/j.jelectrocard.2022.07. 069. Wang, T. and Isola, P. Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere. In Proceedings of the 37th International Conference on Machine Learn-ing , pp. 9929–9939. PMLR, November 2020. URL 
+
+https://proceedings.mlr.press/v119/ wang20k.html .Wu, Y. and He, K. Group normalization. In Proceedings of the European Conference on Computer Vision (ECCV) ,September 2018. 6Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+## A. Preprocessing Pipeline Scaler  SR  AFib 
+
+1 hour  1 hour  1 hour 
+
+≥ 4 hours  ≥ 1 hour 
+
+Figure 3. Episode selection and preprocessing pipeline. SR normalization windows (hour 0–1) are disjoint from classification windows (hours 1–2), ensuring the RobustScaler has no access to labeled data. The ≥ 4 hr SR inclusion criterion further ensures that all SR classification windows begin at least 2 hr before AF onset, reducing the risk of including pre-episode transitional rhythms. 
+
+Per-patient normalization uses, 
+
+˜RR i = RR i − median( R(p)scale )IQR( R(p)scale ) (4) where R(p)scale is the patient specific fit window (the first SR hour). Beats with RR < 200 ms or > 2000 ms are excluded as physiologically implausible. The hyperparameter optimization is described in Appendix B. 
+
+## B. Encoder Architecture and Training Details k = 3      
+
+> k = 5
+> k = 7
+> 200 RR
+> Intervals Feature Maps
+> Kernel Size (k) Concatenated
+> Feature Maps Mixed Features Output Feature
+> Vector
+> Channel Mix
+> (kernel size = 1 ) Attention
+> Pooling
+> Latent Vector
+> Projection
+
+Figure 4. Encoder architecture: multi-branch 1D-CNN backbone with temporal attention pooling and a two-layer MLP projection head. 
+
+Architecture. Three parallel 1D-CNN branches with kernel sizes k ∈ { 3, 5, 7} capture beat-to-beat fluctuations, medium-range oscillations, and broader trend dynamics, motivated by Inception style multi-scale processing (Szegedy et al., 2015). Each branch applies three strided convolution blocks (stride 2) with channel depths {16 , 32 , 64 }, Group Normalization (Wu & He, 2018) (8 groups), and ReLU. Branch outputs are concatenated and fused via a 1×1 convolution, then pooled by a softmax temporal attention module (Shashikumar et al., 2018), 
+
+αt = exp( w⊤ht)
+
+P 
+
+> t′
+
+exp( w⊤ht′ ) , z = X
+
+> t
+
+αtht. (5) A two-layer MLP projects z ∈ R128 to e ∈ R128 ; both are ℓ2-normalized to the unit hypersphere (Wang & Isola, 2020). The contrastive loss operates on ˆe; the linear probe on ˆz.
+
+Training. PyTorch on a single NVIDIA RTX 2080. AdamW with learning rate 6.8×10 −3 and weight decay 8.8×10 −4;cosine annealing to 10 −6; dropout 0.12 on the projection head; learnable temperature τ initialized at 0.05 . Patient-aware 7Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+sampling uses P = 8 patients and n = 16 windows per class per-patient ( B = 128 ). Up to 100 epochs with early stopping on validation AUROC (patience 10). 
+
+Hyperparameter selection. 32 hyperparameters (architecture, optimizer, data pipeline including W and S) are jointly tuned by Optuna’s TPE sampler (Akiba et al., 2019) on the validation split, with the test split held out until final evaluation. For all three loss conditions (Proposed, SupCon, BCE), only the temperature τ and learning rate are varied to find the best performance per loss. The encoder architecture, sampler, and probe are held fixed across all conditions, giving no tuning advantage to the proposed loss. 
+
+## C. Embedding-Geometry Metric Definitions 
+
+The encoder produces L2-normalized embeddings, so every embedding zi ∈ Sd−1 satisfies ∥zi∥ = 1 . Let yi ∈ { SR , AF }
+
+denote the class label and pi ∈ P the patient identifier. Define the index sets 
+
+Sc = {i : yi = c}, Scp = {i : yi = c, p i = p},
+
+the (unnormalized) class centroids 
+
+μc = 1
+
+|Sc|
+
+X
+
+> i∈Sc
+
+zi, μcp = 1
+
+|Scp|
+
+X
+
+> i∈Scp
+
+zi,
+
+their L2-normalized versions ˆμc = μc/∥μc∥, ˆμcp = μcp/∥μcp∥, and the mean class spreads 
+
+¯dc = 1
+
+|Sc|
+
+X
+
+> i∈Sc
+
+∥zi − μc∥2, ¯dcp = 1
+
+|Scp|
+
+X
+
+> i∈Scp
+
+∥zi − μcp∥2.
+
+Per-patient class cohesion (primary metric). For class c ∈ { SR , AF },
+
+Coh c = 1
+
+|P |
+
+X
+
+> p∈P
+
+1
+
+|Scp|
+
+X
+
+> i∈Scp
+
+z⊤ 
+
+> i
+
+ˆμ cp . (6) Because ∥zi∥ = ∥ˆμcp∥ = 1 , each summand is the cosine similarity between an embedding and its same-patient same-class centroid; values lie in [−1, 1] and approach 1 as the per-patient class cluster tightens. 
+
+Global class separability. 
+
+CentDist = ∥μSR − μAF ∥2, (7) 
+
+CentSim = ˆ μSR ⊤ ˆμAF , (8) 
+
+Cglob = ∥μSR − μAF ∥2
+
+¯dSR + ¯dAF . (9) We refer to Cglob as a compactness ratio . It is the ratio of between-class centroid distance to the sum of within-class mean spreads. 
+
+Per-patient compactness. 
+
+Cpp = 1
+
+|P |
+
+X
+
+> p∈P
+
+∥μSR  
+
+> p
+
+− μAF  
+
+> p
+
+∥2
+
+¯dSR  
+
+> p
+
++ ¯dAF 
+
+> p
+
+. (10) 
+
+Cpp measures the same separation-to-spread trade-off as Cglob , but evaluated within each patient and then averaged. 
+
+Note: when within-patient class spread is very small ( ¯dSR  
+
+> p
+
++ ¯dAF  
+
+> p
+
+→ 0), the ratio becomes large regardless of whether the resulting clusters are positioned consistently across patients. In such cases Cpp should be interpreted alongside the raw spreads ¯dcp and the per-patient cohesion scores rather than in isolation. 8Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+Table 2. Embedding-space metrics on the test set (mean ± std, 5 seeds). Per patient SR cohesion is the primary metric. Bold = best per row. ↑ higher is better; ↓ lower is better. 
+
+Metric Proposed SupCon BCE 
+
+SR cohesion ↑ 0.850 ± 0.044 0.800 ± 0.029 0.772 ± 0.049 
+
+AF cohesion ↑ 0.846 ± 0.048 0.921 ± 0.035 0.955 ± 0.019 
+
+Centroid similarity ↓ +0 .238 ± 0.200 +0 .155 ± 0.123 −0.717 ± 0.029 
+
+Global centroid dist. ↑ 1.034 ± 0.100 1.120 ± 0.095 1.603 ± 0.045 
+
+Global compactness ratio ↑ 1.192 ± 0.124 1.313 ± 0.465 2.427 ± 0.226 
+
+Per-patient compactness ratio ↑ 3.273 ± 0.433 2.178 ± 1.148 6.396 ± 0.590 
+
+AUROC ↑ 0.989 ± 0.003 0.983 ± 0.009 0.980 ± 0.012 
+
+Table 3. Per-class linear-probe metrics for the proposed representations (4160 AF and 3799 SR segments from unseen patients; mean ± std across 5 seeds). The headline AUROC of 0.989 ± 0.003 is reported in the main text. 
+
+Class Prec. Recall F1 
+
+SR (0) 0.970 ± 0.009 0.927 ± 0.020 0.948 ± 0.012 
+
+AF (1) 0.936 ± 0.017 0.974 ± 0.008 0.955 ± 0.010 
+
+Accuracy 0.952 ± 0.011 
+
+AUROC 0.989 ± 0.003 
+
+## D. Embedding-Geometry Metrics (Full Table) E. Downstream PAF Detection (Per-Class Metrics and Loss Comparison) F. Comparison with Prior Work 
+
+9Patient-Aware Contrastive Learning Preserves Per-Patient Structure in RR-Interval Representations 
+
+Table 4. Linear-probe comparison across loss functions on the fixed patient-independent test split (5 seeds; bold = best mean per metric). 
+
+Loss AUROC AF Prec. AF Recall AF F1 SR F1 Acc. 
+
+Proposed 0.989 ±0.003 0.936 ±0.017 0.974 ±0.008 0.955 ±0.010 0.948 ±0.012 0.952 ±0.011 
+
+SupCon 0.983 ±0.009 0.933 ±0.017 0.972 ±0.005 0.952 ±0.008 0.945 ±0.011 0.949 ±0.009 
+
+BCE 0.980 ±0.012 0.929 ±0.021 0.974 ±0.009 0.951 ±0.012 0.943 ±0.016 0.947 ±0.014 
+
+Table 5. Performance comparison with related work on RR-interval AF detection. Direct numerical comparison is limited by dataset and evaluation differences. † Cross-validation with within-patient data mixing inflates reported metrics. ‡ MIT-BIH AF contains no episodes satisfying our quality criteria (AF ≥ 1h, preceding SR ≥ 4h). 
+
+Study Method Dataset Validation Sens. Spec. Acc. 
+
+(Udawat & Singh, 2022) HRV+ML MIT-BIH AF CV † 95.16% 92.46% 94.43% (Andersen et al., 2019) CNN+RNN 3 dbs 5-fold CV † 98.98% 96.95% —(Andersen et al., 2019) CNN+RNN Unseen Pt. holdout 86.04% 98.96% —(Faust et al., 2018) LSTM MIT-BIH ‡ 10-fold CV † — — 98.51% 
+
+Ours CNN+MLP IRIDIA-AF Pt. holdout 97 .40 ±0.80 % 92 .72 ±2.01 % 95 .17 ±1.07 %
+
+10

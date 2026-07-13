@@ -1,0 +1,291 @@
+Title: Semi-Supervised Sound Event Detection with Conditional Mixup and Embedding-Level Contrastive Loss
+
+URL Source: https://arxiv.org/pdf/2606.29901v1
+
+Published Time: Tue, 30 Jun 2026 01:50:35 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Semi-Supervised Sound Event Detection with Conditional Mixup and Embedding-Level Contrastive Loss 
+
+Nian Shao 1,2, Xian Li 2,3, Xiaofei Li 2,3∗
+
+Abstract — Sound event detection (SED) is a core module for acoustic environmental analysis, yet its performance is often limited by scarce labeled data. Recent systems leverage large pretrained audio foundation models, but effective fine-tuning remains challenging because labeled data are limited while unlabeled data are abundant. A previous work, ATST-SED, addressed this problem with a pseudo-label based semi-supervised fine-tuning framework. In this work, we further improve the framework by adopting an embedding-level self-supervised contrastive loss inspired by ATST-Frame pretrain-ing. This contrastive objective better exploits unlabeled data during fine-tuning. One challenge is that mixup serves different roles in the two objectives: pseudo-label learning uses com-position mixup, while contrastive learning treats mixup as a perturbation. To resolve this mismatch, we propose conditional mixup, which combines composition mixup and perturbation mixup in one semi-supervised framework and defines the corresponding embedding-level contrastive losses. The resulting model achieves 0.645 PSDS 1 and 0.822 PSDS 2 on the DESED validation set, establishing a new state of the art. 
+
+Keywords— sound event detection, semi-supervised learning, contrastive learning, mixup, ATST. I. I NTRODUCTION 
+
+Sound conveys rich information about the surrounding environment, but recognizing sound events remains challeng-ing for machines [1]. Sound event detection (SED) aims to detect sound events and their temporal boundaries in polyphonic audio scenes. Since frame-level annotation is expensive, SED suffers from severe label scarcity. In practice, SED systems are trained with multiple annotation types. These include weakly labeled data, which provide clip-level event tags without temporal boundaries [2]; strongly labeled synthetic and real data, which provide time-aligned event annotations [1], [3]; and unlabeled data [4]. This setup makes semi-supervised learning a natural choice for modern SED benchmarks. Prior work has improved semi-supervised SED with data augmentation, pseudo-label based learning, and stronger architectures for frame-level modeling [5]–[8]. Recent SED systems also benefit from pretrained self-supervised audio models, including BEATs, AST, and ATST-Frame [9]–[12]. Trained on large-scale audio corpora, these models provide stronger representations than task-specific training alone. In particular, ATST-Frame is trained with a frame-level self-supervised contrastive objective and learns frame-level audio representations that transfer well to tem-porally localized downstream tasks such as SED [11]. In        
+
+> 1Zhejiang University, Hangzhou, China.
+> 2School of Engineering, Westlake University, Hangzhou, China
+> 3Westlake University &Westlake Institute for Advanced Study, Hangzhou, China.
+> ∗Corresponding author. Email: lixiaofei@westlake.edu.cn
+
+prior ATST-SED work [13], ATST-Frame was introduced into a CRNN-based detector, and a two-stage pseudo-label based semi-supervised framework was proposed for fine-tuning ATST-Frame for SED, providing a strong baseline. However, the semi-supervised objectives commonly used in SED are dominated by consistency regularization [5], [14], [15]. These objectives are effective for lightweight SED models, but can be much less effective for SED systems built on large pretrained self-supervised encoders [16]–[18]. A likely reason is that consistency regularization is too weak compared with the much stronger pretraining tasks. By con-trast, self-supervised contrastive learning is a more challeng-ing representation-learning objective and has been shown to improve the linear separability and transferability of learned representations during pretraining [11], [19]. Among existing self-supervised contrastive frameworks, ATST-Frame is par-ticularly suitable for SED because it is trained with a frame-level objective that matches the frame-level nature of SED. We therefore introduce its embedding-level self-supervised contrastive objective into semi-supervised fine-tuning, so that unlabeled data can be better leveraged than pseudo-label consistency alone. Pseudo-label learning and contrastive learning, however, benefit from different uses of mixup. In pseudo-label learn-ing, mixup follows a composition view: the mixed sample should preserve the content of both source samples. In contrastive learning, mixup follows a perturbation view: the newly added sample should only perturb the input sample [11], [20], [21]. Both strategies are effective in their own settings. To exploit both of them within one framework, we propose conditional mixup, which combines composition mixup and perturbation mixup according to the interpolation coefficient. Based on the two mixup cases, we further de-fine the corresponding pseudo-label losses and embedding-level contrastive losses, so that decision-level pseudo-label supervision and embedding-level contrastive supervision can complement each other during fine-tuning. On the DESED validation set, ATST-SEDv2 achieves 0.645 PSDS 1 and 0.822 PSDS 2 with cSEBB post-processing, establishing a new state of the art. The main contributions are as follows. First, we propose conditional mixup to combine composition mixup and perturbation mixup in one framework. Second, we design the corresponding pseudo-label and embedding-level contrastive losses, which provide an effective semi-supervised objective for both lightweight and pretraining-based SED models. Third, we achieve new state-of-the-art performance on the DESED validation set, reaching 0.645 PSDS 1 and 0.822 PSDS 2. 
+
+> arXiv:2606.29901v1 [eess.AS] 29 Jun 2026 Input samples
+> CNN
+> ATST-Frame
+> ATST-SED encoder
+> RNN
+> Merge
+> MLP
+> SED
+> classifier Fig. 1. Model architecture of the ATST-SED model, which consists of an ATST-SED encoder and a SED classifier.
+
+II. M ETHOD 
+
+Polyphonic SED is a multi-class detection task in which a model detects the onset and offset of multiple sound events in an audio clip. This work focuses on the DESED dataset [1], which provides strongly labeled, weakly labeled, and unlabeled training data. To make use of both super-vised and unsupervised data, the SED model is trained in a semi-supervised manner. In this work, we aim to strengthen semi-supervised fine-tuning for ATST-SED by adopting an embedding-level self-supervised contrastive ob-jective inspired by ATST-Frame pretraining [11]. In this sec-tion, we first review the pseudo-label based semi-supervised fine-tuning baseline. We then describe the mixup strategies used in the baseline system and in contrastive learning, and introduce conditional mixup to unify them. Next, we describe the corresponding embedding-level self-supervised losses and summarize the overall training objective. 
+
+A. Pseudo-Label Based Two-Stage Fine-Tuning Baseline 
+
+We use ATST-SED as the baseline model [13]. As shown in Fig. 1, the model consists of an ATST-SED encoder and a nonlinear SED classifier [6]. The encoder consists of a convolutional recurrent neural network (CRNN) [6] and a pretrained ATST-Frame model [11]. The pretrained ATST-Frame model serves as an additional feature extractor along-side the 7-layer convolutional neural network (CNN) feature extractor. The features from the two branches are temporally aligned and fused, after which a recurrent neural network (RNN) performs contextual modeling before classification. The baseline fine-tuning framework is divided into two stages. Both stages are trained in a semi-supervised manner. In stage 1, the ATST-Frame model is kept frozen, and only the CRNN and SED classifier are optimized. The supervised binary cross-entropy (BCE) loss ( LBCE ) is applied to the labeled data. For unlabeled data, the Mean Teacher (MT) loss ( LMT ) [22] is used. Specifically, an exponential moving average (EMA) teacher generates pseudo labels for the unla-beled data, and the MT loss minimizes the mean-square error between the student predictions and these pseudo labels. The total loss of stage 1 is 
+
+Lstage1 = LBCE + rMT LMT , (1) where rMT is the ramp-up weight of LMT . In stage 2, all parameters are fine-tuned together. Since the amount of labeled data in DESED is still limited for tuning a large pretrained encoder, the baseline further applies mixup and frequency warping (FW) [11] to 50% of the training data to increase data diversity, and assigns larger weights to the unsupervised losses to make fuller use of the unlabeled data. Besides BCE and MT, interpolation consistency training (ICT) loss ( LICT ) [23] is used together with mixup for semi-supervised learning. When mixup is applied, the ICT loss replaces the MT loss for the mixed samples. The total loss of stage 2 is 
+
+Lstage2 = LBCE + rMT LMT + rICT LICT , (2) where rICT is the ramp-up weight of LICT . In this work, we keep the stage-1 training unchanged and only redesign the stage-2 fine-tuning strategy. 
+
+B. Conditional mixup 
+
+The mixup [24] used in the baseline model combines two samples and treats the sound events from both audio clips as co-occurring in the mixed sample. Formally, for an input sample (xi, yi) and a randomly selected auxiliary sample 
+
+(xj , yj ), where x ∈ RT ×D and y ∈ RT ×C , T and D denote the time and feature dimensions, and C is the number of classes, mixup generates a new sample (x′, y′) as x′ = λxi+(1 − λ)xj , and y′ = λyi + (1 − λ)yj , where λ ∈ [0 , 1] is typically drawn from a Beta distribution. In semi-supervised learning, ˜yi and ˜yj denote the teacher predictions on xi and 
+
+xj , respectively. The mixed pseudo-label is λ˜yi + (1 − λ)˜ yj .Denote the student prediction on x′ as ˆy′. The corresponding pseudo-label loss is 
+
+LICT = ∥ˆy′ − (λ˜yi + (1 − λ)˜ yj )∥22 , (3) which is the ICT loss [23]. Since this mixup preserves the content of both source clips, we refer to it as composition mixup .Audio contrastive self-supervised learning also adopts mixup [11], [20], [21], but treats the auxiliary sample as a perturbation to the input sample. In this context, λ is typically drawn from a restricted uniform distribution (e.g., in [20], λ ∼ U(0 .6, 1) ), which ensures that the contribution of the auxiliary sample remains smaller than that of the input sample. We refer to this use of mixup as perturbation mixup . When using it for semi-supervised learning, the mixed sample x′ is constructed in the same way, while only the target of the input sample is preserved, i.e., y′ = yi and 
+
+˜yi is used as the pseudo label in pseudo-label loss. To unify the two mixup methods, we propose conditional mixup . In audio mixup, the interpolation coefficient λ can be interpreted as the relative energy ratio between the input signal and the auxiliary signal, which is proportional to λ 
+
+> 1−λ
+
+.When λ is close to 0.5, the two signals have similar energy, so events from both signals are treated as co-occurring in the mixture. When λ is large, the input signal dominates the mixture, and the auxiliary signal is treated as a perturbation. We therefore use λ ∈ [0 .5, 1] together with a threshold τ to determine the mixup mode. When 0.5 ≤ λ ≤ τ , the mixed sample follows the composition view. In this case, we use label combination rather than interpolation to better represent event co-occurrence: the supervised target is the logical OR 
+
+yi ∨ yj , while the semi-supervised target is the sum ˜yi + ˜ yj ,Input samples 𝐱𝐱 𝑖𝑖                         
+
+> Teacher ATST-SED encoder
+> Projector
+> Predictor
+> Student ATST-SED encoder
+> SED classifier Projector
+> Prediction �𝐲𝐲 𝑖𝑖 Embedding �𝐳𝐳 𝑖𝑖
+> EMA
+> Pseudo-label loss ℒpsd p
+> Contrastive loss ℒcon p
+> Perturbation mixup
+> 𝐱𝐱 p′=𝜆𝜆𝐱𝐱 𝑖𝑖 +1− 𝜆𝜆 𝐱𝐱 𝑗𝑗 ,𝜆𝜆 ∈ (𝜏𝜏 , 1]
+> SED classifier
+> Prediction �𝐲𝐲 p′
+> Embedding 𝐩𝐩 p′
+> stop gradient
+> Mixed
+> samples 𝐱𝐱 p
+> ′Fig. 2. Flowchart of the proposed pseudo-label and contrastive losses, when using perturbation mixup for data augmentation.
+
+clamped by maximum of 1. Formally, for 0.5 ≤ λc ≤ τ , we define 
+
+x′ 
+
+> c
+
+= λcxi + (1 − λc)xj , (4) 
+
+y′ 
+
+> c
+
+= yi ∨ yj . (5) The corresponding pseudo-label loss Lc-psd is 
+
+Lc-psd = ∥ˆy′ 
+
+> c
+
+− min (˜ yi + ˜ yj , 1)∥22 , (6) When τ < λ ≤ 1, the mixed sample follows perturbation mixup, and only the target of the input sample is preserved. For τ < λ p ≤ 1, we define 
+
+x′ 
+
+> p
+
+= λpxi + (1 − λp)xj , (7) 
+
+y′ 
+
+> p
+
+= yi. (8) The corresponding pseudo-label loss Lp-psd is 
+
+Lp-psd = ˆy′ 
+
+> p
+
+− ˜yi 
+
+> 22
+
+, (9) The unified pseudo-label objective for conditional mixup is 
+
+Lcp-psd = 12 (Lc-psd + Lp-psd ) . (10) 
+
+C. Embedding-Level Semi-Supervised Contrastive Losses 
+
+We now introduce embedding-level semi-supervised con-trastive losses. Following [11], contrastive learning forms positive pairs by applying data augmentation to the same sample and aligning the resulting embeddings. In our frame-work, conditional mixup produces two augmented views for each input, corresponding to the composition and per-turbation cases. We therefore define two contrastive losses accordingly. As shown in Fig. 2, a projector and a predictor are attached after the ATST-SED encoder for contrastive learning. The contrastive loss is computed between the student predictor output and the teacher projector output, which helps prevent collapse in contrastive learning [19]. The extracted embeddings are ℓ2-normalized along the hidden dimension. 
+
+Perturbation case For the positive pair (xi, x′
+
+> p
+
+) created by perturbation mixup, the auxiliary sample is treated only as a perturbation to the input sample. Therefore, the contrastive objective is to maximize the similarity between the mixed sample and the input sample. Let ˜zi ∈ RT ×H denote the teacher embedding of xi, and let p′ 
+
+> p
+
+∈ RT ×H denote the student embedding of the mixed sample x′
+
+> p
+
+. The frame-level contrastive loss is defined as 
+
+Lpcon (xi, x′
+
+> p
+
+) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥˜zi(t, :) − p′
+
+> p
+
+(t, :) ∥22, (11) where (t, :) denotes the embedding at the t-th frame. As in [11], we also use the reversed positive pair by feeding x′ 
+
+> p
+
+to the teacher and xi to the student, and denote the resulting loss by L′pcon . The total perturbation contrastive loss is 
+
+Lp-con = 12 (Lpcon + L′pcon ). (12) 
+
+Composition case For the positive pair (xi, x′
+
+> c
+
+) created by composition mixup, both the input sample and the auxiliary sample contribute to the mixed content. Therefore, the con-trastive objective is to maximize the similarity between the mixed sample and both source samples. Let ˜zi, ˜zj ∈ RT ×H
+
+denote the teacher embeddings of xi and xj , and let p′ 
+
+> c
+
+∈
+
+RT ×H denote the student embedding of the mixed sample 
+
+x′
+
+> c
+
+. We use the average of the two teacher embeddings as the contrastive target. The contrastive loss is defined as 
+
+Lccon (xi, x′
+
+> c
+
+) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+12 (˜ zi(t, :) + ˜ zj (t, :)) − p′
+
+> c
+
+(t, :) 
+
+> 22
+
+.
+
+(13) Similarly, we also use the reversed positive pair and denote the corresponding loss by L′ccon . The total composition con-trastive loss is 
+
+Lc-con = 12 (Lccon + L′ccon ). (14) The total contrastive loss used in this work is 
+
+Lcon = 12 (Lc-con + Lp-con ). (15) 
+
+D. Overall training objective 
+
+The proposed method is used for stage-2 fine-tuning of ATST-SED. The overall training objective is composed of three parts: the supervised BCE loss, the pseudo-label based loss, and the contrastive loss. We use the proposed conditional mixup for data augmentation. Frequency warping [11] is also applied to the mixed samples to further increase the difficulty of the semi-supervised task. The unmixed input samples remain unaugmented so that the teacher model can generate reliable pseudo labels, while the original Mean Teacher loss remains unchanged. The overall training ob-jective is 
+
+Ltotal = LBCE + rMT LMT + rcp-psd Lcp-psd + rcon Lcon , (16) where rcp-psd and rcon are the weights for the pseudo-label loss and contrastive loss, respectively. III. E XPERIMENTAL RESULTS 
+
+A. Experiment setup 
+
+Code is available on our website 1. All experiments are conducted on DESED [1]. The training set comprises 1,578 weakly labeled clips, 10,000 synthesized strongly labeled clips, 14,412 unlabeled clips, and 3,470 additional real strongly labeled clips from AudioSet [3]. The evaluation is performed on the DESED validation set with 1,168 strongly labeled audio clips. For preprocessing, all recordings are resampled to 16 kHz and truncated or padded to 10 sec-onds. For ATST-SED, the CNN branch uses 128-dimensional LogMel features with a frame length of 128 ms and a hop length of 16 ms. The ATST-Frame branch keeps its original preprocessing pipeline. When applying the proposed method, we add a projector and a predictor only during training for embedding-level con-trastive regularization, while keeping the inference architec-ture unchanged. Both modules share the same architecture: a linear layer, batch normalization, a ReLU, and a final linear layer. The batch sizes for real strongly labeled, synthetic strongly labeled, weakly labeled, and unlabeled data are 24, 24, 48, and 48, respectively. We optimize the models with Adam [25]. For ATST-SED stage-2 fine-tuning, the learning-rate setup is the same as in [13]. A layer-wise decaying learning rate is used for the ATST blocks (initial rate 2e-4, decaying by 0.5 per layer), and a uniform initial rate of 2e-4 is used for the CNN, projector, and predictor. The RNN and classifier use a higher initial rate of 2e-3. Fine-tuning lasts for 20,000 steps. All learning rates follow an exponential ramp-up from 0 to their initial values during the first 290 steps. They then cosine-decay to α 
+
+> 10
+
+. The hyperparameters are empirically set as follows: rMT = 70 , rcp-psd = 17 .5,
+
+rcon = 3 , and the mixup-mode threshold τ = 0 .55 .Post-processing applies median filtering and change-detection-based sound event bounding boxes (cSEBB) [26] to transform soft model predictions into binary decisions. Models are evaluated every 10 epochs on the DESED vali-dation set using PSDS 1 and PSDS 2 [27]. PSDS 1 emphasizes temporal stability, and PSDS 2 emphasizes audio tagging accuracy, where higher values indicate better performance. Unless otherwise specified, all reported results use median-filter post-processing.                
+
+> 1https://github.com/Audio-WestlakeU/ATST-SED 0.4 0.6 0.8 1.0
+> PSDS1 Score
+> Dog
+> Blender
+> Frying
+> Cat
+> Alarm bell
+> Dishes
+> Speech
+> Running water
+> Elec. shaver
+> Vacuum
+> +0.057
+> +0.047
+> +0.028
+> +0.026
+> +0.014
+> +0.011
+> +0.007
+> +0.004
+> -0.001
+> -0.006
+> ATST-SEDv2 ATST-SED
+> Fig. 3. Comparison between ATST-SED [13] and the proposed ATST-SEDv2 on per-class PSDS1 scores. TABLE I COMPARISON WITH THE PREVIOUS BASELINES .
+> Method PSDS 1PSDS 2
+> CRNN 0.384 0.628 CRNN + proposed method 0.403 0.661
+> ATST-SED [13] 0.583 0.810 ATST-SED + proposed method (ATST-SEDv2) 0.607 0.817
+
+B. Comparison with the baseline model 
+
+We first apply the proposed method to the baseline models, and the results are shown in Table I. We also train a CRNN model to show that the proposed method is effective on lightweight SED models. Its training follows the DCASE 2023 baseline setup. When applying our method to CRNN, we use rcp-psd = 0.125 , rcon = 0.1, and τ = 0.55 .For clarity, we denote “ATST-SED + proposed method” as ATST-SEDv2. Our approach obtains consistent improve-ments across both architectures. For PSDS 1, CRNN improves from 0.384 to 0.403, and ATST-SED improves from 0.583 to 0.607. These gains are non-trivial for PSDS 1, because this metric strongly penalizes instability across classes [27]. For PSDS 2, CRNN improves from 0.628 to 0.661, and ATST-SED improves from 0.810 to 0.817, indicating improved tag-ging capacity while maintaining temporal detection quality. The stronger gain on CRNN suggests that the method is especially helpful when the backbone capacity is limited, while the gain on ATST-SED shows that the method is still effective on a strong pretrained baseline. Per-class analysis in Fig. 3 compares our system with ATST-SED, showing that the improvement is distributed across classes rather than concentrated in only a few easy classes. The method particularly benefits challenging categories such as “dog”, “cat”, and “dishes”. These events are short and have high acoustic variability, so they are difficult for SED systems [4]. Overall, the proposed approach effectively enhances semi-supervised learning across both lightweight and pretraining-based SED models. TABLE II ABLATION STUDY OF ATST-SED V2 COMPONENTS .                                                                  
+
+> Method PSDS 1PSDS 2
+> Stage 1 frozen training 0.529 0.778 Stage 2 w. Lcon 0.560 0.811 w. LMT +Lcp-psd 0.579 0.800 w. LMT +Lp-psd +Lp-con 0.595 0.810 w. LMT +Lc-psd +Lc-con 0.601 0.817 w. LMT +Lcp-psd +Lcon (ATST-SEDv2) 0.607 0.817 TABLE III COMPARISON WITH SOTA SED MODELS (MF: MEDIAN FILTER ). METHODS MARKED WITH †USE THE SCORES REPORTED IN THEIR ORIGINAL PAPERS ,AND PSDS 2IS NOT PROVIDED FOR THEM .
+> Method PSDS 1PSDS 2
+> cSEBB MF cSEBB MF ATST-SED [13] 0.618 0.583 0.813 0.810 MAT-SED †[28] 0.602 0.587 --PMAM iter2 †[29] 0.625 0.597 --ATST-SEDv2 (ours) 0.645 0.607 0.822 0.817
+
+C. Ablation Study 
+
+Table II reports the ablation results. Each row corresponds to an independent stage-2 fine-tuning setting, and the stage-1 result is listed for reference. Using only the contrastive loss (Lcon ) improves performance over stage 1, which confirms that the contrastive objective is useful in semi-supervised fine-tuning. Pseudo-label losses ( LMT + Lcp-psd ) remain es-sential, and using them alone yields performance close to ATST-SED [13]. However, the gain from contrastive loss is clearly smaller than that from pseudo-label losses. A likely reason is that the contrastive objective and the SED objective do not necessarily share the same optimum. When contrastive loss is used alone, the available supervised data may be too limited to regularize the network toward the SED optimum. Therefore, contrastive loss should be used together with pseudo-label losses to better leverage unlabeled data during fine-tuning. For conditional mixup, we further ablate the composition and perturbation branches separately while keeping the Mean Teacher loss. Both the composition branch ( Lc-psd + Lc-con )and the perturbation branch ( Lp-psd + Lp-con ) are effective when used separately. In particular, the composition-only setting reaches 0.601/0.817, which is clearly better than the original ATST-SED result of 0.583/0.810. This result shows that the composition branch, together with the in-troduced contrastive loss Lc-con , is effective. Similarly, the perturbation-only setting also yields strong results, validat-ing perturbation mixup as an effective augmentation for semi-supervised learning. Overall, each proposed module improves the stage-1 model when used individually, and the modules are compatible. Combining all components yields the best performance. 
+
+D. Comparison with SOTA SED systems 
+
+Table III benchmarks ATST-SEDv2 against competing SOTA methods on the DESED validation set. To ensure a fair comparison, we apply cSEBB to both our model and the ATST-SED baseline. cSEBB uses adaptive thresholds, rather than a single threshold, to detect event boundaries from soft predictions. This allows both low-confidence and high-confidence events to be detected and generally yields more accurate results. We compare with two recent methods: MAT-SED [28] and PMAM iter2 [29]. Both methods apply self-supervised learning to AST-based [12] SED systems. They first pretrain with self-supervised tasks and then perform semi-supervised fine-tuning with pseudo-label losses. PMAM further applies iterative updates with prototypical modeling and achieves strong PSDS 1 performance. Compared with these methods, ATST-SEDv2 uses a simpler strategy by jointly applying contrastive and pseudo-label losses during fine-tuning. Fine-tuning can be completed in a single run with lower training complexity. Even with this simpler design, the method lever-ages unlabeled data effectively and achieves better PSDS 1
+
+performance under both cSEBB and median-filter post-processing. Overall, ATST-SEDv2 establishes new state-of-the-art re-sults on the DESED validation set, reaching 0.645 PSDS 1
+
+and 0.822 PSDS 2.IV. C ONCLUSION 
+
+In this paper, we extend ATST-SED by introducing an embedding-level self-supervised contrastive objective into semi-supervised fine-tuning. Since pseudo-label learning and contrastive learning favor different mixup semantics, we propose conditional mixup to combine composition mixup and perturbation mixup in one framework, together with the corresponding pseudo-label and embedding-level contrastive losses. In this way, decision-level pseudo-label supervision and embedding-level contrastive supervision complement each other during fine-tuning. This design improves the use of unlabeled data while keeping the inference-time model unchanged. On the DESED validation set, the proposed method achieves state-of-the-art performance, reaching 0.645 PSDS 1 and 0.822 PSDS 2.REFERENCES [1] N. Turpault, R. Serizel, A. Shah, and J. Salamon, “Sound event detection in domestic environments with weakly labeled data and soundscape synthesis,” in Acoustic Scenes and Events 2019 Workshop (DCASE2019) , 2019, p. 253. [2] T.-W. Su, J.-Y. Liu, and Y.-H. Yang, “Weakly-supervised audio event detection using event-specific gaussian filters and fully convolutional networks,” in ICASSP . IEEE, 2017, pp. 791–795. [3] J. F. Gemmeke, D. P. Ellis, D. Freedman, A. Jansen, W. Lawrence, R. C. Moore, M. Plakal, and M. Ritter, “Audio set: An ontology and human-labeled dataset for audio events,” in 2017 IEEE international conference on acoustics, speech and signal processing (ICASSP) .IEEE, 2017, pp. 776–780. [4] R. Serizel and N. Turpault, “Sound Event Detection from Partially Annotated Data: Trends and Challenges,” in IcETRAN conference , Srebrno Jezero, Serbia, Jun. 2019. [Online]. Available: https://inria.hal.science/hal-02114652 [5] C.-Y. Koh, Y.-S. Chen, Y.-W. Liu, and M. R. Bai, “Sound event detection by consistency training and pseudo-labeling with feature-pyramid convolutional recurrent neural networks,” in IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2021, pp. 376–380. [6] L. JiaKai, “Mean teacher convolution system for dcase 2018 task 4,” DCASE2018 Challenge, Tech. Rep., 2018. [7] X. Zheng, Y. Song, I. McLoughlin, L. Liu, and L.-R. Dai, “An improved mean teacher based method for large scale weakly labeled semi-supervised sound event detection,” in IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) , 2021, pp. 356–360. [8] H. Nam, S.-H. Kim, B.-Y. Ko, and Y.-H. Park, “Frequency Dynamic Convolution: Frequency-Adaptive Pattern Recognition for Sound Event Detection,” in Interspeech , 2022, pp. 2763–2767. [9] S. Chen, Y. Wu, C. Wang, S. Liu, D. Tompkins, Z. Chen, W. Che, X. Yu, and F. Wei, “BEATs: Audio pre-training with acoustic tokeniz-ers,” in International Conference on Machine Learning (ICML) , 2023, pp. 5178–5193. [10] X. Li and X. Li, “ATST: Audio representation learning with teacher-student transformer,” in Interspeech , 2022, pp. 4172–4176. [11] X. Li, N. Shao, and X. Li, “Self-supervised audio teacher-student transformer for both clip-level and frame-level tasks,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 32, pp. 1336–1351, 2024. [12] Y. Gong, Y.-A. Chung, and J. Glass, “AST: Audio Spectrogram Transformer,” in Interspeech 2021 , 2021, pp. 571–575. [13] N. Shao, X. Li, and X. Li, “Fine-tune the pretrained atst model for sound event detection,” in ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,2024, pp. 911–915. [14] N. Shao, E. Loweimi, and X. Li, “RCT: Random consistency training for semi-supervised sound event detection,” in Interspeech , 2022, pp. 1541–1545. [15] Y. Guan, J. Han, H. Song, S. Deng, G. Zheng, T. Zheng, and Y. He, “Sound activity-aware based cross-task collaborative training for semi-supervised sound event detection,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 32, pp. 3947–3959, 2024. [16] N. Shao, X. Li, and X. Li, “Atst self-supervised plus rct semi-supervised sound event detection: Submission to dcase 2022 challenge task 4,” tech. rep. , 2022. [17] C.-C. Liu, T.-H. Kuo, C.-P. Chen, C.-L. Lu, B.-C. Chan, Y.-H. Cheng, and H.-F. Chuang, “Cht+nsysu sound event detection system with pretrained embeddings extracted from beats model for dcase 2023 task 4,” DCASE2023 Challenge, Tech. Rep., June 2023. [18] K. Li, P. Cai, and Y. Song, “Li USTC team’s submission for DCASE 2023 challenge task4a,” DCASE2023 Challenge, Tech. Rep., June 2023. [19] X. Chen and K. He, “Exploring simple siamese representation learn-ing,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2021. [20] D. Niizumi, D. Takeuchi, Y. Ohishi, N. Harada, and K. Kashino, “Byol for audio: Self-supervised learning for general-purpose audio representation,” in 2021 International Joint Conference on Neural Networks (IJCNN) . IEEE, Jul 2021. [Online]. Available: http://dx.doi.org/10.1109/IJCNN52387.2021.9534474 [21] K. Li, Y. Song, L.-R. Dai, I. McLoughlin, X. Fang, and L. Liu, “AST-SED: An effective sound event detection method based on audio spectrogram transformer,” in IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2023, pp. 1–5. [22] A. Tarvainen and H. Valpola, “Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results,” in Advances in Neural Information Processing Sys-tems (NIPS) , vol. 30, 2017. [23] V. Verma, A. Lamb, J. Kannala, Y. Bengio, and D. Lopez-Paz, “Interpolation consistency training for semi-supervised learning,” in 
+
+International Joint Conference on Artificial Intelligence (IJCAI) , 2019, pp. 3635–3641. [24] H. Zhang, M. Cisse, Y. N. Dauphin, and D. Lopez-Paz, “mixup: Beyond empirical risk minimization,” in International Conference on Learning Representations (ICLR) , 2018. [25] D. P. Kingma and J. Ba, “Adam: A method for stochastic opti-mization,” in International Conference on Learning Representations (ICLR) , 2015. [26] J. Ebbers, F. G. Germain, G. Wichern, and J. Le Roux, “Sound Event Bounding Boxes,” in Interspeech 2024 , 2024, pp. 562–566. [27] J. Ebbers, R. Haeb-Umbach, and R. Serizel, “Threshold independent evaluation of sound event detection scores,” in IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,2022, pp. 1021–1025. [28] P. Cai, Y. Song, K. Li, H. Song, and I. McLoughlin, “MAT-SED: A Masked Audio Transformer with Masked-Reconstruction Based Pre-training for Sound Event Detection,” in Interspeech 2024 , 2024, pp. 557–561. [29] P. Cai, Y. Song, N. Jiang, Q. Gu, and I. McLoughlin, “Prototype based masked audio model for self-supervised learning of sound event detection,” in ICASSP 2025 - 2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2025, pp. 1–5.

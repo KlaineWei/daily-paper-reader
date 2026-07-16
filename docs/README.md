@@ -6,41 +6,47 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-15
-- 运行时间：2026-07-15 21:24:06 UTC
+- 最新运行日期：2026-07-16
+- 运行时间：2026-07-16 21:17:10 UTC
 - 运行状态：成功
-- 本次总论文数：7
-- 精读区：4
-- 速读区：3
+- 本次总论文数：9
+- 精读区：5
+- 速读区：4
 
 ### 今日简报（AI）
-今日精读4篇、速读3篇，聚焦可解释AI与异常检测方向。最值得关注的是两篇9.0分精读论文：稀疏自编码器用于可解释分布外检测，以及为安全分析师解释深度学习网络入侵告警决策。建议优先阅读这两篇，深入理解可解释AI在安全场景中的实践价值。
-- 详情：[/202607/15/README](/202607/15/README)
+今日精读5篇、速读4篇，聚焦可解释AI在金融与安全领域的异常检测应用。最值得关注《可解释AI在银行交易异常检测中的应用》与《可解释Tsetlin机器在PDF恶意软件检测》，两者均在高可解释性下实现精准检测。后续可留意噪声残差聚类及统计非线性重建损失在图像异常检测中的实用方法。
+- 详情：[/202607/16/README](/202607/16/README)
 
 ### 精读区论文标签
-1. [Sparse Autoencoders for Interpretable Out-of-Distribution Detection](/202607/15/2607.12094v1-sparse-autoencoders-for-interpretable-out-of-distribution-detection)  
+1. [Explainable Artificial Intelligence for Anomaly Detection in Banking Transactions: An Internal Audit Perspective](/202607/16/2607.13469v1-explainable-artificial-intelligence-for-anomaly-detection-in-banking-transactions-an-internal-audit-perspective)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：使用稀疏自编码器的可解释分布外检测
-2. [Explaining Intrusion Alert Decisions of Deep Learning-based Network Intrusion Detection Systems for Security Analysts](/202607/15/2607.12203v1-explaining-intrusion-alert-decisions-of-deep-learning-based-network-intrusion-detection-systems-for-security-analysts)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：为网络异常检测解释入侵检测决策，直接匹配异常检测可解释性需求
-3. [Bridging the Catalog-to-Real Gap: Scalable Product Recognition via Multi-Stage Contrastive Learning](/202607/15/2607.09888v1-bridging-the-catalog-to-real-gap-scalable-product-recognition-via-multi-stage-contrastive-learning)  
-   标签：评分：8.0/10、query:contrastive
-   evidence：使用多阶段对比学习进行跨域产品识别，直接对应对比学习主题。
-4. [LARAD: Layout-Aware Road Anomaly Detection via Spatial-Logic Reasoning](/202607/15/2607.12858v1-larad-layout-aware-road-anomaly-detection-via-spatial-logic-reasoning)  
+   evidence：银行业务异常检测的可解释人工智能
+2. [Leveraging Interpretable Tsetlin Machine for PDF Malware Detection](/202607/16/2607.09290v1-leveraging-interpretable-tsetlin-machine-for-pdf-malware-detection)  
    标签：评分：8.0/10、query:xai-objdet
-   evidence：道路异常检测，利用空间逻辑推理进行可解释性分析
+   evidence：可解释Tsetlin机用于PDF恶意软件检测，直接面向伪造检测可解释性
+3. [Bridging the Catalog-to-Real Gap: Scalable Product Recognition via Multi-Stage Contrastive Learning](/202607/16/2607.09888v1-bridging-the-catalog-to-real-gap-scalable-product-recognition-via-multi-stage-contrastive-learning)  
+   标签：评分：8.0/10、query:contrastive
+   evidence：多阶段对比学习用于跨域产品检索
+4. [A Novel Graph Fraud Detector via Grouped Attribute Completion and Confidence-Aware Contrastive Learning](/202607/16/2607.11107v1-a-novel-graph-fraud-detector-via-grouped-attribute-completion-and-confidence-aware-contrastive-learning)  
+   标签：评分：8.0/10、query:contrastive
+   evidence：对比学习用于图欺诈检测
+5. [Prototype-based AI triage for 3D pathology](/202607/16/biorxiv-10-64898-2026-07-09-737559-v1-prototype-based-ai-triage-for-3d-pathology)  
+   标签：评分：8.0/10、query:xai-objdet
+   evidence：通过原型学习实现3D病理学的可解释异常检测
 
 ### 速读区论文标签
-1. [A Novel Graph Fraud Detector via Grouped Attribute Completion and Confidence-Aware Contrastive Learning](/202607/15/2607.11107v1-a-novel-graph-fraud-detector-via-grouped-attribute-completion-and-confidence-aware-contrastive-learning)  
-   标签：评分：7.0/10、query:contrastive
-   evidence：将置信度感知对比学习应用于图欺诈检测，扩展了对比学习的应用场景。
-2. [Slot-RAE: Streamlining Object-Centric Learning via Direct Representation Auto-Encoders](/202607/15/2607.11196v1-slot-rae-streamlining-object-centric-learning-via-direct-representation-auto-encoders)  
+1. [Effective Synthetic Image Detection via Noise Residual Clustering](/202607/16/2607.10695v1-effective-synthetic-image-detection-via-noise-residual-clustering)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：基于直接表示自编码器的以物体为中心的学习，支持可解释目标检测
-3. [Structured Evidence Selection for Weakly Supervised Video Anomaly Detection](/202607/15/2607.10298v1-structured-evidence-selection-for-weakly-supervised-video-anomaly-detection)  
+   evidence：基于噪声残差聚类的合成图像检测
+2. [Statistical Non-linear Reconstruction Loss for Image Anomaly Detection](/202607/16/2607.12866v1-statistical-non-linear-reconstruction-loss-for-image-anomaly-detection)  
+   标签：评分：7.0/10、query:xai-objdet
+   evidence：图像异常检测，提出统计非线性重构损失
+3. [A Unified Detection Framework for AI-Related Content and Artifacts](/202607/16/2607.07527v1-a-unified-detection-framework-for-ai-related-content-and-artifacts)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：基于结构化证据选择的弱监督视频异常检测，包含推理过程
+   evidence：基于马氏距离的统一AI生成内容与伪造物检测框架
+4. [PiVoT: A Variational Solution for Real-time Large-scale Multi-object Detection and Tracking under Heavy Clutter](/202607/16/2607.13891v1-pivot-a-variational-solution-for-real-time-large-scale-multi-object-detection-and-tracking-under-heavy-clutter)  
+   标签：评分：6.0/10、query:xai-objdet
+   evidence：复杂杂波下的变分多目标检测与跟踪
 
 
 <div class="dpr-home-promo-card">

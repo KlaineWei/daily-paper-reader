@@ -1,0 +1,5492 @@
+Title: A Unified Detection Framework for AI-Related Content and Artifacts
+
+URL Source: https://arxiv.org/pdf/2607.07527v1
+
+Published Time: Thu, 09 Jul 2026 01:04:52 GMT
+
+Number of Pages: 46
+
+Markdown Content:
+# A Unified Detection Framework for AI-Related Content and Artifacts 
+
+Xifeng Zhang a, Tao Hu a, Yijie Peng b, Wan Tian c,d, ∗
+
+> aSchool of Mathematical Sciences, Capital Normal University, Beijing 100048, China
+> bSchool of Management and Engineering, Nanjing University, Nanjing 210008, China
+> cAdvanced Institute of Information Technology, Peking University
+> dWangxuan Institute of Computer Technology, Peking University, Beijing 100871, China
+
+Abstract 
+
+Artificial intelligence (AI) is a double-edged sword: while it has achieved remarkable success across a wide range of domains, its deployment also calls for effective oversight and regula-tion, for which the detection of AI-related content and artifacts is perhaps the most direct and cost-effective approach. To this end, we propose a unified detection framework based on Mahalanobis distance scores (MDS), applicable to several important settings, including the detection of large language model (LLM) generated text, hallucination, watermark, and ad-versarial examples. A key component of the proposed method is to accurately characterize the positive class—such as human-generated text, factual statements, unwatermarked text, or non-adversarial samples—which requires an efficient and robust estimator of the covariance ma-trix of deep representations of positive samples before computing the MDS. Since the positive samples typically consist of multiple classes, and these classes may exhibit both homogene-ity and heterogeneity, we develop joint estimation methods for both the casewise and cellwise minimum covariance determinant (MCD) estimators. We provide efficient optimization algo-rithms for both estimators and prove their convergence. We provide a reasonable definition of the breakdown point for the joint estimators and prove their corresponding high breakdown point properties. Empirical evaluations confirm the effectiveness of the proposed detection framework. 
+
+Keywords: AI oversight; LLM; MDS; Robust covariance estimation; MCD; Joint estimation 
+
+1. Introduction 
+
+AI, particularly with the advent of foundation models, has rapidly become a general-purpose technology with broad scientific, industrial, and societal impact [1]. Recent advances in LLMs and generative models have enabled the automated production, transformation, and interaction with diverse digital content, including natural language, code, and multimodal data [2]. While these capabilities create substantial opportunities in education, healthcare, scientific discovery, and software development, they also introduce AI-related artifacts that are diffi-cult to monitor at scale, such as synthetic text, hallucinated or factually inconsistent outputs, watermark traces, and adversarial perturbations [3, 4, 5]. These artifacts often manifest as observable statistical irregularities in model outputs or learned representations, for which de-tection provides a scalable and cost-effective mechanism for AI oversight, especially when the underlying model is inaccessible or continually changing. Existing detection methods can be broadly divided into white-box and black-box paradigms. White-box methods assume access        
+
+> ∗Corresponding author.
+> Email addresses: cnxifeng9819@163.com (Xifeng Zhang), hutao@cnu.edu.cn (Tao Hu),
+> pengyijie@pku.edu.cn (Yijie Peng), wantian61@foxmail.com (Wan Tian) arXiv:2607.07527v1 [stat.ML] 8 Jul 2026
+
+to internal model information, such as parameters, gradients, logits, or decoding probabilities, and can exploit model-specific signals or embedded mechanisms [5]. In contrast, black-box methods operate only on observable outputs or representations obtained from accessible fea-ture extractors, making them more suitable for proprietary, evolving, or API-only systems [6]. From a practical perspective, we therefore focus on black-box detection and discuss this class of methods below. Despite being studied separately, LLM-generated text detection, hallucination detection, adversarial example detection, and watermark detection can all be viewed as determining whether a sample deviates from a reference distribution in a suitable representation space. LLM-generated text detection can be viewed as identifying distributional discrepancies be-tween human-written and model-generated text [7, 8]; hallucination detection seeks to find outputs inconsistent with factual, contextual, or self-consistency-based evidence [9, 6]; adver-sarial example detection aims to recognize abnormal inputs or representations [3, 4, 10, 11]; and watermark detection uncovers deliberately embedded statistical signals in generated content [5]. A wide range of black-box detection methods have been developed under this perspec-tive. Likelihood-based methods exploit token- or sequence-level probability patterns assigned by language models [7, 8]. Classifier-based methods train supervised or contrastive models on learned representations, with applications to LLM-generated text detection, hallucination de-tection, and adversarial detection [12]. Watermark-specific methods embed and subsequently detect statistical signatures in generated outputs [5]. However, these methods are often task-specific, rely on tailored features or supervised training data, and require retraining or careful data curation when transferred to new domains or models. They also rarely provide a unified statistical treatment of heterogeneous reference samples arising from multiple classes, sources, domains, or generation mechanisms. To address these limitations, we propose a general black-box detection framework based on MDS. The key idea is to characterize positive samples in a learned representation space and detect negative samples that deviate from this characterization. Specifically, for positive samples, we use an appropriate pretrained model to extract deep representations, estimate their location and covariance structure, and compute MDS for detection. For MDS estimation, we adopt both casewise MCD [13] and cellwise MCD [14] as the basic principles. Since positive samples may consist of multiple classes, we further propose joint estimators for both the casewise and cellwise settings using a reparameterization technique, together with efficient optimization algorithms. We establish the convergence of the proposed algorithms and the high breakdown point properties of the resulting estimators. Extensive experiments on LLM-generated text detection, hallucination detection, watermark detection, and adversarial example detection demonstrate the effectiveness and generality of the proposed framework. It is worth noting that our approach is inspired by Lee et al. [15], who applied class-conditional Gaussian modeling to adversarial and out-of-distribution detection. However, their method assumes a common covariance matrix across classes and relies on empirical covariance estimation, limiting its robustness in heterogeneous or contaminated settings. In summary, our contributions are as follows: 1. We propose a unified black-box detection framework for a broad class of AI-related con-tent and artifacts, including LLM-generated text, hallucinations, watermarked text, and adversarial examples. The framework is flexible and broadly applicable across different detection tasks. 2. We develop joint estimation methods for multiple covariance matrices in low-dimensional settings. The proposed methods cover both casewise and cellwise contamination mecha-nisms and allow positive samples to contain multiple classes with shared and class-specific covariance structures. 23. We introduce a suitable definition of the breakdown point for joint estimators and estab-lish the high-breakdown-point properties of the proposed joint estimators. The remainder of this paper is organized as follows. Section 2 introduces the unified detec-tion framework. Sections 3 and 4 present the proposed MCD estimators and their multi-class extensions. Section 5 develops optimization algorithms, and Section 6 establishes convergence guarantees and high-breakdown-point properties. Section 7 reports experimental results, and Section 8 concludes the paper. Implementation details and proofs are provided in the appen-dices. 
+
+2. Unified detection framework via Mahalanobis Distance Scores 
+
+In this section, we introduce the proposed unified framework for detecting AI-related con-tent and artifacts. For ease of exposition, we first consider the single-class positive-sample setting in Section 2.1, and then extend the framework to the multi-class setting in Section 2.2. Figure 1 provides a schematic illustration of the overall framework. Sample Under Test   
+
+> Feature Extraction Detector
+
+Positive / Negative 
+
+> Pretrained Model
+> Mahalanobis Distance
+> Pretrained Model
+> Joint casewise/cellwise MCD estimator
+> Cellwise Casewise Latent Representations
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Cellwise Casewise Latent Representations
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+> Assets
+> ...
+
+—————— Multi-Class —————— 
+
+> MD-based Score
+
+—————— Single-Class —————— 
+
+> 1) Estimating 2) Scoring
+> Assets
+> ...
+> Cellwise Casewise Latent Representations
+> Assets
+> ...
+> Assets
+> ...
+> Cellwise Casewise Latent Representations
+> Assets
+> ...
+> Pretrained Model
+> Mahalanobis Distance
+> MD-based Score
+> Pretrained Model
+> MCD CellMCD
+> ，
+> 1) Estimating 2) Scoring
+
+Figure 1: Overview of the proposed framework for detecting AI-related content and artifacts under single-class and multi-class settings. 
+
+2.1. Single-class MDS detector 
+
+We first consider the setting where positive samples are assumed to come from a single class. For example, in image adversarial example detection, the positive samples may be clean images from one class, while the negative samples are their adversarially perturbed counterparts. Let the set of positive samples be D1 = {(xi, Y i = 1) }ni=1 , and let the set of negative samples be 
+
+D2 = SK2
+
+k=1 D(k)2 , where D(k)2 = {(˜ x(k)
+
+i , Y (k)
+
+i = −1) }mk
+
+i=1 , k = 1 , 2, . . . , K 2. The complete dataset is denoted by D = D1 ∪ D 2. Let M be a pretrained model trained on positive samples and used to extract latent representations. For each input x ∈ Rp, we obtain a representation z ∈ Rq
+
+from a chosen layer of M. The corresponding representation sets are denoted by 
+
+Z1 = {(zi, Y i = 1) }ni=1 , Z2 =
+
+K2[
+
+k=1 
+
+Z(k)2 ,
+
+3where Z(k)2 = {(˜ z(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= −1) }mk
+
+> i=1
+
+, k = 1 , 2, . . . , K 2. To characterize the positive class, we estimate its mean vector μ and covariance matrix Σ based on the deep representations of positive samples in Z1. This choice is natural because positive samples are typically abundant and easier to obtain, and pretrained models are usually trained primarily on positive samples. Since the positive samples used for estimation may still contain contamination, direct empirical estimation of μ and Σ can be unstable. Therefore, we use robust estimators, denoted by bμ and 
+
+bΣ, whose construction will be detailed in Section 3. Using these estimates, the Mahalanobis distance scores for positive and negative samples are defined as 
+
+di = ( zi − bμ)⊤ bΣ−1
+
+(zi − bμ), ˜d(k) 
+
+> i
+
+= (˜ z(k) 
+
+> i
+
+− bμ)⊤ bΣ−1
+
+(˜ z(k) 
+
+> i
+
+− bμ), k = 1 , 2, . . . , K 2.
+
+The resulting scores measure how far each sample is from the positive class in the learned representation space. Intuitively, a larger score indicates that the sample is less consistent with the positive class and therefore more likely to be negative. Classification can then be performed on the one-dimensional score sets 
+
+S1 = {(di, Y i = 1) }ni=1 , S(k)2 = {( ˜d(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= −1) }mk
+
+> i=1
+
+, k = 1 , 2, . . . , K 2,
+
+by training a score-based binary classifier. 
+
+2.2. Multi-class MDS detector 
+
+We next consider the multi-class setting, where positive samples may come from multiple classes or subpopulations. For example, in image adversarial example detection, the positive samples may consist of clean images from different digit classes, while the negative samples are their adversarially perturbed counterparts. Let the positive and negative sample sets be D1 =SK1 
+
+> k=1
+
+D(k)1 and D2 = SK2 
+
+> k=1
+
+D(k)2 , respectively, where D(k)1 = {(x(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= 1) }nk
+
+> i=1
+
+, k = 1 , 2, . . . , K 1
+
+and D(k)2 = {(˜ x(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= −1) }mk
+
+> i=1
+
+, k = 1 , 2, . . . , K 2. As in the single-class setting, a pretrained model M is used to extract latent representations. The corresponding representation sets are denoted by 
+
+Z1 =
+
+> K1
+
+[
+
+> k=1
+
+Z(k)1 , Z2 =
+
+> K2
+
+[
+
+> k=1
+
+Z(k)2 ,
+
+where Z(k)1 = {(z(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= 1) }nk 
+
+> i=1
+
+and Z(k)2 = {(˜ z(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= −1) }mk
+
+> i=1
+
+. To characterize the posi-tive classes, we estimate class-specific mean vectors μ(k) and covariance matrices Σ(k) based on the deep representations of positive samples in Z(k)1 , k = 1 , 2, . . . , K 1. This multi-class formula-tion allows different positive classes to have distinct geometric structures in the representation space. Since the positive samples used for estimation may still contain contamination, direct empirical estimation of μ(k) and Σ(k) can be unstable. Therefore, we use joint robust estimators, denoted by {bμ(k)}K1 
+
+> k=1
+
+and { bΣ(k)
+
+}K1
+
+> k=1
+
+, whose construction will be detailed in Section 4. Using these estimates, the Mahalanobis distance score for each sample is defined as its minimum distance to the positive classes: 
+
+d(k) 
+
+> i
+
+= min 
+
+> 1≤j≤K1
+
+n
+
+(z(k) 
+
+> i
+
+− bμ(j))⊤( bΣ(j)
+
+)−1(z(k) 
+
+> i
+
+− bμ(j))
+
+o
+
+, k = 1 , 2, . . . , K 1,
+
+˜d(k) 
+
+> i
+
+= min 
+
+> 1≤j≤K1
+
+n
+
+(˜ z(k) 
+
+> i
+
+− bμ(j))⊤( bΣ(j)
+
+)−1(˜ z(k) 
+
+> i
+
+− bμ(j))
+
+o
+
+, k = 1 , 2, . . . , K 2.
+
+To ensure that the Mahalanobis distance is well-defined in high-dimensional settings, a positive-definiteness constraint is imposed during covariance estimation. Details are provided in Sections 3-4. In addition, to mitigate the computational burden and numerical instability associated with high-dimensional covariance estimation, Gaussian random projection is applied to reduce 4the dimensionality of the representations before covariance estimation. Details are provided in Appendix A.3. This minimum-distance rule reflects the intuition that a sample should be regarded as normal if it is close to at least one positive class, whereas a sample far from all positive classes is more likely to be negative. Classification can then be performed on the one-dimensional score sets S(k)1 = {(d(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+= 1) }nk
+
+> i=1
+
+, k = 1 , 2, . . . , K 1, and S(k)2 = {( ˜d(k) 
+
+> i
+
+, Y (k) 
+
+> i
+
+=
+
+−1) }mk
+
+> i=1
+
+, k = 1 , 2, . . . , K 2, by training a score-based binary classifier. 
+
+3. Single-class robust estimation 
+
+In the single-class MDS detector introduced in Section 2.1, the key step is to estimate the mean vector and covariance matrix of the deep representations of positive samples. Let 
+
+Z = ( z1, z2, . . . , zn)⊤ ∈ Rn×q denote the representation matrix of positive samples. Since these samples may still contain contaminated observations or corrupted feature entries, empirical estimates of the mean and covariance matrix can be unstable. We therefore introduce two robust estimation methods: the casewise MCD, which is designed for contaminated observations, and the cellwise MCD, which is designed for contamination at the feature-entry level. 
+
+3.1. Casewise minimum covariance determinant 
+
+We first consider casewise contamination, where entire observations may be unreliable. To motivate the estimator, consider a Gaussian working model for the positive representations, 
+
+zi ∼ N q(μ, Σ), i = 1 , 2, . . . , n. The density is f (zi; μ, Σ) = 1(2 π)q/ 2|Σ|1/2 exp −12 MD 2(zi, μ, Σ) ,
+
+where MD 2(zi, μ, Σ) = ( zi − μ)⊤Σ−1(zi − μ). The negative log-likelihood, up to a constant factor, is 
+
+ℓ(μ, Σ; zi) = ln |Σ| + MD 2(zi, μ, Σ) + q ln(2 π).
+
+If all observations are reliable, minimizing Pni=1 ℓ(μ, Σ; zi) leads to the usual empirical mean and covariance matrix. However, this estimator is sensitive to contaminated observations. The casewise MCD estimator addresses this issue by selecting a subset of h observations with the smallest covariance determinant. Let H = ( w1, w 2, . . . , w n)⊤, where wi ∈ { 0, 1}, i ∈{1, 2, . . . , n }, indicates whether the i-th observation is retained, with Pni=1 wi = h. The casewise MCD estimator solves 
+
+min 
+
+> μ,Σ,H
+> n
+
+X
+
+> i=1
+
+wiℓ(μ, Σ; zi), s.t. wi ∈ { 0, 1},
+
+> n
+
+X
+
+> i=1
+
+wi = h. (1) For fixed weights H, the estimators are 
+
+bμ = 1
+
+h
+
+> n
+
+X
+
+> i=1
+
+wizi, bΣ = 1
+
+h
+
+> n
+
+X
+
+> i=1
+
+wi(zi − bμ)( zi − bμ)⊤.
+
+Substituting these estimates into (1) shows that the casewise MCD is equivalent to finding the subset of size h whose covariance matrix has the minimum determinant. It is worth noting that directly solving (1) is computationally challenging, since it involves a combinatorial search over all subsets of size h. In practice, the casewise MCD is commonly computed using the Fast-MCD algorithm proposed by Rousseeuw and Van Driessen [16], which efficiently approximates the MCD solution through concentration steps and multiple initial subsets. The tuning parameter h controls the trade-off between robustness and efficiency: a smaller h yields higher robustness against contamination, whereas a larger h uses more obser-vations and can improve statistical efficiency when contamination is mild. A common choice is h = ⌊(n + q + 1) /2⌋, which attains the highest breakdown point, while larger values such as 
+
+h = ⌊0.75 n⌋ are often used when higher efficiency is desired [13, 16]. The resulting bμ and bΣ
+
+are then used in the single-class MDS detector. 53.2. Cellwise minimum covariance determinant 
+
+The casewise MCD removes entire observations and is therefore suitable when contamina-tion affects whole samples. In deep representations, however, contamination may occur only in a subset of feature entries. Removing an entire observation in this case may discard useful information. The cellwise MCD addresses this problem by assigning binary weights at the cell level. Let W = ( wij )1≤i≤n, 1≤j≤q ∈ { 0, 1}n×q be a cellwise indicator matrix, where wij = 1 
+
+means that the j-th entry of zi is retained, and wij = 0 means that the entry is flagged as con-taminated. Denote by wi the i-th row of W . For each observation, let z(wi) 
+
+> i
+
+be the subvector of zi containing only retained entries. Similarly, μ(wi) is the corresponding subvector of μ, and 
+
+Σ(wi) is the corresponding principal submatrix of Σ. Let q(wi) = Pqj=1 wij denote the number of retained entries in the i-th observation. Under the same Gaussian working model, the observed likelihood for the retained entries of zi is 
+
+f
+
+
+
+z(wi) 
+
+> i
+
+; μ(wi), Σ(wi)
+
+
+
+= 1(2 π)q(wi)/2|Σ(wi)|1/2 exp 
+
+
+
+−12MD 2
+
+
+
+z(wi) 
+
+> i
+
+, μ(wi), Σ(wi)
+
+
+
+,
+
+where the partial Mahalanobis distance is 
+
+MD 2
+
+
+
+z(wi) 
+
+> i
+
+, μ(wi), Σ(wi)
+
+
+
+=
+
+
+
+z(wi) 
+
+> i
+
+− μ(wi)
+
+⊤ 
+
+Σ(wi)
+
+−1 
+
+z(wi) 
+
+> i
+
+− μ(wi)
+
+
+
+.
+
+The corresponding negative log-likelihood is 
+
+ℓ
+
+
+
+μ(wi), Σ(wi); z(wi)
+
+> i
+
+
+
+= ln |Σ(wi)| + q(wi) ln(2 π) + MD 2
+
+
+
+z(wi) 
+
+> i
+
+, μ(wi), Σ(wi)
+
+
+
+.
+
+Unlike ordinary missing-data problems, the cellwise indicator matrix W is not observed in advance but is estimated from the data. To avoid flagging too many entries, the cellwise MCD imposes a lower bound on the number of retained cells in each column and adds a penalty for flagged cells. Specifically, for a given h, we require ∥W ·j ∥0 ≥ h, j = 1 , 2, . . . , q, where ∥W ·j ∥0 is the number of retained entries in the j-th column. We also impose λmin (Σ) ≥ a, where λmin (Σ)
+
+denotes the smallest eigenvalue of Σ, for some a > 0, thereby ensuring that the covariance matrix is nonsingular. The cellwise MCD estimator is then defined as the solution to 
+
+min 
+
+> μ,Σ,W
+> n
+
+X
+
+> i=1
+
+ℓ
+
+
+
+μ(wi), Σ(wi); z(wi)
+
+> i
+
+
+
++
+
+> q
+
+X
+
+> j=1
+
+bj ∥1n − W ·j ∥0
+
+s.t. W ∈ { 0, 1}n×q, ∥W ·j ∥0 ≥ h, j = 1 , 2, . . . , q, λmin (Σ) ≥ a. 
+
+(2) Here 1n denotes the n-dimensional all-ones vector, ∥1n − W ·j ∥0 counts the number of flagged cells in the j-th feature dimension, and bj > 0 controls the penalty for flagging cells in that dimension. If an observation has no retained entries, i.e., q(wi) = 0 , we set ln |Σ(wi)| = 0 and 
+
+MD 2(z(wi) 
+
+> i
+
+, μ(wi), Σ(wi)) = 0 .It is worth noting that directly solving (2) is computationally challenging, because the objective involves both continuous parameters (μ, Σ) and a high-dimensional binary matrix 
+
+W . Following Raymaekers and Rousseeuw [14], the cellwise MCD can be computed through an iterative procedure that alternates between updating the cellwise indicator matrix and esti-mating the mean vector and covariance matrix from the retained cells. The penalty parameters 
+
+bj regulate the degree of cellwise flagging and are typically chosen so that, in the absence of contamination, only a small expected fraction of cells is flagged. The parameter h specifies the minimum number of retained entries in each feature dimension and prevents degenerate solutions that remove too many cells. Thus, h and bj jointly control the robustness–efficiency 6trade-off: more aggressive flagging improves robustness to cellwise contamination, whereas re-taining more cells improves efficiency when contamination is mild. The resulting bμ and bΣ are then used in the single-class MDS detector. 
+
+4. Multi-class robust estimation 
+
+In the multi-class MDS detector introduced in Section 2.2, positive samples may come from multiple classes. The covariance structures of different classes may exhibit both homogeneity and heterogeneity. Estimating the covariance matrix for each class separately may fail to borrow information across classes and thus lead to insufficient statistical efficiency. Therefore, building on the casewise and cellwise MCD principles, we extend these two robust estimators to the multi-class setting and propose corresponding joint estimation methods. For notational simplicity, we write the total number of classes as K in this section. 
+
+4.1. Joint casewise MCD estimator 
+
+We first consider casewise contamination, where entire observations may be unreliable within each class. Let Z = {Z(1) , . . . , Z(K)}, where Z(k) = ( z(k)1 , . . . , z(k) 
+
+> nk
+
+)⊤ ∈ Rnk ×q denotes the representation matrix of the k-th positive class, k = 1 , 2, . . . , K . As a working model, we assume 
+
+z(k) 
+
+> i
+
+∼ N q(μ(k), Σ(k)), i = 1 , 2, . . . , n k, k = 1 , 2, . . . , K, where μ(k) ∈ Rq and Σ(k) ∈ Rq×q denote the class-specific mean vector and covariance matrix. Following the reparameterization idea in the joint estimation of multiple graphical models [17], we introduce the following decomposition to explicitly model both shared and class-specific dependence structures: 
+
+Σ(k) = Θ ⊙ Γ(k), (3) where ⊙ denotes the Hadamard product. Equivalently, for Σ(k) = ( σ(k) 
+
+> ij
+
+)1≤i,j ≤q,
+
+σ(k) 
+
+> ij
+
+=
+
+(
+
+θij γ(k) 
+
+> ij
+
+, i̸ = j, γ(k) 
+
+> ii
+
+, i = j, 
+
+with θii = 1 for i = 1 , 2, . . . , q . Here Θ = ( θij )1≤i,j ≤q represents the shared covariance pattern across classes, whereas Γ(k) = ( γ(k) 
+
+> ij
+
+)1≤i,j ≤q captures class-specific variation. This reparame-terization separates shared dependence ( Θ) from class-specific deviations ( Γ(k)). We use the Root Mean Square (RMS) correlation normalization rule to ensure the identifiability of the decomposition, and details are given in Appendix Appendix A.2. For k = 1 , 2, . . . , K , let w(k) 
+
+> i
+
+∈ { 0, 1} indicate whether the i-th observation in class k is retained. We write H(k) = ( w(k)1 , . . . , w (k) 
+
+> nk
+
+)⊤ for the vector of casewise weights in class k with 
+
+Pnk 
+
+> i=1
+
+w(k) 
+
+> i
+
+= hk. The joint casewise MCD estimator is defined as the solution to 
+
+min 
+
+> {μ(k),H(k),Σ(k)}Kk=1
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+w(k) 
+
+> i
+
+˜ℓ(μ(k), Σ(k); z(k) 
+
+> i
+
+) + P(Θ, {Γ(k)}Kk=1 )s.t. w(k) 
+
+> i
+
+∈ { 0, 1},
+
+> nk
+
+X
+
+> i=1
+
+w(k) 
+
+> i
+
+= hk, Σ(k) = Θ ⊙ Γ(k), λmin (Σ(k)) ≥ ak,
+
+(4) where ˜ℓ(μ(k), Σ(k); z(k) 
+
+> i
+
+) = ln |Σ(k)| + q ln(2 π) + MD 2
+
+
+
+z(k) 
+
+> i
+
+, μ(k), Σ(k)
+
+
+
+with MD 2
+
+
+
+z(k) 
+
+> i
+
+, μ(k), Σ(k)
+
+
+
+= ( z(k) 
+
+> i
+
+− μ(k))⊤(Σ(k))−1(z(k) 
+
+> i
+
+− μ(k)), k = 1 , 2, . . . , K . Following 7Guo et al. [17], we impose the penalty 
+
+P(Θ, {Γ(k)}Kk=1 ) = λ1∥Θ∥1,off + λ2
+
+> K
+
+X
+
+> k=1
+
+∥Γ(k)∥1,off := λ1
+
+X
+
+> i̸=j
+
+|θij | + λ2
+
+> K
+
+X
+
+> k=1
+
+X
+
+> i̸=j
+
+|γ(k) 
+
+> ij
+
+|, (5) where λ1, λ 2 > 0 control the global and class-specific sparsity levels, respectively. Here, ∥ · ∥ 1,off 
+
+denotes the sum of the absolute values of the off-diagonal elements of a matrix. The first term promotes a sparse shared structure through Θ: when θij is set to zero, the corresponding covariance entry is removed from all classes simultaneously, encouraging homogeneity across classes. The second term regularizes the class-specific components Γ(k), allowing different classes to retain distinct covariance magnitudes and signs when the shared component is nonzero, thereby preserving heterogeneity. Therefore, the penalty jointly encourages common structure across classes and flexible class-specific deviations. The constraint λmin (Σ(k)) ≥ ak > 0 ensures that each covariance matrix is nonsingular. 
+
+4.2. Joint cellwise MCD estimator 
+
+We next consider cellwise contamination, where only a subset of feature entries may be unreliable. In this setting, removing entire observations can be inefficient, since many uncontaminated entries may still contain useful information. The joint cellwise MCD esti-mator therefore assigns binary weights at the cell level within each class. For class k, let 
+
+W (k) = ( w(k) 
+
+> ij
+
+)1≤i≤nk ,1≤j≤q ∈ { 0, 1}nk ×q be the cellwise indicator matrix, where w(k) 
+
+> ij
+
+= 1 means that the j-th entry of z(k) 
+
+> i
+
+is retained, and w(k) 
+
+> ij
+
+= 0 means that the entry is flagged as con-taminated. Let w(k) 
+
+> i
+
+denote the i-th row of W (k), and let q(w(k)  
+
+> i)
+
+= Pqj=1 w(k) 
+
+> ij
+
+be the number of retained entries in observation i of class k. For any vector or matrix, the superscript (w(k) 
+
+> i
+
+)
+
+denotes the subvector or principal submatrix corresponding to the retained entries. Thus, 
+
+z(w(k)  
+
+> i,k )
+> i
+
+, μ(w(k) 
+
+> i,k )
+
+, Σ(w(k)  
+
+> i,k )
+
+denote the retained subvector of z(k) 
+
+> i
+
+, the corresponding subvector of 
+
+μ(k), and the corresponding principal submatrix of Σ(k), respectively. Using the same covariance decomposition in (3), the joint cellwise MCD estimator is defined by minimizing 
+
+min  
+
+> {μ(k),W(k),Σ(k)}Kk=1
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+˜ℓ
+
+
+
+μ(w(k) 
+
+> i,k )
+
+, Σ(w(k) 
+
+> i,k )
+
+; z(w(k) 
+
+> i,k )
+> i
+
+
+
++
+
+> K
+
+X
+
+> k=1
+> q
+
+X
+
+> j=1
+
+b(k) 
+
+> j
+
+1nk − W (k) 
+
+> ·j0
+
++ P(Θ, {Γ(k)}Kk=1 )s.t. W (k) ∈ { 0, 1}nk ×q, W (k) 
+
+> ·j0
+
+≥ hk, j = 1 , 2, . . . , q, 
+
+Σ(k) = Θ ⊙ Γ(k), λmin (Σ(k)) ≥ ak > 0, k = 1 , 2, . . . , K. 
+
+(6) Let MD 2(z(w(k)  
+
+> i,k )
+> i
+
+, μ(w(k) 
+
+> i,k )
+
+, Σ(w(k) 
+
+> i,k )
+
+) = ( z(w(k)  
+
+> i,k )
+> i
+
+− μ(w(k) 
+
+> i,k )
+
+)⊤(Σ(w(k) 
+
+> i,k )
+
+)−1(z(w(k)  
+
+> i,k )
+> i
+
+− μ(w(k) 
+
+> i,k )
+
+)
+
+be the partial Mahalanobis distance, we have ˜ℓ(μ(w(k) 
+
+> i,k )
+
+, Σ(w(k) 
+
+> i,k )
+
+; z(w(k)  
+
+> i,k )
+> i
+
+) = ln |Σ(w(k) 
+
+> i,k )
+
+| +
+
+q(w(k)  
+
+> i)
+
+ln(2 π)+MD 2(z(w(k)  
+
+> i,k )
+> i
+
+, μ(w(k) 
+
+> i,k )
+
+, Σ(w(k) 
+
+> i,k )
+
+). Here, 1nk is the nk-dimensional all-ones vector, and ∥1nk − W (k) 
+
+> ·j
+
+∥0 counts the number of flagged cells in the j-th feature dimension of class k.The constants b(k) 
+
+> j
+
+penalize cellwise flagging, while the constraints ∥W (k) 
+
+> ·j
+
+∥0 ≥ hk prevent too many entries from being removed in any feature dimension. If all entries of an observation are flagged, we adopt the empty-pattern convention q(w(k)  
+
+> i)
+
+= 0 , ln |Σ(w(k) 
+
+> i,k )
+
+| = 0 , and MD 2 = 0 ,so that the objective function remains well-defined. λmin (Σ(k)) ≥ ak > 0 guarantees that the covariance matrix is nonsingular. The penalty P(Θ, {Γ(k)}Kk=1 ) is the same as in (5), 8encouraging homogeneity through the shared component Θ while preserving heterogeneity by the class-specific components Γ(k).
+
+5. Optimization algorithms 
+
+In this section, we develop optimization algorithms for the two joint estimators introduced in Section 4. The main difficulty is that both estimators involve discrete selection variables and continuous covariance parameters under the shared-structure reparameterization Σ(k) =
+
+Θ ⊙ Γ(k). For the joint casewise MCD estimator, the discrete variables correspond to the retained observations in each class. For the joint cellwise MCD estimator, the discrete variables correspond to retained cells in each class-specific representation matrix. We solve both problems by alternating between updating the discrete selection variables and updating the continuous parameters. We use t ∈ N as a superscript on the estimator to represent the result obtained in the t-th iteration, where N represents the set of non-negative integers, and t = 0 represents the initial value. 
+
+5.1. Optimization for joint casewise MCD estimator 
+
+Under casewise contamination, we first initialize, for each group k, a subset H(k, 0) of size hk. Starting from this initial subset, the algorithm iteratively updates both the model parameters and the subset composition until convergence. We first update the group means based on the current subset: 
+
+bμ(k,t +1) =
+
+Pnk 
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+z(k)
+
+> i
+
+Pnk 
+
+> i=1
+
+w(k,t )
+
+> i
+
+=
+
+Pnk 
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+z(k)
+
+> i
+
+hk
+
+, k = 1 , 2, . . . , K. 
+
+We next update the shared structure bΘ(t+1) 
+
+and the group-specific heterogeneity compo-nents bΓ(k,t +1) 
+
+via alternating optimization: 
+
+• We first fix bΘ(t)
+
+and update each bΓ(k,t +1) 
+
+:
+
+bΓ(k,t +1) 
+
+= arg min 
+
+> Γ
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+˜ℓ(bμ(k,t +1) , bΘ(t)
+
+⊙ Γ; z(k) 
+
+> i
+
+) + λ2
+
+X
+
+> i̸=j
+
+|γij |.
+
+• We then fix all bΓ(k,t +1) 
+
+and update the shared structure bΘ(t+1) 
+
+:
+
+bΘ(t+1) 
+
+= arg min 
+
+> Θ
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+˜ℓ(bμ(k,t +1) , Θ ⊙ bΓ(k,t +1) 
+
+; z(k) 
+
+> i
+
+) + λ1
+
+X
+
+> i̸=j
+
+|θij |.
+
+The covariance matrices are updated by bΣ(k,t +1) 
+
+= bΘ(t+1) 
+
+⊙ bΓ(k,t +1) 
+
+, k = 1 , 2, . . . , K . After updating the parameters, the algorithm computes the Mahalanobis distances of all samples to their group centers using the updated mean and covariance estimates. Within each group, the hk
+
+samples with the smallest Mahalanobis distances are selected as unflagged samples, forming the updated subset H(k,t +1) . This process is repeated until convergence. To enhance robustness, a reweighting step is performed after convergence, following the Fast-MCD algorithm [16]. The subset is updated based on Mahalanobis distances, and the final parameter estimates are computed with respect to this reweighted subset. The complete computation procedure is presented in Algorithm 1. 9Algorithm 1 Fast-MCD Algorithm for Joint Casewise MCD Estimator (JCASEMCD) 
+
+Require: Data Z, subset sizes {hk}Kk=1 , penalties λ1, λ 2, error threshold ε, eigenvalue thresh-olds {ak}Kk=1 .Initialize t = 0 and generate initial estimates bμ(k, 0) , bΘ(0) 
+
+, bΓ(k, 0) 
+
+, bΣ(k, 0) 
+
+, and initial subsets 
+
+H(k, 0) for k = 1 , 2, . . . , K .
+
+while not converged do 
+
+Update group means: 
+
+bμ(k,t +1) ←
+
+Pnk 
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+z(k)
+
+> i
+
+hk
+
+, k = 1 , 2, . . . , K. 
+
+Update structure parameters: 1. For k = 1 , 2, . . . , K , fix bΘ(t)
+
+and update bΓ(k,t +1) 
+
+:
+
+bΓ(k,t +1) 
+
+← arg min 
+
+> Γ
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+˜ℓ
+
+bμ(k,t +1) , bΘ(t)
+
+⊙ Γ; z(k)
+
+> i
+
+
+
++ λ2
+
+X
+
+> i̸=j
+
+|γij |.
+
+2. Fix all bΓ(k,t +1) 
+
+and update bΘ(t+1) 
+
+:
+
+bΘ(t+1) 
+
+← arg min 
+
+> Θ
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+˜ℓ
+
+bμ(k,t +1) , Θ ⊙ bΓ(k,t +1) 
+
+; z(k)
+
+> i
+
+
+
++ λ1
+
+X
+
+> i̸=j
+
+|θij |.
+
+Update covariance matrices: 
+
+bΣ(k,t +1) 
+
+← bΘ(t+1) 
+
+⊙ bΓ(k,t +1) 
+
+, k = 1 , 2, . . . , K. 
+
+Update subsets H(k,t +1) with the hk samples having smallest Mahalanobis distances. 
+
+if max k ∥ bΣ(k,t +1) 
+
+− bΣ(k,t )
+
+∥F < ε and max k ∥bμ(k,t +1) − bμ(k,t )∥2 < ε then 
+
+Converged, exit loop. 
+
+else 
+
+t ← t + 1 .
+
+end if end while 
+
+Reweighting: Update weights w(k, final ) 
+
+> i
+
+based on Mahalanobis distances and recompute 
+
+bμ(k, final ), bΣ(k, final )
+
+, bΘ(final )
+
+, ˆΓ(k, final )
+
+.
+
+return bμ(k, final ), bΣ(k, final )
+
+, bΘ(final )
+
+, ˆΓ(k, final )
+
+10 5.2. Optimization for joint cellwise MCD estimator 
+
+For the cellwise setting, it is difficult to directly solve Equation (6). The optimization proceeds by first estimating the weight matrices W and then updating the parameters given the missing entries. For ease of discussion, we introduce notation and partitions. In the t-th iteration, for the k-th group, the i-th row is divided into three parts z(k) 
+
+> i
+
+= ( z(k) 
+
+> ij
+
+, z(k)⊤ 
+
+> i,o
+
+, z(k)⊤ 
+
+> i, −o
+
+)⊤
+
+after a suitable permutation of coordinates, where z(k) 
+
+> ij
+
+is the element in row i and column j, and 
+
+z(k) 
+
+> i,o
+
+and z(k) 
+
+> i, −o
+
+correspond to entries marked as normal (w(k,t ) 
+
+> iτ
+
+= 1) and abnormal (w(k,t ) 
+
+> iτ
+
+= 0) ,
+
+τ = 1 , 2, . . . , q , respectively, with o = {τ̸ = j : w(k,t ) 
+
+> iτ
+
+= 1 }. Accordingly, the mean vector bμ(k)
+
+and covariance matrix bΣ(k)
+
+are partitioned as 
+
+bμ(k) =
+
+
+
+μ(k)
+
+> j
+
+bμ(k)
+
+> o
+
+bμ(k)
+
+> −o
+
+ , bΣ(k)
+
+=
+
+bσ(k) 
+
+> jj
+
+bΣ(k) 
+
+> j,o
+
+bΣ(k)
+
+> j, −o
+
+bΣ(k) 
+
+> o,j
+
+bΣ(k) 
+
+> o,o
+
+bΣ(k)
+
+> o, −o
+
+bΣ(k) 
+
+> −o,j
+
+bΣ(k) 
+
+> −o,o
+
+bΣ(k)
+
+> −o, −o
+
+ .
+
+We first initialize each group separately by computing initial location estimates bμ(k, 0) ,covariance estimates bΣ(k, 0) 
+
+, and weight matrices W (k, 0) , ensuring that each column contains at least hk non-missing entries not flagged as outliers. An iterative process then alternates between updating cellwise weights and updating parameters. In the t-th iteration, with bμ(k,t )
+
+and bΣ(k,t )
+
+fixed, the objective function used for updating the weight of entry (i, j ) in group k is 
+
+∆(k) 
+
+> ij
+
+= ln( C(k) 
+
+> ij
+
+) + ln(2 π) + (z(k) 
+
+> ij
+
+− bz(k) 
+
+> ij
+
+)2
+
+C(k)
+
+> ij
+
+− b(k) 
+
+> j
+
+, (7) where b(k) 
+
+> j
+
+= max {χ21−α(1) + ln(2 π) + ln(1 /([( bΣ(k, 0) 
+
+)−1]jj ), 0}, with χ21−α(1) representing the chi-square 1 − α quantile with 1 degree of freedom. Moreover, the conditional mean and variance are 
+
+bz(k) 
+
+> ij
+
+= bμ(k,t ) 
+
+> j
+
++ bΣ(k,t ) 
+
+> j,o
+
+( bΣ(k,t ) 
+
+> o,o
+
+)−1(z(k) 
+
+> i,o
+
+− bμ(k,t ) 
+
+> o
+
+), C(k) 
+
+> ij
+
+= bσ(k,t ) 
+
+> jj
+
+− bΣ(k,t ) 
+
+> j,o
+
+( bΣ(k,t ) 
+
+> o,o
+
+)−1( bΣ(k,t ) 
+
+> j,o
+
+)⊤. (8) The index set o is determined by the current weight matrix W (k,t ). All cells with ∆(k) 
+
+> ij
+
+< 0
+
+are retained. If fewer than hk cells are retained in the j-th column, the smallest remaining values of ∆(k) 
+
+> ij
+
+are additionally retained until hk cells are retained [14]. Then, the Expectation-Maximization (EM) algorithm [18] updates bμ(k,t +1) , bΓ(k,t +1) 
+
+, and bΘ(t+1) 
+
+.
+
+E-step . Given W (k,t +1) , the conditional expectation and covariance for the i-th observation in group k are computed. Let Oi = {τ : w(k,t +1)  
+
+> iτ
+
+= 1 }, Ui = {τ : w(k,t +1)  
+
+> iτ
+
+= 0 }, and let z(k) 
+
+> i, Oi
+
+be a subvector indexed by Oi. The conditional expectation is m(k,t ) 
+
+> i
+
+= ( m(k,t )
+
+> i, Oi
+> ⊤
+
+, m(k,t )
+
+> i, Ui
+> ⊤
+
+)⊤, where 
+
+m(k,t ) 
+
+> i, Oi
+
+= z(k) 
+
+> i, Oi
+
+, m(k,t ) 
+
+> i, Ui
+
+= bμ(k,t ) 
+
+> Ui
+
++ bΣ(k,t ) 
+
+> Ui,Oi
+
+( bΣ(k,t ) 
+
+> Oi,Oi
+
+)−1(z(k) 
+
+> i, Oi
+
+− bμ(k,t ) 
+
+> Oi
+
+), (9) and the conditional covariance V (k,t ) 
+
+> i
+
+satisfies 
+
+V (k,t ) 
+
+> i, Oi,Oi
+
+= O, V (k,t ) 
+
+> i, Oi,Ui
+
+= V (k,t ) 
+
+> i, Ui,Oi
+
+= 0, V (k,t ) 
+
+> i, Ui,Ui
+
+= bΣ(k,t ) 
+
+> Ui,Ui
+
+− bΣ(k,t ) 
+
+> Ui,Oi
+
+( bΣ(k,t ) 
+
+> Oi,Oi
+
+)−1 bΣ(k,t ) 
+
+> Oi,Ui
+
+, (10) where O and 0 represent a matrix and a vector containing only zeros, respectively. When 
+
+Oi = ∅, we use the convention m(k,t ) 
+
+> i
+
+= bμ(k,t ) and V (k,t ) 
+
+> i
+
+= bΣ(k,t )
+
+. The conditional second-order 11 central moment is then 
+
+E
+
+h
+
+(z(k) 
+
+> i
+
+− μ(k))( z(k) 
+
+> i
+
+− μ(k))⊤ z(k)
+
+> i, Oi
+
+i
+
+= V (k,t ) 
+
+> i
+
++ ( m(k,t ) 
+
+> i
+
+− μ(k))( m(k,t ) 
+
+> i
+
+− μ(k))⊤.
+
+M-step . We first update the location parameters bμ(k,t +1) : bμ(k,t +1) = 1
+
+> nk
+
+Pnk 
+
+> i=1
+
+m(k,t ) 
+
+> i
+
+, and compute 
+
+S(k,t )cell = 1
+
+nknkX
+
+> i=1
+
+h
+
+V (k,t ) 
+
+> i
+
++ ( m(k,t ) 
+
+> i
+
+− bμ(k,t +1) )( m(k,t ) 
+
+> i
+
+− bμ(k,t +1) )⊤
+
+i
+
+.
+
+Next, fixing bΘ(t)
+
+, the group-specific structure bΓ(k,t +1) 
+
+is updated by solving 
+
+bΓ(k,t +1) 
+
+= arg min  
+
+> Γ
+
+nk
+
+h
+
+ln | bΘ(t)
+
+⊙ Γ| + tr(( bΘ(t)
+
+⊙ Γ)−1S(k,t )cell )
+
+i
+
++ λ2
+
+X
+
+> i̸=j
+
+|γij |.
+
+Finally, the shared structure bΘ(t+1) 
+
+is updated by 
+
+bΘ(t+1) 
+
+= arg min 
+
+> Θ
+> K
+
+X
+
+> k=1
+
+nk
+
+h
+
+ln |Θ ⊙ bΓ(k,t +1) 
+
+| + tr(( Θ ⊙ bΓ(k,t +1) 
+
+)−1S(k,t )cell )
+
+i
+
++ λ1
+
+X
+
+> i̸=j
+
+|θij |.
+
+The covariance matrices for each group are then reconstructed via bΣ(k,t +1) 
+
+= bΘ(t+1) 
+
+⊙
+
+bΓ(k,t +1) 
+
+, and the algorithm iterates until convergence. The full procedure is summarized in Algorithm 2. 
+
+Algorithm 2 Computation procedure for joint cellwise MCD estimator (JCELLMCD) 
+
+Require: Z = ( Z(1) , . . . , Z(K)), {hk}Kk=1 , {ak}Kk=1 , λ1, λ 2.Initialize t = 0 , bμ(k, 0) , bΣ(k, 0) 
+
+, W (k, 0) , bΘ(0) 
+
+, bΓ(k, 0) 
+
+and evaluate b(k) 
+
+> j
+
+for k = 1 , 2, . . . , K .
+
+while not converged do 
+
+For k = 1 , 2, . . . , K , update cellwise weights (Algorithm 3): 
+
+W (k,t +1) = CellwiseWeightsUpdater (Z(k), bμ(k,t ), bΣ(k,t )
+
+, W (k,t ), h k, b (k) 
+
+> j
+
+).
+
+Update parameters via EM (Algorithm 4): 
+
+(bμ(k,t +1) , bΘ(t+1) 
+
+, bΓ(k,t +1) 
+
+)Kk=1 = EM (Z, {W (k,t +1) }Kk=1 , (bμ(k,t ), bΘ(t)
+
+, bΓ(k,t )
+
+)Kk=1 , {ak}Kk=1 , λ 1, λ 2).
+
+Reconstruct covariance matrices: bΣ(k,t +1) 
+
+= bΘ(t+1) 
+
+⊙ bΓ(k,t +1) 
+
+, k = 1 , 2, . . . , K .Check convergence and update t = t + 1 .
+
+end while return bμ(k, final ), bΣ(k, final )
+
+, bΘ(final )
+
+, bΓ(k, final )
+
+, W (k, final )
+
+12 Algorithm 3 CellwiseWeightsUpdater step for Algorithm 2 
+
+Require: Z(k), bμ(k,t ), bΣ(k,t )
+
+, W (k,t ), hk, b(k)
+
+> j
+
+W (k,t +1) = W (k,t )
+
+for j = 1 , . . . , q do for i = 1 , . . . , n k do 
+
+o = {τ̸ = j : w(k,t +1)  
+
+> iτ
+
+= 1 }.Compute conditional mean and variance with Equation (8). Compute objective function ∆(k) 
+
+> ij
+
+with Equation (7). 
+
+end for 
+
+Let N− = # {∆(k) 
+
+> ij
+
+< 0, i = 1 , 2, . . . , n k}, and update weights: 
+
+w(k,t +1)  
+
+> ij
+
+= I{N− ≥ hk}I{∆(k) 
+
+> ij
+
+< 0} + I{N− < h k}I{∆(k) 
+
+> ij
+
+among hk smallest }
+
+end for return W (k,t +1) 
+
+Algorithm 4 EM step for Algorithm 2 
+
+Require: Z, {W (k,t +1) }Kk=1 , (bμ(k,t ), bΘ(t)
+
+, bΓ(k,t )
+
+)Kk=1 , {ak}Kk=1 , λ1, λ 2.
+
+for k = 1 , . . . , K do for i = 1 , . . . , n k do 
+
+Partition indices: Oi = {τ : w(k) 
+
+> iτ
+
+= 1 }, Ui = {τ : w(k) 
+
+> iτ
+
+= 0 }.Compute conditional mean m(k,t ) 
+
+> i
+
+with Equation (9). Compute conditional covariance V (k,t ) 
+
+> i
+
+with Equation (10). 
+
+end for 
+
+Update location: bμ(k,t +1) = 1
+
+> nk
+
+Pnk 
+
+> i=1
+
+m(k,t )
+
+> i
+
+Compute S(k,t )cell = 1
+
+> nk
+
+Pnk
+
+> i=1
+
+V (k,t ) 
+
+> i
+
++ ( m(k,t ) 
+
+> i
+
+− bμ(k,t +1) )( m(k,t ) 
+
+> i
+
+− bμ(k,t +1) )⊤.Update group-specific structures: 
+
+bΓ(k,t +1) 
+
+= arg min  
+
+> Γ
+
+nk
+
+h
+
+ln | bΘ(t)
+
+⊙ Γ| + tr(( bΘ(t)
+
+⊙ Γ)−1S(k,t )cell )
+
+i
+
++ λ2
+
+X
+
+> i̸=j
+
+|γij |.
+
+end for 
+
+Update shared structure: 
+
+bΘ(t+1) 
+
+= arg min 
+
+> Θ
+> K
+
+X
+
+> k=1
+
+nk
+
+h
+
+ln |Θ ⊙ bΓ(k,t +1) 
+
+| + tr(( Θ ⊙ bΓ(k,t +1) 
+
+)−1S(k,t )cell )
+
+i
+
++ λ1
+
+X
+
+> i̸=j
+
+|θij |.
+
+return (bμ(k,t +1) , bΘ(t+1) 
+
+, bΓ(k,t +1) 
+
+)Kk=1 
+
+The updates for bΘ and {bΓ(k)
+
+}Kk=1 , which correspond to the Fast-MCD algorithm for the joint casewise MCD estimator in Section 5.1 and the EM-based procedure for the joint cell-wise MCD estimator in Section 5.2, are essentially constrained optimization problems. We use proximal gradient descent with backtracking search to obtain approximate solutions. Detailed update formulas are provided in Appendix A.4. Details such as algorithm initialization, the identifiability of the covariance decomposition, and dimensionality reduction in the implemen-tation are also given in Appendix A. 13 6. Theoretical properties 
+
+In this section, we discuss the main theoretical properties of the proposed joint estimators. Specifically, the joint casewise MCD estimator is optimized via the Fast-MCD algorithm, and the joint cellwise MCD estimator is optimized via the EM-based procedure. Detailed statements and proofs of these properties are provided in the subsequent theorems and Appendix B. 
+
+6.1. Convergence guarantees 
+
+The following theorems establish convergence guarantees for the proposed joint estima-tors. In particular, they show that the algorithms generate non-increasing sequences of their respective objective values and that these objective values converge to finite limits. Moreover, any interior accumulation point satisfies suitable blockwise stationarity conditions for the con-tinuous variables, together with optimality or coordinatewise optimality of the corresponding discrete selection variables. 
+
+Theorem 6.1. Let Ω = ( Ω(1) , . . . , Ω(K)), with Ω(k) = ( μ(k), Σ(k)) and Σ(k) = Θ ⊙ Γ(k) for 
+
+k = 1 , 2, . . . , K . Define the regularized joint negative log-likelihood objective function as 
+
+Lcase (Ω, H) = 
+
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+w(k) 
+
+> i
+
+˜ℓ(μ(k), Σ(k); z(k) 
+
+> i
+
+) + P(Θ, {Γ(k)}Kk=1 ):= 
+
+> K
+
+X
+
+> k=1
+
+Q(k)case (Ω, H) + λ1∥Θ∥1,off + λ2
+
+> K
+
+X
+
+> k=1
+
+∥Γ(k)∥1,off ,
+
+where w(k) 
+
+> i
+
+∈ { 0, 1} and Pnk 
+
+> i=1
+
+w(k) 
+
+> i
+
+= hk. Suppose λmin (Σ(k)) ≥ ak > 0, λ1 > 0, and λ2 > 0. For each iteration t, let L(t) 
+
+> Γ,k
+
+and L(t) 
+
+> Θ
+
+be the Lipschitz constants of the gradients of the smooth parts of the Γ(k)- and Θ-subproblems, respectively. The proximal gradient step sizes are chosen with a strict descent margin, namely, for some constants δΓ, δ Θ ∈ (0 , 1) , LΓ,k ≥ sup s≥0 L(s) 
+
+> Γ,k
+
+> 0 and 
+
+LΘ ≥ sup s≥0 L(s) 
+
+> Θ
+
+> 0, k = 1 , 2, . . . , K ,
+
+0 < inf  
+
+> s≥0
+
+η(s) 
+
+> Γ,k
+
+≤ η(t) 
+
+> Γ,k
+
+≤ 1 − δΓ
+
+LΓ,k 
+
+, 0 < inf  
+
+> s≥0
+
+η(s) 
+
+> Θ
+
+≤ η(t) 
+
+> Θ
+
+≤ 1 − δΘ
+
+LΘ
+
+.
+
+Then the pre-reweighting iterations of Algorithm 1 satisfy: 1. Lcase (Ω(t+1) , H(t+1) ) ≤ L case (Ω(t+1) , H(t)) ≤ L case (Ω(t), H(t));2. The sequence Lcase (Ω(t), H(t)) converges to a finite value L∗
+
+> case
+
+;3. Any interior accumulation point (Ω∗, H∗), namely one satisfying λmin (Θ∗ ⊙Γ(k)∗) > a k >
+
+0, k = 1 , 2, . . . , K is blockwise stationary with respect to the continuous variables, and H∗
+
+is optimal for the discrete H-block given Ω∗.
+
+Theorem 6.1 ensures that the Fast-MCD algorithm for the joint casewise MCD estimator, before the final reweighting step, produces a non-increasing sequence of the regularized negative log-likelihood values. This implies that each pre-reweighting iteration either decreases or main-tains the objective value, and that the objective values converge to a finite limit. Moreover, any interior accumulation point is blockwise stationary with respect to the continuous parameters and is optimal with respect to the discrete casewise selection block. Consequently, practitioners can rely on the algorithm to produce stable estimates for casewise-contaminated data. 14 Theorem 6.2. Let Ω = ( Ω(1) , . . . , Ω(K)), with Ω(k) = ( μ(k), Σ(k)) and Σ(k) = Θ ⊙ Γ(k) for 
+
+k = 1 , 2, . . . , K . Denote the cellwise objective function as 
+
+Lcell (Ω, W ) = 
+
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+˜ℓ
+
+
+
+μ(w(k) 
+
+> i,k )
+
+, Σ(w(k) 
+
+> i,k )
+
+; z(w(k) 
+
+> i,k )
+> i
+
+
+
++
+
+> K
+
+X
+
+> k=1
+> q
+
+X
+
+> j=1
+
+b(k) 
+
+> j
+
+∥1nk − W (k) 
+
+> ·j
+
+∥0 + λ1∥Θ∥1,off + λ2
+
+> K
+
+X
+
+> k=1
+
+∥Γ(k)∥1,off ,
+
+subject to λmin (Σ(k)) ≥ ak > 0, ∥W (k) 
+
+> ·j
+
+∥0 ≥ hk, b(k) 
+
+> j
+
+≥ 0 for all j and k, λ1 > 0, and λ2 > 0.The proximal gradient step sizes are chosen with a strict descent margin, namely, for some constants δΓ, δ Θ ∈ (0 , 1) , ∀ t ≥ 0 and k = 1 , 2, . . . , K ,
+
+0 < inf  
+
+> s≥0
+
+η(s) 
+
+> Γ,k
+
+≤ η(t) 
+
+> Γ,k
+
+≤ 1 − δΓ
+
+LΓ,k 
+
+, 0 < inf  
+
+> s≥0
+
+η(s) 
+
+> Θ
+
+≤ η(t) 
+
+> Θ
+
+≤ 1 − δΘ
+
+LΘ
+
+,
+
+where LΓ,k > 0, LΘ > 0 are Lipschitz constants. Algorithm 2 satisfies: 1. Lcell (Ω(t+1) , W (t+1) ) ≤ L cell (Ω(t), W (t+1) ) ≤ L cell (Ω(t), W (t));2. The sequence Lcell (Ω(t), W (t)) converges to a finite value; 3. Any interior limit point (Ω∗, W ∗), namely one satisfying λmin (Θ∗ ⊙ Γ(k)∗) > a k > 0, k =1, 2, . . . , K is stationary with respect to the continuous variables for fixed W ∗, and W ∗
+
+is coordinatewise optimal for the discrete cellwise weight update given Ω∗.
+
+Theorem 6.2 establishes analogous convergence guarantees for the joint cellwise MCD estimator using the EM-based generalized procedure. The cellwise objective values decrease monotonically and converge to a finite limit. Moreover, any interior accumulation point satisfies the stationarity conditions for the continuous parameters with the cellwise weights fixed, while the limiting cellwise weight matrix is coordinatewise optimal for the discrete weight update. These results provide a theoretical justification for the stability of the proposed procedure under cellwise contamination and missing-entry patterns. 
+
+6.2. Finite-sample breakdown property 
+
+To provide context, the following theorems characterize the robustness of the proposed joint estimators under casewise and cellwise contamination. We establish finite-sample break-down points, showing how much contamination the estimators can tolerate while maintain-ing bounded estimates. In order to discuss the breakdown point properties of the joint es-timators, we introduce some definitions under the joint estimation framework. Let Z⋆ =
+
+{Z⋆(1) , . . . , Z⋆(K)}, where Z⋆(k) = ( z⋆(k)1 , . . . , z⋆(k) 
+
+> nk
+
+)⊤ ∈ Rnk ×q denotes the clean representation matrix of the k-th positive class, k = 1 , 2, . . . , K . Let bΩ = ( bμ, bΣ) = ( {bμ(k)}Kk=1 , { bΣ(k)
+
+}Kk=1 )
+
+denote the joint estimator. For any vector r = ( r1, r 2, . . . , r K ), define 
+
+β(r) := max 
+
+> 1≤k≤K
+
+rk
+
+nk
+
+.
+
+Definition 6.1 (Joint Casewise Contamination) . Let Ccase (r) be the set of all contaminated samples ˜Z = { ˜Z(1) , . . . , ˜Z(K)}, where for each group k ∈ { 1, 2, . . . , K }, ˜Z(k) is obtained by replacing at most rk rows of Z⋆(k).
+
+15 Definition 6.2 (Joint Cellwise Contamination) . Let Ccell (r) be the set of all contaminated samples ˜Z, where for each group k ∈ { 1, 2, . . . , K } and each column j ∈ { 1, 2, . . . , q }, ˜Z(k) is obtained by replacing at most rk cells in the j-th column of Z⋆(k).
+
+Definition 6.3 (Finite-Sample Joint Breakdown Points) . The joint location breakdown points are 
+
+δ∗
+
+> case ,μ
+
+( bΩ, Z⋆) := inf 
+
+(
+
+β(r) : sup 
+
+> ˜Z∈C case (r)
+
+max  
+
+> 1≤k≤K
+
+∥bμ(k)( ˜Z) − bμ(k)(Z⋆)∥2 = ∞
+
+)
+
+,ε∗
+
+> cell ,μ
+
+( bΩ, Z⋆) := inf 
+
+(
+
+β(r) : sup 
+
+> ˜Z∈C cell (r)
+
+max  
+
+> 1≤k≤K
+
+∥bμ(k)( ˜Z) − bμ(k)(Z⋆)∥2 = ∞
+
+)
+
+.
+
+The joint scatter explosion and implosion breakdown points are 
+
+δcase ,+( bΩ, Z⋆) := inf 
+
+(
+
+β(r) : sup 
+
+> ˜Z∈C case (r)
+
+max  
+
+> 1≤k≤K
+
+λmax ( bΣ(k)
+
+( ˜Z)) = ∞
+
+)
+
+,εcell ,+( bΩ, Z⋆) := inf 
+
+(
+
+β(r) : sup 
+
+> ˜Z∈C cell (r)
+
+max  
+
+> 1≤k≤K
+
+λmax ( bΣ(k)
+
+( ˜Z)) = ∞
+
+)
+
+,δcase ,−( bΩ, Z⋆) := inf 
+
+
+
+β(r) : inf 
+
+> ˜Z∈C case (r)
+
+min  
+
+> 1≤k≤K
+
+λmin ( bΣ(k)
+
+( ˜Z)) = 0 
+
+
+
+,εcell ,−( bΩ, Z⋆) := inf 
+
+
+
+β(r) : inf 
+
+> ˜Z∈C cell (r)
+
+min  
+
+> 1≤k≤K
+
+λmin ( bΣ(k)
+
+( ˜Z)) = 0 
+
+
+
+.
+
+If no admissible contamination fraction in [0 , 1] causes breakdown, the breakdown fraction is reported as 1. 
+
+The above definition is appropriate because, within the joint estimation framework, the es-timator comprises the location and scatter parameters of multiple positive classes. Unbounded shift, covariance explosion, or covariance degradation in the estimation of any single class will lead to the failure of the overall joint estimation. Therefore, we measure the joint contamination intensity by the maximum contamination ratio across all classes and define breakdown based on the worst-case scenario. When K = 1 , these definitions reduce to the classic casewise and cell-wise breakdown definitions, maintaining consistency with the existing theoretical frameworks of MCD and cellMCD. Based on these definitions, we establish the breakdown point properties of the joint estimators. We assume the dataset is in general position: any (q − 1) -dimensional affine subspace contains at most q points. 
+
+Theorem 6.3 (Joint Cellwise Breakdown Point) . Consider the joint cellwise estimator mini-mizing the joint objective subject to λmin (Σ(k)) ≥ ak > 0, ∥W (k) 
+
+> ·j
+
+∥0 ≥ hk, and a non-negative penalty 
+
+P(Θ, {Γ(k)}Kk=1 ) = λ1
+
+X
+
+> i̸=j
+
+|θij | + λ2
+
+> K
+
+X
+
+> k=1
+
+X
+
+> i̸=j
+
+|γ(k) 
+
+> ij
+
+|.
+
+Assume each clean group Z⋆(k) is in general position and 
+
+hk ≥
+
+jnk
+
+2
+
+k
+
++ 1 , k = 1 , 2, . . . , K. 
+
+Let 
+
+β0 := min 
+
+> 1≤k≤K
+
+nk − hk + 1 
+
+nk
+
+.
+
+16 Then, 
+
+εcell ,−( bΩ, Z⋆) = 1 , εcell ,+( bΩ, Z⋆) ≥ β0, ε∗
+
+> cell ,μ
+
+( bΩ, Z⋆) ≥ β0.
+
+If nk = n and hk = h for all groups, these simplify to 
+
+εcell ,− = 1 , εcell ,+ ≥ n − h + 1 
+
+n , ε∗ 
+
+> cell ,μ
+
+≥ n − h + 1 
+
+n .
+
+Theorem 6.3 indicates that the joint cellwise MCD estimator is highly robust: it can tolerate a large proportion of contaminated cells without the location or covariance estimates becoming unbounded. The lower bound β0 is sharp as a common guarantee for simultaneous boundedness of the location and scatter estimates under the stated contamination construction. 
+
+Theorem 6.4 (Joint Casewise Breakdown Point) . Suppose each clean group is in general position and hk ≥ ⌊ nk/2⌋ + 1 , k = 1 , 2, . . . , K . For the penalized joint casewise estimator with 
+
+λmin (Σ(k)) ≥ ak > 0 and P(Θ, {Γ(k)}Kk=1 ) ≥ 0, let 
+
+β0 := min 
+
+> 1≤k≤K
+
+nk − hk + 1 
+
+nk
+
+.
+
+Then, 
+
+δcase ,−( bΩ, Z⋆) = 1 , δcase ,+( bΩ, Z⋆) ≥ β0, δ∗
+
+> case ,μ
+
+( bΩ, Z⋆) ≥ β0.
+
+If nk = n and hk = h for all groups, 
+
+δcase ,− = 1 , δcase ,+ ≥ n − h + 1 
+
+n , δ∗ 
+
+> case ,μ
+
+≥ n − h + 1 
+
+n .
+
+This establishes a provable high breakdown lower bound for the penalized joint casewise estima-tor. 
+
+Theorem 6.4 similarly establishes that the joint casewise MCD estimator maintains bounded estimates even under substantial casewise contamination. The derived lower bounds on δcase ,−,
+
+δcase ,+, and δ∗ 
+
+> case ,μ
+
+provide a clear, provable measure of the estimator’s finite-sample robustness. 
+
+7. Real data applications 
+
+We evaluate our unified MDS-based framework on four real-world AI-related tasks: LLM-generated text, watermark, hallucination, and adversarial example detection. Performance is assessed using comprehensive metrics, including area under the receiver operating characteris-tic curve (ROC AUC), area under the precision-recall curve (PR AUC), F1 score, specificity, accuracy, precision, and recall. Our implementation is available at https://github.com/ Astringency/JointMCD.git .
+
+7.1. LLM-generated text detection 
+
+LLM-generated text detection aims to distinguish human-written passages from LLM-generated ones. We use the Human ChatGPT Comparison Corpus (HC3), a benchmark dataset widely adopted for AI-generated text detection, which contains paired human and ChatGPT-3.5 responses across multiple domains [19, 20, 21]. We sample 1,000 instances from each do-main, except for the “wiki_csai” subset, where all 842 available samples are used. To assess cross-generator generalization, we further collect responses to the same questions from five re-cent LLMs: ChatGPT-5.4 [22, 23], ChatGPT-5.4 mini [24], Gemini-3 Flash Preview [25, 26], Gemini-3.1 Flash Lite Preview [27], and Gemini-3.1 Pro Preview [28]. This yields five HC3-based datasets, each with 4,842 instances. We apply the proposed unified detection framework 17 using RoBERTa-base as the pretrained encoder [29], and compare it with likelihood-based [12], rank-based [7], entropy-based [30], DetectGPT [8], and RoBERTa baseline methods. For DetectGPT, we report both the raw perturbation discrepancy score, DetectGPT-d, and its normalized version, DetectGPT-z. The results in Table 1 demonstrate the effectiveness and robustness of the proposed meth-ods across different LLM generators: JCASEMCD achieves ROC AUC values of 0.969 and 0.951 on GPT-5.4 and GPT-5.4 mini, respectively, comparable to the strongest DetectGPT variants while yielding the highest specificity and precision, and remains competitive on the more challenging Gemini-based datasets, achieving the best overall performance on Gemini-3.1 Pro Preview in terms of ROC AUC, PR AUC, F1 score, and accuracy. 
+
+7.2. Watermark detection 
+
+Watermark detection can be viewed as a special case of LLM-generated text detection, where the generated text may contain deliberately embedded statistical traces. When the watermarking rule of the generating model is known, such traces can be detected by hypothesis-testing procedures specifically designed for the corresponding watermarking mechanism [31]. In contrast, the proposed framework does not require explicit knowledge of the watermarking rule, but instead detects distributional deviations in the space of deep representations. We conduct watermark detection experiments based on Facebook OPT-1.3B [32]. Three types of generated text are considered: non-watermarked text, denoted by Null; text gener-ated with Gumbel-Max watermarking, denoted by Gumbel; and text generated with inverse-transform watermarking, denoted by Inverse. We consider two types of detection tasks: dis-tinguishing human-written text from watermarked text, and distinguishing non-watermarked generated text from watermarked generated text. In these tasks, we denote unwatermarked text as positive samples and watermarked text as negative samples. The proposed method is compared with the hypothesis-testing framework of Li et al. [31], which assumes access to the underlying watermarking mechanism. The results are reported in Table 2. The results in Table 2 show that the hypothesis-testing baselines of Li et al. [31] perform strongly when the watermarking rule is known and matched to the test procedure, achieving the best F1 score, accuracy, precision, and specificity. This is expected because these methods are tailored to the known watermarking mechanism and directly exploit its statistical signal. In contrast, the proposed method is mechanism-agnostic and does not rely on explicit water-marking rules. Although its overall performance is generally lower, it provides a more balanced classification behavior: the testing-based methods attain very high precision and specificity but relatively low recall, indicating conservative detection of the negative class, namely wa-termarked text, whereas the proposed method improves recall while maintaining moderate precision, leading to a more balanced precision–recall trade-off. This distinction becomes more important when the watermarking mechanism is unknown or the generated text is watermark-free. In this setting, we treat human-written text as pos-itive samples and watermark-free LLM-generated text as negative samples. Since the testing framework of Li et al. [31] depends on knowledge of the watermarking rule, its effectiveness may degrade substantially outside the matched watermark setting, as shown in Table 3. These results indicate that specialized testing procedures are preferable when the watermarking rule is fully known, whereas the proposed framework offers a more general, task-agnostic detection strategy. 
+
+7.3. Hallucination detection 
+
+Hallucination detection aims to determine whether generated text contains factually in-correct or internally inconsistent content. Compared with LLM-generated text detection, hal-lucination detection is more directly concerned with factual reliability and logical consistency. 18 Table 1: Performance comparison for LLM-generated text detection. Best results are shown in bold, and second-best results are marked with †. All metrics are computed with respect to the LLM-generated samples. 
+
+LLM Detector ROC AUC PR AUC F1 Specificity Accuracy Precision Recall Mean GPT-5.4 Entropy 0.022 0.309 0.667 0.000 0.500 0.500 1.000 0.428 Likelihood 0.956 0.937 0.928 0.897 0.926 0.902 0.955 0.929 LogRank 0.954 0.934 0.932 0.894 0.930 0.901 0.966 0.930 Rank 0.881 0.843 0.840 0.792 0.833 0.808 0.874 0.839 RoBERTa-base 0.231 0.351 0.667 0.000 0.500 0.500 1.000 0.464 RoBERTa-large 0.235 0.353 0.667 0.000 0.500 0.500 1.000 0.465 DetectGPT-d 0.974 0.976 0.928 0.907 0.926 0.911 0.945 0.938 †
+
+DetectGPT-z 0.958 0.949 0.921 0.893 0.919 0.898 0.945 0.926 JCASEMCD 0.969 0.970 0.915 0.973 0.920 0.969 0.867 0.941 
+
+JCELLMCD 0.963 0.957 0.913 0.905 0.912 0.906 0.919 0.925 GPT-5.4 mini Entropy 0.027 0.309 0.667 0.000 0.500 0.500 1.000 0.429 Likelihood 0.958 0.937 0.929 0.886 0.926 0.895 0.967 0.928 †
+
+LogRank 0.954 0.934 0.929 0.893 0.926 0.900 0.960 0.928 †
+
+Rank 0.854 0.825 0.799 0.746 0.790 0.767 0.835 0.802 RoBERTa-base 0.251 0.357 0.667 0.000 0.500 0.500 1.000 0.468 RoBERTa-large 0.264 0.363 0.667 0.000 0.500 0.500 1.000 0.471 DetectGPT-d 0.967 0.970 0.919 0.904 0.918 0.906 0.932 0.931 
+
+DetectGPT-z 0.952 0.940 0.916 0.885 0.914 0.891 0.943 0.920 JCASEMCD 0.951 0.955 0.892 0.925 0.895 0.920 0.866 0.915 JCELLMCD 0.945 0.939 0.887 0.873 0.885 0.876 0.898 0.900 Gemini-3.1 flash-lite preview Entropy 0.177 0.338 0.667 0.000 0.500 0.500 1.000 0.454 Likelihood 0.838 0.845 0.790 0.838 0.798 0.824 0.758 0.813 †
+
+LogRank 0.848 0.855 0.798 0.867 0.809 0.850 0.752 0.825 
+
+Rank 0.860 0.832 0.804 0.751 0.795 0.771 0.840 0.808 RoBERTa-base 0.358 0.410 0.669 0.012 0.505 0.503 0.999 0.494 RoBERTa-large 0.295 0.372 0.667 0.000 0.500 0.500 1.000 0.476 DetectGPT-d 0.714 0.807 0.713 0.878 0.750 0.836 0.622 0.760 DetectGPT-z 0.719 0.804 0.720 0.860 0.751 0.821 0.641 0.759 JCASEMCD 0.798 0.770 0.737 0.571 0.702 0.660 0.834 0.725 JCELLMCD 0.737 0.688 0.700 0.584 0.673 0.647 0.762 0.685 Gemini-3 flash preview Entropy 0.180 0.338 0.667 0.000 0.500 0.500 1.000 0.455 Likelihood 0.823 0.832 0.776 0.814 0.783 0.802 0.753 0.798 †
+
+LogRank 0.834 0.843 0.787 0.814 0.792 0.805 0.770 0.806 
+
+Rank 0.853 0.828 0.787 0.751 0.780 0.765 0.810 0.796 RoBERTa-base 0.344 0.401 0.668 0.007 0.504 0.502 1.000 0.489 RoBERTa-large 0.274 0.364 0.667 0.000 0.500 0.500 1.000 0.472 DetectGPT-d 0.690 0.785 0.691 0.803 0.717 0.762 0.632 0.726 DetectGPT-z 0.691 0.776 0.686 0.827 0.720 0.779 0.613 0.727 JCASEMCD 0.823 0.796 0.768 0.628 0.742 0.697 0.855 0.758 JCELLMCD 0.763 0.715 0.717 0.616 0.695 0.668 0.773 0.707 Gemini-3.1 pro preview Entropy 0.287 0.377 0.667 0.000 0.500 0.500 1.000 0.476 Likelihood 0.698 0.722 0.669 0.015 0.507 0.503 0.998 0.587 LogRank 0.740 0.707 0.699 0.476 0.647 0.610 0.818 0.671 Rank 0.710 0.732 0.682 0.734 0.694 0.711 0.654 0.702 †
+
+RoBERTa-base 0.275 0.365 0.667 0.007 0.502 0.501 0.998 0.474 RoBERTa-large 0.179 0.338 0.667 0.000 0.500 0.500 1.000 0.455 DetectGPT-d 0.518 0.666 0.667 0.001 0.501 0.500 1.000 0.550 DetectGPT-z 0.506 0.653 0.667 0.000 0.500 0.500 1.000 0.547 JCASEMCD 0.813 0.781 0.754 0.606 0.725 0.682 0.844 0.744 
+
+JCELLMCD 0.748 0.695 0.717 0.600 0.691 0.662 0.783 0.699 
+
+19 Table 2: Performance comparison across different watermark detection tasks. Best results are shown in bold, and second-best results are marked with †. All metrics are computed with respect to the watermarked samples. 
+
+Task Method F1 Specificity Accuracy Precision Recall Human vs Gumbel Gumbel-Test 0.630 0.947 0.716 0.901 0.485 JCASEMCD 0.575 0.607 † 0.585 0.589 † 0.562 †
+
+JCELLMCD 0.591 † 0.576 0.586 † 0.585 0.597 
+
+Human vs Inverse Inverse-Test 0.625 0.948 0.713 0.902 0.479 JCASEMCD 0.575 0.606 † 0.584 † 0.588 † 0.562 †
+
+JCELLMCD 0.589 † 0.571 0.584 † 0.582 0.597 
+
+Null vs Gumbel Gumbel-Test 0.629 0.943 0.714 0.895 0.485 JCASEMCD 0.590 † 0.597 0.592 † 0.593 † 0.586 
+
+JCELLMCD 0.585 0.601 † 0.589 0.592 0.578 †
+
+Null vs Inverse Inverse-Test 0.624 0.945 0.712 0.898 0.479 JCASEMCD 0.590 † 0.590 0.590 † 0.590 † 0.590 
+
+JCELLMCD 0.581 0.596 † 0.585 0.587 0.574 †   
+
+> Table 3: Performance comparison for detecting human-generated text and OPT-generated text without water-mark. Best results are shown in bold, and second-best results are marked with †.All metrics are computed with respect to the OPT-generated samples.
+
+Method F1 Specificity Accuracy Precision Recall Gumbel-Test 0.196 0.930 † 0.523 0.624 0.116 Inverse-Test 0.099 0.948 0.501 0.511 0.055 JCASEMCD 0.788 0.728 0.777 0.752 0.827 
+
+JCELLMCD 0.735 † 0.662 0.720 † 0.697 † 0.778 †
+
+Hallucination detection can be conducted in either a reference-free or reference-based setting, depending on whether external evidence or reference answers are available. In both settings, correct facts are treated as positive samples and hallucinatory text as negative samples. We consider two benchmark datasets: HaluEval [33], a large-scale benchmark used for reference-free hallucination detection, and the biography-domain “wiki_bio_gpt3_hallucination” dataset [6], which contains 1,908 sentence-level samples with Wikipedia evidence and hallucination labels, enabling reference-based evaluation.  
+
+> Table 4: Performance comparison for hallucination detection. Best results are shown in bold, and second-best results are marked with †. All metrics are computed with respect to the hallucinated text.
+
+Method ROC AUC PR AUC F1 Specificity Accuracy Precision Recall DeBERTa-v3-large-1 0.623 0.707 0.734 0.325 0.631 0.665 † 0.818 
+
+DeBERTa-v3-large-2 0.644 † 0.724 † 0.734 0.338 0.634 † 0.668 0.814 †
+
+JCASEMCD(w/o ref) 0.608 0.489 0.568 0.518 † 0.576 0.501 0.656 JCELLMCD(w/o ref) 0.751 0.734 0.642 0.577 0.648 0.565 0.744 JCASEMCD(w ref) 0.554 0.640 0.663 † 0.441 0.581 0.661 0.666 JCELLMCD(w ref) 0.557 0.653 0.652 0.447 0.571 0.657 0.648 
+
+As baselines, we use two DeBERTa-based NLI models, DeBERTa-v3-large-mnli-fever-anli-ling-wanli-binary and DeBERTa-v3-large-zeroshot-v1.1-all-33, denoted as DeBERTa-NLI and DeBERTa-ZS, respectively; both require reference information. The results in Table 4 show that the reference-free JCELLMCD achieves the best overall performance, with ROC AUC and PR AUC values of 0.751 and 0.734, respectively, outperforming the DeBERTa baselines by alleviat-ing their low-specificity issue. JCELLMCD also consistently outperforms JCASEMCD, suggest-ing that the cellwise strategy is more effective in capturing localized hallucination anomalies. 20 7.4. Adversarial examples detection 
+
+Adversarial examples are deliberately perturbed inputs designed to mislead a model while remaining visually or semantically similar to benign samples. In this setting, normal images are positive samples, and adversarial images are negative samples. Since such perturbations can induce abnormal patterns in deep feature representations even when the input-space changes are small, adversarial example detection provides another natural setting for evaluating the proposed MDS-based framework. Existing detection methods include Local Intrinsic Dimen-sionality (LID), which detects adversarial samples by characterizing the intrinsic dimensionality of their local neighborhoods [34], and the Mahalanobis distance-based detector proposed by Lee et al. [15]. We study adversarial example detection in image classification tasks. On CIFAR-10 and CIFAR-100 [35], adversarial examples are generated using four representative attack methods: FGSM [3], BIM [36], CWL2 [4], and DeepFool [37]. We also consider ImageNet [38] adversarial examples generated by Diff-PGD [39]. The target classifiers used to generate these adversarial examples are mainly ResNet [40] and DenseNet [41] models. We use ResNet as the feature extractor to obtain deep representations for the proposed framework, and compare its perfor-mance with LID and the Mahalanobis distance-based method of Lee et al. [15]. The results are reported in Figure 2. The proposed framework matches or exceeds baselines in simpler settings (e.g., CIFAR-10 under FGSM/BIM) by effectively capturing adversarial deviations. However, it under-performs the standard Mahalanobis baseline in complex scenarios (e.g., CIFAR-100 under CWL2/DeepFool), likely due to the instability of joint covariance estimation in high-dimensional, multi-class spaces. Thus, while effective for moderate-complexity tasks, it requires further sta-bilization or dimensionality reduction for more challenging settings. 1 2 3 4                 
+
+> F1
+> 1234
+> Specificity
+> 1234
+> Accuracy
+> 1234
+> Precision
+> 1234
+> Recall
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> DenseNet
+> ResNet
+> ResNet-50
+> CIFAR-10
+> CIFAR-100
+> CIFAR-10
+> CIFAR-100
+> ImageNet
+> BIM
+> CWL2
+> DeepFool
+> FGSM
+> BIM
+> CWL2
+> DeepFool
+> FGSM
+> BIM
+> CWL2
+> DeepFool
+> FGSM
+> BIM
+> CWL2
+> DeepFool
+> FGSM
+> Diff-PGD
+> Model Dataset Attack Type
+> 1: JCASEMCD 2: JCELLMCD 3: LID 4: Mahalanobis
+
+Figure 2: Heatmap of different metrics. All metrics are computed with respect to the adversarial examples. 
+
+8. Conclusion 
+
+This paper proposed a unified framework for detecting AI-related anomalous samples, including LLM-generated text, hallucinations, watermarked text, and adversarial examples. The framework combined pretrained deep representations, robust estimation of the mean and covariance structure of positive samples, and MDSs for detection. To handle multi-class positive samples with shared and class-specific structures, we developed joint casewise and cellwise MCD estimators and established the convergence of the corresponding optimization algorithms and the high-breakdown-point properties of the estimators. Experiments demonstrated the 21 effectiveness and generality of the proposed framework. These results showed that combining deep representations, robust joint covariance estimation, and MDS provided a flexible and statistically principled approach for detecting diverse AI-related anomalous samples. Future work will consider relaxing the normality assumption, improving high-dimensional covariance estimation, and extending the framework to online and distribution-shift settings. 22 Appendix A. Details of implementation and optimization 
+
+Appendix A.1. Initialization for JCASEMCD and JCELLMCD 
+
+To initialize the estimation procedure, we employ a robust univariate filtering strategy to mitigate the adverse effects of severe cellwise outliers. Recall that Z(k) is the nk × q data matrix of the k-th group, k = 1 , 2, . . . , K . For each variable j ∈ { 1, 2, . . . , q }, we compute the coordinate-wise median med (k) 
+
+> j
+
+= median( z(k) 
+
+> j
+
+) and the scaled median absolute deviation (MAD): MAD (k) 
+
+> j
+
+= 1 .4826 · median 1≤i≤nk |z(k) 
+
+> ij
+
+− med (k) 
+
+> j
+
+|, where the factor 1.4826 = 1 /Φ−1(0 .75) 
+
+makes the scaled MAD equal to the standard deviation under a normal distribution. We then calculate the absolute MAD-scaled outlier score |z(k) 
+
+> ij
+
+− med (k) 
+
+> j
+
+|/MAD (k) 
+
+> j
+
+. An observation cell 
+
+z(k) 
+
+> ij
+
+is flagged as a potential outlier and assigned a binary weight wij = 0 if its score exceeds a threshold; otherwise, wij = 1 . Following the suggestion of Iglewicz and Hoaglin [42], we set the threshold to 3.5. Alternative threshold values, such as 2.5 and 3, can also be considered. To guarantee numerical stability, we enforce a minimum subset size requirement, denoted as hk. If the number of unflagged cells in any given column falls below hk, we retain the hk observations with the smallest robust distances and flag the rest. Subsequently, the flagged cellwise outliers are temporarily imputed using their respective column medians, yielding a robustly imputed data matrix Z♯(k).For JCELLMCD, the initial location vector bμ(k, 0) and scatter matrix bΣ(k, 0) 
+
+are computed as the empirical mean and empirical covariance matrix of Z♯(k), respectively, followed by a regularization step to ensure bΣ(k, 0) 
+
+is strictly symmetric positive definite. For JCASEMCD, the above cellwise-cleaned estimates are used as preliminary robust estimates. Specifically, we compute the Mahalanobis distances of the original observations in Z(k) using these preliminary estimates, retain the hk observations with the smallest distances, and then recompute bμ(k, 0) and 
+
+bΣ(k, 0) 
+
+from the retained original observations, again followed by a regularization step to ensure symmetric positive definiteness. Finally, bΘ(0) 
+
+and bΓ(k, 0) 
+
+are generated through the Hadamard product decomposition, and we present a scheme in Appendix Appendix A.2 to guarantee the uniqueness of the decomposition. This procedure provides a highly resistant starting point for the subsequent iterative algorithms. 
+
+Appendix A.2. Identifiability of covariance decomposition 
+
+Although the covariance decomposition is defined through the Hadamard product, such a decomposition is not unique. For example, multiplying the shared structure matrix by a positive constant while dividing the heterogeneous structure by the same constant leaves their Hadamard product unchanged. To remove this scaling ambiguity and ensure identifiability, we impose an RMS-correlation normalization rule on the decomposition. Specifically, let Σ(k) = ( σ(k) 
+
+> ij
+
+)1≤i,j ≤q, k = 1 , 2, . . . , K . For each off-diagonal entry i̸ = j, we first define the group-specific correlation coefficient 
+
+ρ(k) 
+
+> ij
+
+= σ(k)
+
+> ij
+
+q
+
+σ(k) 
+
+> ii
+
+σ(k)
+
+> jj
+
+, k = 1 , 2, . . . , K. 
+
+We then define the shared structure matrix Θ by 
+
+θij =
+
+(
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+
+
+ρ(k)
+
+> ij
+
+2
+
+)1/2
+
+, i̸ = j, 
+
+and set θii = 1 , i = 1 , 2, . . . , q . Under this rule, Θ captures the common correlation strength 23 across groups rather than the signed average correlation, and therefore avoids the cancellation of positive and negative correlations across groups. Given Θ, the heterogeneous structure matrices {Γ(k)}Kk=1 are uniquely determined as fol-lows. For the diagonal entries, we set 
+
+γ(k) 
+
+> ii
+
+= σ(k) 
+
+> ii
+
+, i = 1 , 2, . . . , q, k = 1 , 2, . . . , K. 
+
+For the off-diagonal entries, if θij > 0, we define 
+
+γ(k) 
+
+> ij
+
+= σ(k)
+
+> ij
+
+θij 
+
+, i̸ = j, k = 1 , 2, . . . , K. 
+
+If θij = 0 , then by the definition of θij , we have ρ(k) 
+
+> ij
+
+= 0 for all k = 1 , 2, . . . , K , and hence 
+
+σ(k) 
+
+> ij
+
+= 0 for all groups. In this case, we set γ(k) 
+
+> ij
+
+= 0 for all k, which avoids division by zero while preserving the exact reconstruction. Therefore, the covariance matrices satisfy 
+
+Σ(k) = Θ ⊙ Γ(k), k = 1 , 2, . . . , K. 
+
+This normalization fixes the scaling ambiguity of the Hadamard product decomposition and yields a unique decomposition. It also admits a natural interpretation: the shared structure Θ
+
+captures the common dependence strength across groups, whereas the heterogeneous structures 
+
+{Γ(k)}Kk=1 retain group-specific scale, sign, and deviation information. 
+
+Appendix A.3. Gaussian random projection dimensionality reduction 
+
+Since the deep representations extracted by pretrained models are usually of high dimen-sion, directly estimating the covariance matrix in the original representation space leads to two practical issues. First, when the feature dimension is large while the sample size is rela-tively limited, the sample covariance matrix and its robust alternatives may become numerically unstable or even nearly singular, which in turn affects the accuracy of Mahalanobis distance cal-culation as well as the stability of the decomposition into shared and heterogeneous structures in the joint estimation procedure. Second, the proposed joint casewise/cellwise MCD methods require repeated updates of the mean vectors, covariance matrices, weight matrices, shared parameters, and group-specific parameters across multiple groups. These steps involve matrix inversion, determinant evaluation, and iterative optimization. As the representation dimension increases, both the computational complexity and memory cost grow substantially, resulting in reducing efficiency during both training and detection. Therefore, in practical implementation, it is necessary to perform an appropriate dimension reduction on the deep representations, while preserving their structural information as much as possible, so as to improve the stability and computational efficiency of the subsequent robust joint estimation procedure. Motivated by these considerations, we employ Gaussian Random Projection as a prepro-cessing step for the deep representations in our algorithm implementation. Specifically, let the original deep representation be zi ∈ Rq, where q may be large. We generate a random matrix 
+
+R ∈ Rd×q whose entries are independently drawn from the Gaussian distribution N (0 , 1/d ),and project the original representation into a lower-dimensional space by Rzi ∈ Rd, d ≪ q,where d is the dimension of the projected variable. All subsequent robust mean estimation, covariance estimation, and Mahalanobis distance computation are then carried out in the projected low-dimensional space. The use of Gaus-sian random projection has several advantages. First, it does not require additional training or complex modeling of the original representations, and can therefore be easily incorporated into the existing detection pipeline. Second, according to the Johnson–Lindenstrauss type results, random projection preserves the Euclidean geometric structure among samples with 24 high probability, which helps maintain the relative distance relationships between normal and negative samples after dimension reduction. Third, by substantially reducing the dimension of the covariance matrix, it alleviates the numerical instability in matrix inversion and deter-minant computation, while also significantly reducing the computational burden of the joint optimization procedure. 
+
+Appendix A.4. Optimization details for Θ and Γ(k)
+
+In this appendix, we provide the detailed numerical procedures for updating the parameters 
+
+Θ and Γ(k) under ℓ1 regularization. These updates correspond to the parameter update steps described in Sections 5.1 and 5.2, namely the Fast-MCD algorithm for the joint casewise MCD estimator and the EM-based procedure for the joint cellwise MCD estimator. The appendix includes the gradient derivations, proximal gradient updates, and the definition of the soft-thresholding operator used in the iterative optimization. When updating Θ and Γ(k), the algorithm requires solving optimization subproblems under an ℓ1 penalty. We employ the proximal gradient method [43] for these updates. Recall that the reparameterized form of the covariance matrix is 
+
+Σ(k) = ( σ(k) 
+
+> ij
+
+)1≤i,j ≤q, σ(k) 
+
+> ij
+
+=
+
+(
+
+θij γ(k) 
+
+> ij
+
+, i̸ = j, γ(k) 
+
+> ii
+
+, i = j. 
+
+For the JCASEMCD, we solve the alternating optimization problem: 
+
+• Fix bΘ(t)
+
+and update each bΓ(k,t +1) 
+
+to decrease the objective for k = 1 , 2, . . . , K :
+
+bΓ(k,t +1) 
+
+= arg min 
+
+> Γ
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+˜ℓ
+
+bμ(k,t +1) , bΘ(t)
+
+⊙ Γ; z(k)
+
+> i
+
+
+
++ λ2
+
+X
+
+> i̸=j
+
+|γij |.
+
+• Fix all bΓ(k,t +1) 
+
+and update the shared structure bΘ(t+1) 
+
+:
+
+bΘ(t+1) 
+
+= arg min 
+
+> Θ
+> K
+
+X
+
+> k=1
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+˜ℓ
+
+bμ(k,t +1) , Θ ⊙ bΓ(k,t +1) 
+
+; z(k)
+
+> i
+
+
+
++ λ1
+
+X
+
+> i̸=j
+
+|θij |.
+
+Define 
+
+S(k,t )case = 1
+
+Pnk 
+
+> i=1
+
+w(k,t )
+
+> ink
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− bμ(k,t +1) )( z(k) 
+
+> i
+
+− bμ(k,t +1) )⊤
+
+= 1
+
+hknkX
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− bμ(k,t +1) )( z(k) 
+
+> i
+
+− bμ(k,t +1) )⊤.
+
+For notational clarity, define 
+
+bΣ(k,t ) 
+
+> Γ
+
+= bΘ(t)
+
+⊙ bΓ(k,t )
+
+, bΣ(k,t ) 
+
+> Θ
+
+= bΘ(t)
+
+⊙ bΓ(k,t +1) 
+
+.
+
+The smooth parts of the subproblems are Q(t)case ,Γ = PKk=1 Q(k,t )case ,Γ and Q(t)case ,Θ = PKk=1 Q(k,t )case ,Θ
+
+with 
+
+Q(k,t )case ,Γ = hk
+
+h
+
+ln | bΣ(k,t ) 
+
+> Γ
+
+| + tr(( bΣ(k,t ) 
+
+> Γ
+
+)−1S(k,t )case )
+
+i
+
+,
+
+and 
+
+Q(k,t )case ,Θ = hk
+
+h
+
+ln | bΣ(k,t ) 
+
+> Θ
+
+| + tr(( bΣ(k,t ) 
+
+> Θ
+
+)−1S(k,t )case )
+
+i
+
+.
+
+25 The non-smooth part, corresponding to ℓ1 regularization, is handled by proximal operators. From matrix calculus: 
+
+∇bΣ(k,t )
+
+> Γ
+
+Q(k,t )case ,Γ = hk
+
+h
+
+( bΣ(k,t ) 
+
+> Γ
+
+)−1 − ( bΣ(k,t ) 
+
+> Γ
+
+)−1S(k,t )case ( bΣ(k,t ) 
+
+> Γ
+
+)−1
+
+i
+
+,
+
+and 
+
+∇bΣ(k,t )
+
+> Θ
+
+Q(k,t )case ,Θ = hk
+
+h
+
+( bΣ(k,t ) 
+
+> Θ
+
+)−1 − ( bΣ(k,t ) 
+
+> Θ
+
+)−1S(k,t )case ( bΣ(k,t ) 
+
+> Θ
+
+)−1
+
+i
+
+.
+
+Applying the chain rule, for bΓ(k,t )
+
+:
+
+h
+
+∇bΓ(k,t ) Q(k,t )case ,Γ
+
+i
+
+> ij
+
+=
+
+( ˆθ(t) 
+
+> ij
+
+[∇bΣ(k,t )
+
+> Γ
+
+Q(k,t )case ,Γ]ij , i̸ = j, 
+
+[∇bΣ(k,t )
+
+> Γ
+
+Q(k,t )case ,Γ]ii , i = j. 
+
+At iteration t, we perform gradient descent: 
+
+˜γ(k,t +1)  
+
+> ij
+
+= ˆ γ(k,t ) 
+
+> ij
+
+− η(t)
+
+> Γ,k
+
+[∇bΓ(k,t ) Q(k,t )case ,Γ]ij ,
+
+followed by the proximal update: 
+
+ˆγ(k,t +1)  
+
+> ij
+
+=
+
+(
+
+Soft(˜ γ(k,t +1)  
+
+> ij
+
+, η (t)
+
+> Γ,k
+
+λ2), i̸ = j, 
+
+˜γ(k,t +1)  
+
+> ii
+
+, i = j, 
+
+where Soft( x, ρ ) = sign( x) · max {| x| − ρ, 0}. Similarly, for bΘ(t+1) 
+
+:
+
+ˆθ(t+1)  
+
+> ij
+
+=
+
+(
+
+Soft( ˜θ(t+1)  
+
+> ij
+
+, η (t) 
+
+> Θ
+
+λ1), i̸ = j, 
+
+1, i = j, 
+
+with ˜θ(t+1)  
+
+> ij
+
+=ˆθ(t) 
+
+> ij
+
+− η(t) 
+
+> Θ
+
+[∇ bΘ(t) Q(t)case ,Θ]ij ,
+
+[∇ bΘ(t) Q(t)case ,Θ]ij =
+
+( P Kk=1 ˆγ(k,t +1)  
+
+> ij
+
+[∇bΣ(k,t )
+
+> Θ
+
+Q(k,t )case ,Θ]ij , i̸ = j, 
+
+0, i = j. 
+
+For the JCELLMCD, the two subproblems are: 
+
+• Fix bΘ(t)
+
+and bμ(k,t +1) , update bΓ(k,t +1) 
+
+:
+
+bΓ(k,t +1) 
+
+= arg min  
+
+> Γ
+
+nk
+
+h
+
+ln | bΘ(t)
+
+⊙ Γ| + tr(( bΘ(t)
+
+⊙ Γ)−1S(k,t )cell )
+
+i
+
++ λ2
+
+X
+
+> i̸=j
+
+|γij |.
+
+• Fix {bΓ(k,t +1) 
+
+}Kk=1 and bμ(k,t +1) , update bΘ(t+1) 
+
+:
+
+bΘ(t+1) 
+
+= arg min 
+
+> Θ
+> K
+
+X
+
+> k=1
+
+nk
+
+h
+
+ln |Θ ⊙ bΓ(k,t +1) 
+
+| + tr(( Θ ⊙ bΓ(k,t +1) 
+
+)−1S(k,t )cell )
+
+i
+
++ λ1
+
+X
+
+> i̸=j
+
+|θij |.
+
+For notational clarity, define 
+
+bΣ(k,t ) 
+
+> Γ
+
+= bΘ(t)
+
+⊙ bΓ(k,t )
+
+, bΣ(k,t ) 
+
+> Θ
+
+= bΘ(t)
+
+⊙ bΓ(k,t +1) 
+
+.
+
+26 The ℓ1 regularization is handled via the proximal operator. The smooth gradient satisfies: 
+
+∇bΣ(k,t )
+
+> Γ
+
+Q(k,t )smooth ,Γ = nk
+
+h
+
+( bΣ(k,t ) 
+
+> Γ
+
+)−1 − ( bΣ(k,t ) 
+
+> Γ
+
+)−1S(k,t )cell ( bΣ(k,t ) 
+
+> Γ
+
+)−1
+
+i
+
+,
+
+and 
+
+∇bΣ(k,t )
+
+> Θ
+
+Q(k,t )smooth ,Θ = nk
+
+h
+
+( bΣ(k,t ) 
+
+> Θ
+
+)−1 − ( bΣ(k,t ) 
+
+> Θ
+
+)−1S(k,t )cell ( bΣ(k,t ) 
+
+> Θ
+
+)−1
+
+i
+
+,
+
+with 
+
+Q(k,t )smooth ,Γ = nk
+
+h
+
+ln | bΣ(k,t ) 
+
+> Γ
+
+| + tr(( bΣ(k,t ) 
+
+> Γ
+
+)−1S(k,t )cell )
+
+i
+
+and 
+
+Q(k,t )smooth ,Θ = nk
+
+h
+
+ln | bΣ(k,t ) 
+
+> Θ
+
+| + tr(( bΣ(k,t ) 
+
+> Θ
+
+)−1S(k,t )cell )
+
+i
+
+.
+
+The chain rule gives 
+
+[∇bΓ(k,t ) Q(k,t )smooth ,Γ]ij =
+
+( ˆθ(t) 
+
+> ij
+
+[∇bΣ(k,t )
+
+> Γ
+
+Q(k,t )smooth ,Γ]ij , i̸ = j, 
+
+[∇bΣ(k,t )
+
+> Γ
+
+Q(k,t )smooth ,Γ]ii , i = j. 
+
+Gradient descent and proximal update: 
+
+˜γ(k,t +1)  
+
+> ij
+
+= ˆ γ(k,t ) 
+
+> ij
+
+− η(t)
+
+> Γ,k
+
+[∇bΓ(k,t ) Q(k,t )smooth ,Γ]ij , ˆγ(k,t +1)  
+
+> ij
+
+=
+
+(
+
+Soft(˜ γ(k,t +1)  
+
+> ij
+
+, η (t)
+
+> Γ,k
+
+λ2), i̸ = j, 
+
+˜γ(k,t +1)  
+
+> ii
+
+, i = j. 
+
+Update for bΘ(t+1) 
+
+:
+
+ˆθ(t+1)  
+
+> ij
+
+=
+
+(
+
+Soft( ˜θ(t+1)  
+
+> ij
+
+, η (t) 
+
+> Θ
+
+λ1), i̸ = j, 
+
+1, i = j, 
+
+˜θ(t+1)  
+
+> ij
+
+= ˆθ(t) 
+
+> ij
+
+− η(t) 
+
+> Θ
+
+[∇ bΘ(t) Q(t)smooth ,Θ]ij ,
+
+[∇ bΘ(t) Q(t)smooth ,Θ]ij =
+
+( P Kk=1 ˆγ(k,t +1)  
+
+> ij
+
+[∇bΣ(k,t )
+
+> Θ
+
+Q(k,t )smooth ,Θ]ij , i̸ = j, 
+
+0, i = j. 
+
+To enforce the constraint λmin ( bΣ(k)
+
+) ≥ ak > 0, where bΣ(k)
+
+= bΘ ⊙ bΓ(k)
+
+, a backtracking line search is employed to determine the step size η(t) 
+
+> Θ
+
+and η(t) 
+
+> Γ,k
+
+at each proximal gradient update. A candidate update is accepted only if the corresponding unprojected covariance matrices satisfy the minimum eigenvalue constraint and the penalized objective function is non-increasing; otherwise, the step size is reduced and the update is retried. In addition, to improve numerical stability, we use minimum eigenvalue clipping as a numerical safeguard when reconstructing covariance matrices and in linear algebra operations such as Cholesky factorization and log-determinant computation. 
+
+Appendix B. Proofs for results 
+
+Appendix B.1. Proof of Theorem 6.1 Proof. First, according to the algorithm, the update of μ corresponds to solving the maximum likelihood estimate, which minimizes the above objective function and therefore does not in-crease it. Specifically, fixing H(k,t ) and Σ(k,t ), where Σ(k,t ) = Θ(t) ⊙ Γ(k,t ), the terms related to 
+
+μ(k) in the k-th group are 
+
+Lμ(k) =
+
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− μ(k))⊤(Σ(k,t ))−1(z(k) 
+
+> i
+
+− μ(k)).
+
+27 Taking the gradient with respect to μ(k) yields: 
+
+∇μ(k) Lμ(k) = −2( Σ(k,t ))−1
+
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− μ(k)).
+
+Setting the gradient to zero gives 
+
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− μ(k)) = 0 ,
+
+which implies 
+
+μ(k,t +1) =
+
+Pnk 
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+z(k)
+
+> i
+
+Pnk 
+
+> i=1
+
+w(k,t )
+
+> i
+
+= 1
+
+hknkX
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+z(k) 
+
+> i
+
+.
+
+Moreover, the Hessian matrix is 
+
+∇2 
+
+> μ(k)
+
+Lμ(k) = 2 hk(Σ(k,t ))−1 ≻ 0.
+
+Since this is a strictly convex quadratic function, the above provides the unique global minimum. Therefore, 
+
+Lcase (μ(t+1) , Σ(t), H(t)) ≤ L case (μ(t), Σ(t), H(t)),
+
+where μ(t+1) = {μ(k,t +1) }Kk=1 , Σ(t) = {Σ(k,t )}Kk=1 and Σ(k,t ) = Θ(t) ⊙ Γ(k,t ).For the update of Γ(k), at iteration t, fixing μ(k,t +1) , H(k,t ), and Θ(t), define the smooth part of the current subproblem as 
+
+Q(k,t )case ,Γ(Γ(k)) = Q(k)case 
+
+
+
+μ(k,t +1) , Θ(t) ⊙ Γ(k), H(k,t )
+
+
+
+.
+
+The Hessian of this expression consists solely of matrix products involving (Σ(k))−1 and the fixed sample covariance S(k,t )case , given μ(k,t +1) , H(k,t ) and Θ(t). Moreover, the relationship be-tween Γ(k) and Σ(k) is linear, since Σ(k) = Θ(t) ⊙ Γ(k). Within the feasible region, the constraint 
+
+λmin (Σ(k)) ≥ a > 0 guarantees that the spectral norm of the inverse matrix is strictly bounded, i.e., ∥(Σ(k))−1∥2 ≤ 1/a . Since ∥S(k,t )case ∥2 and the entries of Θ(t) are fixed for the current sub-problem, all Hessian components are bounded locally. Therefore, there exists a finite local Lipschitz constant L(t) 
+
+> Γ,k
+
+such that ∇Γ(k) Q(k,t )case ,Γ is Lipschitz continuous in the current subprob-lem (Lemma 1.2.2 in Nesterov [44]). Hence, for any X, Y in the current feasible region, 
+
+Q(k,t )case ,Γ(Y ) ≤ Q(k,t )case ,Γ(X) + ⟨∇ Γ(k) Q(k,t )case ,Γ(X), Y − X⟩ + L(t)
+
+> Γ,k
+
+2 ∥Y − X∥2 
+
+> F
+
+.
+
+Similarly, for the update of Θ, fixing μ(k,t +1) , H(k,t ), and Γ(k,t +1) , define 
+
+Q(t)case ,Θ(Θ) = 
+
+> K
+
+X
+
+> k=1
+
+Q(k)case 
+
+
+
+μ(k,t +1) , Θ ⊙ Γ(k,t +1) , H(k,t )
+
+
+
+.
+
+Since the mapping Θ 7 → Θ ⊙ Γ(k,t +1) is linear for each fixed Γ(k,t +1) , and since Γ(k,t +1) is fixed in the current Θ-subproblem, the same argument implies that there exists a finite local Lipschitz constant L(t) 
+
+> Θ
+
+such that ∇ΘQ(t)case ,Θ is Lipschitz continuous in the current subproblem. Let 
+
+F (t) 
+
+> k
+
+(Γ(k)) = Q(k,t )case ,Γ(Γ(k)) + λ2∥Γ(k)∥1,off 
+
+28 and 
+
+F (t)(Θ) = Q(t)case ,Θ(Θ) + λ1∥Θ∥1,off .
+
+By the proximal gradient lemma [45], when 0 < η (t) 
+
+> Γ,k
+
+≤ (1 − δΓ)/L (t)
+
+> Γ,k
+
+, applying this inequality with X = Γ(k,t ), Y = Γ(k,t +1) and using the optimality of the proximal gradient update yields 
+
+F (t) 
+
+> k
+
+(Γ(k,t +1) ) ≤ F (t) 
+
+> k
+
+(Γ(k,t )) − 12η(t)
+
+> Γ,k
+
+− L(t)
+
+> Γ,k
+
+2
+
+!
+
+∥Γ(k,t +1) − Γ(k,t )∥2 
+
+> F
+
+.
+
+Similarly, when 0 < η (t) 
+
+> Θ
+
+≤ (1 − δΘ)/L (t) 
+
+> Θ
+
+, we have 
+
+F (t)(Θ(t+1) ) ≤ F (t)(Θ(t)) − 12η(t)
+
+> Θ
+
+− L(t)
+
+> Θ
+
+2
+
+!
+
+∥Θ(t+1) − Θ(t)∥2 
+
+> F
+
+.
+
+Since the coefficients of the squared norm terms are nonnegative under the above local step-size conditions, the updates of Γ(k) and Θ do not increase the objective function. In summary, 
+
+Lcase (Ω(t+1) , H(t)) ≤ L case (Ω(t), H(t)).
+
+Finally, the update rule for H ensures that the objective function does not increase. Given 
+
+Ω, the terms related to H(k) in the k-th group are 
+
+LH(k) =
+
+> nk
+
+X
+
+> i=1
+
+w(k)
+
+> i
+
+h
+
+ln |Σ(k)| + q ln(2 π) + MD 2(z(k) 
+
+> i
+
+, Ω(k))
+
+i
+
+,
+
+where MD 2(z(k) 
+
+> i
+
+, Ω(k)) = ( z(k) 
+
+> i
+
+− μ(k))⊤(Σ(k))−1(z(k) 
+
+> i
+
+− μ(k)). Since Pnk 
+
+> i=1
+
+w(k) 
+
+> i
+
+= hk is fixed, 
+
+ln |Σ(k)| + q ln(2 π) acts as a constant. Therefore, minimizing L(k) is equivalent to minimizing 
+
+Pnk 
+
+> i=1
+
+w(k) 
+
+> i
+
+MD 2(z(k) 
+
+> i
+
+, Ω(k)) with w(k) 
+
+> i
+
+∈ { 0, 1} and Pnk 
+
+> i=1
+
+w(k) 
+
+> i
+
+= hk. The solution to this 0-1 linear programming problem is to select the hk samples with the smallest Mahalanobis distances. Algorithm 1 performs exactly this. Hence, 
+
+Lcase (Ω(t+1) , H(t+1) ) ≤ L case (Ω(t+1) , H(t)).
+
+Thus, 
+
+Lcase (Ω(t+1) , H(t+1) ) ≤ L case (Ω(t+1) , H(t)) ≤ L case (Ω(t), H(t)),
+
+establishing the first property. Moreover, let a = min 1≤k≤K {ak}. For any k, given λmin (Σ(k)) ≥
+
+a, we have |Σ(k)| = Qqj=1 λj (Σ(k)) ≥ aq, which implies ln |Σ(k)| ≥ q ln a. The Mahalanobis distance is non-negative: 
+
+(z(k) 
+
+> i
+
+− μ(k))⊤(Σ(k))−1(z(k) 
+
+> i
+
+− μ(k)) ≥ 0.
+
+The ℓ1 regularization term is also non-negative. Hence, 
+
+Lcase (Ω, H) ≥
+
+> K
+
+X
+
+> k=1
+
+Q(k)case ≥
+
+> K
+
+X
+
+> k=1
+
+hk [q ln a + q ln(2 π)] := Lmin > −∞ .
+
+By the monotone convergence theorem, since the update sequence of Lcase is monotonically non-increasing and bounded below, it converges to a finite limit L∗, establishing the second property. 29 For the third property, we first show the iterative sequence has a limit point. Since 
+
+Lcase (Ω(t), H(t)) ≤ L case (Ω(0) , H(0) ) := C0,
+
+all iterates are contained in the initial sublevel set. Moreover, the Mahalanobis-distance terms and the penalty term are nonnegative. Therefore, for each k,
+
+hk ln |Σ(k)| ≤ C0 − hkq ln(2 π) − X 
+
+> l̸=k
+
+hl · q{ln a + ln(2 π)} =: Ck.
+
+Thus, |Σ(k)| ≤ exp( Ck/h k). Since all eigenvalues of Σ(k) are bounded below by a, we have 
+
+|Σ(k)| =
+
+> q
+
+Y
+
+> j=1
+
+λj (Σ(k)) ≥ aq−1λmax (Σ(k)).
+
+Consequently, λmax (Σ(k)) ≤ a−(q−1) exp( Ck/h k), which shows that {Σ(k,t )}t is uniformly bounded for every group k. Together with the lower eigenvalue constraint, this also implies that 
+
+{(Σ(k,t ))−1}t is uniformly bounded. We next claim that the location estimates are bounded. Let 
+
+Rk = max 
+
+> 1≤i≤nk
+
+∥z(k) 
+
+> i
+
+∥2 < ∞.
+
+For any selected subset H(k,t ) of size hk,
+
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− μ(k,t ))⊤(Σ(k,t ))−1(z(k) 
+
+> i
+
+− μ(k,t )) ≥ 1
+
+λmax (Σ(k,t ))
+
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+∥z(k) 
+
+> i
+
+− μ(k,t )∥22.
+
+Using ∥z(k) 
+
+> i
+
+− μ(k,t )∥2 ≥ |∥ μ(k,t )∥2 − Rk|, we obtain 
+
+> nk
+
+X
+
+> i=1
+
+w(k,t ) 
+
+> i
+
+(z(k) 
+
+> i
+
+− μ(k,t ))⊤(Σ(k,t ))−1(z(k) 
+
+> i
+
+− μ(k,t )) ≥ 1
+
+λmax (Σ(k,t ))(∥μ(k,t )∥2 − Rk)2.
+
+Since the left-hand side is bounded above on the same sublevel set and λmax (Σ(k,t )) is uniformly bounded, it follows that {μ(k,t )}t is bounded. Finally, we prove the boundedness of the reparameterized variables. The lower bound on the likelihood part implies that the penalty term is uniformly bounded on the sublevel set: 
+
+λ1∥Θ(t)∥1,off + λ2
+
+X
+
+> k
+
+∥Γ(k,t )∥1,off ≤ C0 − Lmin < ∞,
+
+Hence the off-diagonal entries of Θ(t) and Γ(k,t ) are bounded. The diagonal entries of Θ(t) are fixed at one, while the diagonal entries of Γ(k,t ) coincide with those of Σ(k,t ) and are therefore bounded by the uniform bound on λmax (Σ(k,t )). Thus Θ(t) and Γ(k,t ) are bounded. Therefore, the sequence {Ω(t)} is bounded. Furthermore, since H(t) only takes a finite number of 0-1 combinations, by the Bolzano–Weierstrass theorem [46], there exists a convergent subsequence 
+
+(Ω(tr ), H(tr )) → (Ω∗, H∗), where tr is the subsequence index, r ∈ N+.Moreover, since {Ω(t)} is bounded and the feasible region satisfies λmin (Σ(k,t )) ≥ ak > 0,all iterates lie in a compact subset of the feasible region. On this compact set, the gradients of the smooth parts of the Γ(k)- and Θ-subproblems are globally Lipschitz continuous. Hence, 30 there exist finite constants LΓ,k and LΘ such that, for all iterations t,
+
+L(t) 
+
+> Γ,k
+
+≤ LΓ,k , L(t) 
+
+> Θ
+
+≤ LΘ.
+
+When the step sizes are chosen with a uniform margin, i.e., 
+
+0 < η (t) 
+
+> Γ,k
+
+≤ 1 − δΓ
+
+LΓ,k 
+
+, 0 < η (t) 
+
+> Θ
+
+≤ 1 − δΘ
+
+LΘ
+
+,
+
+for some δΓ, δ Θ ∈ (0 , 1) , the proximal gradient descent inequalities imply the uniform sufficient decrease property. Specifically, there exist constants cΓ,k > 0 and cΘ > 0 such that 
+
+F (t) 
+
+> k
+
+(Γ(k,t +1) ) ≤ F (t) 
+
+> k
+
+(Γ(k,t )) − cΓ,k ∥Γ(k,t +1) − Γ(k,t )∥2 
+
+> F
+
+,
+
+and 
+
+F (t)(Θ(t+1) ) ≤ F (t)(Θ(t)) − cΘ∥Θ(t+1) − Θ(t)∥2 
+
+> F
+
+.
+
+Summing these inequalities over t and using the fact that Lcase is bounded below, we obtain 
+
+X
+
+> t
+
+∥Γ(k,t +1) − Γ(k,t )∥2 
+
+> F
+
+< ∞, X
+
+> t
+
+∥Θ(t+1) − Θ(t)∥2 
+
+> F
+
+< ∞.
+
+Hence, 
+
+Γ(k,t +1) − Γ(k,t ) → 0, Θ(t+1) − Θ(t) → 0.
+
+Moreover, since the step sizes are bounded away from zero, i.e., 
+
+η(t) 
+
+> Γ,k
+
+≥ inf  
+
+> s
+
+η(s) 
+
+> Γ,k
+
+> 0, η(t) 
+
+> Θ
+
+≥ inf  
+
+> s
+
+η(s) 
+
+> Θ
+
+> 0, t ≥ 0.
+
+it follows that 1
+
+η(t)
+
+> Γ,k
+
+
+
+Γ(k,t +1) − Γ(k,t )
+
+
+
+→ 0, 1
+
+η(t)
+
+> Θ
+
+
+
+Θ(t+1) − Θ(t)
+
+
+
+→ 0.
+
+For the proximal optimality condition of the Γ-update: 
+
+0 ∈ ∇ Γ(k) Q(k,t )case ,Γ(Γ(k,t )) + 1
+
+η(t)
+
+> Γ,k
+
+(Γ(k,t +1) − Γ(k,t )) + λ2∂∥Γ(k,t +1) ∥1,off .
+
+Let (Ω∗, H∗) be an accumulation point satisfying the interior condition 
+
+λmin (Θ∗ ⊙ Γ(k)∗) > a k, k = 1 , 2, . . . , K. 
+
+By the continuity of the minimum eigenvalue, the eigenvalue constraints are inactive in a sufficiently small neighborhood of this accumulation point. Hence, along the convergent subse-quence, the accepted proximal gradient updates coincide locally with the unconstrained proxi-mal gradient updates for the corresponding penalized block subproblems. Taking the limit along the convergent subsequence and using the continuity of the gradient, the vanishing of the scaled difference term, and the closedness of the subdifferential of the ℓ1
+
+norm yields 
+
+0 ∈ ∇ Γ(k) Q(k)case (Ω∗, H∗) + λ2∂∥Γ(k)∗∥1,off .
+
+31 By the same reasoning for the Θ-update: 
+
+0 ∈ ∇ Θ
+
+> K
+
+X
+
+> k=1
+
+Q(k)case (Ω∗, H∗) + λ1∂∥Θ∗∥1,off .
+
+Meanwhile, since the μ-update is an exact minimization: 
+
+0 = ∇μ(k) Lcase (Ω∗, H∗).
+
+Finally, since the H-update selects the hk samples with the smallest Mahalanobis distances given the current parameter estimates, H∗ belongs to the set of minimizers of the discrete 
+
+H-subproblem given Ω∗; in the presence of ties, the conclusion is understood under the same tie-breaking rule used in the algorithm. Hence, any interior accumulation point (Ω∗, H∗) is blockwise stationary with respect to the continuous variables, and H∗ is optimal for the discrete block. This completes the proof of Theorem 6.1. 
+
+Appendix B.2. Proof of Theorem 6.2 Proof. First, given Ω, for the k-th group, i-th row, and j-th column, let o = {τ̸ = j : w(k) 
+
+> iτ
+
+= 1 }
+
+denote the indices of the currently retained cells. By changing the status of cell j from flagged to retained, the Schur complement yields: 
+
+|Σ(k)
+
+> o∪{ j}
+
+| = |Σ(k) 
+
+> oo
+
+| · C(k) 
+
+> ij
+
+,
+
+where C(k) 
+
+> ij
+
+= Σ(k) 
+
+> jj
+
+− Σ(k) 
+
+> j,o
+
+(Σ(k) 
+
+> oo
+
+)−1(Σ(k) 
+
+> j,o
+
+)⊤. Meanwhile, the Mahalanobis distance can be decom-posed as: 
+
+MD 2 
+
+> o∪{ j}
+
+= MD 2 
+
+> o
+
++ (z(k) 
+
+> ij
+
+− bz(k) 
+
+> ij
+
+)2
+
+C(k)
+
+> ij
+
+,
+
+where 
+
+bz(k) 
+
+> ij
+
+= μ(k) 
+
+> j
+
++ Σ(k) 
+
+> j,o
+
+(Σ(k) 
+
+> oo
+
+)−1(z(k) 
+
+> i,o
+
+− μ(k) 
+
+> o
+
+).
+
+When o = ∅, we use the convention that |Σ(k) 
+
+> oo
+
+| = 1 , MD 2 
+
+> o
+
+= 0 , bz(k) 
+
+> ij
+
+= μ(k) 
+
+> j
+
+, and C(k) 
+
+> ij
+
+= Σ(k) 
+
+> jj
+
+.Therefore, compared to keeping it “flagged”, the increment in the objective function by retaining cell (i, j ) is exactly: 
+
+∆(k) 
+
+> ij
+
+= ln C(k) 
+
+> ij
+
++ ln(2 π) + (z(k) 
+
+> ij
+
+− bz(k) 
+
+> ij
+
+)2
+
+C(k)
+
+> ij
+
+− b(k) 
+
+> j
+
+.
+
+This matches the quantity defined in Algorithm 3. Consequently, fixing the other param-eters, the optimization over the j-th column in the k-th group is equivalent to: 
+
+min   
+
+> w(k)1j,...,w (k)
+> nk j∈{ 0,1}
+> nk
+
+X
+
+> i=1
+
+w(k) 
+
+> ij
+
+∆(k) 
+
+> ij
+
+s.t. 
+
+> nk
+
+X
+
+> i=1
+
+w(k) 
+
+> ij
+
+≥ hk.
+
+This 0–1 linear programming problem admits the following solution: all cells with ∆(k) 
+
+> ij
+
+< 0
+
+should be retained, and if their number is less than hk, the remaining cells are selected in ascending order of ∆(k) 
+
+> ij
+
+until the columnwise lower bound hk is satisfied. The thresholding rule in Algorithm 3 is precisely this optimal solution, where ∆(k)(hk )j is the hk-th smallest value in {∆(k) 
+
+> ij
+
+}nk
+
+> i=1
+
+. Thus, each columnwise weight update does not increase the objective function. Applying this argument sequentially over all columns j = 1 , . . . , q and all groups k = 1 , . . . , K 
+
+32 gives 
+
+Lcell (Ω(t), W (t+1) ) ≤ L cell (Ω(t), W (t)).
+
+Given W (t+1) , the update of Ω can be viewed as a generalized EM step with penalty. We treat the flagged cells as missing variables and the retained cells as observed variables. Let 
+
+Lsmooth cell (Ω, W (t+1) ) denote the observed negative log-likelihood part of Lcell (Ω, W (t+1) ), exclud-ing the cellwise flagging penalty and the ℓ1 regularization terms. For the current parameter 
+
+Ω(t), the EM majorization relationship gives 
+
+Lsmooth cell (Ω, W (t+1) ) − L smooth cell (Ω(t), W (t+1) )
+
+≤Qsmooth (Ω | Ω(t), W (t+1) ) − Qsmooth (Ω(t) | Ω(t), W (t+1) ),
+
+where terms independent of Ω are omitted from the surrogate. Define the penalized EM surrogate 
+
+Qpen (Ω | Ω(t), W (t+1) ) = Qsmooth (Ω | Ω(t), W (t+1) ) + λ1∥Θ∥1,off + λ2
+
+> K
+
+X
+
+> k=1
+
+∥Γ(k)∥1,off .
+
+Since the cellwise flagging penalty is fixed when W (t+1) is fixed, adding the regularization terms to both sides yields 
+
+Lcell (Ω, W (t+1) ) − L cell (Ω(t), W (t+1) ) ≤ Qpen (Ω | Ω(t), W (t+1) ) − Qpen (Ω(t) | Ω(t), W (t+1) ).
+
+Therefore, it is sufficient to find a feasible update Ω(t+1) satisfying 
+
+Qpen (Ω(t+1) | Ω(t), W (t+1) ) ≤ Qpen (Ω(t) | Ω(t), W (t+1) ),
+
+which guarantees 
+
+Lcell (Ω(t+1) , W (t+1) ) ≤ L cell (Ω(t), W (t+1) ).
+
+The update of μ is the exact minimizer of the smooth EM surrogate with respect to the location parameters. Specifically, it is given by the sample mean of the conditional complete-data means. Hence, the μ-step does not increase Qpen . Next, fixing μ(t+1) , W (t+1) , and Θ(t),the Γ(k)-subproblem has the form 
+
+min 
+
+> Γ(k)
+
+Q(k,t )smooth ,Γ(Γ(k)) + λ2∥Γ(k)∥1,off ,
+
+where S(k,t )case in the proof of Theorem 6.1 is replaced by S(k,t )cell . According to the proximal gradient update with backtracking described in Appendix A.4, the accepted update is feasible, satisfies 
+
+λmin (Θ(t) ⊙ Γ(k,t +1) ) ≥ ak and yields 
+
+Q(k,t )smooth ,Γ(Γ(k,t +1) ) + λ2∥Γ(k,t +1) ∥1,off ≤ Q(k,t )smooth ,Γ(Γ(k,t )) + λ2∥Γ(k,t )∥1,off .
+
+Similarly, fixing μ(t+1) , W (t+1) , and {Γ(k,t +1) }Kk=1 , the Θ-subproblem is 
+
+min 
+
+> Θ
+> K
+
+X
+
+> k=1
+
+Q(k,t )smooth ,Θ(Θ) + λ1∥Θ∥1,off .
+
+The accepted proximal gradient update with backtracking is feasible, satisfies λmin (Θ(t+1) ⊙
+
+33 Γ(k,t +1) ) ≥ ak, k = 1 , 2, . . . , K , and gives 
+
+> K
+
+X
+
+> k=1
+
+Q(k,t )smooth ,Θ(Θ(t+1) ) + λ1∥Θ(t+1) ∥1,off ≤
+
+> K
+
+X
+
+> k=1
+
+Q(k,t )smooth ,Θ(Θ(t)) + λ1∥Θ(t)∥1,off .
+
+Combining the exact μ-update with the accepted proximal gradient updates for Γ(k) and Θ,we obtain 
+
+Qpen (Ω(t+1) | Ω(t), W (t+1) ) ≤ Qpen (Ω(t) | Ω(t), W (t+1) ).
+
+Therefore, 
+
+Lcell (Ω(t+1) , W (t+1) ) ≤ L cell (Ω(t), W (t+1) ).
+
+Combining this with the W -update from the first step establishes the monotonicity of the overall algorithm: 
+
+Lcell (Ω(t+1) , W (t+1) ) ≤ L cell (Ω(t), W (t)).
+
+For any nonempty observed pattern A ⊂ { 1, . . . , q }, Σ(k) 
+
+> A
+
+is a principal submatrix of Σ(k).Let a = min 1≤k≤K {ak}. By Cauchy’s interlace theorem (Theorem 4.3.28, [47]), 
+
+λmin (Σ(k) 
+
+> A
+
+) ≥ λmin (Σ(k)) ≥ a. 
+
+Therefore, 
+
+ln |Σ(k) 
+
+> A
+
+| ≥ | A| ln a > −∞ .
+
+For the empty pattern A = ∅, we use the convention ln |Σ(k) 
+
+> A
+
+| = 0 and MD 2 
+
+> A
+
+= 0 . The partial Mahalanobis distance is non-negative, the discrete penalty satisfies 
+
+> K
+
+X
+
+> k=1
+> q
+
+X
+
+> j=1
+
+b(k) 
+
+> j
+
+∥1 − W (k) 
+
+> ·j
+
+∥0 ≥ 0,
+
+and the ℓ1 regularization terms are also non-negative. Consequently, Lcell has a global lower bound. Since it decreases monotonically, the sequence Lcell (Ω(t), W (t)) converges to a finite value, establishing the second property. We next show that the generated sequence has a convergent subsequence. Since 
+
+Lcell (Ω(t), W (t)) ≤ L cell (Ω(0) , W (0) ) =: C0,
+
+all iterates lie in the initial sublevel set. Fix a group k and a variable j. The constraint 
+
+∥W (k,t ) 
+
+> ·j
+
+∥0 ≥ hk implies that at least one retained pattern contains the variable j. For any such nonempty pattern A with j ∈ A, the corresponding log-determinant term ln |Σ(k,t ) 
+
+> A
+
+| is bounded above on the sublevel set, because all other terms in the objective are bounded below. Together with λmin (Σ(k,t ) 
+
+> A
+
+) ≥ a, we obtain 
+
+|Σ(k,t ) 
+
+> A
+
+| =
+
+> |A|
+
+Y
+
+> l=1
+
+λl(Σ(k,t ) 
+
+> A
+
+) ≥ a|A|− 1λmax (Σ(k,t ) 
+
+> A
+
+),
+
+which implies that λmax (Σ(k,t ) 
+
+> A
+
+) is uniformly bounded. Hence the diagonal element σ(k,t ) 
+
+> jj
+
+is uniformly bounded. Since this holds for every j, all diagonal elements of Σ(k,t ) are uniformly bounded. As Σ(k,t ) is positive semidefinite, every 2 × 2 principal submatrix is also positive semidefinite. Hence, for any j̸ = l, σ(k,t ) 
+
+> jj
+
+σ(k,t ) 
+
+> ll
+
+−(σ(k,t ) 
+
+> jl
+
+)2 ≥ 0, which implies |σ(k,t ) 
+
+> jl
+
+| ≤ 
+
+q
+
+σ(k,t ) 
+
+> jj
+
+σ(k,t ) 
+
+> ll
+
+.Therefore, the boundedness of all diagonal entries implies the boundedness of all off-diagonal 34 entries. Thus {Σ(k,t )}t is uniformly bounded for every k. The lower eigenvalue constraint also implies that {(Σ(k,t ))−1}t is uniformly bounded. We now prove that the location estimates are bounded. Let 
+
+Rk = max 
+
+> 1≤i≤nk
+
+∥z(k) 
+
+> i
+
+∥2 < ∞.
+
+For each coordinate j, choose a retained pattern A containing j. The corresponding partial Mahalanobis term satisfies 
+
+(z(k) 
+
+> i,A
+
+− μ(k) 
+
+> A
+
+)⊤(Σ(k) 
+
+> A
+
+)−1(z(k) 
+
+> i,A
+
+− μ(k) 
+
+> A
+
+) ≥ 1
+
+λmax (Σ(k) 
+
+> A
+
+)∥z(k) 
+
+> i,A
+
+− μ(k) 
+
+> A
+
+∥22.
+
+Since λmax (Σ(k) 
+
+> A
+
+) is uniformly bounded and the objective is bounded above on the sublevel set, 
+
+μ(k,t ) 
+
+> j
+
+cannot diverge. Hence {μ(k,t )}t is bounded for every k.Finally, the lower bound on the likelihood part implies that the penalty term is uniformly bounded on the sublevel set. Thus the off-diagonal entries of Θ(t) and Γ(k,t ) are bounded. The diagonal entries of Θ(t) are fixed at one, while the diagonal entries of Γ(k,t ) coincide with those of Σ(k,t ) and are therefore bounded. Hence Θ(t), Γ(k,t ), Σ(k,t ), and μ(k,t ) are bounded. Since W (t) only takes values from a finite set of 0-1 matrices, by the Bolzano–Weierstrass theorem there exists a convergent subsequence (Ω(tr ), W (tr )) → (Ω∗, W ∗), where tr ∈ N+ is the index of the subsequence. By the same sufficient-decrease argument as in the proof of Theorem 6.1, with S(k,t )case replaced by S(k,t )cell , the accepted proximal gradient updates imply 
+
+X
+
+> t
+
+∥Γ(k,t +1) − Γ(k,t )∥2 
+
+> F
+
+< ∞, X
+
+> t
+
+∥Θ(t+1) − Θ(t)∥2 
+
+> F
+
+< ∞.
+
+Therefore, 
+
+Γ(k,t +1) − Γ(k,t ) → 0, Θ(t+1) − Θ(t) → 0.
+
+The proximal optimality condition for the Γ(k)-update gives 
+
+0 ∈ ∇ Γ(k) Q(k,t )smooth ,Γ(Γ(k,t )) + 1
+
+η(t)
+
+> Γ,k
+
+
+
+Γ(k,t +1) − Γ(k,t )
+
+
+
++ λ2∂∥Γ(k,t +1) ∥1,off .
+
+Let (Ω∗, W ∗) be an accumulation point satisfying the interior condition 
+
+λmin (Θ∗ ⊙ Γ(k)∗) > a k, k = 1 , 2, . . . , K. 
+
+By the continuity of the minimum eigenvalue, the eigenvalue constraints are inactive in a sufficiently small neighborhood of this accumulation point. Hence, along the convergent subse-quence, the accepted proximal gradient updates coincide locally with the unconstrained proxi-mal gradient updates for the corresponding penalized block subproblems. Taking the limit along the convergent subsequence and using the continuity of the gradient, the vanishing of the scaled difference term, and the closedness of the subdifferential of the ℓ1
+
+norm, we obtain 
+
+0 ∈ ∇ Γ(k) Q(k)smooth (Ω∗ | Ω∗, W ∗) + λ2∂∥Γ(k)∗∥1,off .
+
+Similarly, 
+
+0 ∈ ∇ Θ
+
+> K
+
+X
+
+> k=1
+
+Q(k)smooth (Ω∗ | Ω∗, W ∗) + λ1∂∥Θ∗∥1,off .
+
+35 Since the μ-update is an exact minimization of the smooth EM surrogate, 
+
+0 = ∇μ(k) Qsmooth (Ω∗ | Ω∗, W ∗).
+
+At Ω = Ω∗, the EM surrogate and the observed smooth objective have the same first-order derivatives with respect to the continuous variables. Hence the above conditions are the first-order stationarity conditions of the penalized observed objective with W ∗ fixed. Moreover, the 
+
+W -update is coordinatewise optimal for the discrete variables. Therefore, W ∗ is coordinatewise optimal given Ω∗, with ties interpreted according to the same tie-breaking convention used in the algorithm. Hence every interior accumulation point (Ω∗, W ∗) is coordinatewise optimal with respect to W and stationary with respect to the continuous variables. This completes the proof of Theorem 6.2. 
+
+Appendix B.3. Proof of Theorem 6.3 Proof. First, we prove the existence of a clean benchmark with a finite objective value. Suppose that the number of contaminated cells in each column of each group does not exceed nk − hk.Then, in every column of group k, at least hk cells remain uncontaminated. Hence, for each group k, we can construct a feasible benchmark mask W (k)0 by setting all contaminated cells to 0 and all uncontaminated cells to 1. This mask satisfies ∥W (k)0,·j ∥0 ≥ hk, j = 1 , 2, . . . , q ,
+
+k = 1 , 2, . . . , K . Choose a fixed feasible joint covariance parameter, for instance Θ0 = Iq,
+
+Γ(k)0 = ckIq, ck ≥ ak, Σ(k)0 = Θ0 ⊙ Γ(k)0 = ckIq. Also take any finite location vector μ(k)0 , for example μ(k)0 = 0. Since the benchmark mask retains only clean cells, the observed likelihood terms evaluated at ({μ(k)0 }Kk=1 , Θ0, {Γ(k)0 }Kk=1 , {W (k)0 }Kk=1 ) depend only on the original clean data and on fixed constants. Moreover, P(Θ0, {Γ(k)0 }Kk=1 ) < ∞ and the cellwise penalties are finite for the fixed nonnegative constants b(k) 
+
+> j
+
+. Therefore, there exists a constant M < ∞, independent of the magnitudes of the contaminated cells, such that the optimal joint cellwise objective value is at most M . This is because the objective function value corresponding to the optimal solution will not exceed the objective function value corresponding to the above feasible solutions. Thus, the required finite benchmark is provided. Second, we prove the scatter implosion breakdown point. Since every feasible solution of the joint cellwise estimator satisfies λmin 
+
+ bΣ(k)
+
+≥ ak > 0, k = 1 , 2, . . . , K , the scatter matrix of any group cannot implode for any admissible contaminated sample. Hence, 
+
+εcell ,−( bΩ, Z⋆) = 1 .
+
+Third, we prove the scatter explosion breakdown point by contradiction. Suppose that there exists a sequence of contaminated samples, with at most nk − hk contaminated cells in each column of each group, such that 
+
+λmax 
+
+ bΣ(k0)
+
+→ ∞ 
+
+for some group k0. For the optimal cellwise mask in this group, define Ai =
+
+n
+
+j : bw(k0) 
+
+> ij
+
+= 1 
+
+o
+
+,
+
+qi = |Ai|, and write bΣ(k0) 
+
+> Ai,A i
+
+for the corresponding principal submatrix. When Ai = ∅, we use the standard convention ln | bΣ(k0) 
+
+> Ai,A i
+
+| = 0 . Let j∗ ∈ arg max 1≤j≤q ˆσ(k0) 
+
+> jj
+
+. Since bΣ(k0)
+
+is positive semidefinite, 
+
+λmax 
+
+ bΣ(k0)
+
+≤ q max  
+
+> 1≤j≤q
+
+ˆσ(k0) 
+
+> jj
+
+.
+
+36 Hence, 
+
+ˆσ(k0) 
+
+> j∗j∗
+
+≥
+
+λmax 
+
+ bΣ(k0)
+
+q .
+
+By the feasibility constraint ∥ cW (k0) 
+
+> ·j∗
+
+∥0 ≥ hk0 , there exists at least one row i∗ such that bw(k0) 
+
+> i∗j∗
+
+= 1 ,or equivalently j∗ ∈ Ai∗ . Therefore, 
+
+λmax 
+
+ bΣ(k0) 
+
+> Ai∗,A i∗
+
+
+
+≥ ˆσ(k0) 
+
+> j∗j∗
+
+≥
+
+λmax 
+
+ bΣ(k0)
+
+q .
+
+Moreover, by the Cauchy interlacing theorem, 
+
+λmin 
+
+ bΣ(k0)
+
+> Ai,A i
+
+
+
+≥ λmin 
+
+ bΣ(k0)
+
+≥ ak0
+
+whenever Ai̸ = ∅. Thus, 
+
+ln bΣ(k0)  
+
+> Ai∗,A i∗
+
+=
+
+> qi∗
+
+X
+
+> l=1
+
+ln λl
+
+ bΣ(k0) 
+
+> Ai∗,A i∗
+
+
+
+≥ ln λmax 
+
+ bΣ(k0) 
+
+> Ai∗,A i∗
+
+
+
++ ( qi∗ − 1) ln ak0
+
+≥ ln 
+
+λmax 
+
+ bΣ(k0)
+
+q + ( qi∗ − 1) ln ak0 .
+
+For every other row i, we also have 
+
+ln bΣ(k0) 
+
+> Ai,A i
+
+≥ qi ln ak0
+
+with the above convention when qi = 0 . Consequently, for a finite constant 
+
+Ck0 = ( nk0 q − 1) min {ln ak0 , 0},
+
+depending only on nk0 , q, and ak0 , we obtain 
+
+> nk0
+
+X
+
+> i=1
+
+ln bΣ(k0) 
+
+> Ai,A i
+
+≥ ln 
+
+λmax 
+
+ bΣ(k0)
+
+q + Ck0 .
+
+Since the partial Mahalanobis distances, the cellwise penalty, and the ℓ1 penalty are all non-negative, the whole joint cellwise objective tends to +∞ if λmax ( bΣ(k0)
+
+) → ∞ . This contradicts the finite benchmark M established in the first step. Therefore, 
+
+εcell ,+( bΩ, Z⋆) ≥ β0.
+
+Finally, we prove the location breakdown point. Suppose again that the number of con-taminated cells per column in each group does not exceed nk − hk. Consider a sequence of such contaminated samples and assume, for contradiction, that 
+
+bμ(k0)
+
+> 2
+
+→ ∞ 
+
+for some group k0. From the scatter explosion result proved above, along this sequence 37 λmax ( bΣ(k0)
+
+) cannot diverge. Hence, there exists a finite constant CΣ such that 
+
+λmax 
+
+ bΣ(k0)
+
+≤ CΣ
+
+along the sequence. Let M0 be a finite constant such that the absolute values of all clean cells in group k0 are bounded by M0.For each coordinate j, at least hk0 cells in column j are clean, while every feasible mask retains at least hk0 cells in the same column. Since hk0 > n k0 /2, these two sets must intersect. Thus, for each j = 1 , 2, . . . , q , there exists an index i(j) such that the cell z(k0) 
+
+> i(j)j
+
+is both clean and retained. Therefore, 
+
+z⋆(k0) 
+
+> i(j)j
+
+≤ M0, bw(k0) 
+
+> i(j)j
+
+= 1 .
+
+Using the lower bound on the partial Mahalanobis terms, we have 
+
+> nk0
+
+X
+
+> i=1
+
+MD 2
+
+
+
+z⋆(k0) 
+
+> i,A i
+
+, bμ(k0) 
+
+> Ai
+
+, bΣ(k0)
+
+> Ai,A i
+
+
+
+≥ 1
+
+CΣ
+
+> nk0
+
+X
+
+> i=1
+
+z⋆(k0) 
+
+> i,A i
+
+− bμ(k0)
+
+> Ai
+> 22
+
+≥ 1
+
+CΣ
+
+> q
+
+X
+
+> j=1
+
+
+
+z⋆(k0) 
+
+> i(j)j
+
+− bμ(k0)
+
+> j
+
+2
+
+≥ 1
+
+CΣ
+
+12 bμ(k0) 22
+
+− qM 20
+
+
+
+.
+
+The log-determinant terms are bounded from below by a finite constant because λmin ( bΣ(k0)
+
+) ≥
+
+ak0 . Hence, if ∥bμ(k0)∥2 → ∞ , the joint cellwise objective must tend to +∞, contradicting the finite benchmark M . Therefore, 
+
+ε∗
+
+> cell ,μ
+
+( bΩ, Z⋆) ≥ β0.
+
+To show that the common lower bound is sharp, consider 
+
+k∗ ∈ arg min 
+
+> k
+
+nk − hk + 1 
+
+nk
+
+.
+
+In this group, fix a column, say j∗ = 1 , replace exactly nk∗ − hk∗ + 1 cells in this column by a value c, and let c → ∞ , leaving all other cells unchanged. Let I be the set of rows whose first-column cell is contaminated. Since |I| = nk∗ − hk∗ + 1 , any feasible mask satisfying 
+
+∥W (k∗) 
+
+> ·1
+
+∥0 ≥ hk∗ must retain at least one contaminated c-cell in the first column, that is, 
+
+#
+
+n 
+
+i : bw(k∗) 
+
+> i1
+
+= 1 
+
+o
+
+∩ I 
+
+
+
+≥ 1.
+
+38 At convergence of the EM μ-block, the first coordinate satisfies 
+
+bμ(k∗)1 = 1
+
+nk∗
+
+> nk∗
+
+X
+
+> i=1
+
+bm(k∗)
+
+> i1
+
+= 1
+
+nk∗
+
+X  
+
+> i:bw(k∗)
+> i1=1
+
+˜z(k∗) 
+
+> i1
+
++ 1
+
+nk∗
+
+X  
+
+> i:bw(k∗)
+> i1=0
+
+bμ(k∗)1 + bΣ(k∗)1,Oi
+
+ bΣ(k∗)
+
+> Oi,Oi
+
+−1 
+
+˜z(k∗) 
+
+> i, Oi
+
+− bμ(k∗)
+
+> Oi
+
+
+
+= cnk∗
+
+#
+
+n 
+
+i : bw(k∗) 
+
+> i1
+
+= 1 
+
+o
+
+∩ I 
+
+
+
++ 1
+
+nk∗
+
+X  
+
+> {i:bw(k∗)
+> i1=1 }∩I c
+
+z⋆(k∗)
+
+> i1
+
++ 1
+
+nk∗
+
+X  
+
+> i:bw(k∗)
+> i1=0
+
+bμ(k∗)1 + bΣ(k∗)1,Oi
+
+ bΣ(k∗)
+
+> Oi,Oi
+
+−1 
+
+z⋆(k∗) 
+
+> i, Oi
+
+− bμ(k∗)
+
+> Oi
+
+
+
+,
+
+where Oi = {j : bw(k∗) 
+
+> ij
+
+= 1 , j ̸ = 1 }, and the usual empty-set convention is used if Oi = ∅. If both bμ(k∗) and bΣ(k∗)
+
+remained bounded as c → ∞ , then the left-hand side and all terms on the right-hand side except the first one would remain bounded. The inverse submatrices are bounded because λmin ( bΣ(k∗)
+
+) ≥ ak∗ . However, the first term on the right-hand side diverges to 
+
++∞, a contradiction. Therefore, at contamination fraction (nk∗ − hk∗ + 1) /n k∗ = β0, either the location or the scatter matrix, or both, must break down. This proves that the common lower bound β0 for scatter explosion and location breakdown is sharp. 
+
+Appendix B.4. Proof of Theorem 6.4 Proof. The proof runs in parallel with the cellwise case, replacing the cellwise masks W (k) with rowwise weights w(k) 
+
+> i
+
+. First, we prove the existence of a clean benchmark with a finite objective value. Suppose that the number of casewise contaminated rows in group k does not exceed 
+
+nk − hk. Then there exists a subset H(k)0 of size hk consisting entirely of clean rows. Choose, for example, 
+
+Θ0 = Iq, Γ(k)0 = ckIq, ck ≥ ak, Σ(k)0 = Θ0 ⊙ Γ(k)0 = ckIq,
+
+and 
+
+μ(k)0 = 1
+
+hk
+
+X
+
+> i∈H(k)0
+
+z⋆(k) 
+
+> i
+
+.
+
+Evaluating the joint casewise objective at ({μ(k)0 }Kk=1 , Θ0, {Γ(k)0 }Kk=1 , {H(k)0 }Kk=1 ) gives a finite value depending only on the clean data and fixed constants, not on the magnitudes of the contaminated rows. Also, P(Θ0, {Γ(k)0 }Kk=1 ) < ∞. Hence, there exists a finite constant M < ∞
+
+such that, under at most nk − hk contaminated rows in every group, the optimal joint casewise objective value is at most M .Second, the implosion breakdown value equals 1. Indeed, every feasible solution satisfies 
+
+λmin 
+
+ bΣ(k)
+
+≥ ak > 0, k = 1 , 2, . . . , K. 
+
+Therefore, no scatter matrix can implode. Under the standard convention that a breakdown fraction is reported within [0 , 1] , this gives 
+
+δcase ,−( bΩ, Z⋆) = 1 .
+
+Third, we prove the scatter explosion breakdown point. Suppose, for the sake of contradic-39 tion, that there exists a sequence of contaminated samples, with at most nk − hk contaminated rows in each group, such that 
+
+λmax 
+
+ bΣ(k0)
+
+→ ∞ 
+
+for some group k0. Since λmin ( bΣ(k0)
+
+) ≥ ak0 , we have 
+
+ln bΣ(k0)
+
+=
+
+> q
+
+X
+
+> j=1
+
+ln λj
+
+ bΣ(k0)
+
+≥ ln λmax 
+
+ bΣ(k0)
+
++ ( q − 1) ln ak0 .
+
+Therefore, the log-determinant contribution of group k0 in the joint casewise objective is bounded from below by 
+
+hk0
+
+h
+
+ln λmax 
+
+ bΣ(k0)
+
++ ( q − 1) ln ak0
+
+i
+
+.
+
+Since the Mahalanobis terms and the ℓ1 penalty are nonnegative, the joint casewise objective tends to +∞ as λmax ( bΣ(k0)
+
+) → ∞ . This contradicts the finite benchmark M established in the first step. Hence, 
+
+δcase ,+( bΩ, Z⋆) ≥ β0.
+
+Finally, we prove the location breakdown point. Suppose, for contradiction, that under at most nk −hk contaminated rows in each group, there exists a sequence of contaminated samples such that 
+
+bμ(k0)
+
+> 2
+
+→ ∞ 
+
+for some group k0. From the scatter explosion result proved above, λmax ( bΣ(k0)
+
+) cannot diverge along this sequence. Hence, there exists a finite constant CΣ such that 
+
+λmax 
+
+ bΣ(k0)
+
+≤ CΣ.
+
+Any feasible subset of size hk0 must contain at least one clean row, because at most nk0 − hk0
+
+rows are contaminated and hk0 > n k0 /2. Let z⋆(k0) 
+
+> i0
+
+be such a retained clean row, and let 
+
+R0 = max  
+
+> i
+
+z⋆(k0) 
+
+> i2
+
+over the clean rows of group k0. Then 
+
+z⋆(k0) 
+
+> i02
+
+≤ R0.
+
+The Mahalanobis term corresponding to this retained clean row satisfies 
+
+
+
+z⋆(k0) 
+
+> i0
+
+− bμ(k0)⊤  bΣ(k0)−1 
+
+z⋆(k0) 
+
+> i0
+
+− bμ(k0)
+
+≥
+
+bμ(k0)
+
+> 2
+
+− R0
+
+2
+
+CΣ
+
+.
+
+Thus, if ∥bμ(k0)∥2 → ∞ , the joint casewise objective must tend to +∞, contradicting the finite benchmark M . Therefore, 
+
+δ∗
+
+> case ,μ
+
+( bΩ, Z⋆) ≥ β0.
+
+To show that the common lower bound is sharp, consider the most vulnerable group 
+
+k∗ ∈ arg min 
+
+> k
+
+nk − hk + 1 
+
+nk
+
+.
+
+40 In this group, replace the first coordinate of exactly nk∗ − hk∗ + 1 rows by a value c, and let 
+
+c → ∞ , leaving all other entries unchanged. Let I be the set of contaminated rows. Since 
+
+|I| = nk∗ − hk∗ + 1 , any feasible subset of size hk∗ must contain at least one row from I. At any exact minimizer, the μ-block satisfies the weighted mean equation 
+
+bμ(k∗) = 1
+
+hk∗
+
+> nk∗
+
+X
+
+> i=1
+
+bw(k∗) 
+
+> i
+
+z⋆(k∗) 
+
+> i
+
+.
+
+Hence, for the first coordinate, 
+
+bμ(k∗)1 = chk∗
+
+#
+
+n 
+
+i : bw(k∗) 
+
+> i
+
+= 1 
+
+o
+
+∩ I 
+
+
+
++ 1
+
+hk∗
+
+X  
+
+> {i:bw(k∗)
+> i=1 }∩I c
+
+z⋆(k∗) 
+
+> i1
+
+.
+
+The first term on the right-hand side diverges to +∞, while the second term is bounded because it only involves clean data. Therefore, at contamination fraction (nk∗ −hk∗ +1) /n k∗ = β0, either the location estimator diverges, or the scatter estimator has already broken down. This proves that the common lower bound β0 is sharp. 
+
+Appendix C. Simulation studies 
+
+We conducted a comprehensive set of simulation studies to evaluate the proposed joint estimation algorithm, and compared its performance with the non-joint MCD [13, 16] and cellMCD [14] methods. For each configuration, the simulation was repeated 100 times, and the reported results are the means and standard deviations of the evaluation metrics over these 100 replications. For the joint method, in each simulation replication we generated K groups of q-dimensional observations, where the k-th group contained nk samples. Clean observations were generated from a multivariate normal distribution Nq(μ(k), Σ(k)). The group mean vectors were set as 
+
+μ(k) = ( k − 1)∆ · 1q, where ∆ controls the mean shift across groups. The covariance matrices followed Σ(k) = Θ ⊙ Γ(k), where Θ denotes the correlation structure shared by all groups, Γ(k)
+
+is a group-specific positive definite matrix for the k-th group, and ⊙ denotes the Hadamard product. The baseline correlation structures for Θ and Γ(k) were generated by two mechanisms: one was an AR(1)-type correlation structure ρ|i−j| with ρ = 0 .9, 1 ≤ i, j ≤ q, referred to as setting A09; the other was a random correlation matrix with a prespecified condition number of 100, referred to as setting ALYZ [48]. Additional coordinate-wise scale perturbations were then introduced into Γ(k) to increase heterogeneity across groups. We considered two contamination schemes, namely casewise contamination and cellwise contamination. In the casewise setting, for each group we randomly selected a proportion εout of entire observations and replaced them with outliers located along the eigenvector corresponding to the smallest eigenvalue of Σ(k), with a fixed Mahalanobis magnitude relative to μ(k). In the cellwise setting, for each variable we independently contaminated a proportion εout of cells, and imposed anomalous shifts along the smallest-eigenvalue direction within the corresponding subspace. During estimation, the trimming subset size for the k-th group was set to hk =max {⌊ (1 − εout )nk⌋, q + 1 }.Specifically, we set K = 5 , q ∈ { 70 , 20 }, nk ∈ { 83 , 100 , 500 }, ∆ = 2 , and εout ∈ { 0.25 , 0.5}.The detailed combinations are shown in Table C.5. For each configuration, we summarized across independent replications the mean squared errors (MSE) of the mean vectors and the relative errors (RE) of covariance matrices, and also reported the Kullback-Leibler (KL) dis-crepancy for covariance estimation. For non-joint competitors, separate estimations were per-formed using covMCD from robustbase [49, 50] for casewise contamination, and cellMCD from 41 cellWise [14] for cellwise contamination. Table C.5 shows the proposed joint framework’s advantage heavily depends on the contamination level and mode. 
+
+Table C.5: Simulation results under different settings. “-” indicates that the metric exceeds 10 6. The values in parentheses represent the standard deviation of the 100 replications. ↓ means the smaller the better. 
+
+Mode k nk εout q MSE( μ) ↓ KL( Σ) ↓ RE( Σ) ↓
+
+Joint Non-joint Joint Non-joint Joint Non-joint casewise 1 500 0.500 70 0.067 (0.087) 0.004 (0.001) 2053.184 (7.963) 32.368 (20.637) 112.888 (6.122) 0.567 (0.020) 
+
+2 500 0.500 70 0.067 (0.114) 0.004 (0.001) 2053.486 (10.050) 37.130 (22.755) 113.360 (5.760) 0.569 (0.018) 
+
+3 500 0.500 70 0.076 (0.115) 0.004 (0.001) 2052.545 (9.889) 34.097 (18.656) 113.080 (5.571) 0.569 (0.021) 
+
+4 500 0.500 70 0.058 (0.089) 0.019 (0.003) 2054.223 (7.897) 64787.089 (6307.088) 112.871 (6.092) 1.006 (0.040) 
+
+5 500 0.500 70 0.073 (0.116) 0.052 (0.080) 2052.555 (10.530) - 112.747 (6.004) 129.392 (6.887) 1 500 0.250 70 0.004 (0.001) 0.026 (0.009) 6.933 (0.199) 78.172 (133.667) 0.412 (0.008) 0.916 (0.085) 2 500 0.250 70 0.004 (0.001) 0.031 (0.010) 6.936 (0.210) 575.151 (879.586) 0.413 (0.007) 0.991 (0.109) 3 500 0.250 70 0.004 (0.001) 0.067 (0.087) 6.947 (0.214) - 0.413 (0.007) 75.739 (17.417) 4 500 0.250 70 0.004 (0.001) 0.066 (0.090) 6.886 (0.195) 576.000 (136.053) 0.411 (0.007) 67.064 (3.762) 5 100 0.250 70 0.018 (0.003) 0.063 (0.084) 58.688 (1.642) 600.097 (164.398) 0.936 (0.023) 67.766 (3.720) 1 100 0.250 20 0.019 (0.007) 0.110 (0.126) 3.160 (0.291) 123.034 (88.941) 0.488 (0.030) 17.695 (2.431) 2 100 0.250 20 0.018 (0.006) 0.102 (0.134) 3.150 (0.297) 135.536 (119.664) 0.488 (0.034) 17.592 (2.468) 3 100 0.250 20 0.018 (0.006) 0.120 (0.134) 3.114 (0.310) 118.094 (86.670) 0.486 (0.033) 17.911 (2.318) 4 100 0.250 20 0.018 (0.005) 0.106 (0.109) 3.074 (0.298) 139.030 (89.511) 0.483 (0.032) 17.442 (2.560) 5 100 0.250 20 0.019 (0.006) 0.110 (0.129) 3.123 (0.331) 121.324 (75.300) 0.485 (0.033) 17.872 (2.467) cellwise 1 500 0.500 70 0.004 (0.001) 0.052 (0.067) 35.450 (9.590) - 0.884 (0.203) 129.312 (7.089) 2 500 0.500 70 0.004 (0.001) 0.051 (0.086) 35.181 (8.702) - 0.863 (0.181) 129.760 (6.841) 3 500 0.500 70 0.004 (0.001) 0.058 (0.086) 35.135 (8.327) - 0.881 (0.187) 129.531 (6.701) 4 500 0.500 70 0.004 (0.001) 0.045 (0.068) 35.586 (9.128) - 0.879 (0.197) 129.240 (6.917) 5 100 0.500 70 0.027 (0.012) 0.057 (0.089) 102.690 (26.680) - 2.371 (1.322) 129.114 (7.002) 1 500 0.250 70 0.003 (0.001) 0.059 (0.069) 14.332 (0.808) 576.208 (157.316) 0.474 (0.010) 67.310 (3.780) 2 500 0.250 70 0.003 (0.001) 0.063 (0.106) 14.441 (0.764) 583.249 (182.543) 0.474 (0.010) 67.110 (4.034) 3 500 0.250 70 0.003 (0.001) 0.083 (0.079) 14.434 (0.767) - 0.475 (0.009) 109.445 (5.974) 4 500 0.250 70 0.003 (0.001) 0.007 (0.006) 14.367 (0.797) 12984.516 (26078.985) 0.473 (0.010) 0.656 (0.177) 5 100 0.250 70 0.015 (0.003) 0.004 (0.001) 55.587 (2.579) 31.899 (18.133) 0.733 (0.016) 0.570 (0.020) 
+
+1 100 0.250 20 0.027 (0.009) 0.114 (0.124) 7.399 (1.149) 101.185 (58.588) 0.693 (0.070) 17.660 (2.353) 2 100 0.250 20 0.027 (0.007) 0.028 (0.009) 7.380 (1.197) 178.290 (457.589) 0.690 (0.071) 0.935 (0.096) 3 100 0.250 20 0.026 (0.009) 0.027 (0.009) 7.428 (1.153) 66.127 (114.598) 0.681 (0.065) 0.923 (0.084) 4 100 0.250 20 0.025 (0.009) 0.027 (0.009) 7.369 (0.993) 93.969 (180.187) 0.689 (0.064) 0.922 (0.084) 5 83 0.250 20 0.031 (0.010) 0.028 (0.008) 8.967 (1.378) 78.029 (137.850) 0.720 (0.072) 0.920 (0.096) 
+
+Under a high outlier ratio ( εout = 0 .500 ) with casewise contamination, the joint method trades some estimation accuracy for enhanced stability, preventing the severe numerical break-down often observed in the non-joint approach. Conversely, under a moderate outlier ratio (εout = 0 .250 ), the benefits of the joint method are evident: it consistently achieves lower estimation errors across different dimensions in casewise scenarios and improves covariance estimation stability under cellwise contamination. 42 References 
+
+[1] R. Bommasani, D. A. Hudson, E. Adeli, R. Altman, S. Arora, S. von Arx, M. S. Bernstein, J. Bohg, A. Bosselut, E. Brunskill, et al., On the opportunities and risks of foundation models, 2021. ArXiv:2108.07258. [2] S. Bubeck, V. Chandrasekaran, R. Eldan, J. Gehrke, E. Horvitz, E. Kamar, P. Lee, Y. T. Lee, Y. Li, S. Lundberg, et al., Sparks of artificial general intelligence: Early experiments with GPT-4, 2023. ArXiv:2303.12712. [3] I. J. Goodfellow, J. Shlens, C. Szegedy, Explaining and harnessing adversarial examples, in: International Conference on Learning Representations, 2015. [4] N. Carlini, D. A. Wagner, Towards evaluating the robustness of neural networks, in: 2017 IEEE Symposium on Security and Privacy, IEEE, 2017, pp. 39–57. [5] J. Kirchenbauer, J. Geiping, Y. Wen, J. Katz, I. Miers, T. Goldstein, A watermark for large language models, in: Proceedings of the 40th International Conference on Machine Learning, volume 202 of Proceedings of Machine Learning Research , PMLR, 2023, pp. 17061–17084. [6] P. Manakul, A. Liusie, M. J. F. Gales, SelfCheckGPT: Zero-resource black-box hallucina-tion detection for generative large language models, in: Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, 2023, pp. 9004–9017. [7] S. Gehrmann, H. Strobelt, A. M. Rush, GLTR: Statistical detection and visualization of generated text, in: Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics: System Demonstrations, 2019, pp. 111–116. [8] E. Mitchell, Y. Lee, A. Khazatsky, C. D. Manning, C. Finn, DetectGPT: Zero-shot machine-generated text detection using probability curvature, in: Proceedings of the 40th International Conference on Machine Learning, volume 202 of Proceedings of Machine Learning Research , PMLR, 2023, pp. 24950–24962. [9] Z. Ji, N. Lee, R. Frieske, T. Yu, D. Su, Y. Xu, E. Ishii, Y. Bang, A. Madotto, P. Fung, Survey of hallucination in natural language generation, ACM Computing Surveys 55 (2023) 1–38. [10] J. H. Metzen, T. Genewein, V. Fischer, B. Bischoff, On detecting adversarial perturbations, in: International Conference on Learning Representations, 2017. [11] W. Tian, L. Zhang, H. Cui, Abnormal sample detection based on robust Mahalanobis distance estimation in adversarial machine learning, Statistics and Its Interface 17 (2024) 91–106. [12] I. Solaiman, M. Brundage, J. Clark, A. Askell, A. Herbert-Voss, J. Wu, A. Radford, G. Krueger, J. W. Kim, S. Kreps, et al., Release strategies and the social impacts of language models, 2019. ArXiv:1908.09203. [13] M. Hubert, M. Debruyne, Minimum covariance determinant, Wiley Interdisciplinary Reviews: Computational Statistics 2 (2010) 36–43. [14] J. Raymaekers, P. J. Rousseeuw, The cellwise minimum covariance determinant estimator, Journal of the American Statistical Association 119 (2024) 2610–2621. 43 [15] K. Lee, K. Lee, H. Lee, J. Shin, A simple unified framework for detecting out-of-distribution samples and adversarial attacks, in: Advances in Neural Information Processing Systems, volume 31, 2018. [16] P. J. Rousseeuw, K. Van Driessen, A fast algorithm for the minimum covariance determi-nant estimator, Technometrics 41 (1999) 212–223. [17] J. Guo, E. Levina, G. Michailidis, J. Zhu, Joint estimation of multiple graphical models, Biometrika 98 (2011) 1–15. [18] A. P. Dempster, N. M. Laird, D. B. Rubin, Maximum likelihood from incomplete data via the EM algorithm, Journal of the Royal Statistical Society: Series B (Methodological) 39 (1977) 1–22. [19] B. Guo, X. Zhang, Z. Wang, M. Jiang, J. Nie, Y. Ding, J. Yue, Y. Wu, How close is ChatGPT to human experts? comparison corpus, evaluation, and detection, 2023. ArXiv:2301.07597. [20] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. L. Wainwright, P. Mishkin, C. Zhang, S. Agar-wal, K. Slama, A. Ray, J. Schulman, J. Hilton, F. Kelton, L. Miller, M. Simens, A. Askell, P. Welinder, P. Christiano, J. Leike, R. Lowe, Training language models to follow in-structions with human feedback, in: Advances in Neural Information Processing Systems, volume 35, 2022, pp. 27730–27744. [21] OpenAI, Introducing ChatGPT, OpenAI, 2022. Accessed April 27, 2026. [22] OpenAI, GPT-5.4 Thinking system card, OpenAI, 2026. Accessed April 27, 2026. [23] OpenAI, Introducing GPT-5.4, OpenAI, 2026. Accessed April 27, 2026. [24] OpenAI, Introducing GPT-5.4 mini and nano, OpenAI, 2026. Accessed April 27, 2026. [25] Gemini Team, Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context, 2024. ArXiv:2403.05530. [26] Google, Gemini 3 Flash preview, Google AI for Developers, 2026. Accessed April 27, 2026. [27] Google, Gemini 3.1 Flash-Lite preview, Google AI for Developers, 2026. Accessed April 27, 2026. [28] Google, Gemini 3.1 Pro preview, Google Cloud Vertex AI documentation, 2026. Accessed April 27, 2026. [29] Y. Liu, M. Ott, N. Goyal, J. Du, M. Joshi, D. Chen, O. Levy, M. Lewis, L. Zettle-moyer, V. Stoyanov, RoBERTa: A robustly optimized BERT pretraining approach, 2019. ArXiv:1907.11692. [30] D. Ippolito, D. Duckworth, C. Callison-Burch, D. Eck, Automatic detection of generated text is easiest when humans are fooled, in: Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, 2020, pp. 1808–1822. [31] X. Li, F. Ruan, H. Wang, Q. Long, W. J. Su, A statistical framework of watermarks for large language models: Pivot, detection efficiency and optimal rules, Annals of Statistics 53 (2025) 322–351. 44 [32] S. Zhang, S. Roller, N. Goyal, M. Artetxe, M. Chen, S. Chen, C. Dewan, M. Diab, X. Li, X. V. Lin, T. Mihaylov, M. Ott, S. Shleifer, K. Shuster, D. Simig, P. S. Koura, A. Sridhar, T. Wang, L. Zettlemoyer, OPT: Open pre-trained transformer language models, 2022. ArXiv:2205.01068. [33] J. Li, X. Cheng, X. Zhao, J.-Y. Nie, J.-R. Wen, HaluEval: A large-scale hallucination evaluation benchmark for large language models, in: Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, Association for Computational Linguistics, Singapore, 2023, pp. 6449–6464. [34] X. Ma, B. Li, Y. Wang, S. M. Erfani, S. Wijewickrema, G. Schoenebeck, M. E. Houle, D. Song, J. Bailey, Characterizing adversarial subspaces using local intrinsic dimensional-ity, in: International Conference on Learning Representations, 2018. [35] A. Krizhevsky, G. Hinton, Learning multiple layers of features from tiny images, Technical Report, University of Toronto, Toronto, 2009. [36] A. Kurakin, I. J. Goodfellow, S. Bengio, Adversarial examples in the physical world, in: Artificial Intelligence Safety and Security, Chapman and Hall/CRC, 2018, pp. 99–112. [37] S.-M. Moosavi-Dezfooli, A. Fawzi, P. Frossard, DeepFool: A simple and accurate method to fool deep neural networks, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2016, pp. 2574–2582. [38] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, L. Fei-Fei, ImageNet: A large-scale hierar-chical image database, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2009, pp. 248–255. [39] H. Xue, A. Araujo, B. Hu, Y. Chen, Diffusion-based adversarial sample generation for improved stealthiness and controllability, in: Advances in Neural Information Processing Systems, volume 36, 2023, pp. 2894–2921. [40] K. He, X. Zhang, S. Ren, J. Sun, Deep residual learning for image recognition, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2016, pp. 770–778. [41] G. Huang, Z. Liu, L. van der Maaten, K. Q. Weinberger, Densely connected convolutional networks, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2017, pp. 4700–4708. [42] B. Iglewicz, D. C. Hoaglin, How to Detect and Handle Outliers, ASQC Quality Press, Milwaukee, WI, 1993. [43] A. Beck, M. Teboulle, A fast iterative shrinkage-thresholding algorithm for linear inverse problems, SIAM Journal on Imaging Sciences 2 (2009) 183–202. [44] Y. Nesterov, Introductory Lectures on Convex Optimization: A Basic Course, 1st ed., Springer, New York, 2004. [45] A. Beck, First-Order Methods in Optimization, Society for Industrial and Applied Math-ematics, Philadelphia, PA, 2017. [46] R. G. Bartle, D. R. Sherbert, Introduction to Real Analysis, 4th ed., Wiley, New York, 2018. 45 [47] R. A. Horn, C. R. Johnson, Matrix Analysis, 2nd ed., Cambridge University Press, Cam-bridge, 2012. [48] C. Agostinelli, A. Leung, V. J. Yohai, R. H. Zamar, Robust estimation of multivariate location and scatter in the presence of cellwise and casewise contamination, TEST 24 (2015) 441–461. [49] M. Maechler, P. Rousseeuw, C. Croux, V. Todorov, A. Ruckstuhl, M. Salibian-Barrera, T. Verbeke, M. Koller, E. L. T. Conceicao, M. A. di Palma, robustbase: Basic Robust Statistics, 2026. R package version 0.99-7. [50] V. Todorov, P. Filzmoser, An object-oriented framework for robust multivariate analysis, Journal of Statistical Software 32 (2009) 1–47. 46

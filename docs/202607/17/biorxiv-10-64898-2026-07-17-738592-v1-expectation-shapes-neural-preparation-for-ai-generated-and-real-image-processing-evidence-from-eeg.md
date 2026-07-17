@@ -1,0 +1,25 @@
+---
+title: "Expectation Shapes Neural Preparation for AI-generated and Real Image Processing: Evidence from EEG"
+title_zh: 预期塑造神经准备以处理AI生成和真实图像：来自脑电图的证据
+authors: "Chen, Y., Eiserbeck, A., Maier, M., Klotzsche, F., Hofmann, S. M., Baum, J., Nierula, B., Hilsmann, A., Bosse, S., Villringer, A., Rahman, R. A., Gaebler, M., Nikulin, V."
+date: 2026-07-17
+pdf: "https://www.biorxiv.org/content/10.64898/2026.07.17.738592v1.full.pdf"
+tags: ["query:xai-objdet"]
+score: 7.0
+evidence: AI生成与真实图像预期的神经可解释性
+tldr: AI生成内容日益普遍，但人们对AI内容的期望如何影响神经处理尚不清楚。本研究利用已有EEG数据集，让被试观看真实人脸图片但被告知是真实或AI生成。发现预期为AI生成时，前刺激alpha功率显著降低，尤其在右脑区域；且仅对AI预期的笑脸，前刺激alpha与后刺激LPP相关。结果表明自上而下的期望调节神经准备状态，为人类-AI交互和AI生成内容评估提供了神经机制见解。
+source: biorxiv
+selection_source: fresh_fetch
+figures_json: "[{\"url\": \"assets/figures/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1723, \"height\": 844, \"label\": \"Figure\"}, {\"url\": \"assets/figures/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1313, \"height\": 2311, \"label\": \"Figure\"}, {\"url\": \"assets/figures/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1715, \"height\": 670, \"label\": \"Figure\"}, {\"url\": \"assets/figures/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1114, \"height\": 2344, \"label\": \"Figure\"}, {\"url\": \"assets/figures/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1027, \"height\": 971, \"label\": \"Figure\"}, {\"url\": \"assets/figures/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1718, \"height\": 1367, \"label\": \"Figure\"}]"
+tables_json: "[{\"url\": \"assets/tables/biorxiv/biorxiv-10-64898-2026-07-17-738592-v1/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1761, \"height\": 689, \"label\": \"Table\"}]"
+motivation: 探究对AI生成内容的期望如何调制大脑的预刺激神经活动，以理解认知期望对感知处理的偏见机制。
+method: 分析已有EEG数据集（N=29），被试观看真实情绪面孔，但被告知是真实或AI生成，比较前刺激alpha功率及与后刺激ERPs的关系。
+result: 预期FAKE相比REAL显著降低右枕顶和颞顶区前刺激alpha功率；仅FAKE笑脸中前刺激alpha与LPP振幅变化显著相关。
+conclusion: AI相关期望通过降低alpha活动增强注意力需求，系统性塑造神经动态，为优化AI生成内容设计提供依据。
+---
+
+## 摘要
+摘要：AI生成的图像、视频和新闻已成为日常生活中不可分割的一部分，导致人们对在线信息越来越持怀疑态度。理解关于AI生成内容存在的预期如何影响感知，对于阐明潜在的神经机制和促进自然化虚拟形象的生成至关重要。在本研究中，我们分析了一个现有的EEG数据集（N=29），其中参与者观看了仅包含真实个体的情绪面部照片，同时被告知即将出现的面孔是真实的（'REAL'）或AI生成的（'FAKE'）。我们检查了刺激前1秒脑电图区间内的振荡活动，发现当参与者预期'FAKE'面孔时，alpha功率显著低于预期'REAL'面孔时。这种效应具有区域特异性，特别是在右侧枕顶区和颞顶区，通过传感器和源水平分析均得到了证实。此外，我们测量了刺激前alpha活动与刺激后事件相关电位（ERPs）之间的调节效应。仅在'FAKE'笑脸中观察到晚期正电位（LPP）幅度的变化与刺激前alpha功率之间存在显著相关性，这与我们之前的发现一致。这些结果表明，与AI相关的预期调节了神经准备状态，较低的alpha活动可能反映了对被认为是由人工生成的刺激增加的注意力需求。本研究证明了自上而下的信念系统地塑造了刺激前和刺激后的神经动态，为认知预期如何偏见感知处理提供了新见解，对理解人机交互以及在现实世界环境中改进AI生成内容的设计和评估具有重要意义。
+
+## Abstract
+Abstract: AI-generated images, videos, and news have become an inseparable part of daily life, leading to increasing skepticism toward online information. Understanding how expectations about the presence of AI-generated content influence perception is crucial for elucidating the underlying neural mechanisms and facilitating the generation of naturalistic avatars. In this study, we analyzed an existing EEG dataset (N = 29) in which participants viewed emotional facial photographs of only real individuals while being informed that upcoming faces were either real ('REAL') or AI-generated ('FAKE'). We examined pre-stimulus oscillatory activities in the one-second EEG interval before stimulus onset and found significantly lower alpha power when participants expected 'FAKE' compared to 'REAL' faces. This effect was region-specific, particularly in right occipito-parietal and temporo-parietal regions, as identified by both sensor- and source-level analyses. In addition, the modulation effect between pre-stimulus alpha activity and post-stimulus event-related potentials (ERPs) was measured. A significant correlation between changes in late positive potential (LPP) amplitudes and pre-stimulus alpha power was observed exclusively for 'FAKE' smiling faces, consistent with our previous findings. These results suggest that AI-related expectations modulate neural preparatory states, with lower alpha activity presumably reflecting increased attentional demands for stimuli believed to be artificially generated. This study demonstrates that top-down beliefs systematically shape both pre- and post-stimulus neural dynamics, providing new insights into how cognitive expectations bias perceptual processing, with implications for understanding human-AI interaction and improving the design and evaluation of AI-generated content in real-world contexts.

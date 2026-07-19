@@ -1,0 +1,461 @@
+Title: Latent Trajectory Discrimination for AI-Generated Text Detection
+
+URL Source: https://arxiv.org/pdf/2607.14967v1
+
+Published Time: Fri, 17 Jul 2026 01:45:47 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# Latent Trajectory Discrimination for AI-Generated Text Detection 
+
+Gianluca Bonifazi 1, Christopher Buratti 1, Michele Marchetti 1, Federica Parlapiano 1, Giulia Quaglieri 1, Davide Traini 1,2, Domenico Ursino 1, Luca Virgili 1,∗ 
+
+> 1
+
+DII, Polytechnic University of Marche  
+
+> 2
+
+CHIMOMO, University of Modena and Reggio Emilia  
+
+> ∗
+
+Corresponding author g.bonifazi@univpm.it; c.buratti@pm.univpm.it; michele.marchetti@univpm.it; g.quaglieri@pm.univpm.it; f.parlapiano@pm.univpm.it; davide.traini@unimore.it; d.ursino@univpm.it; luca.virgili@univpm.it 
+
+Abstract 
+
+Most existing approaches to AI-Generated Text Detection (AIGTD) treat documents as static objects and base their decisions on aggregate statistics or globally compressed embeddings. How-ever, this perspective overlooks the inherently dynamic nature of autoregressive generation, where content evolves progressively through the latent space. In this paper, we reformulate AIGTD as the problem of distinguishing between latent generation trajectories. Instead of relying on static representations, we model how textual representations evolve across the sequence. To this end, we propose Geometric Trajectory and Contrastive Learning (GTCL), a framework that segments the document into ordered local units, encodes each unit in an embedding space, and constructs a structured and sequence-level representation. GTCL then applies contrastive learning to these tra-jectories to learn geometric regularities associated with the autoregressive generation. Evaluations performed on three different benchmarks and several approaches show that GTCL outperforms de-tection baselines consistently, which implies that explicitly modeling sequential dynamics provides robust discriminative signals across models and domains. These results suggest that modeling trajectory differences could improve detection and open up a dynamic direction that has been underexplored in previous AIGTD literature. 
+
+Keywords: AI-Generated Text Detection; Latent Trajectory; Temporally Aligned Similarity; Con-trastive Learning; Large Language Models 
+
+# 1 Introduction 
+
+The proliferation of Large Language Models (LLMs) has radically altered the production of digi-tal content, making synthetic texts increasingly indistinguishable from human-generated ones. This development has made AI-Generated Text Detection (AIGTD) a central issue [42], with significant implications in academia, where the widespread use of generative tools raises new challenges regarding authorship and scientific integrity [26]. 1arXiv:2607.14967v1 [cs.CL] 16 Jul 2026 Over time, the literature has identified three categories of defensive strategies [40], i.e., supervised methods, zero-shot approaches, and watermarking techniques. Supervised methods involve training classifiers on labeled corpora; they achieve high performance under controlled conditions but often degrade in cross-model scenarios. Zero-shot approaches exploit intrinsic probabilistic signals, such as perplexity or log-probability curvature, without requiring specific training. Finally, watermarking techniques identify signals directly into the generative process but require control of the model and are not applicable to arbitrary texts. Despite their methodological differences, these paradigms share the implicit assumption that text is a static object. Decisions are based on aggregated statistics or compressed embeddings at the document level without explicitly modeling how latent representations evolve along the sequence. As the superficial differences between human and synthetic texts diminish, this static perspective reveals structural limitations. Empirical analyses have highlighted significant instability in the performance of existing detectors [1], while theoretical results link maximum achievable accuracy to the Total Variation distance between the distributions of human and generated texts [30]. Furthermore, adversarial tests show that recursive paraphrasing strategies can significantly reduce the effectiveness of existing systems [4]. This evidence suggests that the distinctive signature of autoregressive generation lies more in the dynamic structure of the generative process than in isolated lexical artifacts. In other words, differences may emerge in how semantic representations progressively evolve as a text progresses. In this paper, we test the aforementioned hypothesis by introducing the Geometric Trajectory and Contrastive Learning (GTCL) framework. Rather than treating a document as a static object summarized by a single embedding, GTCL represents it as a trajectory in latent space. To achieve this, it segments the text into fixed-length overlapping windows, encodes each window as a feature vector, and organizes the resulting feature vectors into a structured matrix that preserves sequential order. In this formulation, a document is modeled as a sequence of local semantic states, and the progression of these states defines a discrete latent dynamic. GTCL is based on different key design principles. First, it shifts the unit of analysis from global pooled representations to trajectory-based modeling. This allows it to explicitly capture the evolution of semantic states along the sequence. Then, it operates on consecutive feature vector differences to model the first order discrete dynamics of the trajectory rather than its absolute positions. Next, it de-fines a temporally aligned similarity measure over these differences and applies supervised contrastive learning [16] directly at the trajectory level. This design allows GTCL to learn structural regulari-ties associated with autoregressive generation without requiring access to logits, decoding traces, or watermarking signals. The contributions of this paper can be summarized as follows: 
+
+• It reformulates AIGTD as a discrimination problem over trajectory differences rather than on static document representations. 
+
+• It introduces a temporally aligned similarity measure based on first order embedding differences that captures directional and locally structured semantic transitions. 
+
+• It proposes GTCL, a trajectory-level, supervised, contrastive learning-based framework that structures the projection space according to generation-specific geometric dynamics. 2• It provides empirical validation on adversarial and multi-model benchmarks, including the RAID dataset [6], the NYT-AI dataset [28], and an OpenReview-based dataset. It shows that GTCL outperforms detection baselines across all evaluation settings. The rest of this paper is organized as follows: Section 2 provides a review of the existing literature. Section 3 formally presents the GTCL framework. Section 4 describes the experimental setup and results. Section 5 discusses the implications of the proposed framework. Finally, Section 6 summarizes our contributions and outlines future work. 
+
+# 2 Related work 
+
+Research on AIGTD can be organized into three main paradigms, namely: (i) zero-shot or training-free approaches, (ii) supervised, training-based approaches, and (iii) watermarking-based approaches. In this section, we analyze these lines of research and emphasize that none of them explicitly model text as a sequential trajectory in latent space. In particular, we analyze a line of research per subsection. 
+
+2.1 Zero-shot detection based on probability distributions 
+
+Initial studies primarily fall within the zero-shot paradigm [22, 31], which exploits the statistical properties of language model probability distributions to detect synthetic text [21, 32]. Classic indi-cators include perplexity, entropy, and mean log-likelihood; all these indicators capture the greater predictability of generated text. DetectGPT [23] makes a significant conceptual advance by observing that generated texts tend to lie in regions of negative curvature in the log-likelihood landscape. It measures probability vari-ation after small perturbations using the generative model’s intrinsic geometric properties. Detect-GPT4Code [41] extends this procedure to code, but it requires domain-specific adaptations. Other training-free approaches, such as Binoculars [10], compare the distributions of two models. DNA-GPT [39], on the other hand, uses n-gram divergences based on regenerating truncated segments. While these methods leverage the internal properties of language models, they primarily rely on aggregate statistics or local perturbations. 
+
+2.2 Supervised methods 
+
+As LLMs have become more complex, research has progressively shifted toward supervised approaches [36, 38], in which a classifier is trained on labeled corpora of human- and AI-generated texts. Some studies have explored the direct application of LLMs as zero-shot classifiers [3]. They have also highlighted structural limitations of this procedure, such as self-recognition bias and inconsistent evaluation results. Most supervised methods rely on encoder-only transformer architectures, such as RoBERTa [8] or DeBERTaV3 [12], which are fine-tuned with a sequence-level classification head. In some cases, these architectures are integrated with sequential or convolutional components [24]. More recent models, such as ModernBERT [5, 37], improve long context handling and computational efficiency. Despite these architectural developments, the paradigm remains static because the document is compressed 3into an aggregated representation (e.g., via CLS token pooling), on which binary classification is performed. The order and internal dynamics of latent representations are not explicitly modeled as a structural object. Extensions based on contrastive learning [14] and adversarial training have been proposed to ad-dress the problems of overfitting and poor cross-model or cross-domain generalization. RADAR [15] formulates detection as an adversarial game between the detector and the paraphraser to induce ro-bustness against superficial rewrites. DeTeCtive [9] uses multi-level contrastive learning to distinguish between model families, treating each LLM as a unique author. Approaches such as ConDA [2] aim for domain-invariant representations, while the approaches in [19] apply contrastive objectives at the document or span level. These strategies improve separability in latent space and robustness to adversarial transformations. However, the unit of representation remains static, consisting of document embeddings, paragraphs, or individual text portions. Even when considering local segments, the latter are not interpreted as part of an ordered trajectory in embedding space. The encoder model implicitly handles sequentiality, but does not explicitly model it as an evolutionary dynamic of the generative process. 
+
+2.3 Watermarking 
+
+Watermarking approaches [11,18,20,27] adopt a conceptually different strategy. Rather than inferring the text’s origin from statistical regularities, they introduce an identifying signal when text is gener-ated. Recent techniques modulate the sampling distribution [17] to insert verifiable signatures while maintaining the text’s fluidity. However, watermarking requires control over the generative process, limiting its application to white-box scenarios. Additionally, the robustness of the watermark may decrease in the presence of paraphrasing or rewriting. Consequently, this paradigm does not address the problem of post-hoc detection on arbitrary texts. 
+
+2.4 Beyond static representations 
+
+Recent benchmarks, such as RAID [6], have revealed that detectors are susceptible to paraphrasing and domain variations. RAID evaluations reveal that detectors struggle not because of individual lexical choices, but because the detectability of generated text comes from the global properties of the generative process. These properties include sampling strategies, repetition penalties, and adversarial modifications. Current methods fail to robustly capture them. Recent analyses of the probabilistic dynamics of autoregressive generation confirm this insight as well. In [33], the authors show that traditional zero-shot methods, based on aggregate statistics over the entire sequence, neglect relevant temporal variations. This highlights the systematic differences between human- and AI-generated text in the final stages of the sequence. This result suggests that the evolutionary structure of text contains discriminative signals that global representations do not capture. Despite this evidence, literature continues to treat text as predominantly static, analyzing it through aggregate statistics or compressed embeddings at the document level. To the best of our 4knowledge, there are no approaches that explicitly model documents as ordered trajectories of latent representations or apply contrastive learning directly to sequential dynamics in embedding spaces. GTCL aims to address this methodological gap. Rather than comparing texts using static repre-sentations, it models each document as a geometric trajectory in a high-dimensional space constructed from ordered local windows. Then, it compares these trajectories using a sequence-level contrastive objective. 
+
+# 3 The GTCL framework 
+
+This section provides a technical description of GTCL. Specifically, Subsection 3.1 explains the moti-vation behind our framework. Subsection 3.2 provides an overview of its workflow. Finally, Subsection 3.3 details the various steps that GTCL takes to achieve its objectives. 
+
+3.1 Motivation 
+
+Modern LLMs generate text through an autoregressive mechanism, where each new token is condi-tioned on the previously generated context [35]. This process introduces strong local dependencies and is expected to induce locally consistent transitions in the latent representation space [13, 23]. While human-written text also exhibits semantic coherence, it is not constrained by a single predictive ob-jective and may naturally include revisions, shifts in perspective, stylistic variations, and semantic discontinuities [7]. As a result, the evolution of latent representations in human-written documents is expected to exhibit greater directional variability than that of AI-generated texts. Most existing AI-generated text detection methods treat documents as static objects, making pre-dictions from aggregate statistics or a single compressed document representation. Although effective in many settings, these approaches overlook how semantic content evolves throughout a document. To address this limitation, GTCL models a document as an ordered sequence of partially overlapping text segments, each mapped into a shared latent space. The resulting sequence of embeddings is inter-preted as a discrete trajectory, whose local transitions describe the semantic evolution of the text. By differentiating it, it is also possible to focus on the local evolution of the text, instead of considering only its absolute schema. In this formulation, detecting AI-generated text becomes a matter of distinguishing differences in trajectories rather than in static document representations. The underlying hypothesis is that differ-ences between human- and AI-generated texts are reflected in the geometry of semantic transitions rather than in isolated lexical features. Accordingly, GTCL performs supervised contrastive learning directly on trajectory dynamics while constructing contrastive groups of hard positive and negative examples. This approach enables the learned representation to more effectively distinguish between se-mantically similar documents from different classes and reduce variability among challenging samples within a class. 
+
+3.2 Overview of the GTCL workflow 
+
+A graphical representation of the GTCL workflow is provided in Figure 1. GTCL behavior consists of three main stages: (i) trajectory-based text representation, (ii) supervised contrastive learning 5over trajectory differences, and (iii) k-nearest neighbors classification in the learned embedding space. During training, a document Ta is segmented into overlapping text windows. These windows are encoded by a frozen encoder E and processed by a trainable transformer-based projection module. This process constructs the trajectory matrix XTa . Then, consecutive trajectory differences ∆ Ta are used to compute temporally aligned similarities and construct hard positive and negative contrastive groups for supervised contrastive learning. During inference, the frozen encoder and projection module generate a document representation that is classified by a k-nearest neighbors classifier. 
+
+Figure 1: Overview of the GTCL workflow. A document is segmented into overlapping token windows and encoded into a latent trajectory; supervised contrastive learning is applied to the trajectory differences (training), and a k-NN classifier labels documents as human- or AI-generated (inference). 
+
+3.3 Steps of the GTCL workflow 
+
+This section outlines the different steps of the GTCL workflow. Each subsection covers one step. 
+
+3.3.1 Text segmentation strategy 
+
+Let T = ( w1, w 2, . . . , w L) be a text document composed of an ordered sequence of L words: let wi,1 ≤ i ≤ L, be the i-th word of T . The goal of this task is to transform T into a structured sequence of local text units while preserving its sequential organization. This allows for the modeling of its internal semantic evolution. To achieve this goal, we use a sliding window mechanism to segment T and extract an ordered sequence of fixed-length text windows. Each window is a contiguous subsequence of words from the original document. We adopted word-based segmentation over token-based ones to maintain architectural agnosticism. Let M ∈ N denote the window length (in number of words) and let Q ∈ N
+
+6denote the sliding step between two consecutive windows, with 1 ≤ Q ≤ M . Furthermore, let N ∈ N
+
+be the maximum number of windows associated with each document. This number is fixed a priori to obtain a uniform-size representation. The i-th sliding window fi can be formalized as: 
+
+fi = ( wri , w ri+1 , . . . , w ri+M −1), (3.1) where the starting index ri is given by: 
+
+ri = ( i − 1) Q + 1 , (3.2) with 1 ≤ i ≤ N .The parameters M and Q determine the overlap degree between adjacent windows. When Q < M ,consecutive windows share M − Q words. This allows for the explicit modeling of local continuity and short-range dependencies. When Q = M , the windows are contiguous and non-overlapping. Larger values of Q are not meaningful because they would discard intermediate portions of the text. The parameter N ensures that each document is mapped to a structured sequence of a fixed length. For documents that are too short to extract N fully populated windows according to the above definition, boundary conditions are handled in the next representation phase. Through this segmentation procedure, each document is transformed into an ordered sequence of sliding windows ( f1, f 2, . . . , f N ) that preserves the sequential organization of the original text and provides the basis for constructing a trajectory-based representation in the feature space. 
+
+3.3.2 Construction of the feature vectors 
+
+Once the ordered sequence of text windows ( f1, f 2, . . . , f N ) is obtained, we first pass each window through a pretrained sentence-embedding encoder E to produce a latent representation of it. Then, we feed this representation to a transformer-based projection module that maps it to the target dimensionality D. The resulting vectors are L2-normalized to ensure scale-invariant computations. We denote the overall encoding function as: 
+
+ϕE : fi 7 → zi (3.3) where zi = ϕE (fi) ∈ RD is the feature vector associated with the window fi. During training, only the transformer-based projection module is optimized under the contrastive learning objective, while E
+
+remains frozen. This design preserves the semantic structure captured by pretraining while enabling the adaptation of the feature space to the downstream discrimination task. The ordered set of feature vectors ( z1, z 2, . . . , z N ) preserves the sequential structure of the original text and is a structured representation of its internal evolution. Under this formulation, the sequence of feature vectors can be interpreted as a discrete trajectory in the feature space. Each point in this trajectory represents the semantic state of a local text segment, and consecutive points capture the progression of the document. Since the window length M and the maximum number of windows N are fixed beforehand, for documents that are too short to allow the extraction of N fully populated windows, the last available 7window is replicated to fill the remaining positions. This ensures that each document is mapped to a sequence of exactly N feature vectors, allowing for direct comparison across texts. Starting from the vectors of the window features, the document T is represented by the following matrix: 
+
+XT =
+
+
+
+z1
+
+z2
+
+...
+
+zN
+
+ ∈ RN ×D (3.4) Each row of XT encodes the semantic content of a local window. The order of the rows preserves the text’s sequential organization. XT is interpreted as the latent trajectory associated with T .
+
+3.3.3 Determining trajectory dynamics 
+
+Starting from the trajectory matrix XT , we formulate the AIGTD problem as a contrastive learning task over trajectory differences associated with texts of different origins. Rather than comparing the absolute positions of vectors of window features in the projection space, we focus on the local evolution of trajectories, defined by the sequence of differences between consec-utive adjacent windows. Vectors of absolute features primarily reflect the global semantic content, which is heavily influenced by topic and lexical choices. Conversely, a sequence of differences describes how the representation changes over time, isolating the incremental transformations characterizing document progression. From a geometric perspective, modeling first order differences makes the representation invariant to global translational shifts in the projection space. Any constant offset applied uniformly to all vectors of window features is canceled out by subtraction. This suppresses absolute positional information and emphasizes relative transitions between consecutive semantic states. From a generative perspective, these transitions are linked to the autoregressive generation mechanism of LLMs. Since each token is generated based on the preceding context, adjacent text segments evolve under a continuity constraint imposed by the next token prediction task. Given XT , we define δi = zi+1 − zi, 1 ≤ i ≤ N − 1. The ordered sequence of differences is represented by the matrix: ∆T =
+
+
+
+δ1
+
+δ2
+
+...
+
+δN −1
+
+ ∈ R(N −1) ×D (3.5) 
+
+3.3.4 Computation of temporally aligned similarities 
+
+Let Ta and Tb be two documents, and let ∆ Ta ∈ R(N −1) ×D and ∆ Tb ∈ R(N −1) ×D be the corresponding sequences of latent trajectory differences. We define the similarity of ∆ Ta and ∆ Tb as a weighted aggregation of the pairwise inner products of their local transitions. Formally speaking: 8s ∆Ta , ∆Tb
+
+ = 
+
+> N−1
+
+X 
+
+> i=1
+> N−1
+
+X
+
+> j=1
+
+wij ⟨δai , δ bj ⟩ (3.6) where δai (resp. δbj ) is the i-th (resp., j-th) local trajectory difference of Ta (resp., Tb), whereas 
+
+⟨δai , δ bj ⟩ is the inner product of δai and δbj . The weight wij encodes two structural constraints, i.e., temporal proximity and directional temporal alignment. It is defined as follows: 
+
+wij =
+
+(Z−1e−γ(i−j) if j ≤ i
+
+0 if j > i (3.7) Here, Z = PN −1
+
+> i=1
+
+PN −1 
+
+> j=1
+
+e−γ(i−j) is a normalization factor such that PN −1
+
+> i=1
+
+PN −1 
+
+> j=1
+
+wij = 1. γ ∈ [0 , 1] is a decay parameter that controls the rate at which temporal influence decreases. Its value determines the degree of temporal locality in the similarity computation. When γ = 0, all pairs with j ≤ i are given equal weight. This results in uniform aggregation of local differences and, consequently, in a more global comparison of trajectory dynamics. As γ tends to 1, the exponential term e−γ(i−j) induces a progressively stronger decay, concentrating similarity on pairs with i close to j and emphasizing locally aligned differences between trajectories. The condition j ≤ i restricts comparisons to temporally compatible local differences and enforces a directional temporal alignment between trajectories. When evaluating the i-th local difference δai
+
+of Ta, only the differences δbj of Tb, occurring at the same or earlier relative positions, are considered. This constraint reflects the sequential nature of text generation. In an autoregressive process, the semantic state at position i depends on preceding states but not on future ones. Since each δi encodes the local evolution between consecutive segments, restricting comparisons to indices j ≤ i ensures that the similarity measure respects the forward progression intrinsic to the generative process and avoids aligning current differences with information corresponding to later stages of another trajectory. From a structural perspective, this asymmetric masking prevents early-stage differences in one document from being misaligned with late-stage differences in another document. If present, such misalignment would disregard the cumulative and directional nature of semantic development. 
+
+3.3.5 Performing supervised contrastive learning and classifying documents 
+
+Based on the temporally aligned similarity defined in Equation 3.6, we perform supervised contrastive training following the formulation in [16]. During this phase, the backbone encoder E is fixed, while the transformer-based projection module is optimized under the contrastive objective. Let T D denote the set of training documents. For each document T ∈ T D , we compute its trajectory matrix XT and the associated sequence of local differences ∆ T , as defined in Equation 3.5. Rather than constructing mini-batches through random sampling, we first generate a collection of contrastive groups designed to emphasize hard positive and negative examples. For each anchor doc-ument Ta, we compute the similarity between its difference sequence ∆ Ta and the difference sequences of all the remaining documents in the training set using the s(·, ·) function defined in Equation 3.6. Let 
+
+Aa denote the set of the ψ most similar documents belonging to the opposite class (hard negatives), 9and let Pa denote the set of the ψ − 1 most dissimilar documents belonging to the same class (hard positives). The contrastive group associated with Ta is then defined as follows: 
+
+Ga = {Ta} ∪ P a ∪ A a (3.8) We denote the value |G a| by Ψ. This value is also equal to 2 ψ.Consequently, each group contains hard negative and hard positive examples, encouraging the model to distinguish between highly similar documents from different classes and reduce the distance between highly dissimilar documents from the same class. After generating all groups, duplicate ones are removed, yielding the final collection of contrastive groups used for training. Given a contrastive group Ga, the supervised contrastive loss for Ta is defined as follows: 
+
+La = − 1
+
+|P a|
+
+X
+
+> p∈P a
+
+log 
+
+
+
+e 
+
+> s(∆ Ta ,∆Tp )
+> τ
+
+X
+
+> n∈G a\{ Ta}
+
+e s(∆ Ta ,∆Tn )
+
+> τ
+
+ (3.9) Here, τ > 0 is a temperature parameter that controls the sharpness of the similarity distribution. The numerator considers all hard positive examples within the group and the denominator includes every other example except the anchor itself. The overall objective is obtained by averaging La over all valid anchors in the group, and then over all contrastive groups. After contrastive training is complete, the transformer-based projection module ϕE is frozen. Fi-nally, each text window fi is projected into the learned representation space zi through the frozen model ϕE . Rather than training an additional classifier, document classification is performed using a 
+
+k-nearest neighbors ( k-NN) classifier that operates directly on the learned representations. This ap-proach aligns with the objective of supervised contrastive learning, which is to promote the generation of compact neighborhoods of samples from the same class in the embedding space while separating samples from different classes. 
+
+# 4 Experiments 
+
+This section describes the experiments conducted to evaluate GTCL. Specifically, Subsection 4.1 presents the experimental setup. Subsection 4.2 assesses the effectiveness of the latent trajectory-based strategy, which represents the core of GTCL. Subsection 4.3 evaluates the performance of GTCL and compares it with other related systems proposed in the previous literature. Subsection 4.4 presents an analysis of the hyperparameters characterizing GTCL. Finally, Subsection 4.5 illustrates an ablation study related to GTCL. 
+
+4.1 Experimental Setup 
+
+In this section, we present our experimental setup; in particular, we describe the models, the datasets, the performance metrics, and the hyperparameter values adopted for our tests. We conducted the ex-periments using the pre-trained encoder-only transformer Nomic Embed Text v1.5 [25] as the backbone 
+
+E (see Section 3.3.2). 10 We performed the evaluation task on three datasets with different characteristics. The first dataset is a subset of RAID [6], an adversarial benchmark designed to evaluate the robustness of detectors against paraphrasing and rewriting strategies. We constructed this subset by randomly selecting human- and AI-generated texts from the original benchmark. In particular, we selected the AI-generated samples from the outputs produced by widely adopted, instruction-tuned, conversational LLMs (i.e., ChatGPT, LLaMA-Chat, and Mistral-Chat) commonly used in real-world applications. The second dataset is a randomly selected subset of NYT-AI [28], which comprises human-authored New York Times articles and synthetic counterparts generated by six LLMs (i.e., Gemma-2-9B, Mistral-7B, Qwen-2-72B, LLaMA-8B, Yi-Large, and GPT-4o) covering a diverse range of open-source and proprietary models with varying architectures and scales. The third dataset is Reviews 1, that we constructed specifically for this study. It consists of human- and AI-generated reviews of scientific papers. We collected the human reviews from the OpenReview 2 peer review process, while we pro-duced the AI-generated reviews by prompting Gemini 1.5 Flash, Gemini 2.0 Flash, and GPT-4o-mini to review the same papers. This dataset is challenging due to the technical and domain-specific nature of the text and to the fact that AI-generated reviews are based on real scientific content, which makes superficial stylistic differences less noticeable. To ensure a fair comparison across datasets, we preprocessed all texts by removing special char-acters and formatting artifacts that LLMs might have introduced during generation. These artifacts include markdown symbols, bullet point indicators, and non-standard punctuation; if not removed, they could act as spurious discriminative features. We divided each dataset in two subsets, namely a training subset (comprising 80% of the elements) and a testing subset (encompassing 20% of the elements). Following DeTeCtive [9], we then merged the training partitions of all datasets to train GTCL; afterwards, we evaluated our framework on the corresponding test partition of each dataset separately. Table 1 shows the main characteristics of the datasets considered.                    
+
+> Dataset Total number Number of Number of Average length of documents human-generated documents AI-generated documents (number of words)
+> RAID 1,827 960 867 1,570 NYT-AI 14,000 2,000 12,000 975 Reviews 2,716 1,552 1,164 2,072
+
+Table 1: Main features of the datasets used in our experiments. We measured performance using Accuracy and weighted F1-score. We also reported separate F1-scores for the human-generated and AI-generated classes, to analyze potential asymmetries in discriminatory power. We compared GTCL with several baselines representing the main detection paradigms. In particular, we considered: Desklib 3, Target Mining RoBERTa (TMR) 4, ModernBERT [5], Binoculars [10], RADAR [15], and DeTeCtive [9]. We used the following default values for the GTCL’s hyperparameters: (i) sliding step Q = 8; 
+
+(ii) window length M = 64; (iii) number of windows N = 32; (iv) decay factor γ = 0 .2; (v) nearest 
+
+> 1https://github.com/christopherburatti/GTCL-AIDetection
+> 2https://openreview.net/
+> 3https://huggingface.co/desklib/ai-text-detector-v1.01
+> 4https://huggingface.co/Oxidane/tmr-ai-text-detector
+
+11 neighbor number k = 9; (vi) contrastive group size Ψ = 128. The code for GTCL’s implementation is publicly available at https://github.com/christopher buratti/GTCL-AIDetection .
+
+4.2 Validation of the latent trajectory-based strategy 
+
+Before evaluating our GTCL framework, we provide statistical evidence that the trajectory differences of human- and AI-generated texts exhibit structurally distinct geometric properties. To this end, we computed the values of several trajectory-level parameters for the sequence of window embeddings associated with each document. We computed the values of these parameters and compared their distributions across the two classes through the Mann–Whitney U test [34] performed on the three datasets of our interest. We recall that the Mann–Whitney U test is a non-parametric test that assesses whether two distributions differ significantly without making distributional assumptions. A 
+
+p-value less than 0 .05 in this test indicates statistically significant differences between the two classes along the corresponding geometric dimension. Let e1, e 2, . . . , e N ∈ RD denote the ordered sequence of window embeddings obtained through E
+
+and associated with a document. This sequence constitutes a discrete trajectory in embedding space. Let ˜δi = ei+1 − ei denote the difference between the ( i + 1)-th and i-th embeddings. We chose a set of geometric metrics over this trajectory. Each metric produces a single scalar value per document; starting from these values we computed the mean and standard deviation of each metric across all documents within each class. The metrics we chose are the following: 
+
+• Trajectory length : It measures the total distance traveled in the embedding space. It is formalized as: Λ =  
+
+> N−1
+
+X
+
+> i=1
+
+∥˜δi∥2 (4.1) where ∥˜δi∥2 denotes the i-th step size obtained by computing the corresponding L2 norm. Ahigh value of Λ indicates that the text covers a wider region of the latent space, exhibiting larger or more frequent shifts between consecutive segments. 
+
+• Step irregularity : It measures how much the magnitude of consecutive embedding differences varies within a single document. Let ρi = ∥˜δi∥2 denote the i-th step size and let ¯ s = 1 
+
+> N−1
+
+PN −1 
+
+> i=1
+
+ρi
+
+denote the mean of all step sizes. Step irregularity is formalized as: 
+
+I =
+
+vuut 1
+
+N − 1 
+
+> N−1
+
+X
+
+> i=1
+
+(ρi − ¯s)2 (4.2) A high value of I indicates that the text alternates between phases of slow and locally coherent progressions and sudden semantic jumps, while a low value reflects a uniform pace of semantic change throughout the document. 12 • Curvature : It measures the tortuosity of the trajectory relative to the straight line displacement between its endpoints. It is formalized as: 
+
+κ = Λ − ∥ eN − e1∥2
+
+Λ (4.3) where ∥eN − e1∥2 denotes the size of the straight line from e1 to eN . A low value of κ indicates a perfectly straight trajectory, while a high value of this parameter corresponds to a highly convoluted trajectory. A high curvature value indicates that the text bends through the latent space rather than progressing linearly from its opening to its closing semantic states. This reflects digressions, perspective shifts, and non-linear semantic development. 
+
+• Directional dispersion : It measures how much the orientation of consecutive embedding differ-ences fluctuates along the sequence. Let ˆ vi = ˜δi/∥˜δi∥2 be the unit normalization of the i-th step vector. The turning angle at position i is defined as: 
+
+θi = arccos 
+
+
+
+ˆvi · ˆv⊤
+
+> i+1
+
+
+
+, i = 1 , . . . , N − 2 (4.4) where θi = 0 if the i-th and ( i + 1)-th differences point in the same direction, while θi = π if they point in opposite directions. Directional dispersion is defined as: 
+
+D =
+
+vuut 1
+
+N − 2 
+
+> N−2
+
+X
+
+> i=1
+
+(θi − ¯θ)2 (4.5) where ¯θ = 1 
+
+> N−2
+
+PN −2 
+
+> i=1
+
+θi. A high value of D indicates that the orientation of consecutive dif-ferences varies widely and irregularly along the sequence, while a low value of this parameter reflects a directionally consistent progression through the latent space. For each dataset, Table 2 reports the mean and standard deviation of each metric defined above computed separately for human- and AI-generated texts. We also computed the p-values of the Mann– Whitney U test and obtained that they were consistently less than 0.05 for all tests conducted on all datasets. The results show the existence of statistically significant differences across all metrics and datasets, which provides empirical support for the hypothesis that human- and AI-generated texts exhibit structurally distinct trajectory differences. As for the Reviews dataset, human-generated trajectories 5 are longer and more tortuous than AI-generated ones, indicating that human writing explores the semantic space in a less constrained way. The curvature difference confirms that human texts tend to meander through the latent space rather than progress along a directed path. Directional dispersion and step irregularity further suggest that consecutive embedding differences are more variable in human texts, which exhibit phases of stable progression that alternate with more abrupt semantic shifts. 
+
+> 5Here and in the following, we use the term “human-generated trajectories” (resp., “AI-generated trajectories”) to denote the trajectories of the human-generated (resp., AI-generated) documents.
+
+13 Human-generated AI-generated Dataset Metric Mean value ± Standard deviation Mean value ± Standard deviation                                                                         
+
+> Reviews Trajectory length 2.648 ±0.762 2.189 ±0.512 Step irregularity 0.054 ±0.010 0.043 ±0.008 Curvature 0.892 ±0.061 0.871 ±0.033 Directional dispersion 0.531 ±0.173 0.510 ±0.117 NYT-AI Trajectory length 1.887 ±0.537 1.727 ±0.190 Step irregularity 0.062 ±0.018 0.052 ±0.005 Curvature 0.866 ±0.072 0.846 ±0.027 Directional dispersion 0.331 ±0.061 0.319 ±0.040 RAID Trajectory length 2.336 ±0.776 2.400 ±0.699 Step irregularity 0.039 ±0.011 0.035 ±0.012 Curvature 0.888 ±0.046 0.900 ±0.043 Directional dispersion 0.487 ±0.196 0.447 ±0.206
+
+Table 2: Trajectory geometry statistics for human- and AI-generated texts on the Reviews, NYT-AI, and RAID datasets. Each cell reports the mean value ± standard deviation for documents within each of the two classes of interest. As for the NYT-AI dataset, which includes a variety of source models and domains, all four metrics demonstrate the same directional pattern observed in the Reviews dataset. Human-generated trajec-tories are longer, more curved, and more irregular than AI-generated ones. This pattern’s consistency across a multi-model corpus suggests that the geometric regularity of AI-generated trajectories is not specific to a single model family but rather reflects a general structural property of autoregressive generation. As for the RAID dataset, which is the most challenging adversarial benchmark, directional disper-sion and step irregularity preserve the trends observed in the other datasets, confirming their robust-ness under adversarial conditions. However, trajectory length and curvature show a partial inversion. In fact, AI-generated texts exhibit slightly longer and less tortuous trajectories than human-generated ones. This is consistent with the effect of adversarial attacks, which alter the local geometric structure of text without fully eliminating the discriminative signal. Generally speaking, human-generated trajectories are more spread out than AI-generated ones across all datasets, indicating that human writing is geometrically more diverse at the document level. AI-generated trajectories tend to cluster in a smaller region of latent space due to the autoregres-sive generation mechanism, which imposes local continuity constraints producing more regular and predictable transitions between consecutive semantic states. These findings provide direct empirical support for the design of GTCL. The geometric differences between human- and AI-generated trajectories, which are observable across all datasets, demonstrate that transitions between consecutive embedding states carry discriminative information about the generative process. In the GTCL framework, these transitions are precisely what the differences between consecutive vectors of window features capture. Therefore, it is worthwhile to explicitly model the sequential evolution of the trajectory rather than compressing a document into a single static vector. 14 4.3 Evaluation of GTCL’s performance 
+
+We evaluated the performance results obtained by GTCL and compared them with those of the related approaches mentioned in Section 4.1. Table 3 reports our results.                                                                                          
+
+> Dataset Approach Accuracy F1-score F1-score (Human) F1-score (AI)
+> Reviews GTCL 0.98 0.98 0.98 0.97
+> Binoculars 0.57 0.47 0.72 0.23 Desklib 0.71 0.68 0.79 0.54 DeTeCtive 0.90 0.90 0.90 0.90 ModernBERT 0.53 0.51 0.63 0.35 RADAR 0.53 0.42 0.68 0.08 TMR 0.47 0.34 0.13 0.62 NYT-AI GTCL 0.98 0.98 0.91 0.99
+> Binoculars 0.43 0.48 0.33 0.51 Desklib 0.92 0.91 0.67 0.96 DeTeCtive 0.94 0.94 0.78 0.96 ModernBERT 0.63 0.68 0.16 0.77 RADAR 0.67 0.72 0.30 0.79 TMR 0.86 0.80 0.07 0.92 RAID GTCL 0.83 0.82 0.83 0.82
+> Binoculars 0.75 0.72 0.81 0.63 Desklib 0.78 0.78 0.79 0.79 DeTeCtive 0.81 0.81 0.82 0.81 ModernBERT 0.74 0.74 0.77 0.71 RADAR 0.65 0.62 0.71 0.50 TMR 0.66 0.65 0.59 0.72
+
+Table 3: Comparison of the performance of GTCL and related approaches on the three datasets. For each metric and dataset, the highest value is highlighted in bold. As for the Reviews dataset, GTCL consistently achieves the best performance across all evaluation metrics. Specifically, it outperforms the second-best approach (i.e., DeTeCtive) by 8.89% in Accuracy, weighted F1-score, and F1-score for human-generated documents, as well as by 7.78% in F1-score for AI-generated documents. These results confirm that the sliding window representation captures useful information and that contrastive optimization is a key factor to guarantee robust discrimination. As for the NYT-AI dataset, GTCL achieves the best overall performance. It outperforms the second-best approach (i.e., DeTeCtive) by 4.26% in Accuracy and weighted F1-score, 16.67% in F1-score for human-generated documents, and 3.13% in F1-score for AI-generated documents. The ad-vantage of GTCL is particularly evident in the human-generated class, where competing approaches exhibit significant performance degradation. DeTeCtive achieves the strongest baseline performance, but its F1-score for human-generated documents is substantially lower than the GTCL’s one (0.78 versus 0.91). As for the RAID dataset, which is the most challenging adversarial benchmark, GTCL consistently achieves the best performance across all evaluation metrics. In particular, it outperforms the second-best approach (i.e., DeTeCtive) by 2.47% in Accuracy, 1.23% in weighted F1-score, and 1.22% in F1-score for human-generated documents, and 1.23% in F1-score for AI-generated documents. Although the margin of improvement is smaller than on the other two datasets, these results demonstrate 15 the effectiveness of the proposed trajectory-based representation and supervised contrastive learning framework even under more challenging generation settings. Results from all three datasets show that consecutive differences in latent representations capture the sequential dynamics of autoregressive generation more effectively than static or aggregate signals. 
+
+4.4 Hyperparameter Analysis 
+
+In this experiment, we aimed to analyze how individual hyperparameters impact the GTCL’s per-formance. To this end, we varied each hyperparameter independently, while keeping all the others fixed at their default values. This procedure ensured that any observed performance variations were attributable only to the hyperparameter under examination. We recall that the hyperparameters and their default values are as follows (see Section 4.1): Q = 8, M = 64, N = 32, γ = 0 .2, Ψ = 128, k = 9. We conducted the analysis on the three datasets used for the other tests. The results obtained reveal consistent patterns across all three datasets. Regarding the sliding step Q (Table 4), performance increases monotonically up to the optimal value and then decreases slightly. Small values of Q produce heavily overlapping windows, introducing redundancy in the representation of the trajectory; in fact, consecutive deltas are nearly identical in this case, which decreases the dynamic signal available for contrastive learning. Conversely, too high values of Q reduce the overlap between adjacent windows, which increases the semantic distance between consecutive points on the trajectory, resulting in the loss of relevant local transitions.                                                                  
+
+> Dataset QAccuracy F1-score F1-score (Human) F1-score (AI)
+> Reviews 10.81 0.80 0.85 0.75 20.86 0.86 0.88 0.84 40.91 0.91 0.93 0.89
+> 80.98 0.98 0.98 0.97
+> 16 0.96 0.96 0.97 0.95 NYT-AI 10.97 0.97 0.88 0.98 20.97 0.97 0.89 0.98 40.97 0.97 0.88 0.98
+> 80.98 0.98 0.91 0.99
+> 16 0.98 0.97 0.90 0.98 RAID 10.66 0.66 0.69 0.63 20.65 0.61 0.74 0.46 40.63 0.60 0.53 0.69
+> 80.83 0.82 0.83 0.82
+> 16 0.82 0.81 0.81 0.81
+
+Table 4: Performance of GTCL against changes in the sliding step Q
+
+Performance remains relatively stable as the window length M varies (Table 5), with a preference for intermediate values. Too short windows tend to capture incomplete semantic units, resulting in noisy embeddings that are less representative of the local content. Conversely, too long windows aggre-gate excessively heterogeneous portions of text, flattening the semantic differences between consecutive windows and reducing the discriminatory power of GTCL. A similar trend is observed for the number of windows N (Table 6). Insufficient document coverage 16 Dataset M Accuracy F1-score F1-score (Human) F1-score (AI)                                     
+
+> Reviews 32 0.98 0.98 0.97 0.97 64 0.98 0.98 0.98 0.97
+> 128 0.96 0.95 0.96 0.95 NYT-AI 32 0.94 0.93 0.83 0.92
+> 64 0.98 0.98 0.91 0.99
+> 128 0.97 0.97 0.89 0.96 RAID 32 0.74 0.73 0.74 0.72
+> 64 0.83 0.82 0.83 0.82
+> 128 0.77 0.76 0.78 0.74
+
+Table 5: Performance of GTCL against changes in the window length M
+
+results in a trajectory that is too short to capture the geometric regularities associated with autore-gressive generation. Conversely, exceeding the optimal value includes redundant or poorly informative portions of text, which dilutes the overall discriminative signal.                                          
+
+> Dataset NAccuracy F1-score F1-score (Human) F1-score (AI)
+> Reviews 16 0.92 0.91 0.92 0.90
+> 32 0.98 0.98 0.98 0.97
+> 64 0.98 0.97 0.97 0.97
+> NYT-AI 16 0.94 0.94 0.89 0.95
+> 32 0.98 0.98 0.91 0.99
+> 64 0.96 0.96 0.84 0.98 RAID 16 0.65 0.64 0.57 0.69
+> 32 0.83 0.82 0.83 0.82
+> 64 0.82 0.81 0.83 0.77
+
+Table 6: Performance of GTCL against changes in the number of windows N
+
+Finally, the hyperparameter γ (Table 7) controls the degree of temporal locality in the similarity measure between trajectories. Performance degrades for too low or too high values of γ. Indeed too low values of this hyperparameter are equivalent to making a global comparison of trajectories, which disregards the local structure of transitions. Conversely, too high values of γ restrict the comparison excessively to the same time, ignoring the medium-range dependencies characterizing the semantic progression of the text. The optimal value of γ lies within an intermediate range and is robust across all the three analyzed datasets. Table 8 analyzes the impact of contrastive group size Ψ (see Section 3.3.5) on GTCL performance. As the table shows, very small groups (Ψ = 16 or 32) generally lead to slightly lower performance. This is likely because they provide a less informative set of hard positive and hard negative examples during contrastive learning. Increasing the group size improves results. The best overall performance is obtained with Ψ = 128 across all three datasets. A further increase to Ψ = 256 does not provide additional benefits and sometimes slightly degrades performance. This suggests that excessively large groups may introduce less informative or noisier samples. Table 9 reports the performance of GTCL for different values of k in the k-nearest neighbors classifier (see Section 3.3.5). As can be seen from the table, GTCL is robust to the choice of k,17 Dataset γ Accuracy F1-score F1-score (Human) F1-score (AI) 
+
+Reviews 0 0.91 0.91 0.92 0.89 0.1 0.94 0.94 0.95 0.92 
+
+0.2 0.98 0.98 0.98 0.97 
+
+0.3 0.97 0.97 0.98 0.96 0.5 0.95 0.94 0.94 0.94 1 0.89 0.89 0.90 0.89 NYT-AI 0 0.93 0.92 0.90 0.93 0.1 0.95 0.95 0.90 0.96 
+
+0.2 0.98 0.98 0.91 0.99 
+
+0.3 0.96 0.96 0.91 0.97 0.5 0.94 0.93 0.89 0.93 1 0.91 0.91 0.85 0.91 RAID 0 0.75 0.75 0.75 0.75 0.1 0.80 0.80 0.81 0.79 
+
+0.2 0.83 0.82 0.83 0.82 
+
+0.3 0.77 0.77 0.77 0.77 0.5 0.75 0.73 0.76 0.70 1 0.70 0.70 0.69 0.71 
+
+Table 7: Performance of GTCL against changes in the decay factor γ
+
+Dataset Ψ Accuracy F1-score F1-score (Human) F1-score (AI) 
+
+Reviews 16 0.93 0.93 0.94 0.93 32 0.94 0.94 0.94 0.93 64 0.96 0.96 0.96 0.95 
+
+128 0.98 0.98 0.98 0.97 256 0.98 0.98 0.98 0.97 
+
+NYT-AI 16 0.97 0.97 0.90 0.98 32 0.97 0.97 0.90 0.98 64 0.97 0.97 0.91 0.98 
+
+128 0.98 0.98 0.91 0.99 
+
+256 0.97 0.97 0.89 0.98 RAID 16 0.78 0.78 0.78 0.78 32 0.75 0.75 0.76 0.75 64 0.80 0.80 0.80 0.81 
+
+128 0.83 0.82 0.83 0.82 
+
+256 0.79 0.79 0.81 0.76 
+
+Table 8: Performance of GTCL against changes in the group size Ψ exhibiting only marginal performance variation across all three datasets. This behavior suggests that the learned representation creates stable local neighborhoods, enabling the k-nearest neighbors classifier to produce consistent predictions across a wide range of neighborhood sizes. 
+
+4.5 Ablation Study 
+
+Our ablation study aimed to evaluate the robustness of GTCL in relation to the selected backbone encoder. To this end, we tested GTCL using Jina Embeddings V3 [29] as an alternative to Nomic Embed Text v1.5. Jina Embeddings V3 is a 570-million-parameter model. It is substantially larger 18 Dataset k Accuracy F1-score F1-score (Human) F1-score (AI)                                                             
+
+> Reviews 50.97 0.96 0.96 0.95 70.97 0.97 0.97 0.96
+> 90.98 0.98 0.98 0.97
+> 11 0.97 0.97 0.97 0.96 13 0.96 0.96 0.96 0.96 NYT-AI 50.96 0.96 0.89 0.98 70.96 0.96 0.90 0.98
+> 90.98 0.98 0.91 0.99
+> 11 0.97 0.97 0.90 0.98 13 0.96 0.96 0.89 0.98 RAID 50.80 0.80 0.81 0.80 70.81 0.81 0.82 0.81
+> 90.83 0.82 0.83 0.82
+> 11 0.81 0.81 0.82 0.81 13 0.80 0.80 0.81 0.80
+
+Table 9: Performance of GTCL against changes in the number of neighbors and more powerful than the 137-million-parameter Nomic Embed Text v1.5 model used in previous experiments. Table 10 shows the results obtained with both backbones across the three datasets.                                 
+
+> Dataset Backbone Accuracy F1-score F1-score (Human) F1-score (AI)
+> Reviews Nomic Embed Text v1.5 0.98 0.98 0.98 0.97 Jina Embeddings V3 0.97 0.96 0.96 0.95 NYT-AI Nomic Embed Text v1.5 0.98 0.98 0.91 0.99 Jina Embeddings V3 0.98 0.97 0.89 0.98 RAID Nomic Embed Text v1.5 0.83 0.82 0.83 0.82 Jina Embeddings V3 0.84 0.82 0.83 0.82
+
+Table 10: Performance of GTCL using Nomic Embed Text v1.5 and Jina Embeddings V3 as backbone encoders From the analysis of this table, we can observe that the performance is consistent across the two configurations, confirming that the discriminative signal captured by GTCL is independent of the specific backbone encoder. These results suggest that the contrastive objective based on trajectories learns geometric regularities that are robust to the choice of the underlying embedding model. They also suggest that GTCL can be effectively instantiated with backbones of different scales and archi-tectures. This implies that Nomic Embed Text v1.5 is sufficient as a backbone encoder for GTCL. As a consequence, there is no need for larger, and therefore more expensive, encoders. 
+
+# 5 Discussion 
+
+The experimental results reported in the previous section demonstrate that explicitly modeling the se-quential dynamics of latent representations yields a signal that can discriminate between AI-generated and human-generated text. GTCL’s consistent advantage across all datasets suggests that trajectory-19 based contrastive learning captures the structural properties of the generative process. Notably, GTCL maintains balanced detection across both classes, a property several existing approaches fail to pre-serve. GTCL’s innovation lies in modeling text as a sequence of evolving representations. While virtually all existing methods treat documents as static objects that can be summarized into a single representa-tion, GTCL treats documents as trajectories in an embedding space. In this space, the discriminative signal emerges from the geometry of semantic transitions rather than from aggregate content. This is not merely a technical variation, but rather a conceptual reframing of the detection problem. Instead of observing what the text looks like, GTCL learns how the text evolves. The empirical evidence pre-sented in Section 4.2 supports this hypothesis by showing that the geometric properties of trajectory differences differ significantly between human- and AI-generated texts across datasets. GTCL offers several practical advantages over existing AIGTD paradigms. First, it operates exclusively on text, requiring no access to logits or the generative model’s internal states. This makes GTCL applicable to any text, regardless of its origin. Second, GTCL produces well-calibrated predictions for both human- and AI-generated texts. This property is especially valuable in real-world deployment scenarios, where minimizing the costs associated with both false positives and false negatives is essential. 
+
+# 6 Conclusion 
+
+In this paper, we proposed GTCL, an AI-Generated Text Detection (AIGTD) framework whose nov-elty lies in modeling the evolution of representations within a document. In fact, rather than treating a document as a static object to be summarized into a single representation, GTCL treats it as a discrete trajectory in latent space. In this space, the discriminative signal emerges from the geometry of semantic transitions between consecutive local segments. This conceptual reframing, from static representation to sequential dynamics, is the paper’s central contribution. It is based on the observa-tion that the autoregressive generation mechanism induces structural regularities in the evolution of latent representations that are not observed in human-generated documents. First, GTCL segments each document into ordered, overlapping windows. Then, it encodes each window using a frozen backbone encoder, followed by a transformer-based projection module. Finally, it applies supervised contrastive learning directly to the sequence of consecutive embedding differences. A temporally aligned similarity measure, designed to consider the forward progression of the generative process, structures the latent space according to the geometric dynamics of the trajectory, rather than global content similarity. The evaluation of GTCL on three different benchmarks demonstrates that the novel perspective underlying it yields robust and discriminative signals across models and domains. Furthermore, the geometric properties of trajectory differences constitute a structurally grounded and empirically vali-dated information source for detection. A promising direction for future work is improving the interpretability of GTCL. Since the discrim-inative signal is distributed along the trajectory, the development of attribution methods identifying the windows or transitions that contribute most to the classification decision could reveal which parts of the text are most indicative of artificial generation. This could lead to new approaches for the 20 explainable detection of AI-generated text. Another area for future research concerns the exten-sion of GTCL to texts produced by diffusion-based language models. Unlike autoregressive models, diffusion-based ones generate text through iterative denoising over the entire sequence, rather than by sequential left-to-right prediction. This different mechanism may induce distinct geometric properties in trajectory differences, which would require the adoption of a powered version of GTCL to account for the absence of a direction in the generative process. 
+
+# Declaration of competing interest 
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+# Data availability 
+
+The datasets and code used for our study are publicly available at https://github.com/christoph erburatti/GTCL-AIDetection .
+
+# References 
+
+[1] V. Bellini, F. Semeraro, J. Montomoli, M. Cascella, and E. Bignami. Between human and AI: assessing the reliability of AI text detection tools. Current Medical Research and Opinion , 40(3):353–358, 2024. Taylor & Francis. [2] A. Bhattacharjee, T. Kumarage, R. Moraffah, and H. Liu. ConDA: Contrastive Domain Adaptation for AI-generated Text Detection. In Proc. of the International Joint Conference on Natural Language Processing and the Conference of the Asia-Pacific Chapter of the Association for Computational Linguistics (IJCNLP’23) , pages 598–610, Nusa Dua, Bali, 2023. ACL. [3] A. Bhattacharjee and H. Liu. Fighting fire with fire: can ChatGPT detect AI-generated text? ACM SIGKDD Explorations Newsletter , 25(2):14–21, 2024. ACM. [4] Y. Cheng, V.S. Sadasivan, M. Saberi, S. Saha, and S. Feizi. Adversarial Paraphrasing: A Universal Attack for Humanizing AI-Generated Text. In Proc. of the Annual Conference on Neural Information Processing Systems (NeurIPS’25) , San Diego, CA, USA, 2025. [5] G. Drayson, E. Yilmaz, and V. Lampos. Machine-generated text detection prevents language model collapse. In 
+
+Proc. of the International Conference on Empirical Methods in Natural Language Processing (EMNLP’25) , pages 29645–29661, Suzhou, China, 2025. [6] L. Dugan, A. Hwang, F. Trhl´ ık, A. Zhu, J. Magnus Ludan, H. Xu, D. Ippolito, and C. Callison-Burch. RAID: A Shared Benchmark for Robust Evaluation of Machine-Generated Text Detectors. In Proc. of the Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL’24 , pages 12463–12492, Bangkok, Thailand, 2024. ACL. [7] S. Gehrmann, H. Strobelt, and A.M. Rush. GLTR: Statistical Detection and Visualization of Generated Text. In 
+
+Proc. of the International Conference of the Association for Computational Linguistics (ACL’19) , pages 111–116, Florence, Italy, 2019. ACL. [8] B. Guo, X. Zhang, Z. Wang, M. Jiang, J. Nie, Y. Ding, J. Yue, and Y. Wu. How close is chatgpt to human experts? comparison corpus, evaluation, and detection. arXiv preprint arXiv:2301.07597 , 2023. [9] X. Guo, Y. He, S. Zhang, T. Zhang, W. Feng, H. Huang, and C. Ma. DeTeCtive: Detecting AI-generated Text via Multi-Level Contrastive Learning. In Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, (NeurIPS’24) , Vancouver, British Columbia, Canada, 2024. 
+
+21 [10] A. Hans, A. Schwarzschild, V. Cherepanova, H. Kazemi, A. Saha, M. Goldblum, J. Geiping, and T. Goldstein. Spotting LLMs With Binoculars: Zero-Shot Detection of Machine-Generated Text. In Proc. of the International Conference on Machine Learning (ICML’24) , Vienna, Austria, 2024. OpenReview.net. [11] J. Hao, J. Qiang, Y. Zhu, Y. Li, Y.H. Yuan, X. Hu, and X. Ouyang. Robust and semantic-faithful post-hoc watermarking of text generated by black-box language models. Frontiers of Computer Science , 19(9):199357, 2025. [12] P. He, J. Gao, and W. Chen. DeBERTaV3: Improving DeBERTa using ELECTRA-Style Pre-Training with Gradient-Disentangled Embedding Sharing. In Proc. of the International Conference on Learning Representations (ICLR’23) , Kigali, Rwanda, 2023. [13] A. Holtzman, J. Buys, L. Du, M. Forbes, and Y. Choi. The Curious Case of Neural Text Degeneration. In Proc. of the International Conference on Learning Representations (ICLR’20) , Addis Abeba, Ethiopia, 2020. OpenReview.net. [14] H. Hu, X. Wang, Y. Zhang, Q. Chen, and Q. Guan. A comprehensive survey on contrastive learning. Neurocomputing ,610:128645, 2024. Elsevier. [15] X. Hu, P.Y. Chen, and T.Y. Ho. RADAR: Robust AI-Text Detection via Adversarial Learning. In Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems, (NeurIPS’23) ,New Orleans, LA, USA, 2023. [16] P. Khosla, P. Teterwak, C. Wang, A. Sarna, Y. Tian, P. Isola, A. Maschinot, C. Liu, and D. Krishnan. Supervised Contrastive Learning. In Advances in Neural Information Processing Systems (NeurIPS’20) , Virtual Event, 2020. [17] J. Kirchenbauer, J. Geiping, Y. Wen, J. Katz, I. Miers, and T. Goldstein. A Watermark for Large Language Models. In Proc. of the International Conference on Machine Learning, (ICML’23) , volume 202 of Proceedings of Machine Learning Research , pages 17061–17084, Honolulu, HI, USA, 2023. PMLR. [18] J. Kirchenbauer, J. Geiping, Y. Wen, M. Shu, K. Saifullah, K. Kong, K. Fernando, A. Saha, M. Goldblum, and T. Goldstein. On the Reliability of Watermarks for Large Language Models. In Proc. of the International Conference on Learning Representations (ICLR’24) , Vienna, Austria, 2024. OpenReview.net. [19] L. La Cava, D. Costa, and A. Tagarelli. Is Contrasting All You Need? Contrastive Learning for the Detection and Attribution of AI-generated Text. In Proc. of the European Conference on Artificial Intelligence (ECAI’24) - Including Conference on Prestigious Applications of Intelligent Systems (PAIS’24) , volume 392 of Frontiers in Artificial Intelligence and Applications , pages 3179–3186, Santiago de Compostela, Spain, 2024. IOS Press. [20] Z. Li, Q. Yi, Z. Ji, Y. Lu, S. Zou, Y. Li, K. Xiao, and H. Liang. Bimarker: Enhancing text watermark detection for large language models with bipolar watermarks. Neurocomputing , page 133843, 2026. Elsevier. [21] Z. Lv and J. Sun. Zero-Shot Detection of LLM-Generated Text via Multilevel Information Compression and Multidimensional Feature Fusion. Neurocomputing , page 132731, 2026. Elsevier. [22] C. Mao, C. Vondrick, H. Wang, and J. Yang. Raidar: geneRative AI Detection viA Rewriting. In Proc. of the International Conference on Learning Representations (ICLR’24) , Vienna, Austria, 2024. OpenReview.net. [23] E. Mitchell, Y. Lee, A. Khazatsky, C.D. Manning, and C. Finn. DetectGPT: Zero-Shot Machine-Generated Text Detection using Probability Curvature. In Proc. of the International Conference on Machine Learning (ICML’23) ,volume 202, pages 24950–24962, Honolulu, HI, USA, 2023. PMLR. [24] Y. Mo, H. Qin, Y. Dong, Z. Zhu, and Zhenglin Li. Large language model (llm) ai text generation detection based on transformer deep learning algorithm. arXiv preprint arXiv:2405.06652 , 2024. [25] Z. Nussbaum, J. Xavier Morris, A. Mulyar, and B. Duderstadt. Nomic Embed: Training a Reproducible Long Context Text Embedder. Transactions on Machine Learning Research , 1, 2025. [26] S. Pudasaini, L. Miralles-Pechu´ an, D. Lillis, and M. Llorens Salvador. Survey on AI-generated plagiarism detection: The impact of large language models on academic integrity. Journal of Academic Ethics , pages 1–34, 2024. Springer. [27] W. Qu, W. Zheng, T. Tao, D. Yin, Y. Jiang, Z. Tian, W. Zou, J. Jia, and J. Zhang. Provably robust multi-bit watermarking for AI-generated text. In Proc. of the USENIX Security Symposium (USENIX Security 25) , pages 201–220, Seattle, WA, USA, 2025. 
+
+22 [28] R. Roy, N. Imanpour, A. Aziz, S. Bajpai, G. Singh, S. Biswas, K. Wanaskar, P. Patwa, S. Ghosh, S. Dixit, N. Ranjan Pal, V. Rawte, R. Garimella, G. Jena, A.P. Sheth, V. Sharma, A. Naresh Reganti, V. Jain, A. Chadha, and A. Das. A Comprehensive Dataset for Human vs. AI Generated Text Detection. arXiv preprint arXiv:2510.22874 , 2025. [29] S. Sturua and I. Mohr and M.K. Akram and M. G¨ unther and B. Wang and M. Krimmel and F. Wang and G. Mastrapas and A. Koukounas and N. Wang and H. Xiao. jina-embeddings-v3: Multilingual embeddings with task lora. arXiv preprint arXiv:2409.10173 , 2024. [30] V.S. Sadasivan, A. Kumar, S. Balasubramanian, W. Wang, and S. Feizi. Can AI-Generated Text be Reliably Detected? Stress Testing AI Text Detectors Under Various Attacks. Transactions on Machine Learning Research ,1, 2025. [31] Z. Shi, Y. Wang, F. Yin, X. Chen, K. W. Chang, and C.J. Hsieh. Red teaming language model detectors with language models. Transactions of the Association for Computational Linguistics , 12:174–189, 2024. MIT Pressy. [32] J. Sun and Z. Lv. Zero-shot detection of LLM-generated text via text reorder. Neurocomputing , 631:129829, 2025. Elsevier. [33] K. Sun, G. Bao, H. Cui, and Y. Zhang. When AI Settles Down: Late-Stage Stability as a Signature of AI-Generated Text Detection. arXiv preprint arXiv:2601.04833 , 2026. [34] T.W. MacFarland and J.M. Yates. Mann–Whitney U test. In Introduction to nonparametric statistics for the biological sciences using R , pages 103–132. 2016. Springer. [35] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin. Attention is All you Need. In Proc. of the International Conference on Advances in Neural Information Processing Systems (NIPS’17) , page 30, Long Beach, CA, USA, 2017. Curran Associates. [36] P. Wang, L. Li, K. Ren, B. Jiang, D. Zhang, and X. Qiu. SeqXGPT: Sentence-Level AI-Generated Text Detection. In Proc. of the International Conference on Empirical Methods in Natural Language Processing (EMNLP’23) , pages 1144–1156, Singapore, 2023. ACL. [37] B. Warner, A. Chaffin, B. Clavi´ e, O. Weller, O. Hallstr¨ om, S. Taghadouini, A. Gallagher, R. Biswas, F. Ladhak, T. Aarsen, G. T. Adams, J. Howard, and I. Poli. Smarter, better, faster, longer: A modern bidirectional encoder for fast, memory efficient, and long context finetuning and inference. In Proc. of the Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) (ACL’25) , pages 2526–2547, 2025. [38] K. Wu, L. Pang, H. Shen, X. Cheng, and T.S. Chua. LLMDet: A Third Party Large Language Models Generated Text Detection Tool. In Findings of the Association for Computational Linguistics (EMNLP’23) , pages 2113–2133, Singapore, 2023. ACL. [39] X. Yang, W. Cheng, Y. Wu, L.R. Petzold, W.Y. Wang, and H. Chen. DNA-GPT: Divergent N-Gram Analysis for Training-Free Detection of GPT-Generated Text. In Proc. of the International Conference on Learning Represen-tations, (ICLR’24) , Vienna, Austria, 2024. OpenReview.net. [40] X. Yang, L. Pan, X. Zhao, H. Chen, L.R. Petzold, W.Y. Wang, and W. Cheng. A Survey on Detection of LLMs-Generated Content. In Findings of the Association for Computational Linguistics (EMNLP’24) , pages 9786–9805, Miami, FL, USA, 2024. ACL. [41] X. Yang, K. Zhang, H. Chen, L. Petzold, W. Y. Wang, and W. Cheng. Zero-shot detection of machine-generated codes. arXiv preprint arXiv:2310.05103 , 2023. [42] Z. Yang, Z. Feng, R. Huo, H. Lin, H. Zheng, R. Nie, and H. Chen. The Imitation Game revisited: A comprehensive survey on recent advances in AI-generated text detection. Expert Systems with Applications , 272:126694, 2025. Elsevier. 
+
+23

@@ -1,0 +1,605 @@
+Title: Interpretable Anomaly and Drift Detection with Gaussian Mixture Models
+
+URL Source: https://arxiv.org/pdf/2607.16811v1
+
+Published Time: Tue, 21 Jul 2026 00:37:33 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Interpretable Anomaly and Drift Detection with Gaussian Mixture Models 
+
+Behnam Asadi 
+
+behnam.asadi@gmail.com 
+
+July 21, 2026 
+
+Abstract 
+
+We revisit Gaussian Mixture Models (GMMs) as a lightweight, interpretable 
+
+tool for anomaly detection and, in particular, for detecting distributional drift in data streams. We make three practical choices explicit and evaluate them on seven public benchmarks. First, the number of mixture components is selected auto-matically by the Bayesian Information Criterion, initialised by k-means, remov-ing the need to fix it in advance. Second, individual observations are scored by their negative log-likelihood under a GMM fitted to normal data, with thresholds set at a target false-alarm rate using Extreme Value Theory. Third, the same inter-pretable model extends to distributional drift: each Gaussian component is a named “regime,” and the fraction of a stream window that matches no regime—its unex-plained mass —is a drift signal that is itself the explanation. We benchmark this against a model-free kernel two-sample test (Maximum Mean Discrepancy, MMD) and against two GMM-to-GMM divergences (a closed-form Cauchy–Schwarz di-vergence and a matching-based KL surrogate). Across seven benchmarks ranging from 3 to 64 dimensions and five random splits, the GMM point detector is com-petitive with—though rarely more accurate than—six baselines (Isolation Forest, LOF, one-class SVM, ECOD, COPOD and an autoencoder), while uniquely yield-ing an interpretable model. For drift, MMD is the strongest pure detector, but the interpretable unexplained-mass statistic matches it when anomalies form novel regimes (and honestly fails, as MMD does not, when drift is a pure re-weighting of existing regimes). Every alarm is explainable: anomalies lie a median of 3σ–10 σ
+
+outside their nearest regime vs. ≈ 1σ for normal points, and a drift alarm reports the fraction of the window matching no known regime. All code and experiments are released. 
+
+Keywords: anomaly detection, novelty detection, concept drift, Gaussian mixture model, Cauchy–Schwarz divergence, Kullback–Leibler divergence, extreme value the-ory. 1arXiv:2607.16811v1 [cs.LG] 18 Jul 2026 1 Introduction 
+
+Anomalies are patterns in data that do not conform to a well-defined notion of normal behaviour. Detecting them is critical across domains: intrusion detection for cyber-security, fraud detection in financial transactions, fault detection in safety-critical sys-tems, and condition monitoring of machines and robots [4]. Figure 1 illustrates the idea in two dimensions: most observations fall in the dense regions N1 and N2, whereas points o1, o2 and the small cluster O3 lie far from them and are flagged as anomalous. 
+
+Figure 1: A simple example of anomalies in a two-dimensional data set: N1, N 2 are normal regions; o1, o 2 are point anomalies; O3 is a small anomalous cluster. This work originated in monitoring the joint-current streams of a six-legged walking robot, but the method is domain-agnostic and we evaluate it as such. We draw a dis-tinction that is often blurred in practice and that organises the whole approach: • Point anomalies: is an individual observation unlikely under normal behaviour? This is naturally answered by the likelihood a density model assigns to the point. • Distributional / drift anomalies: has the distribution of a recent window of the stream shifted away from normal behaviour? Individual points may each look normal while their collective distribution has changed—a regime change, sensor degradation, or a novel operating mode [8; 18]. This is naturally answered by a 
+
+distance between distributions .Gaussian Mixture Models serve both tasks with a single, interpretable model: a weighted set of Gaussian components that approximates any continuous density to arbitrary ac-curacy [2; 20]. Unlike black-box detectors, a GMM exposes named “regimes” (its components), so an alarm can be attributed to which regime the data left and how far .
+
+Contributions. (i) We present a compact, reproducible pipeline that couples auto-matic GMM model selection (BIC, k-means-initialised) with likelihood-based point scoring and Extreme-Value-Theory thresholding. (ii) For drift detection we introduce an interpretable “unexplained-mass” statistic on the same GMM—the fraction of a 2window matching no known regime—and benchmark it against a model-free MMD two-sample test and two GMM-to-GMM divergences—one closed-form (Cauchy–Schwarz, exact for mixtures) and one matching-based approximation (a KL surrogate). (iii) We give an honest empirical study on seven public benchmarks ( d ∈ [3 , 64] , five random splits) with six baselines (classic and modern) and an EVT threshold-calibration check, reporting where the GMM loses as well as where it wins. (iv) We separate two drift regimes— contamination by point-outliers vs. in-support re-weighting of regimes— and show which detectors each regime needs, exposing what the interpretable statistic can and cannot do. All code is released. 
+
+# 2 Related Work 
+
+Anomaly and novelty detection are surveyed in Chandola et al. [4] and Pimentel et al. [18]. GMMs have long been used for density-based anomaly detection [20]; the pa-rameters are estimated by Expectation–Maximization [6], and the number of compo-nents is commonly chosen by the Bayesian Information Criterion [23] or the Inte-grated Completed Likelihood [1]. Popular alternative detectors include Isolation For-est [16], the Local Outlier Factor [3], and the one-class SVM [22]; more recent tabular detectors include the parameter-free ECOD [15] and COPOD [14], and autoencoder reconstruction-error methods [21]. We benchmark against all of these. None of these, however, exposes an interpretable model of normality. Comparing two GMMs requires a distance between mixtures. The KL divergence, central to statistical pattern recognition [7], has no closed form between two Gaussian mixtures; practical work therefore uses approximations—Monte-Carlo, the variational and matching bounds of Hershey and Olsen [11], or the matching approximation of Goldberger et al. [9]. An alternative is to use a divergence that is closed-form for mixtures: Kampa et al. [13] derived such an expression for the Cauchy–Schwarz di-vergence, which we adopt. Distance-based comparison of GMMs has been used, e.g., for speaker and music similarity [12]. For streaming settings, Extreme Value Theory provides principled thresholds at a chosen false-alarm rate [5; 24], and drift is studied broadly in Gama et al. [8]. An orthogonal, model-free route to comparing two samples is the kernel Maximum Mean Discrepancy [10], which we discuss as an alternative in Section 5. 33 Method 
+
+3.1 Gaussian mixture density model 
+
+A GMM models a D-dimensional observation x as a weighted sum of K Gaussian components, 
+
+p(x | λ) = 
+
+> K
+
+X
+
+> k=1
+
+πk N (x | μk, Σk),
+
+> K
+
+X
+
+> k=1
+
+πk = 1 , π k ≥ 0, (1) with parameters λ = {πk, μ k, Σk}Kk=1 estimated by Expectation–Maximization [6; 2]. Each component is a regime of normal behaviour; the weight πk is the prior probability of that regime. 
+
+3.2 Model selection and initialisation 
+
+The number of components K is not known a priori: too few yields an under-fitting density, too many increases variance and cost. Rather than fixing K, we select it by the Bayesian Information Criterion 
+
+BIC( K) = −2 log ˆL(K) + pK log N, (2) where ˆL(K) is the maximised likelihood, pK the number of free parameters and N the sample size, choosing K⋆ = arg min K BIC( K). BIC is the natural criterion here be-cause, unlike hard-clustering validity indices, it scores the mixture likelihood directly. EM is sensitive to initialisation, so we seed it with k-means: cluster centroids initialise the means μk, and the fraction of points per cluster initialises the weights πk.
+
+3.3 Point-anomaly scoring 
+
+Given a GMM fitted to normal data, an observation x is scored by its negative log-likelihood 
+
+s(x) = − log 
+
+> K
+
+X
+
+> k=1
+
+πk N (x | μk, Σk), (3) so that unlikely points receive high scores. This is a per-sample test suited to point anomalies. 
+
+3.4 Detecting distributional drift 
+
+For a window W = {x1, . . . , x m} of the stream we ask whether its distribution has departed from the reference normal GMM f . Our primary, interpretable statistic is the 4unexplained mass : the fraction of the window that matches no reference regime beyond 
+
+τ standard deviations, 
+
+Uτ (W ) = 1
+
+m
+
+> m
+
+X
+
+> i=1
+
+1
+
+
+
+min  
+
+> k
+
+∆k(xi) > τ 
+
+
+
+, ∆k(x) = 
+
+q
+
+(x − μk)⊤Σ−1 
+
+> k
+
+(x − μk),
+
+(4) where ∆k is the Mahalanobis distance to component k. Uτ rises when a window contains points outside every known regime, and the value is the explanation ( τ = 3 
+
+throughout). As a closed-form, model-level alternative we also fit a GMM g to the window and measure a GMM-to-GMM divergence to f . The KL divergence 
+
+DKL (f ∥g) = 
+
+Z
+
+f (x) log f (x)
+
+g(x) dx (5) is closed-form for two single Gaussians but not for two mixtures; it is also asymmetric and unbounded, which makes it awkward as a threshold statistic. We therefore use the 
+
+Cauchy–Schwarz divergence [13], 
+
+DCS (f, g ) = − log 
+
+R f (x)g(x) d x
+
+qR f (x)2 dx R g(x)2 dx
+
+ , (6) which is symmetric and satisfies DCS ≥ 0 with equality iff f = g. For GMMs f =P 
+
+> i
+
+πiN (· | μi, Σi) and g = P 
+
+> j
+
+π′ 
+
+> j
+
+N (· | μ′ 
+
+> j
+
+, Σ′ 
+
+> j
+
+), every integral above is a sum of Gaussian–Gaussian inner products with the exact identity 
+
+Z
+
+N (x | μi, Σi) N (x | μ′ 
+
+> j
+
+, Σ′ 
+
+> j
+
+) d x = N (μi | μ′ 
+
+> j
+
+, Σi + Σ ′ 
+
+> j
+
+), (7) giving the closed form 
+
+DCS (f, g ) = − log 
+
+ P 
+
+> i,j
+
+πiπ′ 
+
+> j
+
+zij 
+
+
+
++ 12 log 
+
+ P 
+
+> i,j
+
+πiπj zf f ij 
+
+
+
++ 12 log 
+
+ P 
+
+> i,j
+
+π′
+
+> i
+
+π′ 
+
+> j
+
+zgg ij 
+
+
+
+,
+
+(8) where zij = N (μi | μ′ 
+
+> j
+
+, Σi + Σ ′ 
+
+> j
+
+) is the cross-term and zf f ij = N (μi | μj , Σi + Σ j ),
+
+zgg ij = N (μ′ 
+
+> i
+
+| μ′ 
+
+> j
+
+, Σ′ 
+
+> i
+
++ Σ ′ 
+
+> j
+
+) are the self-terms of f and g. All sums are evaluated in the log domain for numerical stability. 1 For comparison we also implement a matching-based KL surrogate in the spirit of Goldberger et al. [9] (and its symmetrised, Jeffreys form), used only as an ablation baseline. 
+
+3.5 Thresholding with Extreme Value Theory 
+
+A detector needs a threshold at a controllable false-alarm rate (FAR). Fitting on normal scores only, we use the Peaks-Over-Threshold method [5; 24]: exceedances of the                                    
+
+> 1The same Gaussian–product identity (7) yields other closed-form mixture divergences. Writing the mixture inner product as ⟨f, g ⟩=P
+> i,j πiπ′
+> jzij , one may replace the Cauchy–Schwarz geometric-mean normalisation p⟨f, f ⟩⟨ g, g ⟩with an arithmetic-mean one, giving −log  2⟨f, g ⟩/(⟨f, f ⟩+⟨g, g ⟩)=
+> −log  1− ∥ f−g∥2/(⟨f, f ⟩+⟨g, g ⟩), a log-normalised integrated-squared-error ( L2) divergence. It is likewise symmetric, non-negative and zero iff f=g, coincides with DCS when ⟨f, f ⟩=⟨g, g ⟩, and behaves similarly in practice; we report DCS as the representative closed-form divergence.
+
+5normal scores over a high quantile u are modelled by a Generalized Pareto distribution, and the threshold for a target FAR is obtained by extrapolating its tail. In principle this extends to FARs below the empirical resolution 1/N , where a raw quantile has no support; we do not test that regime here and evaluate calibration at 10 −2 and 10 −3
+
+(Section 4.4), reporting the empirical quantile as a baseline. 
+
+# 4 Experiments 
+
+4.1 Datasets 
+
+We use seven public benchmarks (Table 1) spanning intrusion detection, medical imag-ing, aerospace telemetry and handwriting, with dimensionality from 3 to 64 . KDD-http/smtp come from the KDD Cup 99 corpus [25]; the remainder follow the conven-tions of the ODDS library [19]. Features are z-scored (byte counts are log -transformed first). Anomaly-labelling conventions are documented in the released code. Table 1: Benchmark datasets, ordered by dimensionality. Dataset n d #anom. %anom. KDD-http 58725 3 2209 3.76 KDD-smtp 95156 3 30 0.03 Mammography 11183 6 260 2.32 Shuttle 49097 9 3511 7.15 Pendigits 10049 16 201 2.00 Satellite 5100 36 75 1.47 Optdigits 5169 64 103 1.99 
+
+4.2 Protocol and baselines 
+
+We follow a semi-supervised (one-class) protocol: each detector is trained on 60% of the normal data and tested on the remaining normal data plus all anomalies. To remove sensitivity to a particular split we repeat this over five random splits and report ROC-AUC as mean ± standard deviation (and average precision, AP, in the released results). Baselines span classic and modern detectors: Isolation Forest [16], Local Outlier Factor [3], a one-class SVM [22] (kernel-approximated for scalability), the parameter-free ECOD [15] and COPOD [14] (via PyOD [26]), and a shallow bottleneck autoencoder scored by reconstruction error [21]. All methods use scikit-learn [17]; the GMM selects 
+
+K ∈ { 1, . . . , 10 } by BIC. 
+
+4.3 Point-anomaly detection 
+
+Table 2 reports ROC-AUC across seven detectors. We are explicit that the GMM is 
+
+not the most accurate: LOF is the strongest on five of seven datasets, sometimes by a 6wide margin (e.g. Optdigits 0.97 vs the GMM’s 0.86 ), and the modern parameter-free detectors ECOD and COPOD take the remaining column (Mammography, 0.91 ). The GMM tops only KDD-http (tied). Adding these stronger and more recent baselines does not change the picture: no single method dominates, and the GMM’s value is not the score. What it offers is competitiveness at low cost : it stays within a few AUC points of the best on the lower-dimensional benchmarks, never inverts, and—unlike LOF, Isolation Forest, one-class SVM, ECOD, COPOD or the autoencoder—yields an interpretable density model that also supports the drift detection and regime attribution of the following sections. LOF’s edge, in particular, comes at the cost of storing the entire training set and providing no model to inspect. Table 3 summarises this trade-off: the accuracy the GMM concedes buys capabilities the other detectors do not have. We also note that our one-class SVM is a scalable Nystr¨ om + SGD approximation rather than an exact kernel SVM; its low score on Pendigits ( 0.35 ) reflects that approximation and untuned bandwidth, not a limitation of the exact one-class SVM. Accuracy also degrades with dimension: the GMM trails LOF clearly on the 64 -dimensional Optdigits set, consistent with the curse of dimensionality for density estimation. Figure 2(a) shows the BIC curve on KDD-http (a sharp elbow at K=2 with BIC decreasing only marginally thereafter, so the exact K is not critical); panels (b,c) show ROC curves on an easy ( 3D) and a hard ( 36 D) benchmark. Table 2: Point-anomaly detection, ROC-AUC (mean over five random splits; best per dataset column in bold). Seven detectors × seven datasets; the GMM is competitive but rarely best (LOF wins most columns), and no baseline collapses as badly as the approximate OCSVM on Pendigits. Method http smtp Mammo Shut Pen Sat Opt GMM (ours) 1.000 0.882 0.871 0.999 0.969 0.956 0.859 IForest 0.992 0.883 0.877 0.996 0.788 0.952 0.849 LOF 1.000 0.903 0.845 1.000 0.986 0.978 0.974 
+
+OCSVM 0.996 0.819 0.772 0.995 0.348 0.907 0.532 ECOD 0.902 0.880 0.906 0.993 0.478 0.876 0.618 COPOD 0.930 0.792 0.906 0.995 0.553 0.906 0.697 AE (MLP) 0.999 0.767 0.880 0.995 0.897 0.920 0.716    
+
+> ROC-AUC, mean over 5 random splits (std ≤0.09 ; per-split values in results.json ); best per column in bold. Columns: http, smtp, Mammo(graphy), Shut(tle), Pen(digits), Sat(ellite), Opt(digits).
+
+7Table 3: What each detector offers beyond an accuracy number. The GMM trades a little accuracy (Table 2) for capabilities the others lack. Method Interpretable Density Attributable Compact model regimes model drift (no data kept) GMM (ours) ✓ ✓ ✓ ✓
+
+IsolationForest – – – ✓
+
+LOF – – – stores all points OCSVM – – – partial ECOD / COPOD per-feature – – ✓
+
+AE (MLP) – – – ✓2 4 6 8 10              
+
+> number of components K
+> 200000
+> 100000
+> 0
+> 100000
+> 200000
+> BIC
+> (a) Model selection (BIC), KDD-http
+> K*= 9
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> false positive rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> true positive rate
+> (b) ROC -- KDD-http
+> GMM (ours) (1.000)
+> IsolationForest (0.992)
+> LOF (1.000)
+> OCSVM (0.998)
+> ECOD (0.899)
+> COPOD (0.928)
+> AE (0.999)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> false positive rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> true positive rate
+> (c) ROC -- Satellite
+> GMM (ours) (0.955)
+> IsolationForest (0.951)
+> LOF (0.977)
+> OCSVM (0.906)
+> ECOD (0.874)
+> COPOD (0.903)
+> AE (0.922)
+
+Figure 2: (a) BIC model selection on KDD-http. (b,c) ROC curves for the GMM detector and baselines on a low- and a high-dimensional benchmark. 
+
+4.4 Threshold calibration 
+
+A detector is only usable with a threshold at a controllable false-alarm rate (FAR). Table 4 evaluates the EVT/Peaks-Over-Threshold thresholds of Section 3.5: we set a target FAR on normal training scores and measure the FAR actually achieved on held-out data. On the lower-dimensional benchmarks the achieved FAR closely tracks the target (e.g. KDD-http, KDD-smtp, Mammography, Shuttle all within a factor of ∼ 1 of both 10 −2 and 10 −3), and detection rates are high where the density model is accurate. On the highest-dimensional sets (Satellite, Optdigits) the achieved FAR drifts above target, an honest symptom of GMM density estimation degrading in high dimensions (Section 5). EVT thus delivers calibrated thresholds precisely in the low-to-moderate-dimensional regime where the GMM is appropriate. 8Table 4: EVT threshold calibration: target vs. achieved false-alarm rate (FAR) for the GMM detector. Dataset target FAR = 10 −2 target FAR = 10 −3
+
+achieved FPR detect. achieved FPR detect. KDD-http 0.0096 1.00 0.0001 1.00 KDD-smtp 0.0106 0.68 0.0007 0.67 Mammography 0.0108 0.34 0.0016 0.20 Shuttle 0.0114 0.99 0.0009 0.96 Pendigits 0.0112 0.19 0.0016 0.01 Satellite 0.0178 0.61 0.0038 0.51 Optdigits 0.0413 0.15 0.0121 0.01 
+
+> Mean over five splits; “detect.” is the fraction of anomalies flagged (TPR).
+
+4.5 Distributional drift detection 
+
+We fit a reference GMM on normal data and, for each dataset and each of five seeds, draw 40 clean windows and 40 windows contaminated with 10% anomalies; each win-dow is modelled by its own GMM and compared to the reference by the Cauchy– Schwarz divergence. Contaminated windows have larger divergence than clean ones, with window-level separation above chance on all but the 64 -dimensional Optdigits set (CS window-AUC 0.51 –0.97 ; highest on KDD-http at 0.97 , effectively chance on Opt-digits at 0.51 ; Table 5). Figure 3 shows the corresponding divergence histograms. We note the “clean” divergence is sizeable on some datasets (e.g. Shuttle, Pendigits) be-cause a 500 -point window GMM is itself a noisy refit, so part of the statistic is fit noise rather than true drift. The comparison below places CS against stronger alternatives. 90.0 0.5 1.0 1.5 2.0 2.5 3.0                                      
+
+> Cauchy--Schwarz divergence
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> count
+> KDD-http (AUC 0.971)
+> clean
+> 10% contam.
+> 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+> Cauchy--Schwarz divergence
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> 16
+> count
+> KDD-smtp (AUC 0.699)
+> clean
+> 10% contam.
+> 02468
+> Cauchy--Schwarz divergence
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> count
+> Mammography (AUC 0.653)
+> clean
+> 10% contam.
+> 0246810 12 14
+> Cauchy--Schwarz divergence
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> count
+> Shuttle (AUC 0.672)
+> clean
+> 10% contam.
+> 0510 15 20 25 30
+> Cauchy--Schwarz divergence
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> 16
+> count
+> Pendigits (AUC 0.558)
+> clean
+> 10% contam.
+> 0510 15 20 25 30
+> Cauchy--Schwarz divergence
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> count
+> Satellite (AUC 0.810)
+> clean
+> 10% contam.
+> 020 40 60 80 100 120 140
+> Cauchy--Schwarz divergence
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> count
+> Optdigits (AUC 0.506)
+> clean
+> 10% contam.
+> Windowed drift detection: CS divergence to reference GMM
+
+Figure 3: Cauchy–Schwarz divergence from each window’s GMM to the reference normal GMM: clean vs. 10% -contaminated windows. 
+
+Drift detectors compared. Table 5 compares four window-level statistics: the exact Cauchy–Schwarz (CS) divergence; a matching-based KL surrogate; the unexplained-mass statistic Uτ (Eq. 4, the interpretable GMM detector, i.e. the fraction of a window beyond 3σ of every reference regime); and, as a model-free reference, the kernel Max-imum Mean Discrepancy (MMD) two-sample test [10], which compares the window sample directly to a reference normal sample without fitting any mixture. Three find-ings stand out. First, the KL surrogate is unstable : it falls below chance ( 0.5) on Shuttle (0.29 ) and Pendigits ( 0.46 ), confirming that an approximate, asymmetric KL is a poor drift statistic. Second, MMD is the strongest pure detector , at or near AUC 1.0 on every dataset (lowest 0.93 on Satellite); the CS divergence is clearly weaker—never the best on any dataset—and collapses to chance on the 64 -dimensional Optdigits set (0.51 ). We therefore do not claim CS is a powerful detector; it is retained as a prin-cipled, closed-form ablation. Third, and most useful, the interpretable unexplained-mass statistic matches MMD in low-to-moderate dimensions (AUC 1.0 on KDD-http, KDD-smtp, Mammography and Shuttle; 0.87 on Pendigits) before it saturates in high dimensions ( 0.50 on Satellite and Optdigits). The saturation is partly an artefact of the fixed τ = 3 σ threshold: under a correct component a normal point in d dimensions sits at ≈ √d σ (already ≈ 8σ at d = 64 ), so every point exceeds 3σ and the statis-tic loses resolution; a χ2
+
+d-calibrated threshold would mitigate this. Where the density 10 model is meaningful, the alarm is both competitive with a model-free test and self-explanatory—it reports the fraction of the window matching no known regime. Table 5: Drift detection, window-level ROC-AUC: the two GMM divergences (CS, KL surrogate), the interpretable unexplained-mass GMM detector, and model-free MMD. The interpretable GMM detector matches MMD in low-to-moderate dimensions. Dataset CS div. KL surr. Unexpl. mass MMD    
+
+> (GMM) (GMM) (GMM, interp.) (model-free)
+
+KDD-http 0.97 ±0.02 0.46 ±0.04 1.00 ±0.00 1.00 ±0.00 
+
+KDD-smtp 0.70 ±0.04 0.93 ±0.04 1.00 ±0.00 0.99 ±0.00 
+
+Mammography 0.65 ±0.07 0.72 ±0.09 1.00 ±0.00 1.00 ±0.00 
+
+Shuttle 0.67 ±0.07 0.29 ±0.06 1.00 ±0.00 1.00 ±0.00 
+
+Pendigits 0.56 ±0.06 0.46 ±0.05 0.87 ±0.04 0.98 ±0.01 
+
+Satellite 0.81 ±0.14 0.98 ±0.01 0.50 ±0.00 0.93 ±0.09 
+
+Optdigits 0.51 ±0.07 0.53 ±0.06 0.50 ±0.00 1.00 ±0.00      
+
+> Window-level ROC-AUC (clean vs. 10% contaminated), mean ±std over five seeds; best per row in bold. Chance = 0 .5. ‘Unexpl. mass’ is the interpretable GMM detector (window fraction beyond 3σof every regime).
+
+4.6 Two kinds of drift: contamination vs. in-support re-weighting 
+
+The experiment above injects point-outliers, so a window drifts by acquiring anomalies that lie outside the normal support. But we motivated drift more broadly (Section 1) as the case where individual points may each look normal while their collective distribu-tion has changed. These are genuinely different, and they need different detectors. To isolate the second case, we build drifted windows that contain only real normal points 
+
+but drawn with re-weighted regime proportions (we assign each normal point to its nearest reference component and over-sample the dominant regimes). No point is an outlier—the “outlier fraction” column of Table 6 stays at the clean baseline—yet the distribution has genuinely shifted. The result is a clean dissociation. On the datasets where the re-weighting truly keeps every point in support (KDD-http, KDD-smtp and Mammography, outlier fraction ≤
+
+2% ), the interpretable unexplained-mass statistic is blind : its AUC is at or below chance (0.47 , 0.17 , 0.01 ), because clean and drifted windows contain the same in-support points. The closed-form CS divergence is unreliable ( 0.26 –0.74 across datasets, strong on some, below chance on others). Only the model-free MMD test detects the re-weighting robustly (AUC 0.98 –1.0 on all seven). (On the higher-dimensional sets Satellite and Optdigits the outlier fraction is 1.0 not because re-weighting creates out-liers but because of the same fixed-τ = 3 σ saturation as Table 5—every normal point sits beyond 3σ—so the unexplained-mass AUC there is pinned at exactly 0.50 ; the three low-dimensional datasets, with outlier fraction ≤ 2% , isolate the in-support ef-fect cleanly.) This is an honest limitation, and it clarifies the division of labour: the unexplained-mass statistic detects novel-regime drift (contamination, new operating modes) and explains it ; detecting in-support drift (a shift in the mix of known regimes) 11 requires a distribution-level test such as MMD, which does not explain its alarms. Table 6: In-support drift (regime re-weighting): on the clean in-support cases (top three rows) the interpretable statistic is blind and only MMD detects the shift robustly. Contrast with Table 5 (contamination), where the interpretable statistic matches MMD. Dataset CS div. Unexpl. mass MMD Outlier frac.    
+
+> (GMM) (GMM, interp.) (model-free) (drift win.)
+
+KDD-http 0.74 ±0.16 0.47 ±0.06 0.98 ±0.04 0.000 KDD-smtp 0.74 ±0.20 0.17 ±0.08 1.00 ±0.00 0.001 Mammography 0.43 ±0.04 0.01 ±0.01 1.00 ±0.00 0.018 Shuttle 0.38 ±0.19 0.64 ±0.21 1.00 ±0.00 0.188 Pendigits 0.63 ±0.11 0.41 ±0.24 1.00 ±0.00 0.690 Satellite 0.56 ±0.09 0.50 ±0.00 1.00 ±0.00 1.000 Optdigits 0.26 ±0.12 0.50 ±0.00 1.00 ±0.00 1.000        
+
+> Window-level ROC-AUC on in-support drift (regime re-weighting). ‘Outlier frac.’ is the share of drifted-window points beyond 3σof every regime. The top three rows are the clean in-support cases (frac. ≤1.3% ); on the rest the fraction is dominated by the fixed-τsaturation of Table 5, not by re-weighting.
+
+4.7 Interpretability: attributing alarms to regimes 
+
+Unlike a black-box detector, the GMM lets every alarm be explained in terms of its named components, or “regimes”. We illustrate this on KDD-http, whose BIC-selected model has nine components—five carrying the bulk of the mass—with the weights shown in Table 7. We use two interpretable quantities. 
+
+Regime attribution (point level). For an observation x we report the nearest compo-nent k⋆(x) = arg min k ∆k(x), where ∆k(x) = 
+
+q
+
+(x − μk)⊤Σ−1 
+
+> k
+
+(x − μk) is the Ma-halanobis distance, together with ∆k⋆ (x) itself— how far outside the nearest known regime the point lies. On KDD-http, normal test points sit a median of 1.1σ (95th percentile 1.8σ) from their nearest regime, whereas flagged anomalies sit a median of 
+
+10 .3σ away (Figure 4a). An alarm therefore comes with a concrete sentence: “this record’s nearest normal regime is k⋆, but it lies 10 σ outside it.” We caution that on KDD-http the anomaly distances are tightly concentrated (median ≈ 95th percentile), an artefact of duplicated attack records. On Mammography the same separation holds without that artefact: anomaly distances are genuinely spread (median 3.1σ, 95th per-centile 14 σ) yet clearly separated from normal points (median 1.4σ), confirming the effect is not specific to one dataset. 
+
+Unexplained mass (window level). For drift we report the fraction of a window whose nearest regime is still farther than τ = 3 σ—the share of the window matching no 
+
+known regime. Clean windows have a mean unexplained mass of 0.1% , whereas 10% -contaminated windows have 10 .1% , recovering the injected contamination almost ex-actly (Figure 4b). This turns a drift alarm into an actionable statement: “∼ 10% of this window matches no known operating regime.” 
+
+12 Table 7: Interpretable regimes (mixture components) for KDD-http. Regime (by weight) 1 2 3 4 5 6 7 8 9Weight πk (%) 28.8 22.0 19.7 19.4 9.3 0.4 0.3 0.1 0.0 
+
+KDD-http: 9 components, of which 5 carry ≥ 1% of the mass. Normal points lie a median 1.1 σ
+
+(p95 1.8 σ) from their nearest regime, whereas flagged anomalies lie a median 10.3 σ away. 0 2 4 6 8 10                       
+
+> Mahalanobis distance ( )
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> density
+> (a) Distance to nearest regime -- KDD-http
+> normal
+> anomaly
+> = 3
+> 0.00 0.02 0.04 0.06 0.08 0.10
+> fraction beyond of every regime
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> count
+> (b) Unexplained mass -- KDD-http
+> clean windows
+> 10% contam. windows
+> injected 10%
+> 01234567
+> Mahalanobis distance ( )
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> 1.6
+> density
+> (c) Distance to nearest regime -- Mammography
+> normal
+> anomaly
+> = 3
+> 0.00 0.02 0.04 0.06 0.08 0.10 0.12
+> fraction beyond of every regime
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> count
+> (d) Unexplained mass -- Mammography
+> clean windows
+> 10% contam. windows
+> injected 10%
+
+Figure 4: Interpretability on KDD-http (top) and Mammography (bottom). (a,c) Ma-halanobis distance to the nearest normal regime: normal points cluster within a few 
+
+σ, anomalies lie far outside (on Mammography the anomaly distances are genuinely spread, not a single spike). (b,d) Unexplained mass per window (fraction beyond τ σ 
+
+of every regime): clean vs. 10% -contaminated windows. The recovery of the injected 
+
+10% is sharp on KDD-http and looser on Mammography ( 4% vs. 9% ). 
+
+# 5 Discussion 
+
+Interpretability. The GMM’s advantage over black-box detectors is not raw accu-racy but explanation: each alarm can be attributed to the mixture component (regime) whose responsibility dropped or whose region the data vacated, together with the di-vergence magnitude. This matters in condition monitoring, where operators need a reason, not just a flag. 13 Dimensionality. Density estimation degrades as D grows; the GMM remains com-petitive up to D=36 (Satellite) here, but for higher dimensions we recommend a dimensionality-reduction front-end (PCA or an autoencoder) before the mixture, or a switch to a dif-ferent detector family. 
+
+When to use what. Use likelihood scoring (3) for point anomalies and the diver-gence (8) for drift. A model-free kernel two-sample test such as MMD [10] solves the drift problem without fitting mixtures and is a strong alternative; the GMM route earns its place when interpretable regimes are wanted or the mixture assumption is reasonable. 
+
+Limitations. Results use five random splits at a single contamination level; a fuller study would sweep contamination rates and add more high-dimensional benchmarks. The drift experiment assumes windows large enough to fit a GMM, trading latency for the ability to see distributional change. The interpretability case study is shown on one dataset for clarity, though the same attribution applies to any GMM. 
+
+# 6 Conclusion 
+
+We presented an interpretable GMM pipeline for anomaly and drift detection: BIC-selected components, likelihood-based point scoring with well-calibrated EVT thresh-olds (in low-to-moderate dimensions), and an interpretable “unexplained-mass” drift statistic on the same model. On seven public benchmarks the point detector is com-petitive with (though rarely the best of) standard baselines while degrading gracefully. For drift, a model-free MMD test is the strongest detector; the unexplained-mass statis-tic matches it when anomalies form novel regimes and—honestly—fails when drift is a pure re-weighting of existing regimes, a case MMD still catches. The closed-form Cauchy–Schwarz divergence is retained as a principled ablation but is empirically dom-inated. The method’s durable value is not raw accuracy—LOF is often more accurate— but that every alarm is explainable: which regimes the data matches or fails to match, and by how much. Future work will add streaming/online GMM updates, deep base-lines, and a dimensionality-reduction front-end for high-dimensional data. 
+
+Reproducibility. All datasets are public; the code, dataset loaders, divergence im-plementations and experiment scripts are released in the prototype/ directory ac-companying this paper. All randomness is seeded; package versions are pinned in 
+
+requirements.txt . The drift comparison (Table 5) is a single run of 60 + 60 win-dows per dataset (sampling standard error ≈ 0.05 in AUC), so orderings within ∼ 0.05 
+
+should be read as ties. 14 References 
+
+[1] Christophe Biernacki, Gilles Celeux, and G´ erard Govaert. Assessing a mixture model for clustering with the integrated completed likelihood. IEEE Transactions on Pattern Analysis and Machine Intelligence , 22(7):719–725, 2000. [2] Christopher M. Bishop. Pattern Recognition and Machine Learning . Springer, 2006. [3] Markus M. Breunig, Hans-Peter Kriegel, Raymond T. Ng, and J¨ org Sander. LOF: Identifying density-based local outliers. In ACM SIGMOD International Confer-ence on Management of Data , pages 93–104, 2000. [4] Varun Chandola, Arindam Banerjee, and Vipin Kumar. Anomaly detection: A survey. ACM Computing Surveys , 41(3):1–58, 2009. [5] Stuart Coles. An Introduction to Statistical Modeling of Extreme Values . Springer, 2001. [6] A. P. Dempster, N. M. Laird, and D. B. Rubin. Maximum likelihood from incom-plete data via the EM algorithm. Journal of the Royal Statistical Society, Series B, 39(1):1–38, 1977. [7] Keinosuke Fukunaga. Introduction to Statistical Pattern Recognition . Academic Press, 2nd edition, 1990. [8] Jo˜ ao Gama, Indr˙ e ˇ Zliobait˙ e, Albert Bifet, Mykola Pechenizkiy, and Abdelhamid Bouchachia. A survey on concept drift adaptation. ACM Computing Surveys , 46 (4):1–37, 2014. [9] Jacob Goldberger, Shiri Gordon, and Hayit Greenspan. An efficient image simi-larity measure based on approximations of KL-divergence between two Gaussian mixtures. In IEEE International Conference on Computer Vision (ICCV) , pages 487–493, 2003. [10] Arthur Gretton, Karsten M. Borgwardt, Malte J. Rasch, Bernhard Sch¨ olkopf, and Alexander Smola. A kernel two-sample test. Journal of Machine Learning Re-search , 13:723–773, 2012. [11] John R. Hershey and Peder A. Olsen. Approximating the Kullback-Leibler diver-gence between Gaussian mixture models. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages IV–317–IV–320, 2007. [12] J. H. Jensen, D. P. W. Ellis, M. G. Christensen, and S. H. Jensen. Evaluation of distance measures between Gaussian mixture models of MFCCs. In International Conference on Music Information Retrieval (ISMIR) , pages 107–108, 2007. [13] Kittipat Kampa, Erion Hasanbelliu, and Jose C. Principe. Closed-form Cauchy-Schwarz PDF divergence for mixture of Gaussians. In International Joint Con-ference on Neural Networks (IJCNN) , pages 2578–2585, 2011. 15 [14] Zheng Li, Yue Zhao, Nicola Botta, Cezar Ionescu, and Xiyang Hu. COPOD: Copula-based outlier detection. In IEEE International Conference on Data Min-ing (ICDM) , pages 1118–1123, 2020. [15] Zheng Li, Yue Zhao, Xiyang Hu, Nicola Botta, Cezar Ionescu, and George H. Chen. ECOD: Unsupervised outlier detection using empirical cumulative distri-bution functions. IEEE Transactions on Knowledge and Data Engineering , 2022. [16] Fei Tony Liu, Kai Ming Ting, and Zhi-Hua Zhou. Isolation forest. In IEEE International Conference on Data Mining (ICDM) , pages 413–422, 2008. [17] F. Pedregosa et al. Scikit-learn: Machine learning in Python. Journal of Machine Learning Research , 12:2825–2830, 2011. [18] Marco A.F. Pimentel, David A. Clifton, Lei Clifton, and Lionel Tarassenko. A review of novelty detection. Signal Processing , 99:215–249, 2014. [19] Shebuti Rayana. ODDS library, 2016. http://odds.cs.stonybrook. edu .[20] Douglas A. Reynolds. Gaussian mixture models. Encyclopedia of Biometrics ,pages 659–663, 2009. [21] Mayu Sakurada and Takehisa Yairi. Anomaly detection using autoencoders with nonlinear dimensionality reduction. Proc. MLSDA Workshop on Machine Learn-ing for Sensory Data Analysis , pages 4–11, 2014. [22] Bernhard Sch¨ olkopf, John C. Platt, John Shawe-Taylor, Alex J. Smola, and Robert C. Williamson. Estimating the support of a high-dimensional distribution. 
+
+Neural Computation , 13(7):1443–1471, 2001. [23] Gideon Schwarz. Estimating the dimension of a model. The Annals of Statistics ,6(2):461–464, 1978. [24] Alban Siffer, Pierre-Alain Fouque, Alexandre Termier, and Christine Largou¨ et. Anomaly detection in streams with extreme value theory. In ACM SIGKDD In-ternational Conference on Knowledge Discovery and Data Mining , pages 1067– 1075, 2017. [25] Mahbod Tavallaee, Ebrahim Bagheri, Wei Lu, and Ali A. Ghorbani. A detailed analysis of the KDD CUP 99 data set. In IEEE Symposium on Computational Intelligence for Security and Defense Applications , 2009. [26] Yue Zhao, Zain Nasrullah, and Zheng Li. PyOD: A Python toolbox for scalable outlier detection. Journal of Machine Learning Research , 20(96):1–7, 2019. 16

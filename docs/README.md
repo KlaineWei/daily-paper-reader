@@ -6,49 +6,38 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-21
-- 运行时间：2026-07-21 20:54:38 UTC
+- 最新运行日期：2026-07-22
+- 运行时间：2026-07-22 21:25:24 UTC
 - 运行状态：成功
-- 本次总论文数：9
+- 本次总论文数：6
 - 精读区：3
-- 速读区：6
+- 速读区：3
 
 ### 今日简报（AI）
-今日精读重点聚焦可解释异常检测与自动驾驶可解释性，速读覆盖图欺诈检测、AI文本检测及视频异常检测等方向。  
-最值得关注的是高斯混合模型驱动的可解释异常与漂移检测（9.0分），以及通过视觉-语言-动作模型解读复杂道路场景以实现安全自动驾驶（8.0分）。  
-建议优先深入上述两篇精读论文，理解可解释AI在安全关键系统中的应用设计思路。
-- 详情：[/202607/21/README](/202607/21/README)
+今日精读2篇高分论文（均9.0/10）解读自动驾驶可解释性与工业异常检测新思路，速读3篇覆盖AI文本检测、血细胞分类及视频异常检测。最值得关注的是将语言模型与视觉任务深度结合的可解释性方法。建议优先精读《What Do They See?》与《OPD-IAD》，借鉴其将语言判断融入视觉模型的框架。
+- 详情：[/202607/22/README](/202607/22/README)
 
 ### 精读区论文标签
-1. [Interpretable Anomaly and Drift Detection with Gaussian Mixture Models](/202607/21/2607.16811v1-interpretable-anomaly-and-drift-detection-with-gaussian-mixture-models)  
+1. [What Do They See? Interpreting Complex Road Scenarios Through the Eyes of Vision-Language-Action Models for Safe and Trustworthy Autonomous Vehicle Learning](/202607/22/2607.16938v1-what-do-they-see-interpreting-complex-road-scenarios-through-the-eyes-of-vision-language-action-models-for-safe-and-trustworthy-autonomous-vehicle-learning)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：使用高斯混合模型的可解释异常与漂移检测
-2. [What Do They See? Interpreting Complex Road Scenarios Through the Eyes of Vision-Language-Action Models for Safe and Trustworthy Autonomous Vehicle Learning](/202607/21/2607.16938v1-what-do-they-see-interpreting-complex-road-scenarios-through-the-eyes-of-vision-language-action-models-for-safe-and-trustworthy-autonomous-vehicle-learning)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：通过反事实消融检测物体来解释VLA模型在复杂道路场景中的行为
-3. [Detection, Attribution, Narration: An End-to-End Pipeline for Explainable Money Mule Identification](/202607/21/2607.17586v1-detection-attribution-narration-an-end-to-end-pipeline-for-explainable-money-mule-identification)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：可解释的欺诈检测流水线，包含特征归因和自然语言叙述
+   evidence：通过反事实消融解释自动驾驶中的VLA模型目标检测
+2. [OPD-IAD: From Language Judgment to Industrial Anomaly Detection via On-Policy Self-Distillation](/202607/22/2607.18850v1-opd-iad-from-language-judgment-to-industrial-anomaly-detection-via-on-policy-self-distillation)  
+   标签：评分：9.0/10、query:xai-objdet
+   evidence：使用LVLM进行可解释异常检测，提供可解释的缺陷推理
+3. [Toward Auditable Fraud Detection: Combining Graph Features, Model Explanations, and Agentic Case Investigation](/202607/22/2607.19266v1-toward-auditable-fraud-detection-combining-graph-features-model-explanations-and-agentic-case-investigation)  
+   标签：评分：9.0/10、query:xai-objdet
+   evidence：融合模型解释与智能体调查的可审计欺诈检测
 
 ### 速读区论文标签
-1. [A Novel Graph Fraud Detector via Grouped Attribute Completion and Confidence-Aware Contrastive Learning](/202607/21/2607.11107v1-a-novel-graph-fraud-detector-via-grouped-attribute-completion-and-confidence-aware-contrastive-learning)  
+1. [Latent Trajectory Discrimination for AI-Generated Text Detection](/202607/22/2607.14967v1-latent-trajectory-discrimination-for-ai-generated-text-detection)  
    标签：评分：7.0/10、query:contrastive
-   evidence：使用对比学习进行图欺诈检测
-2. [Latent Trajectory Discrimination for AI-Generated Text Detection](/202607/21/2607.14967v1-latent-trajectory-discrimination-for-ai-generated-text-detection)  
-   标签：评分：7.0/10、query:contrastive
-   evidence：对比学习用于生成轨迹判别
-3. [O-VAD: Industrial Video Anomaly Detection through Object-Centric Tracking and Reasoning](/202607/21/2607.18142v1-o-vad-industrial-video-anomaly-detection-through-object-centric-tracking-and-reasoning)  
+   evidence：使用对比学习进行AI生成文本检测
+2. [Interpretable Peripheral Blood Cell Classification via Vision-Language Concept Bottleneck and Soft Decision Tree](/202607/22/biorxiv-10-64898-2026-07-14-738462-v1-interpretable-peripheral-blood-cell-classification-via-vision-language-concept-bottleneck-and-soft-decision-tree)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：以对象为中心的异常检测并结合推理，与异常检测可解释性相关
-4. [CFR-Net:Collaborative Feature Refnement Network for Medical Image Anomaly Detection](/202607/21/2607.11509v1-cfr-netcollaborative-feature-refnement-network-for-medical-image-anomaly-detection)  
+   evidence：通过视觉-语言概念瓶颈和软决策树实现可解释分类
+3. [Context-structured Video Anomaly Detection with Large Vision-Language Models](/202607/22/2607.19077v1-context-structured-video-anomaly-detection-with-large-vision-language-models)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：医学图像异常检测中的协作特征精炼
-5. [A Non-Intrusive Traffic Analysis Framework for Authorization Risk Detection and Coordinated Response in Web Applications](/202607/21/2607.16754v1-a-non-intrusive-traffic-analysis-framework-for-authorization-risk-detection-and-coordinated-response-in-web-applications)  
-   标签：评分：6.0/10、query:xai-objdet
-   evidence：可解释的风险组件用于授权异常检测
-6. [Simple Domain Generalization for Strong Pixel-Level Image Tampering Detection in Modern VLMs](/202607/21/2607.18230v1-simple-domain-generalization-for-strong-pixel-level-image-tampering-detection-in-modern-vlms)  
-   标签：评分：6.0/10、query:xai-objdet
-   evidence：像素级图像篡改检测的域泛化方法，直接与伪造检测任务相关
+   evidence：上下文结构化视频异常检测，分解为环境、物体、时间上下文
 
 
 <div class="dpr-home-promo-card">

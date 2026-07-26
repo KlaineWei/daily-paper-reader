@@ -6,29 +6,32 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-25
-- 运行时间：2026-07-25 21:23:32 UTC
+- 最新运行日期：2026-07-26
+- 运行时间：2026-07-26 20:01:20 UTC
 - 运行状态：成功
 - 本次总论文数：3
-- 精读区：1
-- 速读区：2
+- 精读区：0
+- 速读区：3
 
 ### 今日简报（AI）
-今日精选3篇论文，聚焦多模态虚假检测与视频异常分析。推荐精读《Sparse Evidence Can Suffice: Agentic Evidence Seeking for Multimodal Video Misinformation Detection》（9.0分），提出即使证据稀疏也能高效检测视频虚假信息的方法。建议优先关注视频虚假检测领域的新思路，并可速读《Detectors Learn the Wrong Thing》了解对抗训练中的物理攻击隐患。
-- 详情：[/202607/25/README](/202607/25/README)
+1) 今日速读3篇论文聚焦驾驶员监控、弱小目标检测及视觉语言模型属性选择。  
+2) 最值得关注：时空面部动作单元检测在驾驶员监控中的应用，以及基于优先级图的红外弱小无人机检测方法。  
+3) 下步可深入探索这些技术在自动驾驶安全和边缘场景目标识别中的实际部署效果。
+- 详情：[/202607/26/README](/202607/26/README)
 
 ### 精读区论文标签
-1. [Sparse Evidence Can Suffice: Agentic Evidence Seeking for Multimodal Video Misinformation Detection](/202607/25/2607.18080v1-sparse-evidence-can-suffice-agentic-evidence-seeking-for-multimodal-video-misinformation-detection)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：多模态视频虚假信息检测中的代理证据搜索
+- 本次无精读推荐。
 
 ### 速读区论文标签
-1. [Rethinking Open-World Video Anomaly Detection: Diagnosing Definition Blindness](/202607/25/2607.20780v1-rethinking-open-world-video-anomaly-detection-diagnosing-definition-blindness)  
+1. [Spatiotemporal Facial Action Unit Detection using Twin Cycle Autoencoders for Driver Monitoring](/202607/26/2607.16760v2-spatiotemporal-facial-action-unit-detection-using-twin-cycle-autoencoders-for-driver-monitoring)  
+   标签：评分：7.0/10、query:xai-objdet
+   evidence：基于FACS的可解释面部动作单元检测
+2. [Gaze-DETR: Top-Down Guidance Through Priority Maps for Infrared Weak-Small UAV Detection with DETR](/202607/26/2607.19040v1-gaze-detr-top-down-guidance-through-priority-maps-for-infrared-weak-small-uav-detection-with-detr)  
+   标签：评分：7.0/10、query:xai-objdet
+   evidence：通过优先级图实现可解释目标检测
+3. [Attributes Should Come from Images, Not Class Names: Distribution-Conditioned Attribute Selection for Vision-Language Models](/202607/26/2607.18695v1-attributes-should-come-from-images-not-class-names-distribution-conditioned-attribute-selection-for-vision-language-models)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：重新思考开放世界视频异常检测中的定义盲点诊断
-2. [Detectors Learn the Wrong Thing: Shortcut-Resistant Adversarial Training Against Physically Realizable Attacks](/202607/25/2607.21243v1-detectors-learn-the-wrong-thing-shortcut-resistant-adversarial-training-against-physically-realizable-attacks)  
-   标签：评分：6.0/10、query:contrastive
-   evidence：实例级对比对抗训练
+   evidence：从图像分布选取属性提升可解释分类
 
 
 <div class="dpr-home-promo-card">

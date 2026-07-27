@@ -1,0 +1,840 @@
+Title: Detect Early, Escalate Rarely: Anytime Detection of AI-Generated Video from the Compressed Bitstream
+
+URL Source: https://arxiv.org/pdf/2607.19476v1
+
+Published Time: Thu, 23 Jul 2026 00:08:50 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+> arXiv:2607.19476v1 [cs.CV] 21 Jul 2026
+
+# KURBAN I N T E L L I G E N C E L A B P R E P R I N T 
+
+# Detect Early, Escalate Rarely: Anytime Detection of AI-Generated Video from the Compressed Bitstream 
+
+Streaming detection from the codec motion field, with an anytime guarantee and a priced compute frontier 
+
+Mert Onur Cakiroglu 1 Mehmet Dalkilic 1 Hasan Kurban 2,  
+
+> 1
+
+Luddy School of Informatics, Computing, and Engineering, Indiana University Bloomington, Bloomington, IN, USA  
+
+> 2
+
+College of Science and Engineering, Hamad Bin Khalifa University, Doha, Qatar Correspondence: hkurban@hbku.edu.qa 
+
+> A B S T R A C T
+
+Detectors for AI-generated video are evaluated offline. A clip is decoded to pixels and scored once, increasingly by a large vision-language model. Detection, however, is deployed online. We recast the task as streaming perception and score the motion field the codec already wrote into the bitstream. Reading that field is a parse, not a pixel-domain forward pass. Because the running aggregate is monotone, one end-calibrated threshold is anytime-valid at the data-dependent decision time. Re-calibrating at each prefix is not. Escalation is priced in closed form. A compute budget maps to a deferral window, on a frontier monotone exactly where the deferral condition holds. On matched GenVidBench the codec stage reaches full-length AUC 0.64 at five orders of magnitude less com-pute than a pixel CNN, on CPU. Its gate holds the stopping-time false-positive rate at target while the real data match its calibration, and drifts above it under distribution shift. Deferring 15% of clips lifts accuracy from 0.75 to 0.78 at 7× less compute (paired: McNemar 𝑝< 10 −6 ). The stage-1 ordering replicates on AIGVDBench. We introduce no new detector. The contribution is the re-framing, two guarantees, and the measured frontiers. Code, configurations, and evaluation splits: 
+
+https://github.com/KurbanIntelligenceLab/streamdet . 
+
+> K E Y W O R D S
+
+AI-generated video detection; streaming perception; compressed-domain video; anytime-valid inference; cascade deferral; efficient inference 
+
+1 Introduction 
+
+Text-to-Video systems such as Sora 2, Veo 3, and Kling now produce AI-generated video (AIGV) so realistic that detection has become a practical necessity. Such detection is typically benchmarked offline but deployed online; the two settings, however, reward different types of detectors. An      
+
+> Preprint •Kurban Intelligence Lab •https://github.com/KurbanIntelligenceLab/streamdet
+
+1ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab generated: sparse motion real: rich motion         
+
+> 12468
+> stream time (GOPs)
+> 0.0
+> 0.5
+> 1.0
+> running score  Mt
+> gate τcommit as generated
+> defer band ( ±uncertain)
+> generated stream ends
+> (generated clips run short)
+> real
+> uncertain
+
+Video Arrives as Compressed GOPs 
+
+> one cell per group-of-pictures, in decode order
+
+The Encoder Already Computed Motion    
+
+> a CPU parse of ∼ 10 5MACs per GOP, no pixel forward pass, gives score st
+
+One Monotone Score, Three Decisions                
+
+> take the running max, then gate once at the end
+> running max Mtper-GOP score st
+> t1t2t3t4
+> Exit early: generated
+> GOP 2 ⋅CPU only
+> Defer: GPU reasoning
+> pixel CNN / VLM ⋅∼ 15%
+> Commit: real
+> stream end ⋅CPU only
+
+1
+
+2
+
+3
+
+Figure 1 Detect early, escalate rarely. A worked example on three clips from the matched cell; every element shown is measured, not drawn. (1) Video arrives one group-of-pictures (GOP) at a time; generated clips also end early (the length asymmetry analyzed in E5). (2) The codec has already written a quantized motion field; a CPU parse reads it for about 10 5 multiply-accumulate operations (MACs), and its texture separates sparse generated from rich real motion. (3) Per-GOP scores 𝑠 𝑡 (dashed) aggregate into a running maximum 𝑀 𝑡 (solid), compared once against the end-calibrated threshold 𝜏 (Proposition 3). The generated clip exits at GOP 2; the real clip commits at stream end. A clip finishing in the uncertain band escalates to a GPU stage (about 15% of inputs). 
+
+offline detector receives the entire clip at once, decodes it into pixels, and produces a single score. Recent methods increasingly use vision-language models (VLMs) to reason over complete clips [ 1– 5 ]. In contrast, deployment video arrives sequentially, and the detector must make a decision within a latency budget. At deployment scale, running a multi-billion-parameter model on every clip is computationally impractical. Recent benchmarks also show that strong multimodal models perform near chance on challenging, in-the-wild AIGV [ 6 , 7], making per-clip scoring with such models not only expensive but also, more importantly, unreliable. Several neighboring lines of work address parts of this problem, but none combines streaming operation, compressed-domain analysis, and compute-adaptive detection for fully-synthetic AIGV. 
+
+2ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab 
+
+Streaming perception folds latency into accuracy, but for object detection and action recognition, not generated video [ 8 , 9 ]. Real-time deepfake detectors operate online but analyze decoded facial imagery [ 10 , 11 ], while motion- and frequency-based methods remain offline and face-specific [12 , 13 ], including one that reads H.264 motion-vector (MV) fields [ 14 ]. Detectors for fully-synthetic AIGV decode pixels and run a heavy per-clip forward pass, forensic and VLM-reasoning alike [1 , 15 – 17 ]. The adaptive-computation toolkit for spending compute per input is mature [ 18 – 21 ], and concurrent work brings it to AIGV. CoCoDetect gates a 3D convolutional neural network (CNN) and escalates uncertain clips to a multimodal large language model (MLLM), but current AIGV systems remain offline and pixel-domain [22]. The compressed bitstream already contains a signal suitable for streaming detection. For each group of pictures (GOP), the codec writes a quantized motion field into the stream. Extracting and scoring this field requires only lightweight CPU-side processing and no pixel-domain neural-network forward pass [ 23 ]. In addition, the signal is available at every prefix, allowing the detector to act before the complete clip has arrived. Pixel and VLM detectors must instead decode frames and run a forward pass, so their natural unit is a whole clip rather than an arriving chunk, and their resizing and re-encoding can weaken the high-frequency forensic cues some of them rely on [17 ]. We aggregate the per-GOP scores monotonically and apply a single end-calibrated threshold, yielding false-positive control at the detector’s data-dependent stopping time. Clips that remain near the decision boundary are deferred to a heavier pixel or VLM detector (Figure 1). On matched GenVidBench, the codec stage reaches AUC 0.80 from the first GOP alone, at five orders of magni-tude less compute than a pixel detector. Deferring 15% of clips raises accuracy from 0.75 to 0.78 
+
+while using seven times less compute than pixel-domain scoring on every clip. We make three contributions. Streaming AIGV detection: a problem, a protocol, and metrics. We recast detection as streaming perception and define anytime AUC (area under the ROC curve) over the observed prefix, a latency-budgeted streaming AUC, and recall at a fixed false-positive rate versus prefix, over public benchmarks with a matched harness (Sections 3 and 6). An anytime compressed-domain front-end with a temporal guarantee. We aggregate GOP-level codec scores into a running maximum gated by one threshold. Monotonicity buys the guarantee (Propositions 2 and 3). A threshold calibrated once, at stream end, controls the false-positive rate at the gate’s own firing time, which the data choose (under the calibration null). Per-prefix recalibration does not (Sections 4 and 5). Reasoning on demand, with a priced frontier. We escalate only the clips the gate calls uncertain, to an expensive pixel or VLM detector. Expected compute then has a closed form, so a budget maps to a deferral window and one point on the compute-accuracy frontier. The frontier is monotone only where the deferral condition holds. Stage 2 must be at least as accurate as stage 1 there (Proposition 4, Corollary 5; Section 6 measures both frontiers). 
+
+2 Related Work  
+
+> AI-generated video detection.
+
+Non-reasoning detectors span frequency and forensic features [ 15 ], representation-geometry cues [ 24 ], training-free temporal statistics [ 16 ], and spectral-semantic fusion [ 25 ]. Large benchmarks evaluate them [ 26 – 28 ]. The most active recent thread couples detection with explanation through VLMs and reinforcement learning [ 1 –5 ]. These are accurate and  
+
+> 3ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+interpretable but heavy and offline, remaining clip-level even at native resolution [ 17 ]. Reliability is the other issue. Off-the-shelf multimodal models are often near-random on hard or in-the-wild AIGV [ 6 , 7 ]. We do not propose another such detector. We use one as an on-demand escalation stage and ask how rarely it must be called. Our front-end faces one known threat. A recent audit shows that motion-cue detectors can exploit dataset motion biases (“generated videos move less”) rather than generation artifacts [ 29 ]. Our stage 1 reads codec motion vectors, so we adopt the concern directly and evaluate under motion-bias control (E7 in Section 6). We also report the identity floor the matched harness gets from scoring real clips against real ones [23].  
+
+> Streaming perception.
+
+Streaming perception jointly evaluates latency and accuracy for online object detection [ 8 ], and online action recognition exits early on edge devices [ 9 ]. Streaming VLM inference is emerging [ 30 ]. We adopt this setting for detection. A decision is a function of the observed prefix and a latency budget, not of the whole clip.  
+
+> Real-time and prior-cue deepfake detection.
+
+The closest detectors come from the deepfake (face-manipulation) literature. Real-time methods authenticate faces in calls through active probing [ 10 ]or spatial-frequency artifacts [ 11 ]. These run online but read faces from decoded pixels. Offline methods use optical flow [ 12 ] or compression-aware frequency cues [ 13 ], at the clip level, again for faces. The nearest prior reads the same H.264 motion vectors as our stage 1, confirming that they carry a cheap temporal cue [ 14 ]. But it crops faces from decoded RGB, classifies face-swap clips offline, and raises streaming only as a prospect. We differ on every axis at once: fully-synthetic AIGV, the bitstream as an always-on streaming front end, and an anytime, compute-adaptive decision with guarantees. Table 1 compares the closest work on four axes: online operation, pixel inference, adaptive compute, and cost per clip.  
+
+> Adaptive computation.
+
+Spending computation per input is classical, from boosted cascades [ 18 ]to early-exit networks [ 19 ]. It continues in window-based early-exit ensembles that route only near-boundary inputs deeper [ 20 ], and in confidence-based cascade deferral with accuracy conditions [ 21 ]. The current test-time-compute literature uses the same idea. An expensive model is invoked only when a cheap model is uncertain [ 31 , 32 ]. Concurrent work brings this pattern to AIGV. CoCoDetect gates a pixel-domain 3D CNN and routes uncertain clips to an MLLM [ 22 ]. But it is offline and clip-level, decodes every frame, and offers no anytime or budget guarantees. Our cascade applies these established methods. The novelty is the streaming problem, the bitstream-native anytime stage, and the resulting frontiers and guarantees.  
+
+> Compressed-domain video and provenance.
+
+Beyond detection, codec signals drive object track-ing without RGB decoding [ 33 ] and efficient streaming VLM inference [ 30 ]. Our own VidAu-dit toolkit uses them as an offline forensic substrate [ 23 ]. None detect generated video as it streams. Source-side provenance labels [ 34 – 36 ] are complementary, but require source cooperation. Transcoding can strip or degrade them, so passive detection remains necessary. The codec signal we read is produced by that same re-compression (discussion in Sec. H).  
+
+> 4ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Approach online no pixel inference adaptive compute cost / clip VLM-reasoning detector [1, 2] ✗ ✗ ✗ high Forensic / spectral [15, 16] ✗ ✗ ✗ medium Offline benchmarks [26, 27] ✗ ✗ ✗ n/a Real-time deepfake, face [10, 11] ✓ ✗ ✗ medium Flow/MV/freq. deepfake [12–14] ✗ ✗ ✗ medium Streaming perception [8] ✓ ✗ partial medium Online action recognition [9] ✓ ✗ early-exit low Gated pixel cascade [22] ✗ ✗ defer medium 
+
+This paper ✓ ✓∗ defer low + 
+
+> Table 1
+
+Positioning against the surrounding lines of work ( ✓/✗=has/lacks; cost low/medium/high). “No pixel inference”: the always-on stage scores the codec motion field, not decoded frames. Obtaining the field is a parse by design. ∗the always-on stage 1. +the reference implementation’s caveat is under Cost. 
+
+3 Streaming AIGV Detection  
+
+> Stream model.
+
+A video arrives as an ordered sequence of chunks 𝑔 1, 𝑔 2, … , 𝑔 𝑁 . At prefix length 
+
+𝑡 the detector has observed 𝑔 1∶ 𝑡 and must be able to output a decision 𝐷 𝑡 ∈ { real , generated , wait }
+
+from it alone. Each chunk carries its arrival/processing latency, so a decision at prefix 𝑡 has a well-defined latency 𝓁 𝑡 . The chunk is the arrival and decision unit, a fixed window of 16 frames by default. Its size is a design knob we ablate (E7). Under the harness’s canonical H.264 re-encode (closed GOP of 16 ; Section 6) a chunk is one encoder GOP, so the two terms are interchangeable below. In the wild a clip’s GOP structure can be far coarser, so the detector windows arriving frames itself (detail in the appendix).  
+
+> Compressed-domain features.
+
+The encoder has already summarized each GOP’s motion: a quan-tized motion-vector field, written into the bitstream. For each GOP we read that field and condense it into a fixed feature 𝜙 𝑡 ∈ ℝ13 , four global motion statistics and nine spectral dimensions, following our VidAudit toolkit [ 23 ]. The scorer therefore runs no pixel-domain forward pass (the implemen-tation caveat is under Cost). A base scorer 𝑓 𝑅 maps a feature (or the running aggregate) to a score 
+
+𝑠 𝑡 ∈ ℝ, higher meaning “generated.” Streaming evaluation needs metrics indexed by time. Definition 1 makes the prefix and the decision latency explicit. 
+
+Definition 1 Anytime accuracy and streaming AUC . Let 𝑀 𝑡 be the detector’s running score after prefix 𝑡 . The anytime AUC at prefix 𝑡 , AUC( 𝑡 ), is the ROC-AUC of 𝑀 𝑡 over the dataset. For a latency budget 𝐵 (a maximum admissible prefix or wall-clock), the latency-budgeted streaming AUC 
+
+is sAUC( 𝐵 ) = AUC( 𝑡 𝐵 ) where 𝑡 𝐵 is the largest prefix reachable within 𝐵 ; the full anytime curve is 
+
+{( 𝓁 𝑡 , AUC( 𝑡 ))} 𝑡 . We also define recall at a fixed false-positive rate as a function of prefix, and the decision-latency distribution under a confidence gate. Computed on public benchmarks with a matched harness, these metrics are the artifact we   
+
+> 5ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+> Algorithm 1
+
+Streaming, compute-adaptive AIGV detection (one clip; 𝜏 and 𝑤 are set once, offline).  
+
+> Input:
+
+GOP stream 𝑔 1, … , 𝑔 𝑁 ; base scorer 𝑓 𝑅 ; decision threshold 𝜏 (calibrated per Proposition 3); deferral width 𝑤 (band 𝑊 = [ 𝜏 − 𝑤, 𝜏 )); stage-2 detector ℎ; latency budget 𝐵  
+
+> Output:
+
+decision and decision latency  
+
+> 1
+
+𝑀 0 ← −∞  
+
+> 2
+
+for 𝑡 = 1 , 2, … , 𝑁 while latency 𝓁 𝑡 ≤ 𝐵 do  
+
+> 3
+
+𝜙 𝑡 ← ParseMV( 𝑔 𝑡 ) ⊳ no pixel-domain forward pass  
+
+> 4
+
+𝑠 𝑡 ← 𝑓 𝑅 (𝜙 𝑡 ); 𝑀 𝑡 ← max( 𝑀 𝑡 −1 , 𝑠 𝑡 ) 
+
+> 5
+
+if 𝑀 𝑡 ≥ 𝜏 then  
+
+> 6
+
+return (generated , 𝓁 𝑡 ) ⊳ confident early exit  
+
+> 7
+
+end if  
+
+> 8
+
+end for  
+
+> 9
+
+// decision point reached without crossing 𝜏  
+
+> 10
+
+if 𝑀 𝑡 < 𝜏 − 𝑤 then  
+
+> 11
+
+return (real , 𝓁 𝑡 ) ⊳ confident  
+
+> 12
+
+else  
+
+> 13
+
+𝑦 ← ℎ(Decode( 𝑔 1∶ 𝑡 )) ⊳ uncertain ( 𝑀 𝑡 ∈ 𝑊 ): stage 2 only here  
+
+> 14
+
+return (𝑦 , 𝓁 𝑡 ) 
+
+> 15
+
+end if 
+
+release. Any detector can be plotted on the same axes; an offline one enters as a single point at the full prefix. 
+
+4 Method  
+
+> Anytime front-end.
+
+The always-on stage maintains a running aggregate of the per-GOP codec scores. We use a sequential disjunctive aggregate 𝑀 𝑡 = max 𝑖 ≤𝑡 𝑠 𝑖 , and a single decision threshold 
+
+𝜏 calibrated to the final-prefix score distribution on real clips (the calibration null). A confidence gate raises “generated” as soon as 𝑀 𝑡 ≥ 𝜏 . By Proposition 3 this one threshold controls the false-positive rate at every prefix and at the data-dependent decision time. If the stream ends or the latency budget expires without crossing 𝜏 , we ask how close 𝑀 𝑡 came to 𝜏 . We fix a deferral width 
+
+𝑤 . The clip is “real” when 𝑀 𝑡 < 𝜏 − 𝑤 , and uncertain when 𝑀 𝑡 ∈ [ 𝜏 − 𝑤, 𝜏 ), with 𝑡 the decision point.  
+
+> Reasoning on demand.
+
+A clip whose final aggregate lands in the one-sided band 𝑊 = [ 𝜏 − 𝑤, 𝜏 )
+
+is escalated to an expensive stage-2 detector ℎ applied to the observed prefix. By default ℎ is a lightweight pixel CNN, optionally a small VLM reasoning detector [ 1 –3 ]. The width 𝑤 is the single knob setting the deferral rate. The final decision is stage 2’s verdict on deferred clips and stage 1’s elsewhere. Section 5 analyzes this cascade with a generic score 𝑠 and window 𝑊 . Here 𝑠 is the aggregate 𝑀 at the decision point and 𝑊 is this band. Sweeping 𝑤 is thus exactly the budget sweep of Corollary 5. The full procedure is Algorithm 1.  
+
+> Cost.
+
+Stage-1 scoring costs about 10 5 MACs per GOP on CPU, five orders of magnitude below a pixel-CNN forward pass, with no GPU. The only GPU cost is stage 2, on the deferred fraction.  
+
+> 6ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+One caveat concerns wall-clock time. Our reference implementation reads the field through the decoder’s side-data export, and so pays a frame decode. A purpose-built parser avoids that decode, and a platform already performs the decode anyway. Either way, the compute the codec stage adds is the 10 5-MAC parse, the figure we report (full accounting in the appendix). 
+
+5 Analysis 
+
+We fix a perturbation-free streaming setting and analyze the two design choices. The aggregator governs when the detector may speak, and the deferral rule governs what speaking costs. Proof ideas are given here, and the two longer proofs are in the appendix. The first result prices waiting. 
+
+Proposition 2 Anytime monotonicity and its false-positive cost . Under the disjunctive ag-gregate 𝑀 𝑡 = max 𝑖 ≤𝑡 𝑠 𝑖 with a fixed threshold 𝜏 , for every clip the events {𝑀 𝑡 ≥ 𝜏 } are nested (non-decreasing) in 𝑡 . Consequently the population true-positive rate TPR 𝜏 (𝑡 ) = Pr gen [𝑀 𝑡 ≥ 𝜏 ] and false-positive rate FPR 𝜏 (𝑡 ) = Pr real [𝑀 𝑡 ≥ 𝜏 ] are both non-decreasing in 𝑡 , where for a clip of length 
+
+𝑁 < 𝑡 we set 𝑀 𝑡 ∶= 𝑀 𝑁 (the maximum freezes at stream end), so the rates are over the full population at every 𝑡 .
+
+Proof. 𝑀 𝑡 = max( 𝑀 𝑡 −1 , 𝑠 𝑡 ) ≥ 𝑀 𝑡 −1 , so 𝑀 𝑡 is non-decreasing in 𝑡 pointwise; hence {𝑀 𝑡 −1 ≥ 𝜏 } ⊆
+
+{𝑀 𝑡 ≥ 𝜏 } as events. Taking probabilities under the generated and real distributions gives the two monotonicities. Proposition 2 makes the latency-accuracy trade-off precise. Observing more can only raise recall and the false-positive rate, because a disjunctive rule accumulates chances to fire. Waiting can cost false alarms. The false-positive side needs more care. A streaming detector emits its verdict at a data-dependent stopping time , the first prefix at which the gate is confident. A fixed-prefix guarantee need not survive that stopping rule. The sequential-analysis literature calls this the optional-stopping problem and answers it with anytime-valid inference [ 37 – 40 ]: error control at every prefix and under any stopping rule. For our monotone aggregate, one end-calibrated threshold supplies that control at a target false-positive level 𝛼 . Per-prefix recalibration removes it. 
+
+Proposition 3 Anytime-valid false-positive control . Let 𝑃 0 be the real (null) distribution, let 
+
+𝑀 𝑡 = max 𝑖 ≤𝑡 𝑠 𝑖 , and let the detector raise “generated” at the alarm time 𝜎 = inf{ 𝑡 ≤ 𝑁 ∶ 𝑀 𝑡 ≥ 𝜏 }
+
+(and “real” if no such 𝑡 ). (i) A single end-calibrated threshold is anytime-valid. Calibrate the threshold 𝜏 so that the null tail at the final prefix is controlled: 𝑃 0(𝑀 𝑁 ≥ 𝜏 ) ≤ 𝛼 . Such a 𝜏 exists: the upper (1 − 𝛼 )-quantile of 𝑀 𝑁 when 𝑀 𝑁 has no atom there (then with equality), and in general any 𝜏 above it. Then the false-positive rate at the data-dependent alarm time equals the final-prefix rate and is controlled, 
+
+𝑃 0(𝜎 ≤ 𝑁 ) = 𝑃 0(𝑀 𝑁 ≥ 𝜏 ) ≤ 𝛼 , and simultaneously 𝑃 0(𝑀 𝑡 ≥ 𝜏 ) ≤ 𝛼 for every prefix 𝑡 ≤ 𝑁 .(ii) Per-prefix recalibration is not. Choosing 𝜏 𝑡 so that 𝑃 0(𝑀 𝑡 ≥ 𝜏 𝑡 ) = 𝛼 at each prefix (an atomless null, for concreteness) controls the per-prefix rate but not the alarm-time rate: 𝑃 0(∃ 𝑡 ≤ 𝑁 ∶ 𝑀 𝑡 ≥
+
+𝜏 𝑡 ) ≥ 𝛼 , with strict inequality iff an early crossing that the final test misses has positive probability, 
+
+𝑃 0(∃ 𝑡 < 𝑁 ∶ 𝑀 𝑡 ≥ 𝜏 𝑡 , 𝑀 𝑁 < 𝜏 𝑁 ) > 0: the multiple-looks inflation.  
+
+> 7ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Proof idea. Monotonicity collapses the union over prefixes into a single event, {∃ 𝑢 ≤ 𝑡 ∶ 𝑀 𝑢 ≥
+
+𝜏 } = { 𝑀 𝑡 ≥ 𝜏 }. The alarm therefore fires at all iff it fires at the end. Part (i) is then the calibration of 
+
+𝜏 read back. For (ii), the per-prefix thresholds 𝜏 𝑡 are non-decreasing (a quantile of the stochastically increasing 𝑀 𝑡 ). So 𝑀 can cross an early boundary yet finish below the higher final one. That is exactly the mass the union carries beyond 𝛼 . Sec. A proves both parts, the second via a lemma on the monotonicity of 𝑀 𝑡 .Proposition 3 thus guarantees level 𝛼 at the detector’s actual operating point, the stopping time, not merely at a fixed prefix. With 𝜏 so calibrated, Definition 1’s anytime curve traces recall against latency at a controlled false-alarm level. The deferral rule determines what escalation costs and when it is worth paying. 
+
+Proposition 4 Cascade compute and accuracy . Let stage 1 produce a score 𝑠 with per-GOP compute 𝐶 1, and let stage 2 have compute 𝐶 2 and be invoked exactly when 𝑠 ∈ 𝑊 , both at constant unit costs; the cascade decides by stage 2 on {𝑠 ∈ 𝑊 } and by stage 1’s deterministic rule elsewhere. Write err 𝐴 𝑖 for stage 𝑖 ’s error mass on a region 𝐴 : the probability of being wrong and in 𝐴 . Let ̄ 𝑡 be the expected number of GOPs processed, and err 1 stage 1’s error if it decided everywhere. The expected per-clip compute and the cascade error are then 
+
+𝔼 [𝐶 ] = ̄ 𝑡 𝐶 1 + Pr( 𝑠 ∈ 𝑊 ) 𝐶 2,
+
+err casc = err 1 − (err 𝑊  
+
+> 1
+
+− err 𝑊  
+
+> 2
+
+).
+
+The bracketed term is the deferral gain Δ( 𝑊 ) ∶= err 𝑊  
+
+> 1
+
+− err 𝑊  
+
+> 2
+
+, so the cascade differs from stage 1 by exactly that gain. Hence err casc ≤ err 1 iff err 𝑊  
+
+> 2
+
+≤ err 𝑊  
+
+> 1
+
+, the confidence-deferral condition, and strictly when stage 2 is strictly better on the deferred set. Proof idea. Compute is linear over the GOPs processed and the deferral event. The cascade is stage 1 off 𝑊 and stage 2 on 𝑊 , so subtracting the identity err 1 = err ̄ 𝑊  
+
+> 1
+
++ err 𝑊  
+
+> 1
+
+, with ̄ 𝑊 the complement of 𝑊 , leaves exactly the deferral gain. The appendix carries this out. 
+
+Corollary 5 Budgeted compute-accuracy frontier . For an expected-compute budget 𝔼 [𝐶 ] = 𝑏 
+
+with ̄ 𝑡 𝐶 1 ≤ 𝑏 ≤̄ 𝑡 𝐶 1 + Pr( 𝑠 < 𝜏 ) 𝐶 2 (gate-fired clips are never deferred), a width 𝑤 with deferral probability Pr( 𝑠 ∈ 𝑊 ) = ( 𝑏 −̄ 𝑡 𝐶 1)/ 𝐶 2 meets the budget exactly when the score law is atomless below 
+
+𝜏 ; the sweep leaves ̄ 𝑡 and err 1 unchanged, since deferral is decided only at the decision point. The achieved operating point is 
+
+(𝔼 [𝐶 ], acc ) = (̄𝑡 𝐶 1 + Pr( 𝑠 ∈𝑊 ) 𝐶 2, 1 − err 1 + Δ( 𝑊 )),
+
+with Δ( 𝑊 ) = err 𝑊  
+
+> 1
+
+− err 𝑊  
+
+> 2
+
+the deferral gain of Proposition 4. Sweeping the deferral width 𝑤 (hence 
+
+𝑊 = [ 𝜏 − 𝑤, 𝜏 )) traces this frontier. It is monotone, accuracy non-decreasing in the budget, iff every marginal region added as 𝑊 widens satisfies the deferral condition ( err 2 ≤ err 1 there). Where the condition fails, the frontier bends back, because escalation is being spent where stage 1 was already correct. 
+
+The condition in Proposition 4 is the standard confidence-deferral condition [ 21 ]. Corollary 5’s monotonicity is its marginal form, since each widening adds exactly the deferral gain on the newly  
+
+> 8ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+deferred region (proof in Sec. A). Nothing forces stage 2 to be better on the deferred set, so we test the condition directly (E3, E4). Together the two guarantees turn “how early can we decide” into a calibrated anytime curve. They turn “how rarely must we call the expensive detector” into a budgeted compute-accuracy frontier. 
+
+6 Experiments 
+
+This section specifies the protocol and reports the runs. We run the cheap sanity control first (E1), then the headline latency-accuracy frontier (E2), the compute-accuracy frontier and deferral guarantee (E3–E4), earliness and stopping-time control (E5), a cross-dataset replication (E6), and ablations (E7).  
+
+> Data, harness, and statistics.
+
+We use the matched GenVidBench subset as the comparison set, a “cell” of ∼27 k clips matched between real and generated sources. AIGVDBench serves for cross-dataset replication [ 26 , 27 ], with the harness, splits, and seeds of our VidAudit toolkit [ 23 ]. Clips enter through that harness’s canonical H.264 re-encode (closed GOP of 16 ), which normalizes encoder fingerprints. E6 deliberately departs from it. We simulate streaming by presenting each clip GOP-by-GOP in decode order. The two stages are those of Section 4. Stage 1 is the CPU-only codec-MV detector. Stage 2 (default) is a lightweight pixel model (CLIP ViT-B/32) [ 41 ]. A small VLM (Ivy-xDetector, Qwen2.5-VL-3B [ 3]) is the escalation upgrade (E4). A clip whose chunks are all low-motion receives a floor score and abstains. It is not dropped, so the evaluated population stays the audited cell. The workload fits one 12 GB consumer GPU (hardware: Sec. J). Principal numbers are leave-one-generator-out means over the seven held-out generators (seed 42), with percentile-bootstrap 95% confidence intervals (CIs). Decision-accuracy points carry clip-level bootstrap CIs (10 ,000 resamples within folds). Every deferral gain carries a paired test (paired bootstrap and exact McNemar). Multi-seed hardening is left to future work. Every number except the VLM and ReStraV MAC estimates comes from the released code path. That path also checks Propositions 2–4 and Corollary 5 by assertion on synthetic data. Sec. D tabulates per-generator spread.  
+
+> Baselines.
+
+We compare four systems: (a) the codec stage-1 alone (anytime); (b) a pixel CNN scored on every processed chunk; (c) a VLM detector scored once per clip, the high-cost reasoning baseline and an upper bound on cost; and (d) clip-level offline versions of (a)–(c) for reference. Each is reported on the metrics of Definition 1, plus expected compute (MACs and ms) and the deferral rate. ReStraV [ 24 ], re-trained under the identical protocol, anchors the accuracy-forward end (Table 2; Figure 3). Real-time face-deepfake detectors [ 10 , 11 ] are complementary, not comparison baselines (appendix). A second current external anchor makes the same point. VideoVeritas (Qwen3-VL-8B, zero-shot, run under the audited protocol) scores the balanced 2,127 -clip subsample (E4) at balanced accuracy 0.82 [0 .80 , 0.83] and AUC 0.83 [0 .82 , 0.85] , at ∼10 13 MACs per clip. Its per-generator spread is bimodal. It is near ceiling on cogvideo, pika and vc2 ( 0.92 –0.95 ) but below chance on svd, musev and ms ( 0.15 –0.45 ), where it confidently calls generated clips real. Heavy reasoning detectors are therefore accurate on average and unreliable exactly where detection is hardest, which is the regime the cascade rations them for. 
+
+E1 (positive control). The harness must reproduce a known answer: the stage-1 detector’s previ-ously reported offline leave-one-generator-out AUC of 0.832 [ 23 ]. It does, exactly, on the released                         
+
+> 9ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab 14812 16
+> prefix observed (GOPs)
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> anytime AUC (t)
+> DECIDE A NYTIME
+> codec · length-matched cell · flat
+> declines (length asymmetry)
+> SIGNAL A T G OP 1
+> codec · CPU
+
+Accuracy Arrives Fast    
+
+> pixel CNN · GPU codec · matched cell codec · length-matched
+> Figure 2
+
+The latency frontier (matched 27k cell, leave-one-generator-out; E2, E5). The pixel CNN (orange) leads throughout, but the codec stage (blue) is informative from the first GOP ( sAUC(1) = 0 .80 ,CPU-only). Its decline reflects the cell’s length asymmetry. On a length-matched cell the curve is flat (dotted; band), so the detector can decide at any prefix. 
+
+feature table. Re-extracting every clip’s features with our own pipeline gives 0.830 , and the real-vs-real identity floor sits at 0.63 , where 0.5 would be ideal. That floor frames E2’s full-length 0.64 .Early prefixes clear it ( sAUC(1) = 0 .80 ). Streaming results are thus not a harness artifact. 
+
+E2 (latency-accuracy frontier). The pixel CNN is more accurate. Its AUC@ 𝑁 is 0.76 against the codec stage’s 0.64 , and leads at every prefix (Figure 2, Table 2). The codec stage answers on the other two axes. It is already informative after the first GOP ( sAUC(1) 0 .80 vs 0.86 ). It costs five orders of magnitude less compute ( 10 5 vs 1.8×10 10 MACs per chunk) and does not need any GPU. Its added streaming cost is the ≈ 33 ms CPU parse-and-score. This is the cheap, always-on front end. 
+
+E3 (compute-accuracy frontier + deferral guarantee). Sweeping the deferral width 𝑤 traces the measured frontier of Figure 3. Escalating 15% of clips to the pixel stage lifts decision accuracy from 
+
+0.75 (codec alone) to 0.78 at 2.6×10 9 expected MACs. That is 7× below scoring every chunk with the pixel CNN. Under clip-level pairing the gain is +0 .027 ([+0 .016 , +0 .038] ; McNemar 𝑝 = 4×10 −7 , 60 
+
+vs 130 flips). The compute accounting is exact. The measured MACs match Proposition 4’s closed form to floating point. The frontier itself is monotone only up to the knee and then bends back to an accuracy of 0.69 at 89% deferral. As the window widens, the cascade escalates clips where stage 1 was already correct, and the deferral condition fails in more than half of them. That is the conditional monotonicity of Corollary 5, observed with its negative regime. The knee is where we operate (the 15% row of Table 2). 
+
+E4 (reasoning on demand). We compare the two escalation choices, a pixel CNN and a small VLM reasoning detector (Ivy-xDetector, Qwen2.5-VL-3B, run zero-shot), on a balanced 2,127 -clip subsample. Both arms see the identical deferred set at a given budget, isolating the stage-2 choice. As a standalone, the VLM is the most accurate detector on this subsample. Its AUC is 0.89 [0 .87 , 0.90] 
+
+against the codec stage’s 0.72 on the same clips. It costs ∼3 ,800× the knee’s expected compute           
+
+> 10 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab 10 510 710 910 11
+> expected compute per chunk (MACs, log scale)
+> 0.70
+> 0.80
+> 0.90
+> decision accuracy
+> pixel-everywhere ⋅0.76 ⋅GPU
+> codec only
+> (CPU, 10 5MACs)
+> +0.02 vs pixel
+
+Spend Compute Only Where It Pays                             
+
+> ∼10 13
+> COMPUTE P AYS O FFDIMINISHING R ETURNS
+> OUR OPERATING POINT
+
+0.78 
+
+> accuracy
+
+15% 
+
+> to GPU
+
+7×  
+
+> vs pixel
+> ReStraV ⋅OFFLINE
+
+0.89 
+
+> accuracy
+
+54 ×
+
+> vs knee
+
+Figure 3 The compute frontier (same cell; E3). The cascade frontier peaks at the knee ( 0.78 at 15% 
+
+deferral). That is above pixel-everywhere 0.76 , at 7× less compute. The frontier then bends back. ReStraV (offline) reaches 0.89 at ∼54× the knee’s per-chunk compute. The VLM sits off-scale ( ∼ 10 13 MACs per clip; 
+
+0.80 on the subsample). 
+
+(∼10 13 MACs, 16 s per clip). That cost is what the cascade rations. Where the choice matters is the deferred set. On the near-boundary clips the codec stage is at chance ( 0.50 balanced accuracy, by construction). The VLM classifies them far better than the pixel CNN, 0.80 against 0.61 . The advantage holds at every budget measured. Escalating 24% of clips reaches 0.72 balanced accuracy with the VLM against 0.65 with the pixel CNN ( +0 .06 [+0 .04 , +0 .09] , McNemar 𝑝 = 1×10 −11 ). At 
+
+55% , escalation reaches 0.79 against 0.68 (+0 .11 [+0 .07 , +0 .15] , 𝑝 = 2×10 −19 ). The caveat is the deferral budget. The codec stage is weak at the strict 𝛼 =0 .05 gate on this subsample ( 0.63 balanced accuracy). The cascade must therefore escalate a quarter of clips to gain 
+
++0 .09 over stage 1. It nears the VLM’s standalone 0.80 only at 55% deferral ( 0.79 ). There it buys compute savings, not accuracy, over running the VLM everywhere. Reasoning on demand is thus worth its cost in the regime the frontier makes explicit, not at the “few percent” a stronger stage 1 would allow. 
+
+E5 (how early can we decide). The guarantees hold where they should. The end-calibrated threshold keeps the stopping-time false-positive rate at 0.039 for target 𝛼 =0 .05 , and Proposition 2’s monotonicity holds for every clip. However, in the matched cell the anytime curve declines with prefix (Figure 2). The cause is the cell, not the signal. Generated clips are shorter, so their maxima freeze early. The real clips’ maxima keep accruing false-alarm opportunities (Proposition 2 under unequal lengths). On a long-form cell whose real and generated clips are matched in length, the curve is flat ( 0.68 across all prefixes). The stopping-time FPR stays controlled at 0.041 . There the first GOP is as informative as the whole clip, so waiting gains nothing. 
+
+E6 (cross-dataset). We repeat the protocol on AIGVDBench (seven generators plus a real source,  
+
+> 11 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+System population AUC@ 𝑁 sAUC (1) decision acc. GPU share compute (MACs) Codec stage-1 (anytime) 27k cell 0.64 0.80 0.75 [0 .73 , 0.77] 0% 10 5
+
+Pixel CNN / chunk 27k cell 0.76 0.86 0.76 [0 .75 , 0.77] 100% 1.8×10 10 
+
+ReStraV (offline, full clip) 27k cell 0.95 n/a 0.89 [0 .89 , 0.90] 100% ∼1 .4×10 11 
+
+Ours (defer to pixel) 
+
+27k cell n/a n/a 𝟎 .𝟕𝟖 † [0 .76 , 0.79] 𝟏𝟓 % 2.6×10 9
+
+Codec stage-1 subsample 0.72 0.88 0.63 ‡ [0 .60 , 0.66] 0% 10 5
+
+VLM / clip (cost upper bnd) subsample 0.89 n/a 0.80 ‡ [0 .78 , 0.82] 100% ∼10 13 
+
+VideoVeritas (zero-shot) subsample 0.83 n/a 0.82 ‡ [0 .80 , 0.83] 100% ∼10 13 
+
+Ours (defer to VLM) 
+
+subsample n/a n/a 𝟎 .𝟕𝟐 †‡ [0 .68 , 0.75] 𝟐𝟒 % 2.4×10 12  
+
+> Table 2
+
+Measured operating points (E2–E4) by population: the matched 27k cell (upper) and the balanced 
+
+2,127 -clip subsample where the VLM was affordable (lower). Blocks are not comparable (see text). AUC@ 𝑁 :running-max AUC at each clip’s own full length. Figure 2 stops at 16 GOPs. Its endpoints 0.674 /0.782 
+
+(codec/pixel) sit consistently above these. Decision acc.: accuracy of the emitted decision. Brackets: clip-level 95% bootstrap CIs. GPU share: fraction of clips reaching a GPU stage (cascade rows: the deferral rate). The pixel cascade is a point of Figure 3. Compute: expected MACs per scored chunk (per clip for the VLM, ReStraV, and defer-to-VLM rows; wall-clock in the appendix). n/a: a cascade emits a decision, not a score, and the VLM produces one score per clip. †accuracy at the 𝛼 =0 .05 gate. ‡balanced accuracy; the VLM is zero-shot (AUC [0 .87 , 0.90] ). VLM/ReStraV MACs are order-of-magnitude estimates, the only numbers not from the released code path. 
+
+3,159 clips). Leave-one-generator-out AUC is 0.62 (bootstrap [0 .58 , 0.65] ), within the spread of GenVidBench’s 0.64 . The anytime curve keeps the same early-informative, prefix-declining shape. One difference strengthens the result: motion vectors here come from each clip’s source codec, not our re-encode, so the signal survives a change of encoder as well. The gate does not transfer unchanged. Its stopping-time FPR rises to 0.068 under this shift (E7). The trend replicates, though one cross-dataset cell is limited evidence of external validity. 
+
+E7 (ablations). Five ablations follow (tables in the appendix). 
+
+The gate behaves as Proposition 3 predicts where its calibration null matches the test null (stopping-time FPR 0.039 –0.041 at 𝛼 =0 .05 ). It drifts above target when that null shifts ( 0.068 cross-dataset). Naive per-prefix recalibration matches it on the matched cell, but inflates the stopping-time rate by 1.7–2.8× once the null shifts (Appendix E7-i). The end-calibrated threshold remains the better construction even where the guarantee is lost. The chunk size is a granularity knob. Eight frames is too short for the spectral features, while 16 and 32 tie at the full prefix. 
+
+The feature set behaves counterintuitively. The four global motion statistics generalize better across generators than the full 13-d feature. The nine spectral dimensions alone collapse out of  
+
+> 12 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+distribution. The robust signal is thus coarse motion statistics, not fine spectral structure. The aggregator costs accuracy. The running max is the weakest offline aggregate we measured (mean-pooling the same codec scores reaches 0.885 ). But it is the only monotone one, and the guarantees require monotonicity (Appendix E7-v). 
+
+The motion-bias control (the shortcut critique of [ 29 ]) runs on all seven generators. Where stage 1 separates real from generated, the signal survives matching on motion magnitude and holds within motion quantiles (cogvideo: raw 0.90 , matched 0.91 , within-bin 0.81 ). This is not the “moves less” artifact. On the hard generators stage 1 is at or near chance (raw 0.43 –0.55 ), so the control cannot inform. A residual shortcut cannot be excluded there. 
+
+Reading the table. Rows of Table 2 are comparable only within a block. The subsample is easier (codec 0.72 against 0.64 on the full cell), so comparing across blocks would overstate the VLM. The escalation comparison that matters is inside the lower block. Deferring to the VLM reaches 0.79 
+
+against 0.68 for the pixel CNN at the matched 55% budget. 
+
+7 Limitations 
+
+The stream model assumes bitstream access and a codec whose motion field is informative. Transcoding is a calibration step, not free. Proposition 3’s control rests on one end threshold calibrated on a held-out real sample. E7 shows it drifts once the test null departs from that sample. Proposition 4 is conditional on stage 2 being at least as accurate on the deferred set, which we test rather than assume. Motion-cue detectors can ride dataset motion biases [ 29 ], so we report the E7 control and leave bias-robust features as open work. Our scope is fully-synthetic AIGV, not face-swap calls [10, 11]. The VLM remains an external dependency. 
+
+8 Conclusion 
+
+We recast AIGV detection as a streaming problem, with its own metrics and protocol. We then showed that the compressed bitstream supplies a cheap, always-on stage. That stage decides early and escalates only when uncertain. Two results make the trade-offs explicit. Temporal monotonicity turns latency into a calibrated anytime curve, at a controlled false-alarm rate. The confidence-deferral guarantee turns escalation cost into a budgeted frontier, monotone exactly where the deferral condition holds. Detection then costs a codec parse, not a large-model forward pass, and any monotone stage 1 inherits both guarantees. 
+
+> D A T A A N D C O D E A V A I L A B I L I T Y
+
+Code, configurations, and evaluation splits are at https://github.com/KurbanIntelligenceLab/streamdet .The released harness reproduces every number in this paper except the VLM MAC estimate, which is analytic (Sec. J). Datasets are public and cited in Sec. 6. 
+
+> C O M P E T I N G I N T E R E S T S
+
+The authors declare no competing interests.  
+
+> 13 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+References 
+
+[1] Kyoungjun Park, Yifan Yang, Juheon Yi, Shicheng Zheng, Muhammad Muaz, Yifei Shen, Dongqi Han, Caihua Shan, and Lili Qiu. VidGuard-R1: AI-generated video detection and explanation via reasoning MLLMs and RL. In The Fourteenth International Conference on Learning Representations , 2026. URL 
+
+> https://openreview.net/forum?id=gXjOsBcXIR
+
+.[2] Yifei Li, Wenzhao Zheng, Yanran Zhang, Runze Sun, Yu Zheng, Lei Chen, Jie Zhou, and Jiwen Lu. Skyra: AI-generated video detection via grounded artifact reasoning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 4482–4493, June 2026. [3] Changjiang Jiang, Wenhui Dong, Zhonghao Zhang, Fengchang Yu, Wei Peng, Xinbin Yuan, Yifei Bi, Ming Zhao, Zian Zhou, Chenyang Si, and Caifeng Shan. Ivy-Fake: A unified explainable framework and benchmark for image and video AIGC detection. In Proceedings of the 2026 International Conference on Multimedia Retrieval , ICMR ’26, page 2438–2447, New York, NY, USA, 2026. Association for Computing Machinery. ISBN 9798400726170. doi: 10.1145/3805622.3810615. URL https://doi.org/10.1145/38 05622.3810615 .[4] Haiquan Wen, Yiwei He, Zhenglin Huang, Tianxiao Li, Zihan Yu, Xingru Huang, Lu Qi, Baoyuan Wu, Xiangtai Li, and Guangliang Cheng. BusterX: MLLM-powered AI-generated video forgery detection and explanation, 2026. URL https://arxiv.org/abs/2505.12620 .[5] Hao Tan, Jun Lan, Senyuan Shi, Zichang Tan, Zijian Yu, Huijia Zhu, Weiqiang Wang, Jun Wan, and Zhen Lei. VideoVeritas: AI-generated video detection via perception pretext reinforcement learning. In Forty-third International Conference on Machine Learning , 2026. URL https://openreview.net/for um?id=lbRi2aAWL7 .[6] Yuqi Tang, Yang Shi, Zhuoran Zhang, Qixun Wang, Xuehai Bai, Yue Ding, Ruizhe Chen, Bohan Zeng, Xinlong Chen, Xuanyu Zhu, Bozhou Li, Yuran Wang, Yifan Dai, Chengzhuo Tong, Xinyu Liu, Yiyan Ji, Yujie Wei, Yuhao Dong, Shilin Yan, Fengxiang Wang, Yi-Fan Zhang, Haotian Wang, Yuanxing Zhang, and Pengfei Wan. Artifact-Bench: Evaluating MLLMs on detecting and assessing the artifacts of AI-generated videos, 2026. URL https://arxiv.org/abs/2605.18984 .[7] Yueying Zou, Pei Pei Li, Zekun Li, Xinyu Guo, Xing Cui, Huaibo Huang, and Ran He. GenVideoLens: Where LVLMs fall short in AI-generated video detection?, 2026. URL https://arxiv.org/abs/2603 .18625 .[8] Jinrong Yang, Songtao Liu, Zeming Li, Xiaoping Li, and Jian Sun. StreamYOLO: Real-time object detection for streaming perception, 2022. URL https://arxiv.org/abs/2207.10433 .[9] Wei Luo, Deyu Zhang, Yin Tang, Fan Wu, and Yaoxue Zhang. EdgeOAR: Real-time online action recognition on edge devices. IEEE Transactions on Mobile Computing , 24(12):13426–13440, 2025. doi: 10.1109/TMC.2025.3591188. [10] Hui Guo, Xin Wang, and Siwei Lyu. Detection of real-time deepfakes in video conferencing with active probing and corneal reflection. In ICASSP 2023 - 2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5, 2023. doi: 10.1109/ICASSP49357.2023.10094720. [11] Libo Lv, Tianyi Wang, Mengxiao Huang, Ruixia Liu, and Yinglong Wang. A spatial-frequency aware multi-scale fusion network for real-time deepfake detection. In Josef Kittler, Hongkai Xiong, Jian Yang, Xilin Chen, Jiwen Lu, Weiyao Lin, Jingyi Yu, and Weishi Zheng, editors, Pattern Recognition and Computer Vision , pages 536–550, Singapore, 2026. Springer Nature Singapore. ISBN 978-981-95-5676-2. [12] Irene Amerini, Leonardo Galteri, Roberto Caldelli, and Alberto Del Bimbo. Deepfake video detection through optical flow based CNN. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops , Oct 2019. [13] Yan Wang, Qindong Sun, Dongzhu Rong, and Rong Geng. Multi-domain awareness for compressed deepfake videos detection over social networks guided by common mechanisms between artifacts.  
+
+> 14 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Computer Vision and Image Understanding , 247:104072, 2024. ISSN 1077-3142. doi: https://doi.org/10.1 016/j.cviu.2024.104072. URL https://www.sciencedirect.com/science/article/pii/S10773142240 0153X .[14] Peter Grönquist, Yufan Ren, Qingyi He, Alessio Verardo, and Sabine Süsstrunk. Efficient temporally-aware deepfake detection using H.264 motion vectors. Electronic Imaging , 36(4):335–1–335–1, 2024. doi: 10.2352/EI.2024.36.4.MWSF-335. URL https://library.imaging.org/ei/articles/36/4/MWSF-335 .[15] Riccardo Corvi, Davide Cozzolino, Ekta Prashnani, Shalini De Mello, Koki Nagano, and Luisa Verdoliva. Seeing what matters: Generalizable AI-generated video detection with forensic-oriented augmentation. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL https: //openreview.net/forum?id=dOGXKBL7IE .[16] Chende Zheng, Ruiqi Suo, Chenhao Lin, Zhengyu Zhao, Le Yang, Shuai Liu, Minghui Yang, Cong Wang, and Chao Shen. D3: Training-free AI-generated video detection using second-order features. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 12852–12862, October 2025. [17] Zhengcen Li, Chenyang Jiang, Hang Zhao, Shiyang Zhou, Yunyang Mo, Feng Gao, Fan Yang, Qiben Shan, Shaocong Wu, and Jingyong Su. Preserving forgery artifacts: AI-generated video detection at native scale. In The Fourteenth International Conference on Learning Representations , 2026. URL 
+
+> https://openreview.net/forum?id=XD43lfRCg6
+
+.[18] P. Viola and M. Jones. Rapid object detection using a boosted cascade of simple features. In Proceedings of the 2001 IEEE Computer Society Conference on Computer Vision and Pattern Recognition. CVPR 2001 ,volume 1, pages I–I, 2001. doi: 10.1109/CVPR.2001.990517. [19] Surat Teerapittayanon, Bradley McDanel, and H.T. Kung. BranchyNet: Fast inference via early exiting from deep neural networks. In 2016 23rd International Conference on Pattern Recognition (ICPR) , pages 2464–2469, 2016. doi: 10.1109/ICPR.2016.7900006. [20] Guoxuan Xia and Christos-Savvas Bouganis. Window-based early-exit cascades for uncertainty esti-mation: When deep ensembles are more efficient than single models. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 17368–17380, October 2023. [21] Wittawat Jitkrittum, Neha Gupta, Aditya Krishna Menon, Harikrishna Narasimhan, Ankit Singh Rawat, and Sanjiv Kumar. When does confidence-based cascade deferral suffice? In Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine, editors, Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , 2023. URL http://papers.nips.cc/paper_files/pap er/2023/hash/1f09e1ee5035a4c3fe38a5681cae5815-Abstract-Conference.html .[22] Huidong Feng, Wentao Chen, Jie Chen, Xinqi Cai, Ruolong Ma, Yinglin Zheng, Yuxin Lin, and Ming Zeng. CoCoVideo: The high-quality commercial-model-based contrastive benchmark for AI-generated video detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11346–11356, June 2026. [23] Mert Onur Cakiroglu, Zhihe Lu, Mehmet Dalkilic, and Hasan Kurban. Auditing generalization in AI-generated video detection: A six-control protocol and the VidAudit toolkit, 2026. URL https: //arxiv.org/abs/2606.31004 .[24] Christian Internò, Robert Geirhos, Markus Olhofer, Sunny Liu, Barbara Hammer, and David Klindt. AI-generated video detection via perceptual straightening. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. URL https://openreview.net/forum?id=LsmUgStXby .[25] Zixi Wei, Huixuan Zhang, and Xiaojun Wan. SpecSem-Net: Integrating spectral and semantic features for robust AI-generated video detection, 2026. URL https://arxiv.org/abs/2605.17311 . 
+
+> 15 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+[26] Zhenliang Ni, Qiangyu Yan, Mouxiao Huang, Tianning Yuan, Yehui Tang, Hailin Hu, Xinghao Chen, and Yunhe Wang. GenVidBench: A 6-million benchmark for AI-generated video detection. Proceedings of the AAAI Conference on Artificial Intelligence , 40(18):15582–15590, Mar. 2026. doi: 10.1609/aaai.v40i1 8.38587. URL https://ojs.aaai.org/index.php/AAAI/article/view/38587 .[27] Long Ma, Zihao Xue, Yan Wang, Zhiyuan Yan, Jin Xu, Xiaorui Jiang, Haiyang Yu, Yong Liao, and Zhen Bi. Your one-stop solution for AI-generated video detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 4458–4470, June 2026. [28] Haoxing Chen, Yan Hong, Zizheng Huang, Zhuoer Xu, Zhangxuan Gu, Yaohui Li, Jun Lan, Huijia Zhu, Jianfu Zhang, Weiqiang Wang, and Huaxiong Li. DeMamba: AI-generated video detection on million-scale GenVideo benchmark. Science China Information Sciences , 69(6):162103, May 2026. ISSN 1869-1919. doi: 10.1007/s11432-024-4894-0. URL https://doi.org/10.1007/s11432-024-4894-0 .[29] Joren Michels, Lode Jorissen, and Nick Michiels. Dataset biases and shortcut learning in motion-based AI-generated video detection, 2026. URL https://arxiv.org/abs/2607.00948 .[30] Yulin Zou, Yan Chen, Wenyan Chen, JooYoung Park, Shivaraman Nitin, Luo Tao, Francisco Romero, and Dmitrii Ustiugov. CodecSight: Leveraging video codec signals for efficient streaming VLM inference, 2026. URL https://arxiv.org/abs/2604.06036 .[31] Mohammad Ali Alomrani, Yingxue Zhang, Derek Li, Qianyi Sun, Soumyasundar Pal, Zhanguang Zhang, Yaochen Hu, Rohan Deepak Ajwani, Antonios Valkanas, Raika Karimi, Peng Cheng, Yunzhou Wang, Pengyi Liao, Hanrui Huang, Bin Wang, Jianye Hao, and Mark Coates. Reasoning on a budget: A survey of adaptive and controllable test-time compute in llms, 2025. URL https://arxiv.org/abs/2507.020 76 .[32] Dujian Ding, Ankur Mallick, Shaokun Zhang, Chi Wang, Daniel Madrigal, Mirian Del Carmen Hipolito Garcia, Menglin Xia, Laks V. S. Lakshmanan, Qingyun Wu, and Victor Rühle. BEST-route: Adaptive LLM routing with test-time optimal compute. In Aarti Singh, Maryam Fazel, Daniel Hsu, Simon Lacoste-Julien, Felix Berkenkamp, Tegan Maharaj, Kiri Wagstaff, and Jerry Zhu, editors, Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Pro-ceedings of Machine Learning Research , pages 13870–13884. PMLR, 13–19 Jul 2025. URL https: //proceedings.mlr.press/v267/ding25d.html .[33] Axel Duché, Clément Chatelain, and Gilles Gasso. See without decoding: Motion-vector-based tracking in compressed video, 2026. URL https://arxiv.org/abs/2602.00153 .[34] Coalition for Content Provenance and Authenticity. Content credentials: C2PA technical specification, version 2.4. https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specifica tion.html , April 2026. Accessed July 20, 2026. [35] Sven Gowal, Rudy Bunel, Florian Stimberg, David Stutz, Guillermo Ortiz-Jimenez, Christina Kouridi, Mel Vecerik, Jamie Hayes, Sylvestre-Alvise Rebuffi, Paul Bernard, Chris Gamble, Miklós Z. Horváth, Fabian Kaczmarczyck, Alex Kaskasoli, Aleksandar Petrov, Ilia Shumailov, Meghana Thotakuri, Olivia Wiles, Jessica Yung, Zahra Ahmed, Victor Martin, Simon Rosen, Christopher Savčak, Armin Senoner, Nidhi Vyas, and Pushmeet Kohli. SynthID-Image: Image watermarking at internet scale, 2025. URL 
+
+> https://arxiv.org/abs/2510.09263
+
+.[36] European Parliament and Council of the European Union. Regulation (EU) 2024/1689 of the European Parliament and of the Council of 13 June 2024 laying down harmonised rules on artificial intelligence and amending Regulations (EC) No 300/2008, (EU) No 167/2013, (EU) No 168/2013, (EU) 2018/858, (EU) 2018/1139 and (EU) 2019/2144 and Directives 2014/90/EU, (EU) 2016/797 and (EU) 2020/1828 (Artificial Intelligence Act). Official Journal of the European Union , L, 2024/1689, 12 July 2024, 2024. URL 
+
+> https://eur-lex.europa.eu/eli/reg/2024/1689/oj
+
+. Article 50: Transparency obligations for providers and deployers of certain AI systems.  
+
+> 16 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+[37] A. Wald. Sequential Tests of Statistical Hypotheses , pages 256–298. Springer New York, New York, NY, 1992. ISBN 978-1-4612-0919-5. doi: 10.1007/978-1-4612-0919-5_18. URL https://doi.org/10.1007/ 978-1-4612-0919-5_18 .[38] Aaditya Ramdas, Peter Grünwald, Vladimir Vovk, and Glenn Shafer. Game-Theoretic Statistics and Safe Anytime-Valid Inference. Statistical Science , 38(4):576 – 601, 2023. doi: 10.1214/23-STS894. URL 
+
+https://doi.org/10.1214/23-STS894 .[39] Aaditya Ramdas and Ruodu Wang. Hypothesis testing with e-values. Foundations and Trends in Statistics , 1(1-2):1–390, 07 2025. ISSN 2978-4212. doi: 10.1561/3600000002. URL https://doi.org/10 .1561/3600000002 .[40] Nick W Koning and Sam van Meer. Anytime validity is free: inducing sequential tests. Journal of the Royal Statistical Society Series B: Statistical Methodology , page qkag050, 02 2026. ISSN 1369-7412. doi: 10.1093/jrsssb/qkag050. URL https://doi.org/10.1093/jrsssb/qkag050 .[41] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Marina Meila and Tong Zhang, editors, Proceedings of the 38th International Conference on Machine Learning , volume 139 of Proceedings of Machine Learning Research , pages 8748–8763. PMLR, 18–24 Jul 2021. URL https://proceedings. mlr.press/v139/radford21a.html .
+
+> APPENDIX
+
+A Proofs 
+
+The body states Propositions 2 to 4 and Corollary 5 and gives the idea of each proof in place. This section gives the full arguments. Each result is restated first so it can be read without the body in hand; the statements restate those in the body. Proposition 2’s proof is a single line and is given in the paper itself. We prove Propositions 3 and 4 and Corollary 5 in full, and isolate one fact used repeatedly, the stochastic monotonicity of the running maximum, as a lemma. 
+
+Lemma 6 Stochastic monotonicity of the running maximum . Let 𝑀 𝑡 = max 𝑖 ≤𝑡 𝑠 𝑖 . Then 
+
+𝑀 𝑡 is stochastically non-decreasing in 𝑡 : for every threshold 𝑥 , Pr( 𝑀 𝑡 ≥ 𝑥 ) is non-decreasing in 𝑡 
+
+under any fixed distribution of the scores. Consequently, for a fixed level 𝛼 the upper (1 − 𝛼 )-quantile 
+
+𝜏 𝑡 = inf{ 𝑥 ∶ Pr( 𝑀 𝑡 ≥ 𝑥 ) ≤ 𝛼 } is non-decreasing in 𝑡 .
+
+Proof. 𝑀 𝑡 = max( 𝑀 𝑡 −1 , 𝑠 𝑡 ) ≥ 𝑀 𝑡 −1 pointwise, so {𝑀 𝑡 −1 ≥ 𝑥 } ⊆ {𝑀 𝑡 ≥ 𝑥 } as events and Pr( 𝑀 𝑡 −1 ≥
+
+𝑥 ) ≤ Pr( 𝑀 𝑡 ≥ 𝑥 ) for every 𝑥 ; this is first-order stochastic dominance 𝑀 𝑡 ⪰ 𝑀 𝑡 −1 . Quantile monotonicity is immediate: since 𝑥 ↦ Pr( 𝑀 𝑡 ≥ 𝑥 ) is non-increasing and dominated by 𝑥 ↦
+
+Pr( 𝑀 𝑡 +1 ≥ 𝑥 ), the infimum of {𝑥 ∶ Pr( 𝑀 𝑡 ≥ 𝑥 ) ≤ 𝛼 } can only grow with 𝑡 , i.e. 𝜏 𝑡 ≤ 𝜏 𝑡 +1 .
+
+Proposition Restatement of Proposition 3 . Let 𝑃 0 be the real (null) distribution, let 𝑀 𝑡 =max 𝑖 ≤𝑡 𝑠 𝑖 , and let the detector raise “generated” at the alarm time 𝜎 = inf{ 𝑡 ≤ 𝑁 ∶ 𝑀 𝑡 ≥ 𝜏 } (and “real” if no such 𝑡 ). (i) A single end-calibrated threshold is anytime-valid. Calibrate the threshold 𝜏 so that the null tail at the final prefix is controlled: 𝑃 0(𝑀 𝑁 ≥ 𝜏 ) ≤ 𝛼 . Such a 𝜏 exists: the upper (1 − 𝛼 )-quantile  
+
+> 17 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+of 𝑀 𝑁 when 𝑀 𝑁 has no atom there (then with equality), and in general any 𝜏 above it. Then the false-positive rate at the data-dependent alarm time equals the final-prefix rate and is controlled, 
+
+𝑃 0(𝜎 ≤ 𝑁 ) = 𝑃 0(𝑀 𝑁 ≥ 𝜏 ) ≤ 𝛼 , and simultaneously 𝑃 0(𝑀 𝑡 ≥ 𝜏 ) ≤ 𝛼 for every prefix 𝑡 ≤ 𝑁 .(ii) Per-prefix recalibration is not. Choosing 𝜏 𝑡 so that 𝑃 0(𝑀 𝑡 ≥ 𝜏 𝑡 ) = 𝛼 at each prefix (an atomless null, for concreteness) controls the per-prefix rate but not the alarm-time rate: 𝑃 0(∃ 𝑡 ≤ 𝑁 ∶ 𝑀 𝑡 ≥
+
+𝜏 𝑡 ) ≥ 𝛼 , with strict inequality iff an early crossing the final test misses has positive probability, 
+
+𝑃 0(∃ 𝑡 < 𝑁 ∶ 𝑀 𝑡 ≥ 𝜏 𝑡 , 𝑀 𝑁 < 𝜏 𝑁 ) > 0: the multiple-looks inflation. 
+
+Proof. By Proposition 2, 𝑀 𝑡 is non-decreasing in 𝑡 , so 𝑀 𝑡 ≤ 𝑀 𝑁 and {∃ 𝑢 ≤ 𝑡 ∶ 𝑀 𝑢 ≥ 𝜏 } = { 𝑀 𝑡 ≥ 𝜏 }.
+
+(i) The alarm fires by prefix 𝑡 iff 𝑀 𝑡 ≥ 𝜏 and by the end iff 𝑀 𝑁 ≥ 𝜏 ; hence 𝑃 0(𝜎 ≤ 𝑁 ) = 𝑃 0(𝑀 𝑁 ≥
+
+𝜏 ) ≤ 𝛼 by the calibration of 𝜏 , and 𝑃 0(𝑀 𝑡 ≥ 𝜏 ) ≤ 𝑃 0(𝑀 𝑁 ≥ 𝜏 ) ≤ 𝛼 for every 𝑡 . (ii) Since {𝑀 𝑁 ≥
+
+𝜏 𝑁 } ⊆ {∃ 𝑡 ∶ 𝑀 𝑡 ≥ 𝜏 𝑡 } and 𝑃 0(𝑀 𝑁 ≥ 𝜏 𝑁 ) = 𝛼 , the union has probability at least 𝛼 . By Lemma 6 the marginal thresholds are ordered, 𝜏 𝑡 ≤ 𝜏 𝑁 for 𝑡 ≤ 𝑁 , so on the event {𝜏 𝑡 ≤ 𝑀 𝑡 ≤ 𝑀 𝑁 < 𝜏 𝑁 } an early boundary is crossed while the final one is not; its probability 𝑃 0(𝑀 𝑡 ≥ 𝜏 𝑡 , 𝑀 𝑁 < 𝜏 𝑁 ) is a lower bound on the excess the union carries over 𝛼 (the full excess sums such events over the looks). The union strictly exceeds 𝛼 exactly when some such miss event carries positive mass. Necessary for that: 𝜏 𝑡 < 𝜏 𝑁 for some 𝑡 (the null genuinely evolves) and null mass in [𝜏 𝑡 , 𝜏 𝑁 ); not sufficient, since the joint law decides. With perfectly dependent scores ( 𝑠 1 = ⋯ = 𝑠 𝑁 ), for instance, every early crossing is also a final crossing and the union is exactly 𝛼 .
+
+Proposition Restatement of Proposition 4 . Let stage 1 produce score 𝑠 with per-GOP compute 
+
+𝐶 1, and let stage 2 have compute 𝐶 2 and be invoked exactly when 𝑠 ∈ 𝑊 , both at constant unit costs; the cascade decides by stage 2 on {𝑠 ∈ 𝑊 } and by stage 1’s deterministic rule elsewhere. Writing 
+
+err 𝐴 for the error mass on a region 𝐴 (the probability of being wrong and in 𝐴 ), the expected per-clip compute and the cascade error are 
+
+𝔼 [𝐶 ] = ̄ 𝑡 𝐶 1 + Pr( 𝑠 ∈ 𝑊 ) 𝐶 2,
+
+err casc = err 1 − (err 𝑊  
+
+> 1
+
+− err 𝑊  
+
+> 2
+
+),
+
+where ̄ 𝑡 is the expected number of GOPs processed and err 1 is stage 1’s error if it decided everywhere. 
+
+Proof. Compute is additive over GOPs processed and over the deferral event: stage 1 runs on every processed GOP (expected count ̄ 𝑡 , cost 𝐶 1 each) and stage 2 runs iff 𝑠 ∈ 𝑊 (cost 𝐶 2), giving the stated expectation by linearity. For accuracy, the cascade equals stage 1 on the confident set {𝑠 ∉ 𝑊 } and stage 2 on the deferred set {𝑠 ∈ 𝑊 }, so err casc = err ̄𝑊  
+
+> 1
+
++ err 𝑊  
+
+> 2
+
+. Since err 1 = err ̄𝑊  
+
+> 1
+
++ err 𝑊  
+
+> 1
+
+, subtracting gives err casc = err 1 − (err 𝑊  
+
+> 1
+
+− err 𝑊  
+
+> 2
+
+); the equivalence and strictness follow. The accounting idealizes stage-1 and stage-2 as fixed unit costs 𝐶 1, 𝐶 2 and folds their early-exit behavior into the expected processed count ̄ 𝑡 ; input-dependent costs only rescale the compute axis and leave the accuracy statement untouched. 
+
+Corollary Restatement of Corollary 5 . For an expected-compute budget 𝔼 [𝐶 ] = 𝐵 with ̄ 𝑡 𝐶 1 ≤
+
+𝐵 ≤̄ 𝑡 𝐶 1 + Pr( 𝑠 < 𝜏 ) 𝐶 2 (gate-fired clips are never deferred), a width 𝑤 with deferral probability 
+
+Pr( 𝑠 ∈ 𝑊 ) = ( 𝐵 −̄ 𝑡 𝐶 1)/ 𝐶 2 meets the budget exactly when the score law is atomless below 𝜏 ; the sweep leaves ̄ 𝑡 and err 1 unchanged, since deferral is decided only at the decision point. The achieved operating point is (𝔼 [𝐶 ], acc) = ( ̄𝑡 𝐶 1 + Pr( 𝑠 ∈𝑊 ) 𝐶 2, 1 − err 1 + Δ( 𝑊 )) with Δ( 𝑊 ) = err 𝑊  
+
+> 1
+
+− err 𝑊  
+
+> 2
+
+. 
+
+> 18 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Sweeping the deferral width 𝑤 (𝑊 = 𝑊 (𝑤 ) = [ 𝜏 − 𝑤, 𝜏 )) traces this frontier, which is monotone, accuracy non-decreasing in the budget, iff every marginal region added as 𝑊 widens satisfies the deferral condition ( err 2 ≤ err 1 there); where it fails the frontier bends back. 
+
+Proof. Feasibility. Setting 𝔼 [𝐶 ] = ̄ 𝑡 𝐶 1 + Pr( 𝑠 ∈ 𝑊 ) 𝐶 2 equal to 𝐵 and solving gives Pr( 𝑠 ∈ 𝑊 ) = (𝐵 −̄ 𝑡 𝐶 1)/ 𝐶 2, which lies in [0 , Pr( 𝑠 < 𝜏 )] exactly on the stated budget range ̄ 𝑡 𝐶 1 ≤ 𝐵 ≤̄ 𝑡 𝐶 1 +Pr( 𝑠 < 𝜏 ) 𝐶 2. Because Pr( 𝑠 ∈ 𝑊 (𝑤 )) is non-decreasing and (for an atomless score law) continuous in 𝑤 ,ranging from 0 at 𝑤 = 0 up to Pr( 𝑠 < 𝜏 ), every feasible deferral probability is realized by some width 𝑤 ; the budget is met. 
+
+Accuracy along the frontier. By Proposition 4, acc( 𝑤 ) = 1 − err casc = 1 − err 1 + Δ( 𝑊 (𝑤 )) , so the fixed term 1 − err 1 carries no 𝑤 -dependence and the entire frontier shape is Δ( 𝑊 (𝑤 )) . Take 
+
+𝑤 ′ > 𝑤 and write 𝑊 (𝑤 ′) = 𝑊 (𝑤 )̇ ∪ 𝐴 with 𝐴 = [ 𝜏 − 𝑤 ′, 𝜏 − 𝑤 ) the marginal region added, disjoint from 𝑊 (𝑤 ). Error mass is additive over disjoint regions, err 𝑊 (𝑤 ′) 
+
+> 𝑘
+
+= err 𝑊 (𝑤 ) 
+
+> 𝑘
+
++ err 𝐴 𝑘 for 𝑘 ∈ {1 , 2} , so 
+
+Δ( 𝑊 (𝑤 ′)) − Δ( 𝑊 (𝑤 )) = err 𝐴  
+
+> 1
+
+− err 𝐴  
+
+> 2
+
+.
+
+Widening the window also raises the budget, 𝐵 (𝑤 ′) > 𝐵 (𝑤 ), since Pr( 𝑠 ∈ 𝑊 ) grows. Hence as the budget increases across 𝐴 the achieved accuracy changes by exactly err 𝐴  
+
+> 1
+
+−err 𝐴  
+
+> 2
+
+, the deferral gain on 
+
+𝐴 . Therefore accuracy is non-decreasing in the budget iff err 𝐴  
+
+> 2
+
+≤ err 𝐴  
+
+> 1
+
+for every marginal region 𝐴 ,i.e. err 2 ≤ err 1 restricted to 𝐴 ; where instead err 𝐴  
+
+> 2
+
+> err 𝐴  
+
+> 1
+
+on some added region, accuracy strictly decreases there and the frontier bends back, escalation being spent where stage 1 was already at least as accurate. In differential form, with the added sliver [𝜏 − 𝑤 − 𝑑𝑤, 𝜏 − 𝑤 ), 𝑑 𝑑𝑤 acc( 𝑤 ) has the sign of the local gain (err 1 − err 2) on that sliver. 
+
+B The streaming pipeline 
+
+Sec. 4 specifies this system and Alg. 1 states it formally: the always-on CPU lane, the gate, and the rare escalation to a GPU stage 2.  
+
+> Chunking versus encoder GOPs.
+
+The chunk is the detector’s own fixed window ( 16 frames by default), not the encoder’s segmentation. The distinction matters in the wild, where a clip’s GOP structure can be far coarser than the decision granularity one wants: our benchmark clips carry a single I-frame each, one encoder GOP per clip. The detector therefore windows the arriving frames itself; under the canonical closed-GOP-16 re-encode the two coincide, which is why we say “GOP” for the chunk. 
+
+C Ablation detail (E7) 
+
+Table A1 gives the numbers behind the chunk-size and feature-set ablations summarized in Sec. 6.  
+
+> Gate (E7-i).
+
+Stopping-time false-positive rate at 𝛼 =0 .05 , end-calibrated threshold versus the naive per-prefix recalibration foil, per cell: matched 0.039 vs 0.039 ; long-form 0.041 vs 0.069 ; pixel 0.058 
+
+vs 0.104 ; AIGVDBench 0.068 vs 0.191 . The end-calibrated gate is at or near target on the two cells whose calibration null matches their test null, and drifts above it under distribution shift, a regime Proposition 3 does not cover, since its guarantee is stated against the null it was calibrated on. The foil is worse on every cell, and its inflation grows with the number of effective looks, exactly as Proposition 3(ii) predicts.  
+
+> 19 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Ablation Setting AUC@ 𝑁 sAUC(1) 
+
+Chunk size 
+
+8 frames 0.53 0.73 16 frames (default) 0.64 0.80 32 frames 0.64 𝟎 .𝟖𝟒 
+
+Feature set Tier-0 only (4 global motion stats) 𝟎 .𝟔𝟔 n/a Tier-1 only (9 spectral) 0.31 n/a All 13-d (default) 0.64 0.80  
+
+> Table A1
+
+Chunk-size and feature-set ablations (matched 27k cell, leave-one-generator-out); the adopted default in each group is marked (default) ; best per column in bold. An 8-frame window starves the spectral estimators; 32 frames buys the best first-GOP score at a coarser decision granularity. Tier-0 alone beating 
+
+the full feature, and Tier-1 alone falling below chance out of distribution, together say the cross-generator signal lives in motion magnitude rather than fine spectral structure. The spectral dimensions appear to fit generator-specific detail that does not transfer. generator raw motion-only matched within-bin cogvideo 0.898 0.663 0.911 0.810 
+
+vc2 0.689 0.522 0.721 0.686 
+
+ms 0.689 0.393 0.673 0.680 
+
+svd 0.632 0.625 0.668 0.626 
+
+mora 0.551 0.621 0.579 0.558 
+
+pika 0.523 0.211 0.451 0.482 
+
+musev 0.432 0.316 0.401 0.492  
+
+> Table A2
+
+Motion-bias control, per held-out generator. raw : stage-1 AUC@ 𝑁 as measured. motion-only : a control scored from coarse motion statistics alone. matched : real and generated clips matched on motion magnitude. within-bin : scored inside motion quantiles.  
+
+> Motion-bias control (E7-iv).
+
+The control was run on all seven generators; per-fold numbers below (raw AUC; AUC of mean motion magnitude alone; AUC after matching real and generated on motion magnitude; motion-quantile within-bin AUC). On the separable generator (cogvideo) matching does not degrade the score ( 0.898 raw vs 0.911 matched) and the within-bin signal ( 0.810 )far exceeds what motion magnitude alone provides ( 0.663 ), so the detector is not reducible to the “generated video moves less” artifact of [ 29 ] there. On the hard generators the control runs but cannot inform: stage 1 is at or near chance to begin with, so no signal remains whose provenance the control could test.  
+
+> Aggregator (E7-v).
+
+Why the running max ? Offline, at the clip’s full length, it is the weakest aggregate of the three we measured: fold-mean AUC 0.641 (max) vs 0.885 (mean over GOPs) vs 
+
+0.850 (last GOP) for the codec stage, and 0.759 vs 0.869 vs 0.863 for the pixel stage. But mean and last are not monotone in the prefix, so neither admits an anytime decision rule: the monotonicity that Proposition 2 establishes for the max is lost, and with it the single-threshold stopping-time  
+
+> 20 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+guarantee of Proposition 3 (a mean can rise and fall, so early crossings are not nested and the multiple-looks inflation returns). The max is the price of anytime validity, and the deferral band is how the cascade buys some of the gap back. The mean-pooled numbers also show the codec substrate itself is rich: pooled offline it exceeds the per-chunk pixel CNN ( 0.885 vs 0.869 ).  
+
+> Learned deferral rule.
+
+A logistic rule trained (within-test, 5-fold) to predict which segments stage 2 would correct, versus the confidence band, as (band / learned) accuracy at matched deferral budgets: 
+
+0.715/0 .713 at 2% , 0.718/0 .717 at 10% , 0.719/0 .720 at 15% , and 0.717/0 .723 at 30% . The band is the better selector at the small budgets the system actually operates at, and is overtaken only past ≈15% ,once the budget is large enough for a learned rule to exploit structure beyond distance-to-threshold. 
+
+D Per-generator results 
+
+The headline leave-one-generator-out numbers are means over seven held-out generators, and that mean hides a wide spread that matters for reading the cascade results. For the codec stage on the matched cell, per-generator AUC@ 𝑁 is: cogvideo 0.90 , vc2 0.70 , ms 0.70 , svd 0.65 , mora 0.56 ,pika 0.52 , musev 0.45 (mean 0.64 , fold s.d. 0.14 ). The stage is genuinely strong on one generator, useful on three, and at or near chance on three. This is the spread that makes escalation worth its compute: the deferred band is populated overwhelmingly by the hard generators, which is why stage 2’s accuracy on that band (E4) is the quantity that moves the frontier, not stage 1’s mean. 
+
+E Streaming-perception metric, adapted 
+
+Streaming perception evaluates a detector against the state of the world at the time its output is emitted, folding latency into accuracy [ 8 ]. We adapt this to a binary authenticity decision: rather than matching to a moving ground truth, we evaluate the running score 𝑀 𝑡 against the (static) clip label at each prefix 𝑡 , and report accuracy as a function of the latency 𝓁 𝑡 at which a decision is emitted. The latency-budgeted sAUC( 𝐵 ) of Definition 1 is the accuracy reachable within budget 𝐵 ;the anytime curve is its trace over budgets. This reduces to standard offline AUC at 𝑡 = 𝑁 with unbounded budget, which is the regime E1 checks. 
+
+F Anytime-valid inference and Ville’s inequality 
+
+A test is anytime-valid at level 𝛼 if its false-positive probability is at most 𝛼 at every sample size and at any data-dependent stopping time [ 38 , 39 ]. The standard route is a nonnegative supermartingale (an e-process) 𝐸 𝑡 with 𝐸 0 ≤ 1 under the null; Ville’s inequality gives 𝑃 0(sup 𝑡 𝐸 𝑡 ≥ 1/ 𝛼 ) ≤ 𝛼 , so stopping the first time 𝐸 𝑡 ≥ 1/ 𝛼 controls the false-positive rate uniformly in time, the sequential generalization of Wald’s probability ratio test [ 37 ]. Confidence sequences are the dual construction for estimation. Proposition 3 is the special case in which the test statistic is the running maximum 
+
+𝑀 𝑡 : because 𝑀 𝑡 is monotone, the time-uniform bound follows directly from a single quantile of 𝑀 𝑁 
+
+without constructing a martingale, and the naive per-prefix boundary is exactly the inadmissible “continuous-monitoring” rule these tools are designed to replace. For a non-monotone streaming statistic (for example a windowed mean of per-GOP scores), one recovers the same guarantee by instantiating 𝐸 𝑡 as a test martingale and applying Ville’s inequality.  
+
+> 21 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Proposition 3 controls the false-positive rate at the stopping time. A constant false-positive 
+
+profile across prefixes is a stronger demand: it needs a genuinely anytime-valid boundary (a confi-dence sequence or e-process as above), which is more conservative than the marginal per-prefix quantile that E7-i evaluates. 
+
+G Confidence-based deferral 
+
+The accuracy condition in Proposition 4 is the standard cascade-deferral condition: a confident first stage should defer exactly the inputs on which a more capable second stage is expected to be more accurate [ 20 , 21 ]. Confidence-based gating (defer when the stage-1 score lies in a band around the decision boundary) is a common, well-behaved instance [ 20 ]; learned deferral rules can improve it and are ablated in E7. We do not claim a new deferral method; we use the existing one and specialize its compute and accuracy accounting to the streaming two-stage detector. 
+
+H Additional related work  
+
+> Provenance and watermarking.
+
+A complementary line labels synthetic media at the source: signed provenance [ 34 ], watermarks [ 35 ], encouraged by regulation [ 36 ]. Both are cooperative-source solutions that transcoding strips and most in-the-wild video never carried, so absence of a signal is not evidence of authenticity. Passive detection remains the safety net; the codec signal we read is intrinsic to the very re-compression that strips provenance. 
+
+I External-baseline configuration 
+
+Two current external detectors anchor the compute-accuracy plane in Table 2; both were run under the audited protocol rather than quoted from their papers.  
+
+> ReStraV (trained, matched protocol).
+
+We port the perceptual-straightening recipe of Internò et al. verbatim: 24 frames sampled over a 2-second window centred on the clip, at 224×224 , em-bedded with a frozen DINOv2 ViT-S/14 (public torch.hub weights); the embedding trajectory is summarised by successive step distances, turning angles, and their fourth-moment statistics into the paper’s 21 -d descriptor. The readout is the same leave-one-generator-out 𝐿 2-regularised logistic regression as stage-1’s — identical folds, seed, and calibration carve-out — so its row in Table 2 differs from ours only in the feature, not the protocol. Its MAC figure ( ∼1 .4×10 11 per clip) is the DINOv2-S forward at 224 2 over 24 frames; the geometry summary and linear readout are negligible against it.  
+
+> VideoVeritas (zero-shot).
+
+We run the authors’ released Qwen3-VL-8B checkpoint (ModelScope weights) with the inference prompt reproduced verbatim from their repository, greedy decoding, at most 1,024 new tokens. 16 frames are sampled uniformly across the clip at native aspect ratio with the long side capped at 896 px ( 32 vision patches of 28 px; uncapped 720 p-and-above sources exceed a 32 GB GPU in a single allocation). The soft score is the softmax mass on the model’s final real-vs-fake verdict token, falling back to the parsed <answer> verdict when that token cannot be located; the hard verdict thresholds this score at 0.5. No fine-tuning, recalibration, or prompt search.  
+
+> 22 ANYTIME AIGV DETECTION FROM THE COMPRESSED BITSTREAM Kurban Intelligence Lab
+
+Scored on the same 2,127 -clip population as the Ivy-VLM arm, it reaches AUC 0.831 [0 .815 , 0.845] 
+
+and balanced accuracy 0.819 [0 .804 , 0.833] , at a median 22 .9 s per clip. Per-generator accuracy is sharply bimodal: cogvideo 0.92 , pika 0.95 , vc2 0.94 , and the real sources hd_vg 0.96 and vript 0.98 ,against svd 0.15 , musev 0.38 and ms 0.45 . Mean score tracks accuracy almost exactly on every generator, so on the three hard generators the model is not uncertain but confidently wrong.  
+
+> Excluded: real-time face-deepfake detectors.
+
+These [ 10 , 11 ] are not run as comparison baselines. They authenticate faces manipulated in live calls, not fully-synthetic scenes, so they target a dif-ferent signal and would be evaluated on a different test distribution (face crops rather than whole clips). They are complementary to streaming AIGV detection, which is how we position them. 
+
+J Compute accounting and hardware 
+
+We report two cost axes. Compute is multiply-accumulate operations (MACs) per chunk, 𝔼 [𝐶 ] = ̄𝑡 𝐶 1 + Pr( 𝑠 ∈ 𝑊 ) 𝐶 2 as in Proposition 4, with 𝐶 1 the per-GOP parse-and-score cost and 𝐶 2 asingle stage-2 inference. Measured on the matched cell, 𝐶 1 ≈ 10 5 MACs (the codec parse plus a 
+
+13 -d linear score) and 𝐶 2 ≈ 1 .8×10 10 MACs (a CLIP ViT-B/32 forward over four sampled frames); because 𝐶 1 ≪ 𝐶 2 and Pr( 𝑠 ∈ 𝑊 ) is small by design, the expected compute is dominated by the rare stage-2 calls, which is what the compute-accuracy frontier (E3) quantifies. This axis is hardware-independent and is where the codec stage’s advantage is unambiguous. Wall-clock is more implementation-dependent: the per-chunk parse-and-score is ≈ 33 ms on CPU and one stage-2 forward is ≈ 28 ms on an A100, but both are preceded by a frame decode ( ≈ 0 .4 s per GOP for the codec stage’s all-frame decode, less for the four-frame pixel sample). That decode is an artifact of extracting motion vectors through the decoder’s side-data export in our reference implementation; a bitstream motion-vector parser reads the same field without pixel reconstruction, and a deployed platform already decodes the stream for playback and moderation, so we treat the decode as a shared cost and report the 10 5-MAC parse as the compute the codec stage adds . 
+
+> Hardware.
+
+Runs were distributed across two university clusters, heterogeneous by design: one carries Intel Xeon Gold 6248 nodes ( 2×20 cores, 2.50 GHz) with NVIDIA V100-PCIE-32 GB GPUs under Red Hat Enterprise Linux 8.10 (kernel 4.18.0-553); the other AMD EPYC 7713 nodes (64 cores) with NVIDIA A100-SXM4-40 GB under SUSE Linux Enterprise 15 SP6 (kernel 6.4.0). Both wall-clock figures in this section were measured in one job on an A100 node, so the ≈ 33 ms parse-and-score timing is against the AMD EPYC 7713. One software environment is shared by both clusters: Python 3.12.13, PyTorch 2.13.0+cu126, NumPy 2.5.1, scikit-learn 1.9.0, pandas 3.0.3, and PyAV 18.0.0 (FFmpeg libavcodec 62.28.102, the decoder whose side-data export provides the motion vectors). The workload nonetheless fits a single consumer GPU: stage 1 is CPU-only, the stage-2 CLIP ViT-B/32 forward needs under 2 GB, and the 3B VLM upgrade fits in under 8 GB, so the core results run within a 12 GB budget. Stage 2 is invoked on only the deferred fraction ( 15% at our operating point), so the GPU is lightly loaded.

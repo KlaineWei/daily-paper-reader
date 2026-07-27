@@ -1,0 +1,209 @@
+Title: MemNMF: Memory-Augmented NMF on LPC Spectra for Anomalous Sound Detection
+
+URL Source: https://arxiv.org/pdf/2607.22086v1
+
+Published Time: Mon, 27 Jul 2026 00:31:56 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# MemNMF: Memory-Augmented NMF on LPC Spectra for Anomalous Sound Detection 
+
+Phurich Saengthong, Takahiro Shinozaki Institute of Science Tokyo, Japan 
+
+Abstract —Autoencoder-based anomalous sound detection is attractive for machine condition monitoring because it can be trained using only normal recordings and yields an interpretable anomaly score from reconstruction error. Most prior work uses spectrogram autoencoders, but reconstructing detailed time– frequency patterns is sensitive to noise and transients, and models can reconstruct some anomalous inputs well, weakening normal–anomaly separation. We propose MemNMF, a constrained reconstruction method that operates on the Linear Predictive Coding spectrum, a compact estimate of the spectral envelope. MemNMF initializes a memory module from an NMF dictionary learned on normal LPC spectra and reconstructs each input as an attention-weighted combination of prototypical normal spectral patterns. Experiments on MIMII and DCASE 2020 Task 2 across multiple machine types and operating conditions show that LPC-spectrum inputs improve a standard autoencoder baseline and that MemNMF yields further gains, with especially strong robustness under noisy, non-stationary settings. 
+
+Index Terms —anomalous sound detection, autoencoder, linear predictive coding, non-negative matrix factorization, memory network. 
+
+I. I NTRODUCTION 
+
+Anomalous sound detection (ASD) aims to detect faults from machine sounds, enabling early maintenance and preventing costly downtime [1]–[5]. Since anomalous events are rare and diverse, practical systems are often trained only on normal recordings and must detect unseen failures at test time [5]. In this setting, reconstruction-based approaches such as autoencoders (AEs) are attractive because they are simple to develop, require only normal data, and provide an end-to-end anomaly score via reconstruction error [1], [5]; moreover, reconstruction errors can provide an interpretable anomaly signal in the input space. Despite their simplicity, AE-based approaches can struggle on noisy, non-stationary recordings, where the reconstruction objective may fit spurious variations rather than invariant machine characteristics. With time-varying spectrogram inputs, the model must reconstruct fine-grained time–frequency detail; when the observed spectrum varies substantially over time, this target diversity encourages fitting nuisance variation rather than the underlying structure that defines the normal machine state, making it difficult to learn a stable normal representation [3], [6]. Moreover, because decoding from a continuous latent space is only weakly constrained, the model may also reconstruct patterns not supported by normal data, reducing normal– anomaly separability [7]. In this paper, we cast robust reconstruction as a constrained representation problem: the model should reconstruct only from patterns supported by normal data and should operate in a feature space that emphasizes invariant machine structure. To this end, we replace time-varying spectrogram textures with the Linear Predictive Coding (LPC) spectrum, which focuses on the spectral envelope, and propose Memory Network-based NMF (MemNMF). We learn an NMF dictionary from normal LPC spectra and use it to initialize a memory network, while learning lightweight key–value projections that map each query to a small set of prototypical normal patterns. The memory then reconstructs an input LPC spectrum as a weighted combination of these patterns, explicitly constraining reconstruction rather than relying on an unconstrained decoder. Experiments on widely used ASD benchmarks, including MIMII [3], [4] and DCASE2020 Task 2 [5], show that replacing spectrogram inputs with the LPC spectrum improves a standard AE baseline under noisy, non-stationary machine sounds, and that combining the LPC spectrum with MemNMF yields further gains. Our contributions are as follows: (i) We show that using the LPC spectrum as the input representation for AE-style ASD can substantially improve performance on non-stationary machine sounds, highlighting the benefit of focusing on the spectral envelope. (ii) We propose MemNMF, which initializes a memory network with an NMF dictionary learned from normal data and constrains reconstruction through attention over prototypical normal spectral patterns. (iii) We conduct an empirical evaluation on MIMII and DCASE2020 Task 2 across multiple machine types and operating conditions, demonstrating competitive performance and improved robustness, particularly under noisy and non-stationary settings. II. R ELATED WORK 
+
+Most AE-based ASD systems operate on time–frequency representations, typically log-mel spectrograms [1], [3], [5], [6], [8]–[11]. To improve AE-based ASD, several works modify the reconstruction objective to better capture temporal dependencies and reduce over-generalization. AE-IDNN interpolates centrally masked spectrogram frames from surrounding frames [6]; ANPs extend interpolation with flexible masking and attention over context frames [9]; and PAE incorporates transformer layers while retaining an interpolation-style objective [10]. Beyond spectrograms, [12] uses LPC-derived features and trains a VAE to reconstruct segment-level LPC. However, AE-based ASD that reconstructs an envelope-focused spectrum appears less commonly studied, even though the spectral envelope can provide a compact summary of spectral shape and potentially reduce sensitivity to frame-level fluctuations. From a broader arXiv:2607.22086v1 [cs.SD] 24 Jul 2026 Training Normal Waveforms   
+
+> LPC Spectrum
+> Non-Negative Matrix Factorization
+> Basis Matrix Activation Matrix
+> (Throwaway)
+> Key Embedding (K)
+> Value Embedding (V)
+> MSE Anomaly Score
+> (a) Stage 1: NMF for Learning Spectral Bases (b) Stage 2: Training Memory Network
+> Memory
+
+Fig. 1: Overview of MemNMF: Stage 1 learns non-negative spectral bases from normal LPC spectra using NMF; Stage 2 trains projections for key–value embeddings derived from the basis vectors and a BatchNorm layer that normalizes dot-product logits to encourage sparse memory retrieval, using mean squared reconstruction loss. reconstruction-based viewpoint, classical PCA-based anomaly detection also uses reconstruction error, but reconstructs from a low-dimensional orthogonal subspace [13]; in contrast, MemNMF uses non-negative, NMF-initialized spectral bases on envelope-focused features. In addition, memory-augmented reconstruction has been studied for image anomaly detection [7], but its use as an acoustic spectral-envelope dictionary for ASD remains less explored. III. M ETHOD 
+
+MemNMF addresses two limitations of spectrogram-based AEs by (i) using an LPC-spectrum representation that sum-marizes each clip by its spectral envelope, avoiding the need to reconstruct fine-grained, time–frequency textures, and (ii) constraining reconstruction to normal patterns via an NMF-derived memory learned from normal data so that atypical spectral structure yields larger reconstruction error. We learn NMF bases from normal LPC spectra and store them in a key– value memory. At test time, the memory reconstructs an input LPC spectrum as a weighted combination of stored items, and the reconstruction error serves as the anomaly score. Figure 1 illustrates the overall framework. 
+
+A. Linear Predictive Coding (LPC) Spectrum 
+
+LPC is a classic technique for modeling spectral envelopes [14]–[17]. Importantly, we compute a single LPC model per audio clip and do not split the signal into short-time frames or apply windowing, as in spectrogram-based AEs. For each audio clip, we estimate LPC coefficients {ak}pk=1 directly from the time-domain waveform using Burg’s method [15], [16]. We then evaluate the corresponding all-pole model on m frequency bins {ωi}mi=1 on the unit circle, yielding one LPC spectrum vector x ∈ (R≥0)m per audio clip: 
+
+xi = |H(ejω i )| = 11 − Ppk=1 ake−jω ik , i = 1 , . . . , m, 
+
+(1) 
+
+B. Memory-Network-Based Non-Negative Matrix Factorization 1) Non-Negative Matrix Factorization: Given a matrix of normal LPC spectra X ∈ (R≥0)n×m, where n is the number of training clips and m is the number of frequency bins, we learn a non-negative factorization [18]: 
+
+X ≈ W B, (2) where B ∈ (R≥0)r×m contains r non-negative basis spec-tra that capture typical normal spectral patterns and W ∈
+
+(R≥0)n×r contains their activations. We optimize W and B un-der non-negativity using coordinate descent [19] and then fix B.We compute the Moore–Penrose pseudo-inverse Bp ∈ Rm×r
+
+as an analysis operator for memory-key initialization: 
+
+Bp = pinv( B). (3) If B is full row-rank, a closed form is Bp = BT (BB T )−1.Using Bp, one can obtain approximate activations via ˜W =
+
+XBp and reconstruct ˜X = ˜W B . For a single query x,the corresponding activation is ˜w = xBp. From the analy-sis/synthesis viewpoint [20], B can be regarded as a synthesis dictionary, while Bp acts as its dual analysis operator for computing activations. In the special case where BB ⊤ = Ir ,we have Bp = B⊤. Unlike NNLS, the standard constrained NMF inference rule [21], xBp gives an unconstrained least-squares estimate, i.e., ˜w = arg min w∈R1×r ∥x−wB∥22, without enforcing w ≥ 0. Thus, Bp is used not as a standalone inference method but as analysis-style key initialization, while MemNMF learns a normalized memory lookup anchored by B.
+
+2) Memory Network Training: We train the memory network on normal LPC spectra X ∈ (R≥0)n×m using a lookup over r
+
+memory items anchored to the fixed NMF dictionary B. The key side uses the analysis operator Bp, and the value side uses the synthesis dictionary B: K = BpPK ∈ Rm×r and 
+
+V = B⊤PV ∈ Rm×r , where PK , P V ∈ Rr×r are learnable projections. During training, we optimize PK , PV , and the TABLE I: Comparison between AE and the proposed method on the sec-dev of DCASE2020T2 with AUC scores.                         
+
+> Machine AE + Log-Mel AE + LPC MemNMF + LPC Toy-car 80.9 71.3 86.2
+> Toy-conveyor 73.4 55.4 62.3 Fan 66.2 61.6 71.7
+> Pump 72.9 75.4 78.8
+> Slider 85.5 93.4 93.7
+> Valve 66.3 96.8 97.6
+> Avg. AUC 74.2 75.6 81.7
+
+BatchNorm parameters (including running statistics), while keeping B and Bp fixed. To compute activations over memory items, we apply Softmax to the dot-product logits XK. During training, we apply BatchNorm to XK before Softmax to normalize logit scale across samples. Accordingly, we compute 
+
+ˆW = Softmax (BatchNorm (XK)) , (4) where Softmax is applied along the memory dimension to yield attention weights over the r memory items. The corresponding reconstruction is ˆX ∈ Rn×m,
+
+ˆX = ˆWV ⊤. (5) We train on normal data by minimizing the mean squared reconstruction loss: 
+
+Lrec = 1
+
+m ∥X − ˆX∥2 
+
+> F
+
+. (6) At inference, we use Lrec as the anomaly score. IV. E XPERIMENTS 
+
+A. Setup 
+
+Datasets. We evaluated on DCASE2020 Task 2 [5], which combines real-machine (MIMII subset [22]) and toy-machine (ToyADMOS subset [4]) recordings, all recorded with real factory noise across six machine types, and provides develop-ment and evaluation splits ( sec-dev /sec-eval ). We also reported results on the full MIMII dataset [22], which includes the overlapping real-machine types and three SNR conditions (−6, 0, and 6 dB). Following [23], we used 11,419 segments for training and 6,600 for testing. All recordings are single-channel audio sampled at 16 kHz and are approximately 10 s long. 
+
+Implementation details. We extracted 60 LPC coefficients using librosa [24] and computed the LPC spectrum as an 8000-dimensional input feature. For NMF, we used 768 components. The memory network was trained with Adam [25] and cosine learning-rate scheduling [26] for 500 epochs, with batch size 200 and an initial learning rate of 0.001. For the LPC-spectrum AE baseline, we followed the AE implementation in [27], which originally used spectrogram inputs, and replaced the input and output layers to accept the 8000-dimensional LPC spectrum; we used batch size 512 and learning rate 0.01. 
+
+Metrics. We reported the area under the receiver operating characteristic curve (AUC) and the partial AUC (pAUC) over a TABLE II: Comparison of AE-based systems on DCASE2020T2 using Amean over AUC and pAUC, reported for sec-dev and sec-eval .                        
+
+> Model sec-dev sec-eval Amean AE [5] 66.6 70.0 68.3 AE-IDNN [6] 71.5 --ANP-IDNN [9] 71.8 75.6 73.7
+> PAE [10] 74.2 --AudDSR [11] 78.2 --Ours (w/ LPC Spectrum) AE 73.6 72.8 73.2 MemNMF 74.9 75.6 75.3
+
+low false positive rate range [0 , p ], following [5]. In particular, pAUC computes the same ranking-based quantity but restricts evaluation to FPR ≤ p, emphasizing performance under strict false-alarm constraints. We used p = 0 .1 [5] and reported the arithmetic mean of AUC and pAUC across all machine sections [28]. Following [22], we trained and evaluated per section for each machine type. 
+
+B. Main results on DCASE2020T2 
+
+We first isolated the impact of the input representation. Table I compares a standard AE trained with spectrogram features (Log-Mel) against the same AE trained with LPC-spectrum features on sec-dev . Replacing spectrograms with the LPC spectrum yielded large gains on non-stationary machine types such as Slider and Valve, suggesting that emphasizing the spectral envelope can be more robust than relying on highly time-varying spectrogram patterns. For Toy-car and Fan, however, the LPC spectrum did not uniformly improve the AE baseline, whereas MemNMF improved performance, suggesting that the training setup (e.g., hyperparameters) may be sub-optimal for these cases. In addition, Toy-conveyor degraded for both AE and MemNMF relative to Log-Mel, highlighting a potential limitation of LPC features on this machine type. Prior work also notes Toy-conveyor as a difficult case for learned ASD representations [29]. Compared with Log-Mel spectrograms, the LPC spectrum smooths time–frequency detail into a global envelope; if Toy-conveyor anomalies are localized or overlap spectrally with normal machine noise, this smoothing can attenuate discriminative cues and reduce normal–anomaly separation. Table II summarizes the overall benchmark results on DCASE2020T2 across sec-dev and sec-eval using the arithmetic mean of AUC and pAUC (Amean). On this aggregate metric, our MemNMF achieved consistent improvements over the AE baseline and competitive performance against recent AE-based approaches (e.g., ANP-IDNN). On sec-dev , MemNMF was competitive with PAE, which uses a stronger Transformer-based architecture, suggesting that a substantial portion of the gain can be attributed to the LPC-spectrum input and the proposed memory-based reconstruction. However, MemNMF underperformed AudDSR, which can benefit from training on broader machine data and from anomaly augmentation 64 128 256 512 768 1024 
+
+> Number of Basis Vectors
+> 60
+> 70
+> 80
+> 90
+> 100
+> Average AUC (%)
+> Noise Level (dB)
+> -6
+> 0
+> 6
+
+(a) Effect of memory sizes. 0 100 200 300 400 500    
+
+> 0
+> 100
+> 200
+> 300
+> 400
+> 500
+> 600
+> 700
+> 800
+> LPC spectrum in batch
+> 0.002
+> 0.003
+> 0.004
+> 0.005
+> 0.006
+> 0.007
+> 0.008
+> 0.009
+> Mem ory slot ind ex
+
+(b) Memory-item activation heatmap without BatchNorm (Valve sec. 06, −6 dB, MIMII). 0 100 200 300 400 500 
+
+> 0
+> 100
+> 200
+> 300
+> 400
+> 500
+> 600
+> 700
+> 800
+> LPC spectrum in batch
+> 0.001875
+> 0.001900
+> 0.001925
+> 0.001950
+> 0.001975
+> 0.002000
+> 0.002025
+> 0.002050
+> Memory slot index
+
+(c) Memory-item activation heatmap with BatchNorm (Valve sec. 06, −6 dB, MIMII). 
+
+Fig. 2: (a) Effect of memory size and memory-item activation heatmaps (b) without BatchNorm vs. (c) with BatchNorm. TABLE III: AUC scores for each machine type on the MIMII [3] dataset.                                                                                      
+
+> Model AE [23] VAE [23] GRLNet [23] MemNMF-512 MemNMF-768
+> -6 dB
+> Fan 68.7 71.5 69.9 74.2 76.4
+> Pump 71.0 71.0 77.5 75.7 77.3 Slider 73.4 70.5 75.0 93.6 94.1
+> Valve 50.3 49.8 53.4 91.4 92.0
+> Avg. 65.9 65.7 68.9 83.7 85.0 0 dB
+> Fan 84.9 84.9 86.6 86.1 87.3
+> Pump 81.6 81.7 85.3 86.8 83.5 Slider 78.5 78.1 80.9 97.0 97.2
+> Valve 54.9 54.7 57.0 96.2 96.7
+> Avg. 75.0 74.8 77.5 91.5 91.2
+> 6 dB
+> Fan 95.3 94.8 95.3 93.5 92.9 Pump 86.9 87.7 90.1 92.2 93.0
+> Slider 90.3 89.7 91.1 98.3 98.7
+> Valve 59.5 57.3 63.9 98.4 98.4
+> Avg. 83.0 82.4 85.1 95.6 95.7
+> Avg. (all) 74.6 74.3 77.2 90.4 90.6
+
+strategies, whereas our setting focuses on learning only from the target normal data within each machine section. 
+
+C. Results on MIMII 
+
+The performance of our method under different SNRs on the MIMII dataset is shown in Table III. Using 768 memory components yielded the best overall result, achieving 90.6% average AUC across machine types and SNRs, and outperforming GRLNet [23] (another AE-based approach) by 13.4% (90.6% vs. 77.2%). Notably, on the non-stationary machine types (Valve and Slider), MemNMF maintained over 90% AUC even at -6 dB, indicating strong robustness in noisy conditions. 
+
+1) Memory sizes: We varied the memory size (equal to the number of NMF components) and found that performance increased with more components, peaking around 512–768; larger sizes brought little additional gain (Fig. 2a). 
+
+2) Design choices: Table IV compares the default Mem-NMF with trained memory-network ablations and NMF-only baselines. In the default model, NMF first learns B and TABLE IV: AUC scores for MemNMF ablations and NMF-only baselines. 
+
+Method -6 dB 0 dB 6 dB MemNMF 84.1 91.5 95.6 
+
+use BT PK as K 82.3 (-1.8) 88.7 (-2.8) 93.3 (-2.3) 
+
+w/o BatchNorm 77.6 (-6.5) 87.0 (-4.5) 94.7 (-0.9) 
+
+w/o NMF (Random Init.) 67.9 (-16.2) 79.2 (-12.3) 83.3 (-12.3) NMF w/ Bp 61.8 (-22.3) 63.1 (-28.4) 64.3 (-31.3) NMF w/ NNLS 78.5 (-5.6) 87.5 (-4.0) 94.6 (-1.0) 
+
+Bp = pinv( B), which are kept fixed while the memory network uses K = BpPK , V = B⊤PV , and BatchNorm on the logits 
+
+XK before Softmax; only PK , PV , and BatchNorm parameters were trained. The “use BT PK as K” row replaces only the default key BpPK , while “w/o BatchNorm” removes only this logit normalization. The “w/o NMF” row keeps the same memory-network training but randomly initializes the key/value dictionaries instead of anchoring them to NMF-derived Bp and 
+
+B. The last two rows are NMF-only baselines without memory-network fine-tuning: NNLS estimates test activations by solving a non-negative reconstruction problem with fixed B, while 
+
+Bp gives an unconstrained pseudo-inverse encoding. NNLS substantially outperforms Bp-only reconstruction, confirming a strong fixed NMF baseline, but fits each test sample independently. MemNMF performs better, especially at low SNRs, by learning a BatchNorm-normalized memory lookup for more robust anomaly-score separation. Fig. 2c shows that BatchNorm decreases activation sparsity, allowing the memory network to utilize a wider variety of memory items for reconstruction, consistent with prior findings [30]. Finally, using Bp to initialize the Key (instead of BT PK ) consistently yields better results, implying that the pseudo-inverse basis provides a stronger encoding for computing activations. V. C ONCLUSION 
+
+We presented MemNMF, aiming to address limitations of conventional autoencoder frameworks for ASD, by reconstruct-ing LPC spectra using a memory module initialized from an NMF dictionary, thereby constraining reconstruction to sparse, non-negative combinations of normal bases. Experiments on MIMII and DCASE2020 Task 2 show consistent gains across machine types and operating conditions, with strong robustness in noisy, non-stationary settings. Future work will study better transfer across domains and stronger constraints for reliability under distribution shift. ACKNOWLEDGMENT 
+
+This work was supported by JTEKT. REFERENCES [1] Y. Koizumi, S. Saito, H. Uematsu, and N. Harada, “Optimizing acoustic feature extractor for anomalous sound detection based on neyman-pearson lemma,” in Proc. EUSIPCO , 2017, pp. 698–702. [2] H. Uematsu, Y. Koizumi, S. Saito, A. Nakagawa, and N. Harada, “Anomaly detection technique in sound to detect faulty equipment,” NTT Technical Review , 2017. [3] H. Purohit, R. Tanabe et al. , “MIMII Dataset: Sound dataset for malfunctioning industrial machine investigation and inspection,” in Proc. DCASE , 2019, pp. 209–213. [4] Y. Koizumi, S. Saito, H. Uematsu, N. Harada, and K. Imoto, “ToyAD-MOS: A dataset of miniature-machine operating sounds for anomalous sound detection,” in Proc. WASPAA , 2019, pp. 308–312. [5] Y. Koizumi, Y. Kawaguchi et al. , “Description and Discussion on DCASE2020 Challenge Task2: Unsupervised Anomalous Sound De-tection for Machine Condition Monitoring,” in Proc. DCASE . arXiv, 2020. [6] K. Suefusa, T. Nishida et al. , “Anomalous Sound Detection Based on Interpolation Deep Neural Network,” in Proc. ICASSP , 2020, pp. 271– 275. [7] D. Gong, L. Liu et al. , “Memorizing Normality to Detect Anomaly: Memory-Augmented Deep Autoencoder for Unsupervised Anomaly Detection,” in Proc. ICCV . Seoul, Korea (South): IEEE, Oct. 2019, pp. 1705–1714. [8] Y. Koizumi, M. Yasuda et al. , “Spidernet: Attention network for one-shot anomaly detection in sounds,” in Proc. ICASSP , 2020, pp. 281–285. [9] G. Wichern, A. Chakrabarty, Z.-Q. Wang, and J. L. Roux, “Anomalous Sound Detection Using Attentive Neural Processes,” in Proc. WASPAA ,2021, pp. 186–190. [10] X.-M. Zeng, Y. Song et al. , “Joint generative-contrastive representation learning for anomalous sound detection,” in Proc. ICASSP , 2023, pp. 1–5. [11] V. Zavrtanik, M. Marolt, M. Kristan, and D. Sko ˇcaj, “Anomalous sound detection by feature-level anomaly simulation,” in Proc. ICASSP , 2024, pp. 1466–1470. [12] L. C. Gleichmann, Y. G. Adhisantoso, A. Lange, and Q. Le Xuan, “Anomaly sound detector based on variational autoencoder with hyper-parameter optimization strategy,” DCASE2024 Challenge, Tech. Rep., 2024. [13] L. Huang, X. Nguyen et al. , “In-network pca and anomaly detection,” in Advances in Neural Information Processing Systems , vol. 19, 2006, pp. 617–624. [14] S. Saito and F. Itakura, “Theoretical consideration of the statistical optimum recognition of the spectral density of speech,” J. Acoust. Soc. Japan , January 1967. [15] N. Andersen, “On the calculation of filter coefficients for maximum entropy spectral analysis,” Geophysics , vol. 39, no. 1, pp. 69–72, 1974. [16] J. P. Burg, “Maximum entropy spectral analysis.” Ph. D. thesis, Stanford University, Department of Geophysics , 1975. [17] J. Makhoul, “Linear prediction: A tutorial review,” Proceedings of the IEEE , vol. 63, no. 4, pp. 561–580, 1975. [18] D. D. Lee and H. S. Seung, “Learning the parts of objects by non-negative matrix factorization,” Nature , vol. 401, no. 6755, pp. 788–791, 1999. [19] A. Cichocki and A. Phan, “Fast local algorithms for large scale nonnegative matrix and tensor factorizations,” IEICE Trans. Fundam. Electron. Commun. Comput. Sci. , vol. 92-A, pp. 708–721, 2009. [20] S. Mallat, A Wavelet Tour of Signal Processing: The Sparse Way , 3rd ed. Academic Press, 2009. [21] D. D. Lee and H. S. Seung, “Algorithms for non-negative matrix factorization,” in Advances in Neural Information Processing Systems ,vol. 13, 2000. [22] H. Purohit, R. Tanabe et al. , “MIMII Dataset: Sound dataset for malfunctioning industrial machine investigation and inspection,” in Proc. DCASE2019 , November 2019, pp. 209–213. [23] Y. Sha, S. Gou et al. , “Regional-local adversarially learned one-class classifier anomalous sound detection in global long-term space,” in Proc. ACM SIGKDD , 2022, p. 3858–3868. [24] Brian McFee, Colin Raffel et al. , “librosa: Audio and Music Signal Analysis in Python,” in Proc. SciPy , 2015, pp. 18 – 24. [25] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,” 
+
+CoRR , vol. abs/1412.6980, 2014. [26] I. Loshchilov and F. Hutter, “SGDR: Stochastic gradient descent with warm restarts,” in Proc. ICLR , 2017. [27] N. Harada, D. Niizumi, D. Takeuchi, Y. Ohishi, and M. Yasuda, “First-shot anomaly detection for machine condition monitoring: A domain generalization baseline,” Proc. EUSIPCO , pp. 191–195, 2023. [28] K. Wilkinghoff, H. Yang et al. , “Keeping the balance: Anomaly score calculation for domain generalization,” in Proc. ICASSP , 2025, pp. 1–5. [29] K. Wilkinghoff, “Sub-Cluster AdaCos: Learning Representations for Anomalous Sound Detection,” in Proc. IJCNN , 2021, pp. 1–8. [30] J. Bjorck, C. P. Gomes, and B. Selman, “Understanding batch normal-ization,” in Proc. NIPS , 2018.

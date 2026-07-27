@@ -6,32 +6,34 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-26
-- 运行时间：2026-07-26 20:01:20 UTC
+- 最新运行日期：2026-07-27
+- 运行时间：2026-07-27 21:24:24 UTC
 - 运行状态：成功
-- 本次总论文数：3
-- 精读区：0
-- 速读区：3
+- 本次总论文数：4
+- 精读区：2
+- 速读区：2
 
 ### 今日简报（AI）
-1) 今日速读3篇论文聚焦驾驶员监控、弱小目标检测及视觉语言模型属性选择。  
-2) 最值得关注：时空面部动作单元检测在驾驶员监控中的应用，以及基于优先级图的红外弱小无人机检测方法。  
-3) 下步可深入探索这些技术在自动驾驶安全和边缘场景目标识别中的实际部署效果。
-- 详情：[/202607/26/README](/202607/26/README)
+1. 今日阅读4篇论文，精读2篇高分研究：深度学习检测腹部CT肠梗阻（9.0分）与记忆增强NMF异常声音检测（8.0分）。  
+2. 最值得关注的方向是医学影像中的肠梗阻自动定位和基于频谱的异常声音检测，两者均展现了高实用与创新价值。  
+3. 建议优先精读这两篇高分论文，理解其模型设计思路，为后续在各自领域的实验或应用提供借鉴。
+- 详情：[/202607/27/README](/202607/27/README)
 
 ### 精读区论文标签
-- 本次无精读推荐。
+1. [Bowel Obstruction Detection and Localization on Abdominal CT with Deep Learning](/202607/27/2607.22173v1-bowel-obstruction-detection-and-localization-on-abdominal-ct-with-deep-learning)  
+   标签：评分：9.0/10、query:xai-objdet
+   evidence：通过概率选择掩码实现可解释的肠梗阻检测
+2. [MemNMF: Memory-Augmented NMF on LPC Spectra for Anomalous Sound Detection](/202607/27/2607.22086v1-memnmf-memory-augmented-nmf-on-lpc-spectra-for-anomalous-sound-detection)  
+   标签：评分：8.0/10、query:xai-objdet
+   evidence：基于记忆增强NMF的可解释异常分数用于异常声音检测
 
 ### 速读区论文标签
-1. [Spatiotemporal Facial Action Unit Detection using Twin Cycle Autoencoders for Driver Monitoring](/202607/26/2607.16760v2-spatiotemporal-facial-action-unit-detection-using-twin-cycle-autoencoders-for-driver-monitoring)  
+1. [FAIR: Feature-Augmented Implicit Regularization for AI-generated Fake Image Detection](/202607/27/2607.22087v1-fair-feature-augmented-implicit-regularization-for-ai-generated-fake-image-detection)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：基于FACS的可解释面部动作单元检测
-2. [Gaze-DETR: Top-Down Guidance Through Priority Maps for Infrared Weak-Small UAV Detection with DETR](/202607/26/2607.19040v1-gaze-detr-top-down-guidance-through-priority-maps-for-infrared-weak-small-uav-detection-with-detr)  
-   标签：评分：7.0/10、query:xai-objdet
-   evidence：通过优先级图实现可解释目标检测
-3. [Attributes Should Come from Images, Not Class Names: Distribution-Conditioned Attribute Selection for Vision-Language Models](/202607/26/2607.18695v1-attributes-should-come-from-images-not-class-names-distribution-conditioned-attribute-selection-for-vision-language-models)  
+   evidence：AI生成假图检测，使用特征增强正则化
+2. [Detect Early, Escalate Rarely: Anytime Detection of AI-Generated Video from the Compressed Bitstream](/202607/27/2607.19476v1-detect-early-escalate-rarely-anytime-detection-of-ai-generated-video-from-the-compressed-bitstream)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：从图像分布选取属性提升可解释分类
+   evidence：从压缩比特流检测AI生成视频，属于伪造检测任务
 
 
 <div class="dpr-home-promo-card">

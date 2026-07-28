@@ -1,0 +1,577 @@
+Title: Traceable LLM Reasoning for Fake-Order Fraud Detection
+
+URL Source: https://arxiv.org/pdf/2607.23075v1
+
+Published Time: Tue, 28 Jul 2026 00:27:19 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Traceable LLM Reasoning for Fake-Order Fraud Detection 
+
+# Siqi You 
+
+ByteDance Hangzhou, China yousiqi.147@bytedance.com 
+
+# Bingsong Xu 
+
+ByteDance Beijing, China xubingsong@bytedance.com 
+
+# Zhixian Zheng 
+
+ByteDance Hangzhou, China zhengzhixian@bytedance.com 
+
+# Xinjian Peng 
+
+ByteDance Hangzhou, China pengxinjian@bytedance.com 
+
+# Yang Xie 
+
+ByteDance Hangzhou, China xieyang.bd@bytedance.com 
+
+# Ying Wang 
+
+ByteDance Hangzhou, China wangying.826@bytedance.com 
+
+# Jiarong Xu 
+
+Fudan University Shanghai, China jiarongxu@fudan.edu.cn 
+
+## Abstract 
+
+Detecting fake-order fraud at scale remains a critical challenge for large online-to-offline (O2O) service platforms, as existing ap-proaches often rely on expert-designed features, produce black-box decisions, and provide limited interpretability. To address these lim-itations, we propose DeepScrub 1, a reinforcement learning frame-work built upon large language models (LLMs) for fake-order fraud detection with traceable reasoning. DeepScrub introduces three innovations. First, a semantic unification module converts hetero-geneous risk signals into textual descriptions that LLMs can un-derstand. Second, continued pre-training on risk-control corpora injects domain knowledge, and task rewards jointly evaluate predic-tion correctness and reasoning quality. Third, the SUggest-REflect (SURE) mechanism incorporates expert feedback and model self-checking to iteratively refine reasoning paths. On a real-world fake-order fraud detection dataset, DeepScrub achieves a macro-F1 score of 85.3%, outperforming the best baseline by 2.7 percentage points. Our task-optimized 8B model further surpasses a 32B model, showing that domain adaptation can matter more than model scale in this setting. In a four-week live pilot, DeepScrub achieved 91.8% precision and 88.5% recall, improving over first-stage human re-viewers by 16.6 and 38.8 percentage points. It reduced first-stage manual review workload by 94% and saved nearly one million RMB annually. These results show that DeepScrub improves fraud re-view accuracy, reduces first-stage review workload, and provides traceable evidence for production risk-review workflows. 
+
+## CCS Concepts 
+
+• Information systems → Data mining ; • Computing method-ologies → Anomaly detection ; Reinforcement learning .
+
+## Keywords 
+
+fraud detection, large language models, reinforcement learning, reasoning, risk-control systems 
+
+> 1The name DeepScrub reflects the goal of deep-cleaning fake-order transactions from e-commerce platforms.
+
+## 1 Introduction 
+
+Fake-order fraud, also known as brushing, refers to behaviors that fabricate or manipulate transaction records, clicks, or user reviews to create an illusion of inflated commercial scale, popularity, or user engagement. Such practices not only undermine the reliabil-ity of sales volumes and ratings, but also distort fair competition among merchants, posing substantial risks to the socio-economic system. According to statistics from the Ministry of Public Security of China in 2025, brushing-related fraud accounts for about 37% of all telecommunication fraud cases. Controlling fake-order fraud on large O2O platforms is particu-larly challenging because suspicious orders are interleaved with le-gitimate business bursts, promotional traffic, and diverse merchant operating strategies. With hundreds of millions of daily transac-tions and complex multi-party interactions, purely manual review is costly and difficult to scale. At the same time, purely model-driven decisions are often hard to justify in enforcement and appeal work-flows, where platforms must explain why a merchant or transaction is judged to be suspicious. Existing fake-order fraud detection methods mainly fall into two categories. The first category relies on handcrafted features and expert rules derived from operational signals and historical behavior patterns. Although effective in some high-precision scenarios, these methods require heavy expert involvement, incur high maintenance costs, and adapt poorly to evolving fraud strategies. The second category uses deep learning models to improve detection accuracy, but their black-box predictions make it difficult to provide defensible evidence in real enforcement workflows. This limitation is especially serious in local-service O2O scenar-ios, where online orders are tightly coupled with offline fulfillment. In such settings, enforcement decisions are not merely classification outputs; they may directly affect merchant penalties, appeal resolu-tion, and downstream operational actions. For example, a legitimate multi-branch merchant may exhibit frequent transactions, recurring users, or unusual geographic patterns that superficially resemble brushing behavior. Without business-grounded explanations, plat-forms risk penalizing legitimate merchants and weakening trust arXiv:2607.23075v1 [cs.CR] 25 Jul 2026 KDD ’27, August 2027, San Jose, California You et al. 
+
+in the review process. Therefore, an effective fake-order fraud de-tection model should not only identify suspicious transactions, but also provide traceable evidence that supports review, enforcement, and appeals. This requirement makes large language models (LLMs) appealing for fake-order fraud detection. By reasoning over heterogeneous evidence in natural language, LLMs can potentially connect risk signals to human-readable explanations and produce auditable deci-sion traces. However, directly applying LLMs to this setting is still insufficient for deployment. In practice, three challenges remain. 
+
+First, key evidence for fake-order fraud is distributed across heterogeneous data sources, including association graphs, behavioral sequences, and structured transaction records, whereas LLMs primarily consume text. A deployable system therefore needs a practical way to unify heterogeneous evidence into a representation that supports both reasoning and auditing without introducing excessive system complexity. Second, fake-order fraud detection requires optimizing not only prediction correctness but also reasoning quality , because correct labels with weak or unsupported explanations are still inadequate for enforcement workflows. Third, high-stakes fraud review can-not rely solely on a single-pass generation process. When initial reasoning overlooks key merchant-side or transaction-side evidence, the system should be able to revisit and refine its judg-ment in a structured manner. To address these challenges, we develop DeepScrub, an LLM-based reinforcement learning framework for fake-order fraud de-tection. DeepScrub first converts heterogeneous risk signals into unified textual evidence through a semantic unification module, enabling the model to reason over graphs, sequences, and struc-tured records in a common format. It then performs continued pre-training on risk-control corpora to inject domain knowledge, followed by task-specific reward design to optimize both predic-tion correctness and reasoning quality. Finally, we introduce the SUggest-REflect (SURE) mechanism that combines expert feedback and self-verification to refine intermediate reasoning and improve the reliability of final decisions. The resulting model improves de-tection performance and provides traceable evidence for production risk-review workflows. We evaluate DeepScrub on a real-world fake-order fraud detec-tion dataset collected from a large O2O platform. The proposed framework achieves the best performance among the evaluated methods in offline experiments. More importantly, in a four-week live pilot, DeepScrub achieved 91.8% precision and 88.5% recall, out-performing human reviewers by 16.6 and 38.8 percentage points, respectively, while reducing manual review workload by 94% and saving nearly one million RMB annually. These results demon-strate that LLM-based reasoning can be translated into measurable operational value in real-world risk-review settings. In summary, our key contributions are as follows: 
+
+• We present DeepScrub, an LLM-based reinforcement learning framework for fake-order fraud detection in production risk-review workflows on large O2O platforms. 
+
+• We combine semantic unification, continued domain adaptation, task-specific reward modeling, and the SUggest-REflect (SURE) mechanism to improve prediction accuracy and reasoning quality. 
+
+• We evaluate DeepScrub through offline experiments and a four-week live pilot, showing improved review accuracy, a 94% re-duction in first-stage manual review workload, and nearly one million RMB in annual cost savings. 
+
+## 2 Related Work 
+
+Fraud Detection Fraud detection has been widely studied in e-commerce, finance, and online service platforms. Early and widely deployed approaches rely on expert rules and manually designed risk indicators, which remain effective for high-precision screening and operational recall [ 6, 7 , 21 ]. Machine learning methods further improve detection by learning behavioral and transactional pat-terns from historical data [ 1 , 13 ]. Since many fraud activities are organized through linked accounts, merchants, or coordinated com-munities, graph-based fraud detection has also become an impor-tant direction [ 3, 16 , 17 ]. More recently, LLMs have been explored for anomaly and fraud detection over tabular or transaction-level data [ 4, 22 , 23 ]. These methods are useful for risk scoring, filtering, and anomaly detection, but they usually provide limited natural-language reasoning that can be inspected during enforcement, es-calation, or appeal handling. This limitation motivates our focus on fake-order fraud review, where the system must produce both a decision and a reviewable reasoning trace. 
+
+Reinforcement Learning in LLMs With the development of large models in various practical applications [ 10 , 14 , 25 , 28 ], re-inforcement learning (RL) has also become a common method for improving and adjusting the behavior of large language models (LLM). Reinforcement learning from human feedback (RLHF) trains reward models from human preferences and then optimizes lan-guage models with reinforcement learning algorithms such as RE-INFORCE and proximal policy optimization (PPO) [ 5 , 15 , 20 , 24 ]. Later preference-optimization methods, including KTO and DPO, reduce the complexity of reward modeling while improving align-ment efficiency [ 9 , 18 ]. group relative policy optimization (GRPO) further improves training efficiency by removing the need for a sep-arately trained critic model [ 12 ]. These methods mainly optimize general preference alignment or final-answer correctness. Fake-order fraud review requires a more specific objective. The model must generate a correct label and a reasoning trace grounded in transaction evidence. DeepScrub addresses this need by combining domain adaptation, task-specific rewards, and SURE training for a deployed review workflow. 
+
+## 3 Problem Formulation 
+
+Fake-order Fraud Detection. Given a de-identified textual repre-sentation of an order, the task is to determine whether the order is involved in fake-order fraud and identify its underlying motivation. The input integrates heterogeneous evidence, including relational networks, temporal behavior sequences, and structured transaction records. The model outputs a reasoning trace 𝑒 and a label 𝑦 ∈ Y .The label space is Y = {0, 1, 2}, corresponding to normal transac-tion, merchant inflating product sales, and influencer inflating their level. Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California 
+
+Figure 1: Overview of DeepScrub. The system first adapts a base LLM with risk-control corpora, then converts heterogeneous order evidence into text, and finally applies SURE training to optimize both fraud labels and reasoning traces. 
+
+## 4 Method of DeepScrub 4.1 Overview 
+
+In this section, we describe the technical details of our DeepScrub. The training pipeline described below is used to build this model, while online inference only requires the trained policy model to generate a label, confidence level, and reasoning trace. As illustrated in Fig. 1(a), to address the lack of domain expertise in general LLMs, we perform domain knowledge injection via continued domain adaptation on a compliance-reviewed corpus composed of public references, governance materials, and de-identified case knowledge. To mitigate potential degradation of the model’s general capabilities caused by domain adaptation, we also incorporate general-domain corpora into the continued pretraining process. As shown in Tab. 1, a risk - control to general data ratio of 1:15 achieves the best trade-off between domain adaptation and general capability preservation (C-Eval 73.97 vs. 73.87 baseline, essentially preserved; C-MMLU 75.80 vs. 76.93 baseline, a manageable 1.1-point drop). The resulting domain - enhanced LLM serves as the base model for the subsequent SUggest–REflect (SURE) reinforcement learning stage. The construction of the SURE training data is shown in Fig. 1(b). Given heterogeneous multi-modal risk-assessment signals, we first apply standardized semantic templates to convert networks, se-quences, and tabular records into unified textual descriptions, which are compatible with the input of LLMs. Data augmentation and filtering strategies are then employed to ensure label correctness and high data quality. The processed data are used to train the model in the SURE reinforcement learning stage, as depicted in Fig. 1(c). 
+
+Table 1: Results under different pretraining data ratios. 
+
+Data C-Eval C-MMLU Qwen3-8B 73.87 76.93 Qwen3-8B (only R) 69.04 73.44 Qwen3-8B (R:G=1:5) 70.59 74.23 Qwen3-8B (R:G=1:10) 72.86 75.11 Qwen3-8B (R:G=1:15) 73.97 75.80 
+
+To address the limitation that existing RL methods lack struc-tured reflective feedback for complex brushing detection, we intro-duce the SURE mechanism. By incorporating feedback from pre-trained risk-control expert and transaction - expert models through a suggestion module, SURE guides the model to perform self-reflection and iterative refinement, thereby improving both decision quality and interpretability. 
+
+## 4.2 Semantic Unification for Reasoning. 
+
+Multi-modal Semantic Unification As outlined in Sec. 1, fake-order fraud detection requires processing multi-modal data, which presents a modality gap for text -based LLMs. To bridge this gap, we define a standardized transformation template that converts heterogeneous data into LLM-compatible text: 
+
+• Graph-to-Text. Entity association signals based on de-identified linkage evidence form a graph structure, which is valuable for identifying group risks and enhancing the performance of brushing detection. Thus, we convert the graph structure into a textual format to help LLMs better interpret these important relationships. 
+
+• Sequence-to-Text. Sequential interaction patterns relevant to risk assessment represent their operational trajectory and risk ten-dencies, which are crucial for identifying bot-like behavior. We transform de-identified behavior-derived signals into textual repre-sentations for downstream reasoning. To enhance the information density of the sequence data, we further aggregate repeated ac-tions in long sequences and summarize action patterns, ensuring high-quality data. 
+
+• Table-to-Text. For structured records, aggregate indicators rele-vant to risk assessment are converted into textual summaries. We also apply a template to convert table data into text. Specifically, the feature names and their corresponding values are combined to cre-ate complete textual descriptions, while boolean and enumerated variables are transformed into their natural-language descriptions, rather than merely listing numeric values. After these transformations, heterogeneous multi-modal transac-tion data is unified into a text format that is more easily understood by the LLM, which will then undergo further data augmentation. Fig. 2 illustrates how we construct reasoning-augmented training data. Orders with brief manual analyses are expanded through chain-of-thought (CoT) enhancement, where DeepSeek-R1 [ 12 ]KDD ’27, August 2027, San Jose, California You et al. unify  
+
+> text graph sequence table DeepSeek R1 with simple annotations CoT augmentation without any annotation CoT generation filtering training data with reasoning path
+
+Figure 2: Construction of reasoning-augmented training data. Heterogeneous order evidence is first converted into text, then expanded with CoT augmentation or CoT generation, and finally filtered to keep label-consistent reasoning paths. 
+
+rewrites expert notes into structured reasoning paths. Orders with-out rationales are processed through CoT generation conditioned on their labels. We then filter generated rationales through manual verification to reduce label-inconsistent reasoning. 
+
+CoT Data Amplification. Annotating fake-order transactions is highly dependent on domain experts, leading to high costs, limited scalability, and a lack of interpretable reasoning in existing labels. To address this issue, we have designed two data augmentation processes to construct training samples that achieve both broad coverage and high quality. 
+
+• CoT Enhancement. Expert annotations are often brief verdicts (e.g., “suspected brushing”) lacking step -by -step logic. We use DeepSeek - R1 to reconstruct them into coherent reasoning chains that retain ex-pert insight while adding explicit logical structure, enhancing both readability and support for training DeepScrub ’s reasoning capa-bility. The detailed prompt design is provided in App. A.4. 
+
+• CoT Generation. For the large volume of rationale -free samples, we employ a generation strategy conditioned on labels, which guides the model to produce reasonable reasoning paths aligned with ground truth annotations. The corresponding prompt templates and generation strategies are detailed in App. A.4. After completing the above data augmentation, all transaction data in textual form are equipped with labels accompanied by high-quality CoT rationales. To ensure consistency between the aug-mented or generated reasoning chains and the true labels, we fur-ther conduct manual verification to filter out noisy data. 
+
+## 4.3 Reward Modeling for Fake-order Fraud Detection 
+
+Rewards guide model training by shaping its optimization direction. For reasoning -based brushing detection, it is essential to evaluate both the final decision’s correctness and the reasoning process’s quality. However, existing work has largely overlooked this require-ment. To address this gap, we design three reward functions for brushing detection: a format reward, an accuracy reward, and a reasoning reward. The detailed designs are described below. 
+
+• Format reward. Following the common practice in DeepSeek-R1, we introduce a format reward to encourage the model to present its analysis and conclusions in a structured manner. Specifically, the reasoning process is enclosed within the <reason> and </reason> tags, while the final decision is placed between the <answer> and </answer> tags. The resulting format reward is denoted as 𝑟 format .
+
+• Accuracy reward. This reward measures both the correctness of the model’s prediction and its confidence in the predicted response. Concretely, when determining the fraud motivation of an order, the model is required to output an answer with an associated confidence level (e.g., “<reason>...</reason><answer>Merchant inflates sales volume, confidence: high</answer>”). Let the model-generated reasoning process be ˆ𝑒 ∈ R| ˆ𝑒 | , the predicted answer be ˆ𝑦 , the ground-truth reasoning process be 𝑒 , the ground-truth answer be 𝑦 , and the predicted confidence be ˆ𝑐 , then we evaluate the model’s judgment accuracy by combining answer correctness and confidence. First, we map the confidence level to a weight: 
+
+𝑤 ( ˆ𝑐 ) =
+
+
+
+1, if ˆ𝑐 = ‘high’ 
+
+2/3, if ˆ𝑐 = ‘medium’ 
+
+1/3, if ˆ𝑐 = ‘low’ 
+
+, (1) and define the indicator function for answer correctness as 
+
+I( ˆ𝒚 , 𝒚 ) =
+
+(
+
+1, if ˆ𝒚 = 𝒚 
+
+0, if ˆ𝒚 ≠ 𝒚 , (2) Multiplying I( ˆ𝑦, 𝑦 ) with confidence weight 𝑤 ( ˆ𝑐 ) yields a basic accuracy signal, but this sparse reward may hinder training. To al-leviate this issue, we further introduce a process-level score defined as the textual similarity between the model-generated reasoning ˆ𝑒 
+
+and the ground-truth reasoning 𝑒 , allowing partial credit when the answer is wrong but the reasoning aligns with expert logic. The similarity is defined as: sim ( ˆ𝒆 , 𝒆 ) = 𝑓 ( ˆ𝒆 ) · 𝑓 (𝒆 )∥𝑓 ( ˆ𝒆 )∥ ∥ 𝑓 (𝒆 )∥ = 𝒖 · 𝒗 
+
+∥𝒖 ∥ ∥ 𝒗 ∥ =
+
+Í𝑑 𝑖 =1 𝑢 𝑖 𝑣 𝑖 √︃ Í𝑑 𝑖 =1 𝑢 2
+
+> 𝑖
+
+√︃ Í𝑑 𝑖 =1 𝑣 2
+
+> 𝑖
+
+,
+
+(3) where 𝑓 denotes a Sentence-BERT encoder [ 19 ], 𝑢, 𝑣 ∈ R𝑑 are the encoded sentence embeddings, ∥ · ∥ denotes the 𝐿 2 norm, and 𝑑 
+
+is the embedding dimension. Finally, we compute the accuracy reward by taking a weighted sum of the above components: 
+
+𝑟 accuracy = (1 − 𝛼 ) · I( ˆ𝑦, 𝑦 ) · 𝑤 ( ˆ𝑐 ) + 𝛼 · sim ( ˆ𝑒, 𝑒 ). (4) Here, 𝑟 accuracy denotes the resulting accuracy reward, and 𝛼 is a hyperparameter that controls the contribution of the process similarity score. In our experiments, we set 𝛼 = 0.1.
+
+• Reasoning reward. The reasoning reward is designed to measure the extent to which the reasoning process contributes to deriving the correct answer, encouraging the model to produce not only correct predictions but also coherent and meaningful reasoning paths. The underlying intuition is that a model response consists of two components—the reasoning process ˆ𝑒 ∈ R| ˆ𝑒 | and the final answer ˆ𝑦 . If ˆ𝑒 is informative and helpful, then the conditional prob-ability of generating the correct answer tokens following ˆ𝑒 should be relatively high. Formally, the probability of generating the ground-truth answer 
+
+𝑦 conditioned on the reasoning process ˆ𝑒 is defined as 
+
+𝐴 ( ˆ𝑒, 𝑦 ) = 1
+
+|𝑦 | 
+
+> |𝑦 |
+
+∑︁ 
+
+> 𝑛 =1
+
+𝑃 𝜃 
+
+ 𝑦 𝑛 | concat ( ˆ𝑒, 𝑦 <𝑛 ), (5) Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California Policy Model  
+
+> prompt Suggestion Generator suggestion
+
+Transaction Expert Model Risk Expert Model 
+
+Group Computation Format Reward Accuracy Reward Reasoning Reward 
+
+Figure 3: SURE training mechanism. The policy model first generates candidate responses, receives intrinsic or expert suggestions based on reward signals, and then refines its reasoning through a second-round response. 
+
+where ˆ𝑒 denotes the reasoning process, 𝑦 is the ground-truth answer, and |𝑦 | is the length of 𝑦 . A larger 𝐴 ( ˆ𝑒, 𝑦 ) indicates that the model is more confident in producing 𝑦 after observing ˆ𝑒 . However, this quantity only captures the local contribution of the reasoning process. To assess its global contribution, we further introduce perplexity as a measure of the model’s overall uncertainty over the generated text. Specifically, we concatenate ˆ𝑒 and 𝑦 into a complete sequence 𝑎 and compute its perplexity as 
+
+PPL (𝑎 ) = exp − 1
+
+|𝑎 | 
+
+> |𝑎 |
+
+∑︁ 
+
+> 𝑛 =1
+
+log 𝑃 𝜃 (𝑎 𝑛 | 𝑎 <𝑛 )
+
+!
+
+, (6) where 𝒂 = concat ( ˆ𝒆 , 𝒚 ) denotes the concatenated text. To com-bine these two metrics, we define a composite score score ( ˆ𝒆 , 𝒚 ) that integrates both local and global perspectives on the usefulness of ˆ𝑒 :score ( ˆ𝒆 , 𝒚 ) = 𝐴 ( ˆ𝒆 , 𝒚 )
+
+PPL (𝒂 ) , (7) To further reduce bias, we compute the difference between the score obtained with and without the reasoning process: 
+
+Δscore = score ( ˆ𝒆 , 𝒚 ) − score (∅, 𝒚 ), (8) Moreover, to mitigate reward hacking from Δscore , we explicitly enforce a semantic connection between the reasoning process and the final answer. We extract a set of keywords K ( 𝑦 ) associated with each ground-truth answer and compute the proportion 𝛾 of these keywords that appear in the model-generated reasoning ˆ𝑒 :
+
+𝛾 = 1
+
+|K ( 𝑦 )| ∑︁ 𝑘 ∈ K ( 𝑦 )
+
+I(𝑘 ∈ ˆ𝑒 ), (9) where I(·) is the indicator function. The final reasoning reward is defined as 
+
+𝑟 reason = Δscore × 𝛾 . (10) Here, 𝑟 reason denotes the reasoning reward, 𝛾 represents the pro-portion of answer-related keywords appearing in the reasoning process, and K ( 𝑦 ) denotes the keyword set associated with the ground-truth answer 𝑦 .
+
+## 4.4 Suggest-reflect Reinforcement Learning 
+
+As noted in Sec.1, existing RL methods lack the structured reflection needed for fraud reasoning. To overcome this, we propose a rein-forcement learning framework with a SUggest–REflect mechanism (SURE). During training, SURE utilizes a pretrained transaction-expert model and a risk-control expert model to provide sugges-tions or trigger re-evaluation on the policy model’s intermediate responses. These suggestions drive the policy model to reflect on and reconstruct its outputs after incorporating the feedback. SURE aims to help the model better internalize the reasoning pathways underlying fraud prediction, and correct errors system-atically. In doing so, SURE encourages the model to “think like an expert” in a systematic manner, thereby continuously improving both decision quality and interpretability in real-world deployments. As shown in Fig. 3, SURE uses an iterative training paradigm with dual-branch (intrinsic or extrinsic) suggestions. Specifically, transaction information is first organized into a prompt and fed into the policy model to generate an initial re-sponse. The suggestion module then produces intrinsic or extrinsic feedback via a dual - branch evaluation. In the reflection stage, the model re -examines its initial output together with the suggestions to produce a refined response. The advantages of the initial and final responses are then combined via a weighted average to form a mixed advantage signal, which is used to guide the policy update. The method details are as follows. Formally, for each order, the transaction information 𝒕 is orga-nized into a prompt 𝑝 and fed into the policy model 𝜋 𝜃 , which samples a group of first-round outputs 𝒐 (1) = {𝑜 (1) 
+
+> 1
+
+, 𝑜 (1) 
+
+> 2
+
+, ..., 𝑜 (1) 
+
+> 𝐺
+
+},where 𝐺 denotes the number of sampled outputs. Each output 𝑜 (1)
+
+> 𝑖
+
+consists of a reasoning process ˆ𝒆 (1) 
+
+> 𝑖
+
+concatenated with a final an-swer ˆ𝒚 (1) 
+
+> 𝑖
+
+, with 𝑖 ∈ [ 1, 𝐺 ]. Subsequently, the first-round responses 
+
+𝒐 (1) are passed to the suggestion module. 
+
+• Suggest. Within the suggestion module, we first compute the reward scores for 𝒐 (1) using the task-specific reward function in-troduced in Sec. 4.3, obtaining 𝒓 (1) = {𝑟 (1)
+
+> format
+
+, 𝑟 (1)
+
+> accuracy
+
+, 𝑟 (1) 
+
+> reason
+
+}. To prevent excessive deviation of the policy model’s own distribution caused by an overload of external suggestions (as also noted in [ 26 ]), we introduce a dual-branch decision mechanism. Specifically, for KDD ’27, August 2027, San Jose, California You et al. 
+
+each first-round output 𝒐 (1) 
+
+> 𝑖
+
+, a branch is selected based on its accu-racy reward 𝑟 (1)
+
+> 𝑖, accuracy
+
+. When the correctness reward is low (below a threshold 𝜇 ), it indicates that the model’s understanding is inade-quate; in this case, we additionally invoke transaction - expert and risk - control - expert models to provide extrinsic suggestions. Other-wise, if the correctness reward is sufficiently high, the model is con-sidered to have produced a relatively reliable response, and only in-trinsic suggestions are obtained to guide the model in self - reflection. 
+
+𝑠 𝑖 =
+
+(𝑠 in  
+
+> 𝑖
+
+, if the accuracy reward 𝑟 (1) 
+
+> 𝑖, accuracy
+
+≥ 𝜇, 𝑠 ex  
+
+> 𝑖
+
+, otherwise . (11) Here, 𝑠 in  
+
+> 𝑖
+
+denotes the intrinsic suggestion for output 𝑜 (1) 
+
+> 𝑖
+
+, which prompts the policy model to conduct self-reflection—checking the plausibility of its reasoning chain and exploring potentially better inference paths. Meanwhile, 𝑠 ex  
+
+> 𝑖
+
+denotes the extrinsic suggestion for 
+
+𝑜 (1) 
+
+> 𝑖
+
+, which is provided by two external models: a transaction - expert model and a risk-control-expert model. Specifically, the transaction-expert model compares the policy model’s generated reasoning ˆ𝒆 (1)
+
+> 𝑖
+
+and answer ˆ𝒚 (1) 
+
+> 𝑖
+
+with the ground-truth reasoning 𝒆 and answer 𝒚 ,and suggests that the policy model focus on the misunderstood or overlooked key points in the transaction information. Similarly, the risk-control-expert model highlights anomalous features that could help improve the accuracy of fake-order fraud detection. Detailed prompt designs for these suggestions are provided in Appendix A.4. 
+
+• Reflect. In the subsequent reflection stage, for each first-round output 𝑜 (1) 
+
+> 𝑖
+
+, the suggestion content 𝑠 𝑖 together with the original output 𝑜 (1) 
+
+> 𝑖
+
+are fed again into the policy model 𝜋 𝜃 , prompting the model to examine its initial response and generate a refined final answer 𝑜 (2) 
+
+> 𝑖
+
+. Analogously, we compute the reward scores for the final responses 𝒐 (2) using the same task-specific reward function introduced in Sec.4.3, obtaining 𝒓 (2) = {𝑟 (2)
+
+> format
+
+, 𝑟 (2)
+
+> accuracy
+
+, 𝑟 (2) 
+
+> reason
+
+}. Fi-nally, the advantage of the two rounds of responses is combined via a weighted average to obtain the mixed advantage 𝐴 𝑖 . Specifically, we introduce a hyperparameter 𝜔 ∈ [ 0, 1] to control the weighting between the second-round advantage 𝐴 (2) 
+
+> 𝑖
+
+= 𝑟 (2)      
+
+> 𝑖 −mean (𝒓 (2))
+> std (𝒓 (2))
+
+and the advantage increment Δ𝐴 𝑖 = 𝐴 (2) 
+
+> 𝑖
+
+− 𝐴 (1) 
+
+> 𝑖
+
+, as formulated below: 
+
+𝐴 𝑖 = 𝜔𝐴 (2) 
+
+> 𝑖
+
++ ( 1 − 𝜔 )Δ𝐴 𝑖 = 𝜔𝐴 (2) 
+
+> 𝑖
+
++ ( 1 − 𝜔 )( 𝐴 (2) 
+
+> 𝑖
+
+− 𝐴 (1) 
+
+> 𝑖
+
+). (12) where 𝐴 (1) 
+
+> 𝑖
+
+and 𝐴 (2) 
+
+> 𝑖
+
+denote the advantage values of the first-and second-round responses 𝑜 𝑖 , respectively; Δ𝐴 𝑖 measures the improvement in advantage after the suggestion–reflection stage; and 𝐴 𝑖 represents the blended advantage. This blended advantage is then used as the advantage term in the GRPO objective function to guide the update of the model parameters. 
+
+## 5 Dataset Construction 
+
+Our evaluation corpus is derived from a large-scale operational risk-control environment over a one-year observation window. As detailed in Sec. 4.2, each record is transformed into a de-identified textual representation for analysis. The construction of the dataset does not rely on a single validation method; instead, it employs a multi-layered filtering and cross-validation process to ensure the accuracy of sample labeling. The specific steps are as follows: 
+
+Acquiring Fraudulent Samples. Samples associated with fake-order fraud are directly extracted from daily risk-control enforce-ment outcomes, which provide the most reliable source of positive labels in our setting. These enforcement outcomes fall into three cat-egories: cases labeled by experts, detections based on high-precision rules, and orders confirmed through law enforcement. 
+
+Acquiring Benign Samples. Selected from orders with prohibi-tively high fraud costs or logically low fraud probability, including: high - value purchases (e.g., appliances, luxury goods), orders with extensive pre -purchase consultation or reviews after consumption, and orders from users with long registration and rich purchase history. 
+
+Data Cleaning and Cross-validation. After obtaining the ini-tially selected benign samples and fake-order fraud samples, we further process the data to exclude potential labeling errors. First, we remove samples with ambiguous labels. We then check feature consistency by filtering benign samples that exhibit patterns in-dicative of fake-order fraud and re-examining positive samples that closely resemble normal orders. We evaluate DeepScrub on a real-world dataset collected from a major O2O e-commerce platform. The dataset contains approxi-mately 150K de-identified orders and covers three categories: Mer-chant Inflating Product Sales, Influencer Inflating Their Level, and Normal Transaction. The raw class distribution is highly imbal-anced. To better reflect deployment conditions and reduce temporal leakage, we split the data chronologically, using roughly the earlier 80% for training and the later 20% for testing. After undersampling the majority class in training, the class ratio is approximately 3 (Merchant) : 1 (Influencer) : 50 (Normal). 
+
+## 6 Experiment 
+
+This section evaluates the effectiveness of our DeepScrub by ad-dressing the following research questions: 
+
+•Q1 : Does DeepScrub improve fake-order fraud review accuracy over baseline models? (Sec. 6.2) 
+
+•Q2 : Which components are responsible for the performance gains? (Sec. 6.3) 
+
+•Q3 : How does SURE improve reasoning quality through expert suggestions and self-verification? (Sec. 6.4) 
+
+## 6.1 Experimental Setup 
+
+Training. Based on the domain -enhanced model (Sec. 4.1), we perform supervised fine - tuning (SFT) on 20% of the CoT - augmented training set (Sec. 4.2) and reinforcement learning on the remaining 80%. Optimization employs a learning rate of 1 × 10 −5, a warmup ratio of 0.05, and a group size of 6. All experiments are run on 4 computing nodes with 32 high-performance GPUs, using a global batch size of 16 and a total training time of approximately 108 hours. Key training hyperparameters are set as follows: reflection threshold 𝜇 = 0.5, mixing weight between learning rounds 𝜔 =
+
+0.7. The training pipeline is implemented using the ms - swift [ 29 ]framework. Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California 
+
+Table 2: Experimental results on our dataset for fake-order fraud detection. 
+
+Methods Metrics Influencer Inflating Their Level Merchant Inflating Product Sales Normal Transaction Overall (macro) Prec. Rec. F1 Prec. Rec. F1 Prec. Rec. F1 Prec. Rec. F1 Qwen3-32B [27] 0.858 0.866 0.862 0.654 0.710 0.681 0.789 0.722 0.754 0.767 0.766 0.765 Qwen3-8B [27] (SFT) 0.905 0.923 0.914 0.759 0.719 0.739 0.814 0.835 0.824 0.826 0.826 0.826 InternLM3-8B [2] (SFT) 0.909 0.791 0.846 0.702 0.543 0.612 0.650 0.860 0.740 0.754 0.731 0.733 Llama-3-8B [8] (SFT) 0.918 0.915 0.916 0.752 0.727 0.739 0.813 0.826 0.819 0.827 0.823 0.825 GLM-4-9B [11] (SFT) 0.906 0.928 0.917 0.769 0.687 0.725 0.801 0.854 0.826 0.825 0.823 0.823 DeepScrub w/o RL 0.913 0.915 0.914 0.772 0.719 0.744 0.826 0.834 0.830 0.837 0.823 0.830 DeepScrub w/o SURE 0.909 0.932 0.920 0.780 0.732 0.755 0.822 0.850 0.836 0.837 0.838 0.837 DeepScrub w/o 𝑟 accuracy 0.883 0.921 0.902 0.710 0.698 0.704 0.800 0.750 0.774 0.798 0.790 0.793 DeepScrub w/o 𝑟 reasoning 0.914 0.938 0.926 0.782 0.731 0.755 0.832 0.871 0.851 0.843 0.846 0.844 DeepScrub 0.914 0.959 0.936 0.800 0.751 0.774 0.832 0.869 0.850 0.849 0.860 0.853 Downstream Tasks. The task is to classify orders into normal transaction, merchant inflating product sales, or influencer inflating their level, providing an interpretable rationale and reasoning path. To prevent feature leakage, all orders in the test set are generated after those in the training set. For the fake-order fraud detection task, we evaluate using precision, recall, and F1, balancing the imbalanced classes via random sampling for per - label analysis and using macro - averaging for overall performance. The same protocol is applied to all baselines and our method for fair comparison. 
+
+Baselines. In this study, to evaluate the effectiveness of the pro-posed approach and address the practical need for resource con-strained deployment, we design a hierarchical baseline system. First, we compare a smaller, task - optimized model (based on Qwen3 - 8B [ 27 ]) that has undergone domain enhancement and reinforcement learn-ing against a much larger, general - purpose model (Qwen3 -32B [ 27 ]) that has not been fine - tuned for the task, testing whether targeted optimization can surpass scale. Second, at a similar parameter scale, we select widely used open - source models, including InternLM3-8B-Instruct 2, Llama3 -8B [ 8 ], and GLM4 - 9B [ 11 ] and fine - tune them on the same training data as our method, thereby comparing differ-ent architectures under a fair training setup. This baseline design directly examines the trade -off between small, tuned models and large, generic ones, while ensuring the gains are attributable to our contributions. 
+
+## 6.2 Experimental Results 
+
+Tab. 2 summarizes the overall performance of DeepScrub and major baseline methods on the fake-order fraud detection task. DeepScrub achieves the best results across all three classification subtasks, with a macro -averaged F1 -score of 0.853, substantially outperforming all baselines. In detail, for influencer’s level inflation, a relatively well - defined pattern, DeepScrub attains an F1 of 0.936, demonstrat-ing its stability on clear fraud signals. The most challenging mer-chant sales inflation subtask sees DeepScrub reaching an F1 of 0.774, exceeding the best fine-tuned baseline (0.739) by 3.5 points, which confirms its capability to detect complex, concealed brushing be-haviors. Meanwhile, on normal transaction recognition, DeepScrub 
+
+> 2InternLM3-8B-Instruct is an updated release from the same team as InternLM2 [2]
+
+also achieves the highest F1 among all baselines (0.850), indicat-ing that improved fraud detection does not come at the cost of misclassifying legitimate orders. Notably, our optimized 8B-level model outperforms the larger-scale Qwen3-32B model, which lacks domain adaptation, showing that task -specific optimization is more effective than simply scaling model size in professional risk -control scenarios. 
+
+## 6.3 Ablation Study 
+
+To validate the contribution of each proposed component, we con-duct four structured ablation experiments: (1) DeepScrub w/o RL: removing the entire reinforcement learning phase (SFT - only base-line); (2) DeepScrub w/o SURE: removing the entire SURE mech-anism; (3) DeepScrub w/o 𝑟 accuracy : ablating the accuracy reward while keeping the format and reasoning rewards, and (4) DeepScrub w/o 𝑟 reasoning : excluding the reasoning reward while retaining the accuracy and format rewards. Compared to the SFT -only baseline, DeepScrub improves macro -F1 from 0.830 to 0.853, showing that RL enables policy refinement beyond static supervision. Keeping RL but disabling SURE still achieves a competitive macro -F1 (0.837), yet performance on “merchant inflating product sales” drops (F1=0.755 vs. 0.774), underscoring the value of interactive reflection for learn-ing nuanced fraud patterns. Removing the accuracy reward causes the steepest decline: macro - F1 falls to 0.793, and “merchant sales inflation” F1 drops to 0.704, confirming that this reward is essential for distinguishing fraudulent from legitimate behaviors. Exclud-ing the reasoning reward yields a marginal drop on the simpler ‘influencer-level inflation’ task (F1=0.926 vs. 0.936) and a larger drop on ‘merchant sales inflation’ (0.755 vs. 0.774), indicating that the reasoning reward helps maintain logical consistency in complex scenarios. 
+
+## 6.4 Case Study 
+
+Tables 3 and 4 illustrate the two roles of SURE. In Tab. 3, expert suggestions help the model correct a wrong first-round label by revisiting overlooked merchant-user relationships and transaction patterns. In Tab. 4, self-verification improves an already correct prediction by adding more specific business context and behavioral evidence. These examples show that SURE improves both error KDD ’27, August 2027, San Jose, California You et al. 
+
+Table 3: Correcting misclassification via experts’ suggestions. 
+
+Question : ... You need to reason step by step based on the order characteristics to optimize the transaction motive derived from the manual analysis ... Basic transaction information of the order ... 
+
+First-round Response : <reason> ... the focal entity shows strong association signals with multiple roles in the transaction chain ... The behavioral pattern exhibits an anomalous cycle of "concentrated ordering followed by no verification or consumption."...It is possible that the user is artificially inflating the payment-based Gross Merchandise Volume (GMV) metric to meet assessment targets (where "GMV" carries high weight in the influencer-level evaluation system)...</reason><answer>Influencer inflating their level.</answer> 
+
+Transaction-expert’s Suggestion :...The direct association between the user’s identity and the merchant is not identified... It is necessary to re-examine the differences between the influencer’s level assessment metrics and the merchant sales evaluation criteria... Risk-control-expert’s Suggestion :...Abnormal surge in transaction amount... The timing distribution does not align with the user’s typical behavior patterns... 
+
+Second-round Response : <reason>...The user acts as an entity associated with the merchant... The merchant fabricates sales volume through linked accounts... However, the user’s behavior aligns more closely with "merchant inflating product sales," indicating a merchant-driven operational logic...</reason><answer>Merchant inflating product sales.</answer> 
+
+Table 4: Refining correct reasoning through self-verification. The Question part is the same as that of Tab. 3. 
+
+First-round Response : <reason> ...The entity’s profile is strongly consistent with the associated merchant type (based on contextual alignment signals). Their transactional behavior was characterized by high frequency, uniformity, and coordinated group activity which exhibited clear signs of sales inflation. The objective is to fabricate "product popularity" data to artificially boost merchant sales performance... </reason><answer>Merchant inflating product sales.</answer> 
+
+Self-verification :...Your conclusion is correct. Please proceed with the following steps for self - verification to confirm whether a more optimal reasoning path exists... 
+
+Second-round Response : <reason>...Behavior-derived risk patterns, together with cross-context consistency checks (association with workplace scenarios) and the merchant’s promotional context (Double 11 period, recent platform entry) collectively indicate a brushing scenario where the merchant aims to inflate sales of "gas + car wash" vouchers...</reason><answer>Merchant inflating product sales.</answer> 
+
+correction and reasoning quality, which supports review-stage de-cisions in fake-order fraud detection. 
+
+## 7 Real-world Deployment 
+
+To verify the practical value of DeepScrub, we deployed it in a pro-duction risk-review workflow for local-service orders. DeepScrub is not used as a full-traffic detector. It operates after lightweight rules recall suspicious orders and automates the first-stage review that was previously handled by standard human reviewers. 
+
+Deployment Architecture. DeepScrub runs as an automated first-stage reviewer in the human-audit pipeline on a cluster of six high-performance GPUs. Its workflow follows four stages: (1) filter-ing suspicious orders (flagged by risk - control rules) and preparing multimodal inputs; (2) converting graphs, sequences, and tables into text via Sec. 4.2; (3) generating a fraud verdict with a reasoning trace; (4) escalating cases to experts based on a threshold. 
+
+Pilot Evaluation. During a four-week online trial, DeepScrub pro-cessed approximately 10,000 orders initially flagged as potentially fraudulent by risk control rules. All orders were simultaneously re-viewed by the standard first-stage reviewers used in the production workflow for comparison. These reviewers had routine training but were not senior fraud experts. Final evaluation labels were adju-dicated by senior fraud experts using the same evidence available in the production review workflow. The results showed that Deep-Scrub achieved a precision of 91.8% (vs. 75.2% human) and a recall of 88.5% (vs. 49.7% human), representing improvements of 16.6 and 38.8 percentage points, respectively. 
+
+Production Impact. The pilot confirms that DeepScrub provides stronger first-stage review performance than standard human re-view in both coverage and accuracy. It is currently in production, reducing the first-stage manual review workload by 94% while cut-ting the time to review a single order from over ten minutes to a few seconds, saving nearly one million RMB annually. Each verdict includes a traceable reasoning chain to support expert adjudication. These results show that DeepScrub supports production fraud re-view with higher accuracy, lower first-stage review workload, and traceable reasoning for expert adjudication. 
+
+## 8 Conclusion 
+
+We presented DeepScrub, an LLM-based framework for fake-order fraud detection in production O2O risk-review workflows. By com-bining semantic unification, domain adaptation, and SURE training, DeepScrub improves detection performance and produces reason-ing traces for review. Future work will extend the framework to broader fraud categories, reduce inference cost, and strengthen human review for high-impact cases. 
+
+## References            
+
+> [1] Abdulalem Ali, Shukor Abd Razak, Siti Hajar Othman, Taiseer Abdalla Elfadil Eisa, Arafat Al-Dhaqm, Maged Nasser, Tusneem Elhassan, Hashim Elshafie, and Abdu Saif. 2022. Financial fraud detection based on machine learning: a systematic literature review. Applied Sciences 12, 19 (2022), 9637. [2] Zheng Cai, Maosong Cao, Haojiong Chen, Kai Chen, Keyu Chen, et al .2024. InternLM2 Technical Report. arXiv:2403.17297 [cs.CL] [3] Dawei Cheng, Yao Zou, Sheng Xiang, and Changjun Jiang. 2025. Graph neural networks for financial fraud detection: a review. Frontiers of Computer Science 19, 9 (2025), 199609. [4] Sijie Cheng, Yanbo Yang, Jiawei Zhang, and Pengfei Li. 2025. LLM-TAD: Inter-pretable Ethereum Fraud Detection Based on Large Language Models. In IEEE
+
+Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California 
+
+International Conference on Blockchain and Trusted Intelligence Systems (ICBCTIS) .[5] Paul F Christiano, Jan Leike, Tom Brown, Miljan Martic, Shane Legg, and Dario Amodei. 2017. Deep reinforcement learning from human preferences. Advances in neural information processing systems 30 (2017). [6] María del Mar Roldán-García, José García-Nieto, and José F Aldana-Montes. 2017. Enhancing semantic consistency in anti-fraud rule-based expert systems. Expert Systems with Applications 90 (2017), 332–343. [7] V Dheepa and R Dhanapal. 2012. Behavior based credit card fraud detection using support vector machines. ICTACT Journal on Soft computing 2, 4 (2012), 391–397. [8] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. 2024. The llama 3 herd of models. arXiv e-prints (2024), arXiv–2407. [9] Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe Kiela. 2024. Kto: Model alignment as prospect theoretic optimization. arXiv preprint arXiv:2402.01306 (2024). [10] Chenghan Fu, Daoze Zhang, Yukang Lin, Zhanheng Nie, Xiang Zhang, Jianyu Liu, Yueran Liu, Wanxian Guan, Pengjie Wang, Jian Xu, et al . 2025. MOON Embedding: Multimodal Representation Learning for E-commerce Search Advertising. arXiv preprint arXiv:2511.11305 (2025). [11] Team GLM, Aohan Zeng, Bin Xu, Bowen Wang, Chenhui Zhang, et al . 2024. ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools. arXiv:2406.12793 [12] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al . 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025). [13] Mustafa Berk Keles and Mehmet Gokturk. 2026. BI-GBDT: A Graph-Free Be-havioral Interaction-Aware Gradient Boosting Framework for Fraud Detection in Large-Scale Payment Systems. Applied Sciences 16, 2 (2026). doi:10.3390/ app16020876 [14] Zhanheng Nie, Chenghan Fu, Daoze Zhang, Junxian Wu, Wanxian Guan, Pengjie Wang, Jian Xu, and Bo Zheng. 2026. Moon2. 0: Dynamic modality-balanced multimodal representation learning for e-commerce product understanding. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .22975–22985. [15] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al . 2022. Training language models to follow instructions with human feedback. Advances in neural information processing systems 35 (2022), 27730–27744. [16] Junjun Pan, Yixin Liu, Xin Zheng, Yizhen Zheng, Alan Wee-Chung Liew, Fuyi Li, and Shirui Pan. 2025. A label-free heterophily-guided approach for unsuper-vised graph fraud detection. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 12443–12451. [17] Tahereh Pourhabibi, Kok-Leong Ong, Booi H Kam, and Yee Ling Boo. 2020. Fraud detection: A systematic literature review of graph-based anomaly detection approaches. Decision Support Systems 133 (2020), 113303. [18] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. 2023. Direct preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems 36 (2023), 53728–53741. [19] Nils Reimers and Iryna Gurevych. 2019. Sentence-bert: Sentence embeddings using siamese bert-networks. arXiv preprint arXiv:1908.10084 (2019). [20] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 
+
+(2017). [21] Lyn Thomas, Jonathan Crook, and David Edelman. 2017. Credit scoring and its applications . SIAM. [22] Che-Ping Tsai, Ganyu Teng, Phillip Wallis, and Wei Ding. 2025. AnoLLM: Large Language Models for Tabular Anomaly Detection. In International Conference on Learning Representations (ICLR) .[23] Ruiqi Wang, Ruikang Liu, Runyu Chen, Haoxiang Suo, Zhiyi Peng, Zhuo Tang, and Changjian Chen. 2026. CausalTAD: Injecting Causal Knowledge into Large Language Models for Tabular Anomaly Detection. arXiv preprint arXiv:2602.07798 
+
+(2026). [24] Ronald J Williams. 1992. Simple statistical gradient-following algorithms for connectionist reinforcement learning. Machine learning 8, 3 (1992), 229–256. [25] Junxian Wu, Chenghan Fu, Zhanheng Nie, Daoze Zhang, Bowen Wan, Wanxian Guan, Chuan Yu, Jian Xu, and Bo Zheng. 2026. MOON3. 0: Reasoning-aware Multimodal Representation Learning for E-commerce Product Understanding. 
+
+arXiv preprint arXiv:2604.00513 (2026). [26] Jianhao Yan, Yafu Li, Zican Hu, Zhi Wang, Ganqu Cui, Xiaoye Qu, Yu Cheng, and Yue Zhang. 2025. Learning to Reason under Off-Policy Guidance. arXiv:2504.14945 [cs.LG] https://arxiv.org/abs/2504.14945 [27] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, et al . 2025. Qwen3 Technical Report. arXiv:2505.09388 [cs.CL] https://arxiv.org/abs/2505.09388 [28] Daoze Zhang, Chenghan Fu, Zhanheng Nie, Jianyu Liu, Wanxian Guan, Yuan Gao, Jun Song, Pengjie Wang, Jian Xu, and Bo Zheng. 2026. MOON: Generative MLLM-based multimodal representation learning for e-commerce product understanding. In Proceedings of the Nineteenth ACM International Conference on Web Search and Data Mining . 924–933. [29] Yuze Zhao, Jintao Huang, Jinghan Hu, Xingjun Wang, Yunlin Mao, et al .2024. SWIFT:A Scalable lightWeight Infrastructure for Fine-Tuning. arXiv:2408.05517 [cs.CL] https://arxiv.org/abs/2408.05517 KDD ’27, August 2027, San Jose, California You et al. 
+
+## A Appendix A.1 Ethics and Privacy 
+
+This study strictly adheres to ethical standards and robust data security protocols to ensure data integrity, transparency, and user privacy. The study is evaluated on de-identified, access-controlled records derived from a large-scale online service platform under internal governance controls. Only authorized researchers who have undergone a formal internal approval process can access this proprietary data, thus ensuring data confidentiality and platform security. All research records were processed under internal governance procedures and restricted to de-identified, aggregate, and access-controlled representations. No direct personal identifiers were used in the research workflow. This data is used solely to develop and evaluate fraud detection methods within a privacy-preserving frame-work that complies with relevant data protection regulations and platform policies. To further ensure the transparency and security of our method-ology, we employ only large, open-source language models and publicly available reinforcement learning libraries throughout the training and evaluation process. We do not use any proprietary or closed-source model components, thereby eliminating the risks associated with reliance on commercial models and improving the reproducibility of our research. 
+
+## A.2 Semantic transformation example 
+
+• Graph-to-Text. For example, the group graph structure can be transformed into: “A de-identified entity group contains 17 linked accounts, with aggregated activity observed over the recent pe-riod...” 
+
+• Sequence-to-Text. The final representation of a de-identified interaction sequence might look like: “A representative sequence of platform events relevant to risk assessment was observed and summarized.” 
+
+• Table-to-Text. Aggregated activity indicators over a short obser-vation window were summarized into structured textual evidence, together with contextual consistency signals. 
+
+## A.3 Evaluation Metrics 
+
+• Precision : Precision measures the proportion of true positive pre-dictions among all instances predicted as positive. It is particularly important when the cost of false positives is high, as it reflects the model’s ability to avoid erroneous positive classifications. A higher precision indicates more reliable positive predictions, while a lower value suggests a greater rate of false positives in the model’s output. Precision = 𝑇 𝑃 𝑇 𝑃 + 𝐹 𝑃 ,
+
+where TP is the number of true positives and FP is the number of false positives. 
+
+• Recall : Recall (also called sensitivity or true positive rate) quan-tifies the proportion of actual positive instances that the model correctly identifies. This metric is critical in scenarios where miss-ing positive cases, such as in medical screening or fraud detection. A high recall indicates that the model captures the majority of relevant positive cases. Recall = 𝑇 𝑃 𝑇 𝑃 + 𝐹 𝑁 ,
+
+where TP is the number of true positives and FN is the number of false negatives. 
+
+• F1-score : F1-score is the harmonic mean of precision and recall, which balances the trade-off between the two metrics by assign-ing equal weight to both. It is optimal for scenarios where false positives and false negatives are equally costly, providing a single comprehensive measure of model performance on positive classes. F1-score = 2 · Precision · Recall Precision + Recall = 2𝑇 𝑃 
+
+2𝑇 𝑃 + 𝐹 𝑃 + 𝐹 𝑁 ,
+
+where TP is the number of true positives, FP is the number of false positives, and FN is the number of false negatives. 
+
+• Macro-averaged Precision : Macro-averaged Precision (Macro-precision) calculates the unweighted average of precision values across all classes, treating each class equally regardless of its sample size. This metric is suitable when all classes have equal importance, avoiding bias toward majority classes in imbalanced datasets. Macro-precision = 1
+
+𝐶 
+
+> 𝐶
+
+∑︁ 
+
+> 𝑖 =1
+
+Precision 𝑖 ,
+
+where 𝐶 is the total number of classes, and Precision 𝑖 is the preci-sion value of the 𝑖 -th class. 
+
+• Macro-averaged Recall : Macro-averaged Recall (Macro-recall) computes the unweighted average of recall values for all classes, giving equal consideration to each class’s performance. It is criti-cal for evaluating model ability to identify instances of all classes equally, especially in multi-class classification tasks with balanced class importance. Macro-recall = 1
+
+𝐶 
+
+> 𝐶
+
+∑︁ 
+
+> 𝑖 =1
+
+Recall 𝑖 ,
+
+where 𝐶 is the total number of classes, and Recall 𝑖 is the recall value of the 𝑖 -th class. 
+
+• Macro-averaged F1-score : Macro-averaged F1-score (Macro-F1) is the unweighted average of F1-score values across all classes, balancing precision and recall equally for every class. It serves as a holistic multi-class performance metric that avoids favoring large classes, making it ideal for imbalanced multi-class classification with equal class priority. Macro-F1 = 1
+
+𝐶 
+
+> 𝐶
+
+∑︁ 
+
+> 𝑖 =1
+
+𝐹 1𝑖 ,
+
+where 𝐶 is the total number of classes, and F1-score 𝑖 is the F1-score value of the 𝑖 -th class. 
+
+## A.4 List of Prompt Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California 
+
+Prompt of CoT Augmentation 
+
+## Role and Task You are an expert in analyzing transaction motives for an O2O platform. Your core task is to identify transaction motives by analyzing order characteristics. The user will provide order information, the corresponding transaction motive, and manual analysis records. You need to reason step by step based on the order characteristics to optimize the transaction motive derived from the manual analysis. ## Known descriptions of transaction motive scenarios 1.Merchant inflating product sales: A behavior of artificially inflating the product 's visible sales volume at a minimal cost. 2.Influencer inflating their level: Increase the influencer 's level by self-buying or hiring the black market to create fake orders. 3.Normal Transaction: A normal transaction refers to a purchase behavior where a consumer places an order, makes payment, and fulfills the obligation (such as in-store verification) or completes a compliant refund within the platform 's established rules, all driven by genuine and spontaneous consumption needs. ## Analysis requirements Follow the steps below based on the provided transaction motive and manual analysis. Reason out the possibilities step by step based on the characteristic data.Consider multi-dimensional characteristics such as time, space, and behavior patterns. Compare normal business fluctuations with abnormal patterns. Give a confidence assessment. ## Output format <reason> 1. First point of analysis... 2. Second point of analysis... </reason> The most likely motive scenario is: Scenario name Confidence level: [High/Medium/Low] Additional notes: [If any] ## Basic transaction information of the order {{feature}} ## Manual analysis {{manual_analysis}} ## Transaction motive {{true_label}} KDD ’27, August 2027, San Jose, California You et al. 
+
+Prompt of CoT Generation 
+
+## Role and Task You are an expert in analyzing transaction motives for an O2O platform. Your core task is to identify transaction motives by analyzing order characteristics.The user will provide order information and the corresponding transaction motive. You need to reason step by step based on the order characteristics to optimize the transaction motive derived from the manual analysis. ## Known descriptions of transaction motive scenarios 1.Merchant inflating product sales: A behavior of artificially inflating the product 's visible sales volume at a minimal cost. 2.Influencer inflating their level: Increase the influencer 's level by self-buying or hiring the black market to create fake orders. 3.Normal Transaction: A normal transaction refers to a purchase behavior where a consumer places an order, makes payment, and fulfills the obligation (such as in-store verification) or completes a compliant refund within the platform 's established rules, all driven by genuine and spontaneous consumption needs. ## Analysis requirements Follow the steps below based on the provided transaction motive and manual analysis. Reason out the possibilities step by step based on the characteristic data.Consider multi-dimensional characteristics such as time, space, and behavior patterns. Compare normal business fluctuations with abnormal patterns.Give a confidence assessment. ## Output format <reason> 1. First point of analysis... 2. Second point of analysis... </reason> The most likely motive scenario is: Scenario name Confidence level: [High/Medium/Low] Additional notes: [If any] ## Basic transaction information of the order {{feature}} ## Transaction motive {{true_label}} Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California 
+
+Prompt of Training 
+
+## Role and Task You are an expert in analyzing transaction motives for an O2O platform. Your core task is to identify transaction motives by analyzing order characteristics. You need to reason step by step based on the order characteristics and finally output a precise judgment result of the transaction motive. ## Known descriptions of transaction motive scenarios 1.Merchant inflating product sales: A behavior of artificially inflating the product 's visible sales volume at a minimal cost. 2.Influencer inflating their level: Increase the influencer 's level by self-buying or hiring the black market to create fake orders. 3.Normal Transaction: A normal transaction refers to a purchase behavior where a consumer places an order, makes payment, and fulfills the obligation (such as in-store verification) or completes a compliant refund within the platform 's established rules, all driven by genuine and spontaneous consumption needs. ## Analysis requirements Reason out the possibilities step by step based on the characteristic data.Consider multi-dimensional characteristics such as time, space, and behavior patterns. Compare normal business fluctuations with abnormal patterns.Give a confidence assessment. ## Output format <reason> 1. First point of analysis... 2. Second point of analysis... </reason> <answer> The most likely motive scenario is: Scenario name Confidence level: [High/Medium/Low] Additional notes: [If any] </answer> ## Basic transaction information of the order {{feature}} 
+
+Prompt of Self-verification 
+
+## Task Description Your conclusion is correct. However, to ensure the rigour of the reasoning, please self - verify according to the following steps: 1.Sort out the key information in the question. 2.Gradually check your logical derivation process and its rationality. 3.Confirm whether there is a better solution path. 4.Finally, re-affirm the conclusion and answer the order motive again according to the following format. ## Output format <reason> 1. First point of analysis... 2. Second point of analysis... </reason> <answer> The most likely motive scenario is: Scenario name Confidence level: [High/Medium/Low] Additional notes: [If any] </answer> KDD ’27, August 2027, San Jose, California You et al. 
+
+Prompt of Reflection 
+
+## Task Description Please gradually check your current reasoning process and conclusions to identify possible logical loopholes, data biases, or insufficient business understanding. 1.For each step of reasoning, clarify: Whether the basis is sufficient (data, rules, business common sense) Whether the logic is rigorous (are there leaps or unvalidated assumptions?) Whether the conclusion covers key scenarios (are there exceptions not considered?) 2.The following are improvement suggestions provided by trade experts: {{domain_suggest}}; please analyze these suggestions item by item and clarify: Which suggestions can directly correct your reasoning loopholes? How to correct them? Which suggestions require additional data or verification? Are there priorities? Avoid directly copying the suggestions; instead, evaluate their applicability in combination with your original reasoning. 3.The following is the analysis of abnormal behaviors by risk experts: {{riskcontrol_suggestion}}; please compare your answer with the risk control expert 's answer: Behavior coverage: Are there abnormal behavior patterns you did not notice? Risk weight: Did you underestimate the risk of certain behaviors? Difference explanation: If the conclusions are inconsistent, is it due to data differences, different business assumptions, or omissions in analysis dimensions? 4.Finally, re-answer the order motive based on the questions according to the following format: <reason> 1. First point of analysis... 2. Second point of analysis... </reason> <answer> The most likely motive scenario is: Scenario name Confidence level: [High/Medium/Low] Additional notes: [If any] </answer> 
+
+Prompt of Suggestions from Transaction-expert 
+
+## Role and Task As an expert in O2O platform business, please conduct a strict comparative analysis of the business knowledge differences between the following student 's answer and the reference answer. Note: Only point out the deficiencies or errors in professional knowledge in the student 's answer and provide suggestions for improvement directions, but do not directly disclose the specific content of the reference answer. ## Input format Student 's answer: {{answer}} Reference answer: {{true_answer}} ## Output requirements (strictly follow this format): 1.Knowledge deficiencies: List the specific business concepts, terms, or logics that are missing/incorrect in the student 's answer (no more than 3 items). 2.Improvement suggestions: Provide suggestions for each deficiency ## Example output: Knowledge deficiencies: Lack of analysis of key business indicators. Improvement suggestions: It is recommended to systematically learn the platform 's core indicator system. Traceable LLM Reasoning for Fake-Order Fraud Detection KDD ’27, August 2027, San Jose, California 
+
+Prompt of Suggestions from Risk-control-expert 
+
+## Role and Task You are a professional expert in analyzing brushing behavior. Please conduct a systematic analysis based on the provided features. Before giving the final judgment, gradually carry out the thinking process according to the following requirements to determine whether the given order has transaction abnormalities: 1.Feature analysis: Analyze the suspicious indicators of the input features item by item. 2.Correlation verification: Check the logical relevance between features. 3.Pattern comparison: Compare with common brushing behavior patterns. 4.Abnormality assessment: Identify features that do not conform to normal transaction rules. ## Output format requirements: <reason> 1. State the analysis logic step by step. 2. Only speak based on the provided feature data. 3. Mark key judgment basis. </reason> <answer> There is an abnormal transaction./There is not an abnormal transaction. </answer>

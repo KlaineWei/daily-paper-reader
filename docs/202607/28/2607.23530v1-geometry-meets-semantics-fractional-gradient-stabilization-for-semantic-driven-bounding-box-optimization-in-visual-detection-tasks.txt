@@ -1,0 +1,410 @@
+Title: Geometry Meets Semantics: Fractional Gradient Stabilization for Semantic-Driven Bounding Box Optimization in Visual Detection Tasks
+
+URL Source: https://arxiv.org/pdf/2607.23530v1
+
+Published Time: Tue, 28 Jul 2026 01:13:40 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# GEOMETRY MEETS SEMANTICS : F RACTIONAL GRADIENT 
+
+# STABILIZATION FOR SEMANTIC -D RIVEN BOUNDING BOX 
+
+# OPTIMIZATION IN VISUAL DETECTION TASKS 
+
+Qi Ming Beijing University of Technology chaser.ming@gmail.com Zheng Zhou Beijing University of Technology 3613895315z@gmail.com Haitian Yang ShanghaiTech University yanght2023@shanghaitech.edu.cn Xudong Zhao Beijing Institute of Technology zhaoxudong@bit.edu.cn Mingjing Zhao Beijing Electronic Science and Technology Institute zmj@besti.edu.cn Liuqian Wang Zhengzhou University jeremy.wang0126@gmail.com Nanqing Liu Yunnan Normal University lansing163@163.com July 28, 2026 
+
+## ABSTRACT 
+
+Bounding boxes are fundamental for object localization in visual detection tasks. Among them, oriented bounding boxes are widely used in visual detection tasks, which provide a more precise directional representation. Generally, IoU-based losses are widely adopted to optimize box regression. However, we observed that IoU-driven box optimization suffers from two key issues: (1) it relies solely on geometric properties while ignoring semantic cues; (2) orientation optimization suffers from unstable gradients, causing oscillations in orientation convergence. In this paper, we propose a Fractional Semantic IoU loss to achieve unified semantic-geometric learning with gradient stabiliza-tion. First, we design a semantic similarity metric to guide IoU optimization, building a Semantic IoU loss (SIoU loss) with an adaptive gradient gating mechanism. Then, we revisit the gradient instability issue in oriented box optimization and extend the SIoU loss to a fractional-order formulation to build the Fr actional Semantic IoU loss (FrSIoU loss). The FrSIoU loss accumulates historical IoU states to regularize abnormal gradients during bounding box optimization process. Extensive experiments demonstrate that our approach achieves stable performance gains across different bounding box formulations and diverse visual detection tasks. The code will be available on GitHub. 
+
+## 1 Introduction 
+
+Visual detection serves as a fundamental task in computer vision, underpinning a wide range of downstream applications such as autonomous driving [ 1, 2], remote sensing analysis [ 3, 4, 5], and robotic interaction [ 6 ]. Furthermore, its success significantly impacts higher-level tasks, including tracking [ 7], segmentation [ 8], and scene understanding [ 9 ]. Bounding boxes are the most common geometric representation to localize object instances in detection frameworks. Depending on task requirements, bounding boxes can be categorized into Horizontal Bounding Boxes (HBBs) [ 10 , 11 ], Oriented Bounding Boxes (OBBs) [ 12 , 13 ], polygon-based representations [ 14 ], etc. To achieve accurate bounding box optimization, modern detectors typically rely on regression losses such as L 1 loss, Smooth-L 1 loss [ 10 , 11 ], or Intersection-over-Union (IoU) based loss functions [ 15 , 16 , 17 , 4]. Among them, IoU-based losses have become a popular metric due to the scale-invariance of the metric and its direct reflection of localization quality. On this basis, a series of IoU-derived losses (e.g., GIoU [ 16 ], DIoU [ 17 ], EIoU [ 18 ], GCIoU [ 4 ]) have been proposed, which improve regression stability and convergence by incorporating geometric factors such as distance, aspect ratio, or overlap consistency into the optimization process. arXiv:2607.23530v1 [cs.CV] 26 Jul 2026 A PREPRINT - J ULY 28, 2026 � Cur �e Traversal 
+
+> Q
+
+Update & Reproject 
+
+Positional encoding                       
+
+> 101111101110101101IoU = +0000000111111111111111111RoI Tokenizer
+> Geometric cues Semantic cues
+> Optimization Optimization IoU = Optimization FrSIoU
+> Pred. Box Pred. Box Box-Driven Feat.-Driven RoI CRoI
+> Gating SIoU
+
+(a) Region-based IoU. r�e Traversal 
+
+> Q
+
+Update & Reproject 
+
+Positional encoding                   
+
+> IoU = +0000000111111111111111111RoI Tokenizer
+> Geometric cues Semantic cues
+> Optimization Optimization IoU = Optimization FrSIoU
+> Pred. Box Pred. Box Box-Driven Feat.-Driven RoI CRoI
+> Gating SIoU
+
+(b) Pixel-based IoU. Detections 
+
+> MLP
+
+Cls. Reg.                               
+
+> MLP
+> 1011111011000000111111111111111111001111111111101100111IoU = +0000000111111111111111111RoI Tokenizer
+> Geometric cues Semantic cues
+> Optimization Optimization IoU = Optimization FrSIoU
+> Pred. Box Pred. Box Box-Driven Feat.-Driven RoI CRoI
+> Gating SIoU
+
+(c) Our FrSIoU. (d) Loss gradient curve. 
+
+Figure 1: Calculation of different IoU variants (a-c) and visualization of abnormal gradients in IoU-based losses (d). Existing (a) region-based and (b) pixel-based IoUs consider only geometric constraints, while our FrSIoU (c) further incorporates semantic cues into box optimization. In recent years, OBB-based visual detection has been widely applied in various scenarios [ 1, 2 , 3, 4 , 5, 6 ]. As a generalized form of HBBs, OBBs explicitly encode object orientation, which is critical for high-precision detection and recognizing objects with large aspect ratios. For example, in remote sensing imagery, OBBs are commonly used to represent arbitrarily oriented objects such as bridges, ships [ 19 , 20 ]; in UAV aerial imagery, OBBs help distinguish densely packed vehicles [ 21 , 22 ]; and in 3D vision, voxel bounding boxes can be regarded as 2D OBBs extended with height information [ 15 , 23 ]. To achieve efficient OBB prediction and optimization, IoU losses have been extended to skew IoU formulations, achieving notable success in both 2D and 3D detection tasks [24, 15, 23, 2, 1]. However, existing methods remain constrained to the geometric properties of IoU when designing loss functions, which would leave their inherent limitations unresolved. We suggest that the IoU loss design should address two critical issues: (1) Current IoU-based losses primarily consider geometric constraints while ignoring the semantic content within bounding boxes . As illustrated in Fig. 1a and Fig. 1b, both region-based methods (e.g., GIoU [ 16 ], DIoU [ 17 ]) and pixel-based methods (e.g., PIoU [ 25 ], PPIoU [ 26 ]) supervise box optimization purely from geometry with some constraints. Intuitively, features within the box provide explicit semantic cues that could enhance localization accuracy. However, existing methods have not fully exploited this semantic information. (2) Skew IoU losses suffer from abnormal angular gradient oscillation during box optimization. Ideally, with the model converging, gradients should diminish to allow fine-grained refinement. However, as shown in Fig. 1d, the optimization process exhibits unexpected gradient surges, which have also been discussed in [4]. The abnormal gradients lead to oscillations in box regression and hindering high-precision. Based on the above analysis, we propose the fractional semantic IoU loss to achieve unified semantic-geometric learning and to mitigate abnormal gradient variations for precise OBB optimization in challenging visual detection tasks. First, as illustrated in Fig. 1c, we introduce a semantic similarity metric that extends IoU loss into Semantic IoU loss (SIoU loss). SIoU loss jointly considers both geometric properties and semantic content of bounding boxes, while a gating mechanism dynamically balances the contributions of semantic and geometric similarities in bounding box optimization. Without the carefully designed geometric penalty terms (such as those in GIoU [ 16 ], DIoU [ 17 ], WIoU [ 27 ], etc.), SIoU loss naturally addresses common issues in naive IoU optimization, such as the non-overlapping regression problem [ 16 ], achieving more efficient bounding box optimization. To further address gradient instability, we extend SIoU loss into a fractional formulation and develop the Fractional Semantic IoU loss (FrSIoU loss), which stabilizes angular gradients during model convergence and ensures accurate OBB regression. FrSIoU loss uses the historical semantic-geometric similarity to generate modulation weights dynamically, and regularize unstable angular gradients during the optimization. Our main contributions are summarized as follows: • We revisit the limitation of current IoU losses and conclude that existing methods rely solely on geometric constraints. Then, a Semantic IoU loss (SIoU loss) is proposed for unified semantic-geometric learning. SIoU loss incorporates both geometric and semantic consistency via a dynamic gating mechanism to adaptively guide bounding box regression. • To address gradient instability in OBB optimization, we further extend SIoU loss into a Fractional Semantic IoU loss (FrSIoU loss). FrSIoU loss stabilizes model convergence via introducing a fractional derivative to capture the historical sIoU, which dynamically adjusts the loss weights to regularize unstable angular gradients. • We conduct extensive evaluations across multiple detectors and vision detection tasks. Experimental results demonstrate that FrSIoU loss exhibits strong generalization ability, consistently achieving performance gains and offering new insights for future research. 2A PREPRINT - J ULY 28, 2026 OBB HBB Point Set Gaussian Polygon 3D Box 
+
+Figure 2: Illustration of different types of bounding box representations. OBB shows strong generality and can be widely applied across various visual detection tasks. 
+
+## 2 Related Work 
+
+OBB Detection in Visual Detection Tasks. Oriented bounding boxes (OBBs) generalize horizontal bounding boxes (HBBs) by explicitly modeling object orientation, enabling high-precision detection of arbitrary-oriented objects. They have been widely applied across diverse vision tasks [ 6 , 19 , 22 , 2 , 28 , 26 , 29 ]. For example, OBBs are used to represent grasp poses in robotic manipulation [ 6], detect oriented objects in remote sensing benchmarks [ 19 ], and distinguish densely arranged vehicles in UAV imagery [ 22 ]. In autonomous driving, 3D bounding boxes can be viewed as OBBs with an additional height dimension [ 2 , 23 ]. They are also adopted in face detection, scene text detection, and precision agriculture [ 28 , 26 , 30 , 29 ]. The key advantage of OBBs lies in their generality, as they unify both axis-aligned and oriented representations, with HBB being a special case. Other representations, such as point sets [ 31 , 32 ], Gaussian models [ 3 , 5], polygons [ 14 , 26 ], and vector encodings [ 33 ], can often be transformed into or approximated by OBBs. This highlights OBBs as a unified, flexible, and fundamental representation for visual detection tasks. 
+
+IoU-based Losses for Bounding Box Optimization. Intersection-over-Union (IoU) is the dominant metric for object detection due to its scale-invariance and intuitive geometric interpretation, and IoU-based losses align training objectives with evaluation [ 15 ]. However, they suffer from slow convergence and zero gradients when predicted and ground-truth boxes do not overlap. To mitigate these issues, many variants introduce auxiliary geometric constraints: GIoU [ 16 ]adds an enclosing-box penalty to provide gradients in non-overlapping cases, DIoU and CIoU [ 17 ] incorporate center distance and aspect ratio consistency to accelerate convergence, and WIoU [ 27 ] adaptively reweights samples to improve robustness against low-quality predictions. Beyond geometric extensions, alternative formulations approximate IoU by modeling boxes as distributions, such as Gaussian Wasserstein Distance (GWD) [ 5], Kullback-Leibler Divergence (KLD) [ 3], and Kalman filter-based KFIoU [ 34 ]. While effective, these approaches still rely on geometric or surrogate supervision, which may partially break the consistency between training loss and evaluation metric. More recently, works have investigated the fundamental gradient behavior of IoU-based losses, revealing vanishing and oscillatory gradients near convergence for HBB [ 18 ], and gradient anomalies with respect to angle and scale in OBB regression [ 4], highlighting the need for more stable and well-behaved optimization strategies. 
+
+## 3 Methodology 
+
+3.1 Problem Formulation Unified OBB Representations Most visual detection tasks represent object instances by encoding object position, scale, and orientation. The 2D OBB is commonly defined as BOBB = ( x, y, w, h, θ ), where (x, y ) ∈ R2 denotes the box center, w, h denote the box extents along the local axes, and θ ∈ R is the rotation angle. We usually normalize the angle to a canonical interval, e.g, θ ∈ [− π 
+
+> 2
+
+, π 
+
+> 2
+
+) or θ ∈ [0 , π ) depending on the application [12, 13]. Next, we adopt a unified view of these representations and their conversions for analyzing optimization behaviour. (1) HBB ↔ OBB. The axis-aligned HBB is widely used in general object detection tasks [ 35 , 36 , 10 , 37 ]. HBB is a special case of the OBB without orientation information: BHBB = ( x, y, w, h ) and the corresponding OBB format is BOBB = ( x, y, w, h, 0) . (2) Point-set ↔ OBB. A point-set representation describes an object by a finite set of 2D points P = {pi = ( xi, y i)}Ni=1 [31 , 32 ]. Its equivalent OBB can be obtained by computing the minimum-area enclosing rectangle of P (or of its convex hull). For complex polygons, PCA is the commonly used approximation to obtain the orthogonal direction. (3) Gaussian representation ↔ OBB. 2D OBB can be viewed as a Gaussian distribution by mean and covariance, G = ( μ, Σ) . More detailed transformation process could be found in [ 3, 5]. (4) Polygon ↔ OBB. Given a polygon with ordered vertices 
+
+{vi}, the minimum-area bounding OBB can be computed exactly via the rotating-calipers algorithm [ 38 ] applied to the convex hull. We denote this operator by BOBB = MinAreaRect(ConvexHull( {vi})) . (5) 3D bounding box ↔ OBB. 
+
+A 3D box B3D = ( x, y, z, l, w, h, ϕ ) can be regarded as a 2D OBB with height, since it only has one rotational degree of freedom (yaw). Thus, many 2D OBB regression methods extend directly to 3D detection [ 2, 23 ]. As shown in Fig. 2, most representations can be mapped to a unified OBB parametrization, enabling a common optimization perspective across diverse detection formulations. 3A PREPRINT - J ULY 28, 2026 
+
+Anomalous Gradient Analysis for OBB Optimization To ensure efficient and stable OBB optimization, the skew IoU loss is widely employed in visual detection tasks [ 15 , 4, 2 ]. Given the predicted box b1 = ( x1, y 1, w 1, h 1, θ 1) and the corresponding target box b2 = ( x2, y 2, w 2, h 2, θ 2), the angular deviation is θ = |θ1 − θ2|. The classic linear IoU loss is 
+
+LIoU (b1, b2) = 1 − IoU( b1, b2). (1) Previous studies [ 4 ] have shown that center point convergence in OBB regression is fast and stable, and therefore, the skew IoU computation can be simplified to center-aligned OBBs. In this case, we obtain the loss gradient with respect to θ as follows: 
+
+∂L IoU 
+
+∂θ = IoU( θ)  1 + IoU( θ) cot θ . (2) The detailed proof can be found in the Appendix. Eq.(2) reveals two mechanisms that produce unstable angular gradients in IoU-driven optimization: 1. Singularity as θ → 0 : As the model converges, θ ↓ 0 and therefore cot θ → ∞ . The angular derivative grows as the angular error decreases, which produces large gradient magnitudes and leads to loss oscillation in the late stage of optimization. Due to boundary conditions in the skew IoU computation, θ never reaches 
+
+0 (see Appendix for proof). Thus, the IoU loss remains convergent. However, its gradient variation during convergence still impedes bounding box refinement. 2. Dependence on overlap magnitude : The linear IoU loss gradient contains the multiplicative factor IoU(1+IoU) ,which can increase with IoU and therefore amplify the singular behaviour. These observations motivate two design goals for a robust localization loss: (1) incorporate semantic cues inside the region to complement purely geometric supervision, and (2) introduce mechanisms to stabilize angular gradients during optimization. In the following sections, we present our semantics-driven bounding box optimization and the fractional IoU loss to achieve the goals. 
+
+3.2 Semantics-Driven Bounding Box Optimization 
+
+Most IoU-based losses focus exclusively on geometric constraints and neglect the rich semantic cues embedded in deep features. In this section, we will introduce a semantics-aware coupling that complements geometric cues with feature similarity, enabling continuous and adaptive guidance throughout the bounding box optimization process. 
+
+Semantic score construction . Let b = ( x, y, w, h, θ ) and b∗ = ( x∗, y ∗, w ∗, h ∗, θ ∗) denote a predicted OBB and a ground-truth OBB, and F(·) be the feature map extracted via the backbone network. We extract two semantic cues: • Intra-region feature distance. Sample N paired locations inside the predicted and GT boxes (after appropriate warping such as RoI Align [ 39 ]), yielding feature vectors {f (i) 
+
+> p
+
+}Ni=1 and {f (i) 
+
+> g
+
+}Ni=1 . Define the mean squared feature distance: 
+
+dintra = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+f (i) 
+
+> p
+
+− f (i)
+
+> g
+> 22
+
+. (3) Convert distance to a similarity s1 ∈ (0 , 1] via: 
+
+s1 = exp   − α d intra 
+
+, (4) where α > 0 controls sensitivity. • Context-region similarity. Build horizontally-aligned context boxes ˆb and ˆb∗ (e.g., axis-aligned expansions of b and b∗) and extract their corresponding feature vectors { ˆf (i) 
+
+> p
+
+}Mi=1 and { ˆf (i) 
+
+> g
+
+}Mi=1 and compute cosine similarity to obtain a contextual alignment score s2:
+
+s2 = 12
+
+1
+
+M
+
+> M
+
+X
+
+> i=1
+
+ˆf (i) 
+
+> p
+
+· ˆf (i)
+
+> g
+
+∥ ˆf (i) 
+
+> p
+
+∥2∥ ˆf (i) 
+
+> g
+
+∥2
+
++ 1 
+
+!
+
+. (5) Finally, the overall semantic score s is defined as: 
+
+s = βs 1 + (1 − β)s2, (6) 4A PREPRINT - J ULY 28, 2026 where β is generally set to 0.5. It controls the balance between fine-grained object semantics and contextual semantics, so that the final semantic score s ∈ [0 , 1] 
+
+In Eq.(6), s1 reflects the fine-grained semantic consistency between predicted and GT regions, providing a precise, discriminative metric that captures localized appearance similarity. Intuitively, the supervision from s1 implicitly encodes geometric constraints between predicted boxes and GT objects. For example, if s1 → 1, the corresponding geometric IoU would naturally reach 1. However, the precisely rotated RoI features would remove orientation cues, making it difficult for the model to converge with only s1 supervision (see Appendix for detailed analysis). To address this issue, we introduce cosine similarity to compute s2. Since contextual semantic information is more flexible, the correlations of context features help to optimize predicted RoI even without perfectly matching the GT region. Therefore, cosine similarity serves as a directional constraint to guide the bounding box optimization. 
+
+Semantic IoU loss . Denote the geometric IoU by u = IoU( b, b∗) ∈ [0 , 1] . We adopt the coupling sIoU = s + (1 − s) u, (7) which preserves the property that a perfect geometric overlap ( u = 1 ) yields sIoU = 1 . Then, the complementary residual serves as 
+
+LSIoU = (1 − s)(1 − u). (8) 
+
+LSIoU is the semantics-driven IoU loss that measures the semantic-geometric misalignment. It extends the geometric-based IoU loss by introducing a feature-driven gating mechanism. When u = 0 , the loss degenerates to LsIoU = 1 − s,providing non-zero gradients through the semantic term and thus avoiding the vanishing-gradient problem. Therefore, 
+
+LsIoU enables feature-level supervision even under complete geometric mismatch. Furthermore, by modulating the geometric term with the semantic score, LsIoU adaptively emphasizes semantic or geometric alignment depending on the optimization phase. 
+
+Analysis of Adaptive Gradient Gating . We next conduct the analysis of the gradient of the SIoU loss. Taking the bounding box parameter θ as an example, we obtain: 
+
+∂L SIoU 
+
+∂θ = −(1 − s) ∂u ∂θ − (1 − u) ∂s ∂θ . (9) Eq.(9) exposes the semantic-geometric gating mechanism in SIoU loss during training. When s is large, semantic consistency becomes more confident, and semantic cues are expected to dominate the bounding box optimization. For example, as s → 1, (1 − s) → 0, and the overall gradient is dominated by the semantic term −∂s/∂θ . Conversely, when s is relatively small while u is large, the semantic score is unreliable, and the model is expected to rely more on geometric cues for refinement. The semantic gradient −∂s/∂θ is scaled by (1 − u); as u → 1 and s → 1, the semantic influence is suppressed, thereby avoiding potential interference with geometric alignment. SIoU loss implements a soft arbitration between semantic and geometric cues. Unreliable semantics increase reliance on geometric information, while confident semantics suppress noisy geometric gradients. Through this adaptive gradient gating mechanism, the SIoU loss dynamically balances semantic and geometric supervision, enabling the network to select the dominant cue based on gradient flow for better bounding box regression. 
+
+3.3 Fractional IoU Loss for Gradient Stabilization 
+
+Though SIoU loss provides a flexible and adaptive bounding box optimization scheme, it still does not fundamentally resolve the issue of abnormal angular gradient variations. In this section, we will extend the SIoU loss into a fractional-order formulation to further stabilize abnormal gradients. 
+
+Fractional IoU Loss . Firstly, a fractional semantic IoU (FrSIoU) loss is proposed to incorporate a memory mechanism of the optimization process. It not only concerns the current loss, but also dynamically adjusts the loss function based on the historical semantic-geometric similarity. Then, it can effectively regularize unstable gradients. The fractional derivative extends differential operations to non-integer orders and characterizes the nonlocal effects of network training [ 40 ]. The Grünwald-Letnikov (G-L) approximation is used to compute the v-th derivative at the current epoch [41]. Given M historical steps, the G-L derivative is defined as 
+
+Dvt (sIoU ) = 
+
+> M
+
+X
+
+> k=0
+
+ck · sIoU t−k, (10) where ck is calculated as 
+
+c0 = 1 , k − 1 − vk · ck = ck−1 for k ≥ 1, (11) 5A PREPRINT - J ULY 28, 2026 Taking M = 2 as an example, the approximate expression is 
+
+Dvt (sIoU ) ≈ c0sIoU t + c1sIoU t−1 + c2sIoU t−2
+
+= sIoU t − vsIoU t−1 + v(v−1) 2 sIoU t−2, (12) The proposed derivative Dνt (sIoU ) represents the trend of semantic-geometric similarity, which further leads to the definition of the modulation weight Wt as 
+
+Wt = exp( −λ · Dvt (sIoU )) , (13) where λ is a hyperparameter controlling the modulation intensity. Finally, the fractional semantic IoU (FrSIoU) loss is defined as 
+
+LF rSIoU = Wt · (1 − s)(1 − u). (14) 
+
+Gradient Stabilization of Fractional IoU . The fractional-order modulated weights Wt make the optimization process more robust and stable by altering the gradient, while the fractional derivative Dvt (sIoU ) quantifies the convergence tendency. When the sIoU metric grows continuously sIoU t > sIoU t−1, given c0 = 1 and c1 = −v, the derivative Dvt (sIoU ) ≈
+
+sIoU t − v ∗ sIoU t−1 tend to be positive. Then, Wt = exp( −λ · positive value ) < 1. Therefore, the loss is suppressed, which decays the optimization step size and mitigates the potential risk of the gradient explosion caused by the cotθ term when θ → 0. When the SIoU loss drops sharply, Dvt (sIoU ) becomes negative, which results in 
+
+Wt = exp( −λ · negative value ) > 1. The loss is then amplified, providing a strong and effective correction signal and imposing corrective constraints. The full gradient of the FrSIoU loss function with the angle parameter θ proves this gradient stabilization.  
+
+> ∂LF rSIoU
+> ∂θ
+
+= ∂(Wt·Lbase ) 
+
+> ∂θ
+
+= ∂W t 
+
+> ∂θ
+
+Lbase + Wt ∂L base  
+
+> ∂θ
+
+(15) In this part, a fundamental assumption is that the semantic score s is treated as a constant whose partial derivative of the geometric parameter θ is zero ( ∂s ∂θ = 0 ). This is because s is extracted from deep features, whose gradient flow is separate from geometric regression. Then, the corresponding partial derivatives are further simplified as  
+
+> ∂L base
+> ∂θ
+
+= ∂((1 −s)(1 −u))  
+
+> ∂θ
+
+= −(1 − st) ∂u t 
+
+> ∂θ
+
+(16)  
+
+> ∂sIoU t−k
+> ∂θ
+
+= ∂(st−k +(1 −st−k )ut−k ) 
+
+> ∂θ
+
+= (1 − st−k) ∂u t−k 
+
+> ∂θ
+
+(17)    
+
+> ∂D vt(sIoU )
+> ∂θ
+
+= MP
+
+> k=0
+
+ck ∂sIoU t−k 
+
+> ∂θ
+
+= MP
+
+> k=0
+
+ck(1 − st−k) ∂u t−k 
+
+> ∂θ
+
+(18)  
+
+> ∂W t
+> ∂θ
+
+= ∂ exp( −λD vt ) 
+
+> ∂θ
+
+= Wt · (−λ) · ∂D vt (sIoU ) 
+
+> ∂θ
+
+(19) Then, the full gradient expression is constructed as  
+
+> ∂LF rSIoU
+> ∂θ
+
+= Wt
+
+ ∂L base  
+
+> ∂θ
+
+− λL base ∂D νt (sIoU )
+
+> ∂θ
+
+
+
+= Wt
+
+
+
+−(1 − st) ∂u t 
+
+> ∂θ
+
+− λL base 
+
+ MP
+
+> k=0
+
+ck(1 − st−k) ∂u t−k
+
+> ∂θ
+
+ (20) Eq. (20) demonstrates that the total gradient is a weighted sum of historical geometric gradients. The optimization process is regularized by the historical states, which reduces the gradient changes caused by the cot θ term and achieves stable convergence for high-precision positioning. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup Datasets . We conduct experiments on multiple datasets to verify the generalization and robustness of our approach, including DOTA [ 19 ], HRSC2016 [ 42 ] and SSDD [ 43 ]. DOTA-v1.0 is utilized as the primary benchmark to assess detection performance across diverse categories and complex scenes. As a large-scale aerial dataset, DOTA-v1.0 6A PREPRINT - J ULY 28, 2026 Table 1: Ablation study of different loss functions on the challenging large-scale DOTA-v1.0 dataset based on Rotated RetinaNet. Loss terms PL BD BR GTF SV LV SH TC BC ST SBF RA HA SP HC mAP 50 (%)                                                                  
+
+> L1loss 87.2 75.2 34.8 63.5 66.4 75.4 85.0 90.3 61.5 60.5 52.4 62.2 60.0 56.8 50.4 65.44 GIoU loss 89.1 77.1 37.2 67.8 67.9 74.3 85.1 90.5 64.3 60.4 48.7 63.1 61.7 56.5 56.7 66.67 SIoU loss 89.2 77.3 37.4 67.0 67.8 74.5 85.4 90.5 61.9 64.3 49.8 65.1 62.0 55.4 54.6 66.82
+> FrSIoU loss 89.2 76.9 37.6 67.6 67.9 74.6 85.5 90.5 63.5 64.1 48.8 65.2 62.0 56.6 57.6 67.27
+
+Table 2: Analysis of hyperparameters in FrSIoU loss.                      
+
+> λαmAP 50 (%) λαmAP 50 (%) λαmAP 50 (%) 0.05 0.05 67.21 0.1 0.05 67.15 0.3 0.05 66.97 0.1 66.80 0.1 67.06 0.1 67.17 0.3 67.04 0.3 67.09 0.3 67.27
+
+contains 2,800 images and 188,000 instances across 15 categories, characterized by extreme scale variations and arbitrary orientations. For fine-grained ship detection, HRSC2016 contains 1,061 images annotated with rotated boxes, specifically highlighting objects with large aspect ratios. In the SAR domain, we utilize the SSDD dataset to demonstrate the generalization capability and robustness of our approach across different imaging modalities and environmental conditions. The SSDD dataset provides 1,160 images for ship detection, focusing on detecting small objects within complex coastal environments. 
+
+Evaluation Metrics . Following common practice, we use three standard metrics to evaluate detection performance: mAP 50 , mAP 75 , and mAP. mAP 50 and mAP 75 represent the Average Precision at IoU thresholds of 0.5 and 0.75, respectively, while mAP averages the precision across IoU thresholds from 0.5 to 0.95 with a step of 0.05. Distinct from prior studies that primarily report mAP 50 , we explicitly include mAP 75 and mAP to demonstrate the model’s robustness in high-precision localization. This stricter evaluation protocol ensures a more rigorous comparison of bounding box regression accuracy. 
+
+Implementation Details . For fair comparison, all experiments are implemented based on MMRotate framework [ 44 ]using four NVIDIA GeForce RTX 3090 GPUs. We use the SGD optimizer with an initial learning rate of 0.02, momentum of 0.9, and weight decay of 0.0001. The batch size is set to 16 with a 500-iteration linear warm-up. Regarding training schedules, models on the DOTA dataset are trained for 24 epochs, while those on HRSC2016 and SSDD datasets are trained for 72 epochs. Specifically for the DOTA dataset, we adopt single-scale training and testing. Ablation studies are conducted on the validation set. For the main results, models are trained on the combined training and validation sets, and the final performance is obtained by submitting testing results to the official evaluation server. 
+
+4.2 Ablation Study and Analysis Effect of Semantic IoU Loss . We first evaluate the impact of introducing semantic guidance into box regression. The baseline model trained with standard L1 loss achieves 65.44% mAP. While the geometric-based GIoU loss improves this to 66.77% by addressing the non-overlapping issue, it still lacks semantic awareness. By replacing GIoU with our proposed SIoU loss, the performance further improves to 66.82% mAP. Notably, SIoU loss demonstrates superior efficacy in rotation-sensitive categories. For instance, the accuracy for roundabout (RA) increases by 2.0% compared to GIoU from 63.1% to 65.1%. This improvement indicates that the semantic alignment term successfully constrains the optimization direction, enabling more robust regression for objects with complex appearances where purely geometric constraints may fall short. 
+
+Effect of Fractional SIoU Loss . Although SIoU loss enhances bounding box optimization flexibility, it does not fundamentally address the problem of angle gradient discontinuity. To further stabilize training, we introduce a Fractional SIoU loss that adaptively decomposes the angle term into periodic components, ensuring smooth gradient propagation near angle boundaries. As presented in Table 1, FrSIoU achieves the best overall performance of 67.27% mAP, outperforming the SIoU loss by 0.45% and the L1 baseline by 1.83%. Specific gains in categories such as bridge (BR) and small vehicle (SV) confirm that the fractional modulation effectively stabilizes angular gradients, ensuring smooth convergence and high-precision localization. 
+
+Effect of Hyperparameters in FrSIoU loss . We further analyze the impact of the modulation intensity λ and the semantic sensitivity parameter α on detection performance, as reported in Table 2. The results demonstrate that FrSIoU 7A PREPRINT - J ULY 28, 2026 Table 3: Comparison with state-of-the-arts on the DOTA-v1.0 dataset using single-scale training and testing. The input image size is 1024 × 1024 . The best and second-best results are highlighted in bold and underlined.                                                                                                                                                                                                                                                                                                                   
+
+> Methods PL BD BR GTF SV LV SH TC BC ST SBF RA HA SP HC mAP 50 mAP 75 mAP One Stage  R-RetinaNet [45] 89.65 82.57 38.16 69.84 77.41 62.76 77.25 90.69 83.80 82.04 59.93 64.83 57.38 64.76 45.56 69.77 37.70 39.65 CSL [46] 89.34 79.67 40.99 69.96 77.71 62.08 77.51 90.87 82.87 82.04 60.03 65.27 53.60 64.08 46.61 69.51 40.41 39.69 R3Det [47] 89.29 75.21 45.42 69.24 75.54 72.90 79.29 90.89 81.02 83.25 58.82 63.17 63.40 62.22 37.41 69.80 36.58 37.82 GWD [5] 88.93 77.04 45.85 69.30 72.53 64.05 76.41 90.87 79.19 80.46 57.68 64.37 63.60 64.75 48.25 69.55 38.91 39.50 KLD [3] 89.21 80.68 48.79 70.56 77.72 75.77 86.34 90.90 82.83 83.78 65.70 65.92 66.08 66.42 40.70 72.76 37.83 39.92 S2A-Net [12] 89.30 80.51 50.38 73.23 78.41 77.40 86.80 90.89 85.64 84.23 62.13 65.95 66.61 67.74 53.51 74.18 36.83 39.84 Two Stage RoI-Trans. [13] 88.97 82.12 54.57 76.27 79.29 77.96 87.94 90.90 87.19 85.66 62.18 62.65 74.63 72.43 59.23 76.13 46.88 45.56 KFIoU [34] 89.05 75.17 49.04 69.67 78.06 75.45 86.69 90.90 83.65 84.48 62.21 62.85 66.72 65.95 50.20 72.67 36.01 38.88 ReDet [48] 89.20 83.78 52.19 71.05 78.05 82.50 88.24 90.86 87.26 85.97 65.50 62.86 75.89 70.05 66.71 76.67 48.84 46.71 O-Former [49] 88.14 79.13 51.96 67.34 81.02 83.26 88.29 90.90 85.57 86.25 60.84 66.36 73.81 71.23 56.49 75.37 46.39 45.01 ACM [50] 88.06 73.99 49.08 61.54 79.73 77.23 87.07 90.89 82.17 84.04 56.97 61.21 63.91 67.78 36.16 70.66 42.64 41.26 Point2RBoxv2 [7] 88.21 69.76 23.30 44.22 79.82 76.18 87.09 89.27 44.97 83.26 16.19 41.00 44.95 58.00 49.54 59.72 25.96 30.13 GSDet [51] 88.50 79.02 50.58 71.71 78.53 83.21 88.25 90.84 84.26 80.33 55.87 57.04 74.70 67.87 57.46 73.88 52.17 47.69 GauCho [52] 88.56 76.69 49.87 61.59 80.00 79.59 87.46 90.88 83.24 84.19 54.98 64.86 64.12 69.53 51.33 72.46 37.03 40.46 O-RCNN [53] 89.35 81.41 52.71 75.02 79.03 82.43 87.82 90.89 86.40 85.30 63.37 65.69 68.28 70.48 57.22 75.69 47.18 45.19
+> FrSIoUloss (Ours) 89.16 84.66 57.34 71.42 80.11 82.62 87.98 90.84 80.56 86.66 64.75 70.68 77.76 73.47 61.30 77.28 50.50 47.94
+
+Table 4: Comparison of different models on HRSC2016 and SSDD datasets. 
+
+Model HRSC2016 SSDD 
+
+mAP(%) mAP 50 (%) mAP 75 (%) mAP 50 (%) R-RetinaNet 46.63 81.60 48.80 78.32 R-RetinaNet + FrSIoU loss 52.80 (+ 6.17) 83.00 (+1.40) 59.30 (+10.50) 80.49 (+2.17) O-RCNN 65.81 89.30 79.70 89.45 O-RCNN + FrSIoU loss 66.26 (+ 0.45) 90.50 (+ 1.20) 81.00 (+1.30) 90.07 (+ 0.62) is highly robust to hyperparameter variations, with mAP 50 fluctuations remaining within a narrow range of 0.5% . This stability implies that the proposed FrSIoU effectively regularizes the gradient without requiring delicate tuning. Based on the peak mAP 50 of 67 .27% , we set λ = 0 .3 and α = 0 .3 as the standard configuration. 
+
+4.3 Results and Comparisons Comparison with SOTA Methods . We validate the proposed FrSIoU loss within the Oriented R-CNN [ 53 ] framework, chosen for its efficiency and strong baseline performance. Table 3 compares our method with recent state-of-the-art oriented object detection approaches categorized into one-stage methods and two-stage methods. As presented in Table 3, our approach achieves the best overall performance among the compared methods, reaching an mAP of 47.94% and mAP 50 of 77.28%. Despite using a simple ResNet-50 backbone, our method outperforms recent competitive models, such as ReDet (46.71% mAP) and GSDet (47.69% mAP), which often rely on more complex feature refinement modules. A key advantage of FrSIoU loss is the ability to generate high-quality bounding boxes. Compared to the baseline Oriented R-CNN, our method yields a substantial improvement of 3.32% in mAP 75 and 2.75% in mAP. Notably, significant gains are observed in categories requiring precise orientation estimation, such as bridge (BR) (+4.63%) and roundabout (RA) (+4.99%). These results confirm that by stabilizing angular gradients during the later stages of training, FrSIoU loss effectively prevents oscillation and enables the model to satisfy stricter IoU thresholds, validating its effectiveness for high-precision detection tasks. 
+
+Generalization on Ship Detection Datasets . To verify the robustness of our approach across specific domains, we extend our evaluation to two ship detection benchmarks: the optical HRSC2016 dataset and the SAR-based SSDD dataset. As detailed in Table 4, incorporating FrSIoU loss yields consistent performance gains across different detector architectures (Rotated RetinaNet and Oriented R-CNN) and imaging modalities. On the HRSC2016 dataset, our method boosts the overall mAP of Rotated RetinaNet by 6.17% and achieves a 10.50% increase in the stricter mAP 75 metric. This substantial improvement highlights the efficacy of the fractional stabilization mechanism in localizing elongated objects, where minor angular perturbations typically cause severe IoU degradation. Furthermore, on the SSDD dataset, FrSIoU improves the mAP 50 for both one-stage and two-stage detectors, confirming its adaptability to diverse sensing scenarios beyond optical imagery. 8A PREPRINT - J ULY 28, 2026 
+
+## 5 Conclusion 
+
+In this paper, we revisited the limitations of IoU-based bounding box optimization, identifying the key challenges of the absence of semantic supervision and unstable angular gradients in oriented bounding box regression. Then, we propose a Semantics IoU loss to utilize geometric constraints with adaptive feature-level guidance for better bounding box regression. Building on this, we introduce the Fractional Semantic IoU (FrSIoU) loss to mitigate angular gradient singularities via incorporating a fractional-order memory mechanism. Extensive experiments on OBB benchmarks demonstrate the superior performance and generalization capability on visual detection tasks. The significant gains in high-precision metrics across mainstream detectors confirm that FrSIoU loss provides a robust solution for precisely oriented object detection, offering a new direction for designing stable objectives in complex geometric regression tasks. 9A PREPRINT - J ULY 28, 2026 
+
+## References 
+
+[1] Yu Zheng, Danyang Zhang, Sinan Xie, Jiwen Lu, and Jie Zhou. Rotation-robust intersection over union for 3D object detection. In Eur. Conf. Comput. Vis. , 2020. [2] Qi Ming, Lingjuan Miao, Zhe Ma, Lin Zhao, Zhiqiang Zhou, Xuhui Huang, Yuanpei Chen, and Yufei Guo. Deep dive into gradients: Better optimization for 3d object detection with gradient-corrected IoU supervision. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2023. [3] Xue Yang, Xiaojiang Yang, Jirui Yang, Qi Ming, Wentao Wang, Qi Tian, and Junchi Yan. Learning high-precision bounding box for rotated object detection via kullback-leibler divergence. Proc. Adv. Neural Inf. Process. Syst. , 2021. [4] Qi Ming, Lingjuan Miao, Zhiqiang Zhou, Junjie Song, and Aleksandra Pizurica. Gradient calibration loss for fast and accurate oriented bounding box regression. IEEE Trans. Geosci. Remote Sens. , 62, 2024. [5] Xue Yang, Junchi Yan, Qi Ming, Wentao Wang, Xiaopeng Zhang, and Qi Tian. Rethinking rotated object detection with gaussian wasserstein distance loss. In Proc. Int. Conf. Mach. Learn. PMLR, 2021. [6] Hu Cheng, Yingying Wang, and Max Q-H Meng. Grasp pose detection from a single rgb image. In Proc. IEEE/RSJ Int. Conf. Intell. Robots Syst. IEEE, 2021. [7] Yi Yu, Botao Ren, Peiyuan Zhang, Mingxin Liu, Junwei Luo, Shaofeng Zhang, Feipeng Da, Junchi Yan, and Xue Yang. Point2rbox-v2: Rethinking point-supervised oriented object detection with spatial layout among instances. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2025. [8] Qi Ming and Xiaowu Xiao. Towards accurate medical image segmentation with gradient-optimized dice loss. IEEE Signal Process. Lett. , 31, 2024. [9] Xingxing Zuo, Pouya Samangouei, Yunwen Zhou, Yan Di, and Mingyang Li. Fmgs: Foundation model embedded 3d gaussian splatting for holistic 3d scene understanding. Int. J. Comput. Vis. , 133(2), 2025. [10] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster R-CNN: Towards real-time object detection with region proposal networks. IEEE Trans. Pattern Anal. Mach. Intell. , 39(6), 2016. [11] Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed, Cheng-Yang Fu, and Alexander C Berg. SSD: Single shot multibox detector. In Proc. Eur. Conf. Comput. Vis. Springer, 2016. [12] J. Han, J. Ding, J. Li, and G. S. Xia. Align deep features for oriented object detection. IEEE Trans. Geosci. Remote Sens. , 2021. [13] Jian Ding, Nan Xue, Yang Long, Gui-Song Xia, and Qikai Lu. Learning RoI transformer for oriented object detection in aerial images. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2019. [14] Yang Yang, Jifeng Chen, Xiaopin Zhong, and Yuanlong Deng. Polygon-to-polygon distance loss for rotated object detection. 
+
+Proc. AAAI Conf. Artif. Intell. , 36(3), 2022. [15] Dingfu Zhou, Jin Fang, Xibin Song, Chenye Guan, Junbo Yin, Yuchao Dai, and Ruigang Yang. Iou loss for 2d/3d object detection. In Proc. Int. Conf. 3D Vis. IEEE, 2019. [16] Hamid Rezatofighi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2019. [17] Zhaohui Zheng, Ping Wang, Wei Liu, Jinze Li, Rongguang Ye, and Dongwei Ren. Distance-IoU loss: Faster and better learning for bounding box regression. In Proc. AAAI Conf. Artif. Intell. , 2020. [18] Hanyang Peng and Shiqi Yu. A systematic iou-related method: Beyond simplified regression for better localization. IEEE Trans. Image Process. , 30, 2021. [19] Gui-Song Xia, Xiang Bai, Jian Ding, Zhen Zhu, Serge Belongie, Jiebo Luo, Mihai Datcu, Marcello Pelillo, and Liangpei Zhang. DOTA: A large-scale dataset for object detection in aerial images. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. ,2018. [20] Ke Li, Gang Wan, Gong Cheng, Liqiu Meng, and Junwei Han. Object detection in optical remote sensing images: A survey and a new benchmark. ISPRS J. Photogramm. Remote Sens. , 159, 2020. [21] Xiaohe Li and Jianping Wu. Developing a more reliable framework for extracting traffic data from a uav video. IEEE Trans. Intell. Transp. Syst. , 24(11), 2023. [22] Chen Chen, Jiahao Qi, Xingyue Liu, Kangcheng Bin, Ruigang Fu, Xikun Hu, and Ping Zhong. Weakly misalignment-free adaptive feature alignment for uavs-based multimodal object detection. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2024. [23] Hualian Sheng, Sijia Cai, Na Zhao, Bing Deng, Jianqiang Huang, Xian-Sheng Hua, Min-Jian Zhao, and Gim Hee Lee. Rethinking iou-based optimization for single-stage 3d object detection. In Proc. Eur. Conf. Comput. Vis. Springer, 2022. [24] Qi Ming, Zhiqiang Zhou, Lingjuan Miao, Hongwei Zhang, and Linhao Li. Dynamic anchor learning for arbitrary-oriented object detection. In Proc. AAAI Conf. Artif. Intell. , 2021. [25] Zhiming Chen, Kean Chen, Weiyao Lin, John See, Hui Yu, Yan Ke, and Cong Yang. PIoU Loss: Towards accurate oriented object detection in complex environments. In Proc. Eur. Conf. Comput. Vis. , 2020. 
+
+10 A PREPRINT - J ULY 28, 2026 
+
+[26] Rei Endo, Taro Miyazaki, Takahiro Mochizuki, and Yoshihiko Kawai. Polygon pixel iou: Similarity metric between polygons with different number of vertices for arbitrary-shaped text spotting. In Proc. IEEE Int. Conf. Acoust. Speech Signal Process. 
+
+IEEE, 2025. [27] Zanjia Tong, Yuhang Chen, Zewei Xu, and Rong Yu. Wise-iou: bounding box regression loss with dynamic focusing mechanism. arXiv preprint arXiv:2301.10051 , 2023. [28] Xuepeng Shi, Shiguang Shan, Meina Kan, Shuzhe Wu, and Xilin Chen. Real-time rotation-invariant face detection with progressive calibration networks. In IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2018. [29] Tianxiao Zhu, Zhonghua Miao, Chunjiang Zhao, Liping Chen, and Ya Xiong. Five-degree-of-freedom strawberry pose estimation using key points and oriented bounding box detection. Computers and Electronics in Agriculture , 239, 2025. [30] Minghui Liao, Zhen Zhu, Baoguang Shi, Gui-song Xia, and Xiang Bai. Rotation-sensitive regression for oriented scene text detection. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2018. [31] Wentong Li, Yijie Chen, Kaixuan Hu, and Jianke Zhu. Oriented reppoints for aerial object detection. In IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2022. [32] Junjie Song, Lingjuan Miao, Zhiqiang Zhou, Qi Ming, and Yunpeng Dong. Optimized point set representation for oriented object detection in remote-sensing images. IEEE Trans. Geosci. Remote Sens. , 20, 2023. [33] Jingru Yi, Pengxiang Wu, Bo Liu, Qiaoying Huang, Hui Qu, and Dimitris Metaxas. Oriented object detection in aerial images with box boundary-aware vectors. In IEEE/CVF Winter Conf. Appl. Comput. Vis. , 2021. [34] Xue Yang, Yue Zhou, Gefan Zhang, Jirui Yang, Wentao Wang, Junchi Yan, Xiaopeng Zhang, and Qi Tian. The kfiou loss for rotated object detection. arXiv preprint arXiv:2201.12558 , 2022. [35] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In Eur. Conf. Comput. Vis. , 2014. [36] Mark Everingham, Luc Van Gool, Christopher KI Williams, John Winn, and Andrew Zisserman. The pascal visual object classes (voc) challenge. Int. J. Comput. Vis. , 88(2), 2010. [37] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Unified, real-time object detection. In 
+
+Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2016. [38] Michael Ian Shamos. Computational geometry . Yale University, 1978. [39] Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Girshick. Mask R-CNN. In Proc. IEEE/CVF Int. Conf. Comput. Vis. ,2017. [40] Roshdi Khalil, Mohammed Al Horani, Abdelrahman Yousef, and Mohammad Sababheh. A new definition of fractional derivative. Journal of computational and applied mathematics , 264, 2014. [41] Rudolf Scherer, Shyam L Kalla, Yifa Tang, and Jianfei Huang. The grünwald–letnikov method for fractional differential equations. Computers & Mathematics with Applications , 62(3), 2011. [42] Zikun Liu, Liu Yuan, Lubin Weng, and Yiping Yang. A high resolution optical satellite image dataset for ship recognition and some new baselines. In Proc. Int. Conf. Pattern Recognit. Appl. Methods. , 2017. [43] Tianwen Zhang, Xiaoling Zhang, Jianwei Li, Xiaowo Xu, Baoyou Wang, Xu Zhan, Yanqin Xu, Xiao Ke, Tianjiao Zeng, Hao Su, et al. Sar ship detection dataset (ssdd): Official release and comprehensive data analysis. Remote Sensing , 13(18), 2021. [44] Yue Zhou, Xue Yang, Gefan Zhang, Jiabao Wang, Yanyi Liu, Liping Hou, Xue Jiang, Xingzhao Liu, Junchi Yan, Chengqi Lyu, Wenwei Zhang, and Kai Chen. Mmrotate: A rotated object detection benchmark using pytorch. In Proc. ACM Int. Conf. Multimedia , 2022. [45] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Dollár. Focal loss for dense object detection. In IEEE/CVF Int. Conf. Comput. Vis. , 2017. [46] Xue Yang and Junchi Yan. Arbitrary-oriented object detection with circular smooth label. In Proc. Eur. Conf. Comput. Vis. 
+
+Springer, 2020. [47] Xue Yang, Junchi Yan, Ziming Feng, and Tao He. R3Det: Refined single-stage detector with feature refinement for rotating object. Proc. AAAI Conf. Artif. Intell. , 35(4), May 2021. [48] Jiaming Han, Jian Ding, Nan Xue, and Gui-Song Xia. ReDet: A rotation-equivariant detector for aerial object detection. In 
+
+Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , June 2021. [49] Jiaqi Zhao, Zeyu Ding, Yong Zhou, Hancheng Zhu, Wen-Liang Du, Rui Yao, and Abdulmotaleb El Saddik. Orientedformer: An end-to-end transformer-based oriented object detector in remote sensing images. IEEE Trans. Geosci. Remote Sens. , 2024. [50] Hang Xu, Xinyuan Liu, Haonan Xu, Yike Ma, Zunjie Zhu, Chenggang Yan, and Feng Dai. Rethinking boundary discontinuity problem for oriented object detection. In Conf. Comput. Vis. Pattern Recognit. , 2024. [51] Zeyu Ding, Jiaqi Zhao, Yong Zhou, Wen-liang Du, Hancheng Zhu, and Rui Yao. Gsdet: Gaussian splatting for oriented object detection. In Proc. Int. Jt. Conf. Artif. Intell. , 2025. [52] José Henrique Lima Marques, Jeffri Murrugarra-Llerena, and Claudio R Jung. Gaucho: Gaussian distributions with cholesky decomposition for oriented object detection. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2025. 
+
+11 A PREPRINT - J ULY 28, 2026 
+
+[53] Xingxing Xie, Gong Cheng, Jiabao Wang, Xiwen Yao, and Junwei Han. Oriented R-CNN for object detection. In IEEE/CVF Int. Conf. Comput. Vis. , 2021. 
+
+12

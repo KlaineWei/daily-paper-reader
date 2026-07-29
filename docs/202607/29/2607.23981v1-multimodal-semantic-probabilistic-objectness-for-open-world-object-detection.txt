@@ -1,0 +1,274 @@
+Title: Multimodal Semantic-Probabilistic Objectness for Open World Object Detection
+
+URL Source: https://arxiv.org/pdf/2607.23981v1
+
+Published Time: Tue, 28 Jul 2026 01:30:14 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Multimodal Semantic-Probabilistic Objectness for Open World Object Detection 
+
+Weijun Tian, Rui Liu ∗
+
+School of Computer Science and Engineering, Beihang University 
+
+{tianweijun,lr}@buaa.edu.cn 
+
+> ∗
+
+Corresponding author. 
+
+Abstract. Open-world object detection (OWOD) requires a detector to recognize known categories, discover unnamed objects from unseen cate-gories, and incrementally learn newly annotated classes. PROB improves unknown discovery by modeling class-agnostic probabilistic objectness in the decoder-query space. However, visual objectness alone cannot de-termine whether an object-like query corresponds to a hard known in-stance, an unseen-category object, or background clutter, resulting in an ambiguous known–unknown decision boundary. We propose MSPO, a lightweight semantic calibration framework that augments PROB with task-aware known-category language priors while preserving its detec-tor architecture and incremental learning protocol. For each currently known category, MSPO constructs an extended text description cover-ing category attributes, visual appearance, typical scenes, and functional usage, and encodes it using a frozen CLIP text encoder. Decoder query features are projected into the same semantic space to estimate their support from the current known-category semantics. This semantic ev-idence is fused with PROB’s visual objectness to calibrate known and unknown predictions without turning OWOD into open-vocabulary clas-sification. Importantly, MSPO never uses future-category names, and all unseen categories remain unnamed during evaluation. Experiments on M-OWODB and S-OWODB show that MSPO improves the strong PROB baseline on the main aggregate metrics while retaining compet-itive unknown recall. It also improves early unknown-confusion metrics and raises PASCAL VOC final mAP by up to 2.7 points. These results demonstrate that known-category language semantics provide an effec-tive calibration signal for probabilistic objectness under the standard OWOD setting. 
+
+Keywords: Open World Object Detection · Multimodal Semantic En-hancement · Probabilistic Objectness · Incremental Learning 
+
+# 1 Introduction 
+
+Modern object detectors are usually trained under a closed-set assumption: all categories that may appear during inference are annotated during training. This assumption is difficult to satisfy in open environments such as autonomous driv-ing, robotics, surveillance, and embodied perception, where the visual world is arXiv:2607.23981v1 [cs.CV] 27 Jul 2026 Fig. 1: Motivation of open world object detection. (a) A closed-set detector trained only with the known class car detects the car but ignores the unseen stop sign. (b) Before the stop sign category is introduced, an OWOD detector should localize it as an unnamed unknown object. (c) After incremental training with the newly introduced stop sign category, the same visual concept becomes a recognized known class. 
+
+not fixed and new categories may appear after deployment. Open world object detection (OWOD) addresses this gap by requiring a detector to perform three abilities jointly: detect known objects, identify unknown objects that are not yet annotated, and incrementally learn newly introduced classes over time [9,14,39]. Figure 1 illustrates this protocol with a simple road-scene example. A closed-set detector trained only on cars can localize the known car but ignores the unseen stop sign. An OWOD detector should instead preserve the stop sign as an un-named unknown object before the class is introduced, and should recognize it as a named class after incremental training. This example highlights that OWOD is not merely a larger-vocabulary recognition problem, but a continual detec-tion problem in which the detector must keep object-like evidence for future categories. The main difficulty of OWOD lies in the ambiguous boundary among known objects, unknown objects, and background. During training, categories outside the current known set are not annotated as unknown; consequently, a detec-tor may treat hidden unknown objects as background. ORE first formalizes OWOD and uses contrastive clustering, energy-based unknown identification, and exemplar replay to support open-world learning [14]. OW-DETR introduces a query-based transformer framework, using attention-driven pseudo-labeling and objectness scoring to mine potential unknown objects [9]. PROB further argues that pseudo-unknown labels are noisy and instead models probabilistic objectness in the decoder query embedding space [39]. This progression shows a clear trend: robust OWOD depends less on naming unknown categories and more on estimating whether a query corresponds to a valid object beyond the current label set. Despite this progress, existing objectness-based OWOD methods remain pri-marily visual and statistical. PROB estimates whether a query embedding be-longs to the learned object distribution, but it does not explicitly ask whether the query is semantically supported by the known category space. This distinc-2tion matters in open-world scenes. A novel object can be visually salient and object-like while being semantically far from all known categories; conversely, a hard instance of a known class can have low classification confidence while still being close to its category semantics. Without semantic evidence, a detector may absorb unknown objects into visually similar known classes or suppress them as background. Vision-language models such as CLIP provide a complementary source of semantic structure by aligning visual concepts with natural language descrip-tions [27]. Open-vocabulary detectors exploit this property to recognize classes specified by text at inference time [8, 17, 22, 25, 33, 34, 36, 37]. However, open-vocabulary detection and OWOD are not identical. Open-vocabulary detection typically assumes that target class names are given, whereas OWOD must dis-cover unknown objects before their names are available. Therefore, rather than replacing an OWOD detector with a full open-vocabulary detector, we use lan-guage semantics as a calibration signal for objectness and the known versus un-known decision. Unlike open-vocabulary detectors, MSPO never scores a query against future or evaluation-only category names; text only forms semantic an-chors for currently known categories, and unknown objects are still reported with a single unnamed unknown label. MSPO constructs Extended-Text Embeddings for known categories using a frozen CLIP text encoder, projects transformer decoder queries into the same semantic space, and estimates the degree to which each query is supported by the current known-category semantics. The complement of this support is converted into a semantic rejection term and fused with probabilistic objectness inside the trainable SPOF objectness loss. The design keeps the PROB detector intact, adds only a small query-level semantic head, and allows each component to be independently enabled for ablation. The central idea is simple: probabilistic objectness estimates whether a query is visually object-like, while known-semantic support estimates whether the query is explained by the current known categories. Their combination bet-ter matches the OWOD objective, because unknown objects should be pre-served when they are object-like but unsupported by the current known semantic space. This formulation also gives a clear experimental question: under the same PROB-aligned OWOD and incremental detection protocols, can frozen language semantics improve the known–unknown trade-off without replacing the detector architecture? Our contributions are summarized in three points: 
+
+– We add Semantic Projection and Query-Text Alignment as a lightweight semantic branch for the classification head. By aligning decoder queries with current known-class text prototypes, it calibrates class logits and improves known-class recognition without changing the detector architecture. 
+
+– We propose Semantic-Probabilistic Objectness Fusion, which combines vi-sual objectness with known-semantic support to distinguish known objects, potential unknown objects, and low-objectness background. This design gives 3the detector an unknown-aware objectness cue while keeping all future cat-egories unnamed under the OWOD protocol. 
+
+– We evaluate MSPO under the PROB-aligned protocols on M-OWODB, S-OWODB, and PASCAL VOC incremental detection. Across these bench-marks, MSPO consistently improves the strong PROB baseline, and the ablations verify the contributions of semantic alignment and objectness fu-sion. 
+
+# 2 Related Work 
+
+2.1 Open World Object Detection 
+
+Open world object detection extends closed-set detection by introducing un-known discovery and incremental learning into the detection protocol [14]. Mod-ern OWOD systems build on two-stage, dense, and transformer detectors [2,6,7, 11,20,23,29,30,32,35,38]. ORE [14] defines the task with energy-based unknown identification, contrastive clustering, and exemplar replay; OW-DETR [9] mines pseudo unknown objects with transformer attention; PROB [39] avoids noisy pseudo-unknown supervision by learning probabilistic objectness from query embeddings. Our work follows the PROB evaluation lineage but adds language-guided semantic evidence to query-level objectness estimation. 
+
+2.2 Objectness, Open-Set Recognition, and Unknown Discovery 
+
+Objectness distinguishes foreground objects from background, but in OWOD it must also preserve objects outside the current annotation set. Energy-based detection, pseudo-label mining, and probabilistic query modeling provide visual routes to this goal [9, 14, 39]. Open-set and out-of-distribution recognition study rejection with activations, confidence calibration, or energy scores [1, 12, 19, 24], but OWOD also requires localization, background separation, and later class learning. We therefore use known-semantic support as a complementary query-level calibration signal rather than a replacement for objectness. 
+
+2.3 Vision-Language and Open-Vocabulary Detection 
+
+Vision-language pretraining, especially CLIP [27], provides transferable image-text representations. Open-vocabulary detectors use such representations through distillation, region-language alignment, caption supervision, or grounded pre-training [3, 8, 16, 22, 26, 33, 34, 36, 37]. These methods show the value of language semantics, but often change the detector family or assume external vocabulary supervision. In contrast, MSPO uses frozen Extended-Text Embeddings as se-mantic anchors inside a PROB-style OWOD detector, keeping the comparison focused on probabilistic objectness. 42.4 Incremental Detection and Representation Learning 
+
+OWOD also requires incremental learning: unknown categories in one task may become known later. This connects to distillation, exemplar replay, representa-tion regularization, and contrastive representation learning [4,10,13,15,18,28,31]. Our method keeps the incremental protocol unchanged and supplies a semantic reference space updated by the active known-class set. 
+
+# 3 Method 
+
+3.1 Problem Setting and Design Principle 
+
+We follow the standard OWOD protocol introduced by ORE and used by OW-DETR and PROB. At task t, the detector is trained with annotations for the currently known class set Cseen t . Objects from classes outside Cseen t may appear during testing, but their names are not provided to the detector and they should be reported as unknown . After each task, a subset of unknown categories becomes annotated and is added to the known set for the next task. The goal is therefore not open-vocabulary naming, but a joint optimization of known-class detection, unknown-object discovery, and incremental learning. Our design starts from the probabilistic view of PROB rather than replacing it. Given an image, a query-based detector produces N decoder query features 
+
+{qi}Ni=1 . Each query predicts a bounding box, known-class logits, and an object-ness score. PROB decomposes the probability of assigning label l to query qi as 
+
+p(l | qi) = p(l | oi, q i) p(oi | qi), (1) where oi denotes the event that the query corresponds to a foreground object. This factorization is well suited for OWOD because an unknown instance has no known class label, but it should still receive high objectness. The limita-tion is that the objectness term is estimated from visual query statistics alone. MSPO keeps this factorization and asks a more specific question: can known-class language semantics provide a complementary query-level cue for calibrating 
+
+p(oi | qi) without naming future-category classes? 
+
+3.2 Overview of MSPO 
+
+As shown in Fig. 2, MSPO follows the same information flow as PROB and adds a lightweight semantic branch. The PROB Image Processing stream ex-tracts Decoder Query Features Q ∈ RN ×Dq , where N is the number of decoder queries and Dq is the detector-query feature dimension. These queries are fed to the PROB Detection Head for classification logits, bounding box regression, and visual objectness distance. The semantic stream has three roles. First, the Semantic Extended Text Prompt constructs known-class semantic anchors as an Extended-Text Embedding matrix P ∈ RK×Dt , where K = |C seen t | and Dt is the CLIP text embedding dimension. Second, Semantic Projection maps query 5Fig. 2: Overview of MSPO. Extended text prompts are encoded by a frozen CLIP text encoder into P ∈ RK×Dt , while PROB extracts decoder query features Q ∈ RN ×Dq .Semantic Projection and Query-Text Alignment compute known-semantic support, and SPOF fuses visual objectness distance with semantic rejection to form DSPOF 
+
+and Lobj . The PROB detection head keeps classification and box prediction under the shared objective. 
+
+features from Dq to Dt, and Query-Text Alignment computes query-prototype semantic logits. Third, Semantic-Probabilistic Objectness Fusion converts weak known-class semantic support into a semantic rejection term and fuses it with the visual objectness distance in the trainable objectness loss. The branch is task-aware: at task t, it uses only Cseen t . It does not introduce future-category names and therefore remains an OWOD method rather than an open-vocabulary detector. 
+
+3.3 Semantic Extended Text Prompt 
+
+For each known class c ∈ C seen t , we construct an Extended-Text Prompt rc from its class name and an offline generated extended description. The prompt follows the fixed pattern: 
+
+“a photo of {label}, with {attributes}, appearing as {appearance}, often seen in {scene}, and used for {function}.” 
+
+The fields describe category attributes, typical appearance, common scene con-text, and functional usage. For reproducibility, the descriptions are generated offline before training, fixed once a category becomes known, and reused in later tasks. At task t, prompts are constructed only for classes in Cseen t ; future-category names are never queried, encoded, or used as text prototypes. The complete prompt list can be provided in the supplementary material. A frozen CLIP text encoder Etxt maps each prompt to a normalized Extended-Text Embedding: 
+
+pc = Etxt (rc)
+
+∥Etxt (rc)∥2
+
+, c ∈ C seen t . (2) 6Stacking all K embeddings gives P = [ p1, . . . , p K ]⊤ ∈ RK×Dt . Because the CLIP text encoder is frozen, P is pre-computed at model construction and reused during training and evaluation. This module provides semantic anchors for the current known categories, not an external vocabulary for recognizing future-category objects. 
+
+3.4 Semantic Projection and Query-Text Alignment 
+
+The semantic branch operates on the same Decoder Query Features used by the detector. Let Q = [ q1, . . . , q N ]⊤ ∈ RN ×Dq denote the query matrix. Semantic Projection uses a lightweight projection head g : RDq → RDt to map each query into the CLIP text embedding space: 
+
+hi = g(qi)
+
+∥g(qi)∥2
+
+, hi ∈ RDt . (3) In our implementation, g is a two-layer MLP, Linear–ReLU–Dropout–Linear, with dropout pdrop = 0 .1. It maps the detector hidden dimension to the 512-dimensional CLIP text space. The CLIP text encoder is frozen; gradients from the semantic loss update the detector and the projection head, but not the text encoder. Query-Text Alignment computes semantic logits between projected queries and Extended-Text Embeddings: 
+
+ai,c = h⊤ 
+
+> i
+
+pc
+
+γs
+
+, c ∈ C seen t , (4) where γs is the semantic temperature. For matched object queries, the alignment head is supervised by the current ground-truth class: 
+
+Lsem = 1
+
+|M| 
+
+X
+
+> (i,y i)∈M
+
+CE( ai, y i), (5) where M is the set of Hungarian-matched object queries. We intentionally do not assign a semantic background label to unmatched queries, because unmatched queries may contain hidden unknown objects under the OWOD protocol. This loss makes the query representation aware of known-class semantic structure while preserving the detector’s original supervision. It is not applied to future-category classes because their names are unavailable during the corresponding OWOD task. 
+
+3.5 Semantic-Probabilistic Objectness Fusion 
+
+The goal of SPOF is to give the detector a query-level criterion for separating three cases: known objects, unknown objects, and background. Visual objectness alone can separate many objects from background, but it cannot decide whether an object-like query belongs to the known semantic space. Conversely, weak 7known-class semantic support alone is not sufficient evidence for an unknown ob-ject, because background regions may also be semantically unsupported. SPOF therefore combines the two cues: a query is a plausible unknown only when it is visually object-like and weakly supported by all current known classes. The PROB Detection Head first measures whether a query is object-like by its distance to a class-agnostic object-query distribution. Let μ ∈ RDq and 
+
+Σ ∈ RDq ×Dq be the running mean and covariance of object query features. The visual objectness distance is 
+
+dPROB  
+
+> i
+
+= ( qi − μ)⊤Σ−1(qi − μ), (6) and its bounded visual objectness evidence is 
+
+Vi = exp( −τ d PROB  
+
+> i
+
+), (7) where τ is the objectness temperature. A low dPROB  
+
+> i
+
+and high Vi indicate an object-like query, while background clutter usually has a large distance and low visual evidence. To distinguish known objects from potential unknown objects, we estimate known-semantic support from the query-text logits: 
+
+Ksem i = ρs max 
+
+> c∈C seen t
+
+softmax( ai)c + (1 − ρs)σ
+
+
+
+max 
+
+> c∈C seen t
+
+ai,c 
+
+
+
+. (8) Here ρs ∈ [0 , 1] balances relative support within the current known set and absolute query-text affinity; we set ρs = 0 .5. High Ksem i means that the query is well explained by at least one current known class. Its complement is the known-semantic rejection term 
+
+Rsem i = 1 − Ksem i , (9) which becomes large when the query is poorly supported by the known semantic anchors. SPOF uses the product of visual objectness and semantic rejection as the unknown-aware objectness cue: 
+
+U SPOF  
+
+> i
+
+= ViRsem i . (10) This product encodes the desired OWOD boundary: known objects have high 
+
+Vi but low Rsem i , unknown objects should have high Vi and high Rsem i , and background regions are suppressed by low Vi even if their semantic rejection is high. During training, future unknown labels are unavailable, so SPOF supervises the learnable boundary using matched known objects. The fused distance for objectness learning is 
+
+DSPOF  
+
+> i
+
+= dPROB  
+
+> i
+
++ λsRsem i , (11) where λs controls how strongly weak known-semantic support is penalized. The SPOF objectness loss averages this fused distance over Hungarian-matched ob-ject queries: 
+
+Lobj = 1
+
+|M| 
+
+X
+
+> i∈M
+
+DSPOF  
+
+> i
+
+, (12) 8so minimizing Lobj simultaneously pulls known objects toward the visual object distribution and increases their known-semantic support. After such training, high objectness with low rejection is treated as known-object evidence, high ob-jectness with high rejection becomes unknown-object evidence, and low object-ness remains background. The full training objective uses the semantic alignment loss before the SPOF objectness loss: 
+
+L = Lcls + λ1Lbox + λ2Lsem + λ3Lobj . (13) Here Lbox denotes the bounding-box regression loss used by the detector, while 
+
+λ1, λ2, and λ3 balance localization, semantic alignment, and SPOF objectness. The detector can still use the semantic logits for classification calibration with weight αs, but the trainable SPOF module is fully specified by Eqs. (8)–(13). Set-ting λ2 = 0 , αs = 0 , and λs = 0 reduces Lobj to the original PROB visual object-ness objective. All semantic modules are controlled by independent weights and switches, enabling ablations for label-only prompt, extended prompt, objectness-fusion-only, and full MSPO variants. The method does not classify unknown objects into external text labels; all future-category objects remain unnamed unknowns during evaluation. 
+
+# 4 Experiments 
+
+4.1 Datasets and Protocols 
+
+We follow the dataset splits and reporting protocol used by PROB, which are inherited from ORE and OW-DETR. The main OWOD evaluation uses M-OWODB and S-OWODB. M-OWODB is built from MS-COCO and PASCAL VOC [5, 21] and follows the superclass-mixed split, where the 80 object cat-egories are divided into four incremental tasks with 20 new classes per task. S-OWODB uses MS-COCO [21] with superclass-separated task splits, making semantic transfer across tasks more challenging. At task t, classes from previous tasks are treated as previously known, classes introduced in the current task are currently known, and future-task classes are treated as unknown during evalua-tion. The detector is evaluated on all introduced known classes and on its ability to retrieve unlabeled unknown objects. We also evaluate incremental object detection on PASCAL VOC 2007 fol-lowing PROB. The 20 VOC classes are split into two-stage protocols: 10 + 10 ,
+
+15+5 , and 19+1 . The first number denotes base classes learned in the first stage, and the second number denotes new classes introduced in the second stage. This experiment tests whether semantic calibration preserves PROB’s incremental learning behavior rather than only improving unknown discovery. 
+
+4.2 Metrics and Implementation Details 
+
+Following PROB, ORE, and OW-DETR, we report unknown recall at the top 50 detections (U-Recall), AP at IoU 0.5 for known classes, Wilderness Impact (WI), 9and Absolute Open-Set Error (A-OSE). For Tasks 2–4, known AP is decomposed into previously known, currently known, and all known categories. For PASCAL VOC incremental detection, we report AP for old classes, AP for new classes, and final mAP. The detector is implemented with the Deformable DETR based PROB code-base, using the same task splits, evaluation code, and incremental training sched-ule as PROB. We use CLIP ViT-B with patch size 16 to construct Dt = 512 
+
+dimensional Extended-Text Embeddings and keep the text encoder frozen; CLIP is used only to pre-compute text embeddings at model construction. The seman-tic projection head uses dropout pdrop = 0 .1 and the semantic temperature is 
+
+γs = 0 .07 . For MSPO, we set the semantic logit weight αs = 0 .10 , the se-mantic distance-fusion weight λs = 0 .10 , the semantic alignment loss weight 
+
+λ2 = 0 .10 , the support mixture weight ρs = 0 .50 , and the semantic unknown inference weight to 0.50 . Following PROB, the fused objectness loss coefficient is λ3 = 8 × 10 −4 and the objectness temperature is τ = 1 .3; the box loss weight 
+
+λ1 follows the default setting in the released PROB code. We use the same op-timizer, learning-rate schedule, fine-tuning splits, and evaluation metrics as the PROB aligned scripts, and all comparisons are made under this shared protocol. 
+
+4.3 Main Results on M-OWODB and S-OWODB 
+
+Table 1 reports the main OWOD results on M-OWODB and S-OWODB in the same PROB format. We compare against the same method lineage used by PROB, including ORE, OW-DETR, and PROB; for M-OWODB, we also in-clude intermediate OWOD methods reported in the PROB comparison table. MSPO improves the strongest aggregate metrics over PROB on both bench-marks, while a few current-class or unknown-recall entries remain close to PROB. This matches our goal of strengthening a strong probabilistic OWOD baseline rather than replacing it with an open-vocabulary detector. 
+
+Analysis. The largest gains appear in early known-class recognition and in ag-gregate known-class AP. On M-OWODB, MSPO improves Task 1 current AP by +2.2 points and Task 2 Both AP by +1.4 points over PROB; it also improves Task 4 previously known AP by +1.2 points. On S-OWODB, the strongest gains are Task 1 current AP by +2.7 points, Task 2 previously known AP by +2.1 points, and Task 2 Both AP by +1.5 points. Averaged over the reported entries, MSPO improves PROB by about +0.7 points on M-OWODB and +0.8 points on S-OWODB. The few lower entries, such as M-OWODB Task 2 current AP and S-OWODB Task 3 U-Recall, indicate that semantic calibration mainly improves the overall known and unknown trade-off rather than uniformly increasing every sub-metric. 
+
+4.4 PASCAL VOC Incremental Object Detection 
+
+Table 2 reports the two-stage PASCAL VOC incremental detection results fol-lowing PROB. The comparison uses the same old-class, new-class, and final mAP 10 Table 1: Main OWOD comparison under the PROB reporting protocol. The upper block reports M-OWODB and the lower block reports S-OWODB. AP and mAP are reported at IoU 0.5. Higher is better for all entries. Method Task 1 Task 2 Task 3 Task 4 U-Recall mAP U-Recall mAP U-Recall mAP mAP Cur. Pre. Cur. Both Pre. Cur. Both Pre. Cur. Both                                                                                                    
+
+> M-OWODB
+> ORE 4.9 56.0 2.9 52.7 26.0 39.4 3.9 38.2 12.7 29.7 29.6 12.4 25.3 UC-OWOD 2.4 50.7 3.4 33.1 30.5 31.8 8.7 28.8 16.3 24.6 25.6 15.9 23.2 OCPL 8.3 56.6 7.7 50.6 27.5 39.1 11.9 38.7 14.7 30.7 30.7 14.4 26.7 2B-OCD 12.1 56.4 9.4 51.6 25.3 38.5 11.6 37.2 13.2 29.2 30.0 13.3 25.8 OW-DETR 7.5 59.2 6.2 53.6 33.5 42.9 5.7 38.3 15.8 30.8 31.4 17.1 27.8 PROB 19.4 59.5 17.4 55.7 32.2 44.0 19.6 43.0 22.2 36.0 35.7 18.9 31.5 MSPO 20.1 61.7 17.8 57.5 32.0 45.4 20.2 44.5 22.8 37.0 36.9 18.7 32.3 S-OWODB
+> ORE 1.5 61.4 3.9 56.5 26.1 40.6 3.6 38.7 23.7 33.7 33.6 26.3 31.8 OW-DETR 5.7 71.5 6.2 62.8 27.5 43.8 6.9 45.2 24.9 38.5 38.2 28.1 33.1 PROB 17.6 73.4 22.3 66.3 36.0 50.4 24.8 47.8 30.4 42.0 42.6 31.7 39.9 MSPO 18.2 76.1 22.9 68.4 36.6 51.9 24.6 49.1 31.0 43.1 43.8 31.5 40.8
+
+format and includes OW-DETR and PROB. MSPO improves final mAP over PROB in all three splits, indicating that semantic calibration does not compro-mise incremental learning. 
+
+Analysis. The clearest Pascal VOC gains appear in the 15 + 5 and 19 + 1 splits, where final mAP improves by +2.6 and +2.7 points over PROB, respectively. In the 19 + 1 split, old-class AP also increases by +2.7 points, suggesting stronger retention of previously learned categories. Across the three incremental settings, the average final mAP gain is about +2.4 points. New-class AP is slightly lower than PROB in the 15 + 5 and 19 + 1 splits, indicating that the main benefit of MSPO comes from old-class stability and final detection quality rather than a uniform increase on every class group. 
+
+4.5 Unknown Confusion Analysis 
+
+Known-semantic calibration is intended to reduce the confusion between un-known objects and known classes. Following PROB, we report WI and A-OSE on the first three M-OWODB tasks, where future-category objects exist. Table 3 shows that MSPO improves U-Recall in all three tasks, with the largest gain of +0.7 points in Task 1. WI is slightly reduced in Tasks 1 and 2 and remains tied with PROB in Task 3. A-OSE decreases by 185 and 192 errors in the first two tasks, while Task 3 is slightly higher than PROB. This trend is consistent with a calibration module: semantic support improves the early known and unknown boundary, but it does not eliminate all late-stage open-set confusion. 11 Table 2: PASCAL VOC 2007 two-stage incremental object detection. The setting                            
+
+> a+bmeans that abase classes are learned first and bnew classes are introduced in the second stage. Setting Method Old New Final mAP
+> 10 + 10
+> OW-DETR 63.5 67.9 65.7 PROB 66.0 67.2 66.5 MSPO 68.2 68.0 68.4
+> 15 + 5
+> OW-DETR 72.2 59.8 69.4 PROB 73.2 60.8 70.1 MSPO 75.9 60.2 72.7
+> 19 + 1
+> OW-DETR 70.2 62.0 70.2 PROB 73.9 48.5 72.6 MSPO 76.6 47.9 75.3 Table 3: Unknown confusion analysis on M-OWODB. Lower is better for WI and A-OSE, while higher is better for U-Recall.
+
+Method Task 1 Task 2 Task 3 U-Recall WI A-OSE U-Recall WI A-OSE U-Recall WI A-OSE ORE 4.9 0.062 10459 2.9 0.028 10445 3.9 0.021 7990 OW-DETR 7.5 0.057 10240 6.2 0.028 8441 5.7 0.016 6803 PROB 19.4 0.057 5195 17.4 0.034 6452 19.6 0.015 2641 
+
+MSPO 20.1 0.055 5010 17.8 0.033 6260 20.2 0.015 2685 
+
+4.6 Ablation Analysis 
+
+The architecture of MSPO is modular, allowing each semantic component to be enabled independently. Following the component-wise ablation style com-monly used in open-vocabulary and open-world studies, Table 4 reports both the enabled modules and the resulting M-OWODB performance. The Label-only Prompt variant uses the plain CLIP text prompt “a photo of {label}” and therefore tests whether class-name text anchoring alone changes the detector. SETP replaces this plain prompt with the Extended-Text Prompt, while SPOF adds Semantic-Probabilistic Objectness Fusion. The ablations show that language information is useful only when it is in-troduced with semantic structure and objectness coupling. Label-only Prompt is unstable: it slightly improves Task 1 mAP from 59.5 to 59.7 and Task 2 Both AP from 44.0 to 44.1, but lowers several U-Recall and later-task aggregate entries. This indicates that plain class names are weak anchors for OWOD because they lack appearance, context, and function cues for separating objects from back-ground and unknown categories. SETP is more reliable: extended descriptions raise Task 1 mAP to 60.7 and Task 2 Both AP to 44.8, showing that richer text prototypes help calibrate known-class logits. However, SETP does not ex-12 Table 4: Ablation study on M-OWODB. The Label-only Prompt variant uses the plain CLIP prompt “a photo of {label}”. SETP denotes Semantic Extended Text Prompt, and SPOF denotes Semantic-Probabilistic Objectness Fusion. Method Label-only SETP SPOF T1 U-R T1 mAP T2 U-R T2 Both T3 U-R T3 Both T4 Both PROB – – – 19.4 59.5 17.4 44.0 19.6 36.0 31.5 Label-only Prompt ✓ – – 19.2 59.7 17.3 44.1 19.4 36.1 31.3 SETP ✓ ✓ – 19.8 60.7 17.6 44.8 19.8 36.5 31.9 SPOF ✓ – ✓ 20.0 60.4 18.0 45.0 20.0 36.8 32.0 MSPO ✓ ✓ ✓ 20.1 61.7 17.8 45.4 20.2 37.0 32.3 
+
+plicitly alter objectness, so its U-Recall gain remains moderate. SPOF comple-ments SETP by injecting known-semantic rejection into probabilistic objectness; it reaches the best Task 2 U-Recall of 18.0 and improves later-task Both AP over PROB. The full MSPO model obtains the best overall trade-off across the re-ported columns, confirming that semantic alignment and semantic-probabilistic objectness fusion are complementary. 
+
+4.7 Qualitative and Mechanistic Analysis 
+
+The semantic branch gives an interpretable query-level score for known seman-tic support and known-semantic rejection. We inspect high-objectness queries with low maximum similarity to known Extended-Text Embeddings and com-pare their predictions with PROB. The desired behavior is that background regions remain filtered by probabilistic objectness, known objects retain high semantic support, and object-like regions unsupported by the known semantic space are preserved as unknown. This analysis directly tests whether MSPO im-proves the OWOD decision boundary rather than merely increasing classification confidence. Figure 3 illustrates how semantic calibration changes the unknown decision. In the baseball-bat scene, PROB fires on background trees as unknown and misses the foreground bat, whereas MSPO suppresses the background response because low known-semantic support alone cannot overcome weak visual object-ness. The compact bat region is visually object-like but unsupported by current known semantics, so SPOF preserves it as unknown and later recognizes it after the class is introduced. In the bench scene, PROB detects the known bicycle but misses the bench; MSPO instead treats the bench as an object-like region poorly explained by T1 known text prototypes. These cases show that semantic-probabilistic objectness reduces background false unknowns while retaining se-mantically meaningful future objects. 
+
+# 5 Conclusion 
+
+We presented MSPO, a multimodal semantic extension of probabilistic object-ness for open world object detection. By constructing Extended-Text Embed-13 Fig. 3: Qualitative comparison between PROB and MSPO across incremental stages. In the first row, PROB in T1 incorrectly fires on background tree regions as unknown, whereas MSPO in T1 preserves the object-like baseball bat as unknown and recognizes it as baseball bat after the class is introduced in T2. In the second row, PROB detects the known bicycle but misses the bench as an unknown object; MSPO localizes the bench as unknown in T1 and recognizes it as bench after incremental training in T2. 
+
+dings, aligning decoder queries with the CLIP semantic space, estimating known-semantic support, and fusing this signal with probabilistic objectness, MSPO cal-ibrates the boundary among known objects, unknown objects, and background while keeping the PROB detector intact. Experiments and ablations show that known-category language semantics are a useful complement to probabilistic ob-jectness under standard OWOD protocols. These results suggest that OWOD objectness should not be treated as purely visual density estimation; calibrat-ing object-like evidence by its support from the current known semantic space provides a lightweight and protocol-compatible improvement. 
+
+# References 
+
+1. Bendale, A., Boult, T.E.: Towards open set deep networks. In: CVPR (2016) 2. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., Zagoruyko, S.: End-to-end object detection with transformers. In: ECCV (2020) 3. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: ICCV (2021) 4. Chen, T., Kornblith, S., Norouzi, M., Hinton, G.: A simple framework for con-trastive learning of visual representations. In: ICML (2020) 5. Everingham, M., Van Gool, L., Williams, C.K.I., Winn, J., Zisserman, A.: The pascal visual object classes (VOC) challenge. IJCV 88 (2), 303–338 (2010) 6. Girshick, R.: Fast R-CNN. In: ICCV (2015) 7. Girshick, R., Donahue, J., Darrell, T., Malik, J.: Rich feature hierarchies for accu-rate object detection and semantic segmentation. In: CVPR (2014) 8. Gu, X., Lin, T.Y., Kuo, W., Cui, Y.: Open-vocabulary object detection via vision and language knowledge distillation. In: ICLR (2022) 
+
+14 9. Gupta, A., Narayan, S., Joseph, K.J., Khan, S., Khan, F.S., Shah, M.: OW-DETR: Open-world detection transformer. In: CVPR (2022) 10. He, K., Fan, H., Wu, Y., Xie, S., Girshick, R.: Momentum contrast for unsupervised visual representation learning. In: CVPR (2020) 11. He, K., Gkioxari, G., Dollár, P., Girshick, R.: Mask R-CNN. In: ICCV (2017) 12. Hendrycks, D., Gimpel, K.: A baseline for detecting misclassified and out-of-distribution examples in neural networks. In: ICLR (2017) 13. Hinton, G., Vinyals, O., Dean, J.: Distilling the knowledge in a neural network. In: NeurIPS Deep Learning Workshop (2015) 14. Joseph, K.J., Khan, S., Khan, F.S., Balasubramanian, V.N.: Towards open world object detection. In: CVPR (2021) 15. Khosla, P., Teterwak, P., Wang, C., Sarna, A., Tian, Y., Isola, P., Maschinot, A., Liu, C., Krishnan, D.: Supervised contrastive learning. In: NeurIPS (2020) 16. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., Dollár, P., Girshick, R.: Segment anything. arXiv preprint arXiv:2304.02643 (2023) 17. Li, L.H., Zhang, P., Zhang, H., Yang, J., Li, C., Zhong, Y., Wang, L., Yuan, L., Zhang, L., Hwang, J.N., Chang, K.W., Gao, J.: Grounded language-image pre-training. In: CVPR (2022) 18. Li, Z., Hoiem, D.: Learning without forgetting. TPAMI 40 (12), 2935–2947 (2018) 19. Liang, S., Li, Y., Srikant, R.: Enhancing the reliability of out-of-distribution image detection in neural networks. In: ICLR (2018) 20. Lin, T.Y., Goyal, P., Girshick, R., He, K., Dollár, P.: Focal loss for dense object detection. In: ICCV (2017) 21. Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dollár, P., Zitnick, C.L.: Microsoft COCO: Common objects in context. In: ECCV (2014) 22. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L.: Grounding DINO: Marrying DINO with grounded pre-training for open-set object detection. arXiv preprint arXiv:2303.05499 (2023) 23. Liu, W., Anguelov, D., Erhan, D., Szegedy, C., Reed, S., Fu, C.Y., Berg, A.C.: SSD: Single shot multibox detector. In: ECCV (2016) 24. Liu, W., Wang, X., Owens, J.D., Li, Y.: Energy-based out-of-distribution detection. In: NeurIPS (2020) 25. Minderer, M., Gritsenko, A., Stone, A., Neumann, M., Weissenborn, D., Doso-vitskiy, A., Mahendran, A., Arnab, A., Dehghani, M., Shen, Z., Wang, X., Zhai, X., Kipf, T., Houlsby, N.: Simple open-vocabulary object detection with vision transformers. In: ECCV (2022) 26. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A.: DINOv2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 (2023) 27. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: ICML (2021) 28. Rebuffi, S.A., Kolesnikov, A., Sperl, G., Lampert, C.H.: iCaRL: Incremental clas-sifier and representation learning. In: CVPR (2017) 29. Redmon, J., Divvala, S., Girshick, R., Farhadi, A.: You only look once: Unified, real-time object detection. In: CVPR (2016) 30. Ren, S., He, K., Girshick, R., Sun, J.: Faster R-CNN: Towards real-time object detection with region proposal networks. In: NeurIPS (2015) 31. Shmelkov, K., Schmid, C., Alahari, K.: Incremental learning of object detectors without catastrophic forgetting. In: ICCV (2017) 
+
+15 32. Tian, Z., Shen, C., Chen, H., He, T.: FCOS: Fully convolutional one-stage object detection. In: ICCV (2019) 33. Yao, L., Han, J., Liang, X., Xu, D., Zhang, W., Li, Z., Xu, H.: DetCLIPv2: Scal-able open-vocabulary object detection pre-training via word-region alignment. In: CVPR (2023) 34. Zareian, A., Rosa, K.D., Hu, D.H., Chang, S.F.: Open-vocabulary object detection using captions. In: CVPR (2021) 35. Zhang, H., Li, F., Liu, S., Zhang, L., Su, H., Zhu, J., Ni, L.M., Shum, H.Y.: DINO: DETR with improved denoising anchor boxes for end-to-end object detection. In: ICLR (2023) 36. Zhou, X., Girdhar, R., Joulin, A., Krähenbühl, P., Misra, I.: Detecting twenty-thousand classes using image-level supervision. In: ECCV (2022) 37. Zhou, Y., Loy, C.C., Dai, B.: RegionCLIP: Region-based language-image pretrain-ing. In: CVPR (2022) 38. Zhu, X., Su, W., Lu, L., Li, B., Wang, X., Dai, J.: Deformable DETR: Deformable transformers for end-to-end object detection. In: ICLR (2021) 39. Zohar, O., Wang, K.C., Yeung, S.: PROB: Probabilistic objectness for open world object detection. In: CVPR (2023) 
+
+16

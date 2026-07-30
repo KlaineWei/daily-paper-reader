@@ -6,43 +6,43 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-29
-- 运行时间：2026-07-29 20:49:44 UTC
+- 最新运行日期：2026-07-30
+- 运行时间：2026-07-30 20:55:37 UTC
 - 运行状态：成功
 - 本次总论文数：7
-- 精读区：2
-- 速读区：5
+- 精读区：4
+- 速读区：3
 
 ### 今日简报（AI）
-1) 今日精读两篇9.0高分：点云可解释性与深度伪造检测取得突破，另速读对抗训练、开放世界检测等前沿。  
-2) 最值得关注：MiSS用逻辑驱动最小充分联盟解释点云分类，LaP-Forensics借助潜-像素一致性多模态推理精准识伪。  
-3) 普通读者可优先精读这两篇思想，并留意对抗训练中“捷径抵抗”的物理攻击防护新思路。
-- 详情：[/202607/29/README](/202607/29/README)
+1) 今日七篇前沿研究聚焦网络安全与音频伪造检测，两篇高分精读分别提出多智能体可解释性框架与推理驱动全模态方法。  
+2) 最值得关注的方向：事件中心的可解释网络安全（(EC)²，9.0）与推理驱动的音频伪造检测（ThinkOmni，9.0），两者均属多智能体与多模态交叉创新。  
+3) 建议优先阅读这两篇论文，结合其代码或数据，探索将逻辑推理与多智能体协作应用于实际安全场景。
+- 详情：[/202607/30/README](/202607/30/README)
 
 ### 精读区论文标签
-1. [MiSS: A Logic-Driven Explanation of Minimal Sufficient Coalitions for Point Cloud Classifiers](/202607/29/2607.24074v1-miss-a-logic-driven-explanation-of-minimal-sufficient-coalitions-for-point-cloud-classifiers)  
+1. [(EC)2: Event-Centric Explainability for Cybersecurity Through Multi-Agent LLM Investigations](/202607/30/2607.26201v1-ec2-event-centric-explainability-for-cybersecurity-through-multi-agent-llm-investigations)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：点云分类器的最小充分联盟逻辑解释方法
-2. [LaP-Forensics: Latent-Pixel Consistency Guided Multimodal Reasoning for Deepfake Detection](/202607/29/2607.25962v1-lap-forensics-latent-pixel-consistency-guided-multimodal-reasoning-for-deepfake-detection)  
+   evidence：针对网络安全异常检测的事件中心可解释性
+2. [ThinkOmni: A Reasoning-Driven Omni-Modal LLM Framework for Audio Forgery Detection and Localization](/202607/30/2607.26553v1-thinkomni-a-reasoning-driven-omni-modal-llm-framework-for-audio-forgery-detection-and-localization)  
    标签：评分：9.0/10、query:xai-objdet
-   evidence：基于多模态推理的可解释深度伪造检测
+   evidence：通过显式法医推理实现可解释伪造检测
+3. [FAS-R1: A Unified Multi-Task MLLM for Reasoning Face Anti-Spoofing](/202607/30/2607.26432v1-fas-r1-a-unified-multi-task-mllm-for-reasoning-face-anti-spoofing)  
+   标签：评分：8.0/10、query:xai-objdet
+   evidence：可解释的人脸反欺骗推理
+4. [Veritas++: Value-aware On-Policy Distillation for Perception-Enhanced AIGI Detection](/202607/30/2607.27113v1-veritas-value-aware-on-policy-distillation-for-perception-enhanced-aigi-detection)  
+   标签：评分：8.0/10、query:xai-objdet
+   evidence：基于MLLM的感知增强AIGI检测与可解释推理
 
 ### 速读区论文标签
-1. [Detectors Learn the Wrong Thing: Shortcut-Resistant Adversarial Training Against Physically Realizable Attacks](/202607/29/2607.21243v1-detectors-learn-the-wrong-thing-shortcut-resistant-adversarial-training-against-physically-realizable-attacks)  
+1. [MiSS: A Logic-Driven Explanation of Minimal Sufficient Coalitions for Point Cloud Classifiers](/202607/30/2607.24074v1-miss-a-logic-driven-explanation-of-minimal-sufficient-coalitions-for-point-cloud-classifiers)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：目标检测器捷径解释
-2. [Multimodal Semantic-Probabilistic Objectness for Open World Object Detection](/202607/29/2607.23981v1-multimodal-semantic-probabilistic-objectness-for-open-world-object-detection)  
-   标签：评分：7.0/10、query:xai-objdet
-   evidence：开放世界目标检测结合语义校准
-3. [Deep Convolutional Large-Margin $\ell_p$-SVDD for Visual Anomaly Detection](/202607/29/2607.22212v1-deep-convolutional-large-margin-ellp-svdd-for-visual-anomaly-detection)  
+   evidence：基于最小充分联盟的点云分类器解释
+2. [Robust Activation Map Rectification for Weakly Supervised Volumetric Segmentation: Temporal Coherence as a Free Lunch](/202607/30/2607.19877v1-robust-activation-map-rectification-for-weakly-supervised-volumetric-segmentation-temporal-coherence-as-a-free-lunch)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：视觉异常检测，显式决策边界，可解释间隔
-4. [XMatchAD: A Cross-Modal Matching Perspective on Reconstruction-based Anomaly Detection](/202607/29/2607.23658v1-xmatchad-a-cross-modal-matching-perspective-on-reconstruction-based-anomaly-detection)  
+   evidence：激活图修正用于可解释定位
+3. [Domain-Prior-Regularized Graph Modeling for Anomaly Detection in Cyber-Physical Systems](/202607/30/2607.23197v1-domain-prior-regularized-graph-modeling-for-anomaly-detection-in-cyber-physical-systems)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：跨模态异常检测
-5. [Cascade Forgery Mining Network for Fingerprint Presentation Attack Detection](/202607/29/2607.24090v1-cascade-forgery-mining-network-for-fingerprint-presentation-attack-detection)  
-   标签：评分：6.0/10、query:xai-objdet
-   evidence：指纹伪造检测，通过自适应深度特征提取挖掘伪造痕迹
+   evidence：使用领域先验正则化和LLM进行异常检测，增强可解释性
 
 
 <div class="dpr-home-promo-card">

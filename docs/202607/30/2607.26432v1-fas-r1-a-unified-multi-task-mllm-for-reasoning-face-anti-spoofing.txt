@@ -1,0 +1,686 @@
+Title: FAS-R1: A Unified Multi-Task MLLM for Reasoning Face Anti-Spoofing
+
+URL Source: https://arxiv.org/pdf/2607.26432v1
+
+Published Time: Thu, 30 Jul 2026 00:23:22 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# FAS-R1: A Unified Multi-Task MLLM for Reasoning Face Anti-Spoofing 
+
+Hongyang Wang 1,2 ∗, Yichen Shi 3∗, Hongrui Li 1∗, Yiru Huo 4, Jun Feng 1†, Zitong Yu 5†
+
+> 1
+
+Shijiazhuang Tiedao University 2Fudan University 3Shanghai Jiao Tong University 
+
+> 4
+
+Yanshan University 5Great Bay University 
+
+Abstract 
+
+Face anti-spoofing (FAS) is increasingly expected to provide not only bona fide/spoof decisions, but also attack semantics and image-grounded evidence for human inspection. Exist-ing discriminative FAS models remain largely label-centric, while recent MLLM-based methods offer structured outputs but still rely mainly on supervised fine-tuning, often produc-ing template-like rationales and weak optimization for dif-ficult attacks. We propose FAS-R1, a two-stage reasoning-oriented MLLM framework for unified FAS prediction, cov-ering authenticity classification, attack-type recognition and spoof-region localization. FAS-R1 first uses FAS-R1-23K, a high-quality long-CoT dataset, for cold-start supervised fine-tuning, and then performs FAS-specific GRPO post-training. Degradation-Simulated Augmentation (DSA) encourages sta-ble spoof-cue reasoning across visual-quality shifts, while Difficulty-Aware GRPO (DA-GRPO) mitigates easy-sample dominance that may leave difficult task–attack groups under-optimized, especially for subtle or ambiguous attacks such as makeup and mask attacks. The main 3B FAS-R1 model achieves 98.75% authenticity accuracy, 93.33% attack-type accuracy, and 96.30/94.73% AP@40/AP@50 in-domain. It also outperforms the compared systems in cross-domain au-thenticity generalization and answer-and-rationale quality. Ex-periments with different base models further show favorable scaling behavior. The code will be released soon. 
+
+Introduction 
+
+Face anti-spoofing (FAS) protects face recognition systems against print, replay, 3D-mask, and partial presentation at-tacks (Yu et al. 2022). In payment, access control, and identity verification, FAS errors can directly affect security. Practical deployments further introduce heterogeneous cameras, illu-mination, compression, resolution, and sensor noise. A reli-able FAS system should therefore go beyond bona fide/spoof prediction and expose attack semantics with supporting vi-sual evidence. Most traditional FAS methods are optimized for label-level discrimination. As illustrated in Fig. 1(a), discrimina-tive models can achieve strong binary classification perfor-mance (He et al. 2016; Yu et al. 2020; Wang et al. 2022), but usually return only a class score. Such label-centric outputs provide limited attack semantics or spatial evidence, making failures difficult to inspect. Vision-language and MLLM-based FAS methods begin 
+
+> ∗
+
+These authors contributed equally. 
+
+> †
+
+Corresponding authors. Feature Extractor    
+
+> Classifier
+> Limited Capablity
+> Label-only Output
+> Real Spoof
+> Traditional
+> Discriminative FAS
+> MLLM only with SFT
+> Explainable FAS
+> Text
+> Encoder
+> Short, Template-like
+> Explanation
+> MLLM with SFT
+> “This looks real.”
+> “Replay attack”
+> Image
+> Encoder
+> MLLM with SFT + RL
+> Reasoning FAS
+> Text
+> Encoder
+> Cold-Start Initialization
+> Analysis: The texture incon-
+> sistencies around the eye
+> suggest a printed photo....
+> Image
+> Encoder
+> GRPO Post-Training
+> Conclusion: Spoof
+
+(a) (b) (c) 
+
+Figure 1: Comparison of three FAS paradigms: (a) discrimi-native models mainly output binary decisions; (b) SFT-based MLLMs provide structured but often template-style explana-tions; (c) FAS-R1 combines SFT and RL to produce struc-tured predictions with inspectable rationales. to address this gap by introducing textual semantics and natural-language rationales (Shi et al. 2025; Zhang et al. 2025). FaceShield further studies a unified MLLM inter-face for authenticity classification, attack-type recognition, and attack-region localization (Wang et al. 2025b). However, these systems are mainly driven by supervised fine-tuning (SFT). As illustrated in Fig. 1(b), SFT teaches the model to follow an output format but can also encourage short, recur-ring explanations. The resulting rationales may look struc-tured while remaining weakly grounded in image-specific evidence. Recent FAS studies have also explored chain-of-thought supervision, tool-augmented reasoning, and reinforcement fine-tuning (Zhang et al. 2026a; Jiang et al. 2025; Zhang et al. 2026b; Ma et al. 2026), showing the promise of post-training beyond SFT. Nevertheless, generic RL does not fully match FAS: models must learn stable spoof cues across visual-quality variations, and training can be dominated by easy samples. Easy cases may be quickly optimized, whereas complex task–attack cases receive weak corrective signals and remain mislearned, making hard-to-distinguish spoof patterns remain confused. Effective reasoning-oriented FAS therefore needs post-training aware of both cue stability and task–attack difficulty. Motivated by these observations, we propose FAS-R1, a two-stage reasoning-oriented MLLM framework for struc-arXiv:2607.26432v1 [cs.CV] 29 Jul 2026 FAS-R1-23K       
+
+> (23K high-quality
+> CoT samples)
+> Motivation / Prior paradigms
+> Discriminative FAS
+> Binary output only:
+> Real / Spoof.
+> MLLM + SFT
+> Explanations but
+> template-like.
+> FAS-R1 (SFT + RL)
+> Evidence-grounded
+> reasoning and multi-
+> task outputs.
+> Data Source
+> Annotations
+> Long-CoT generation
+> WMCA SiW
+> -Mv2
+> Initial CoT Samples
+> PADISI
+> -Face
+> Prompt templates
+> ...
+> ...
+> <think> visual clues,
+> evidence: inconsistent texture,
+> screen reflection, noise pattern…
+> <think>
+> <answer> ` real /
+> spoof``</answer>`
+> <attack> replay</attack>
+> <box>` (x1,y1,x2,y2)`</box>
+> MLLM CoT generation
+> Image Annotation Prompt
+> template
+
++ + 
+
+> Dual-model
+> verification
+> Rule / manual
+> filtering
+> Verifier
+> MLLM
+> check annotation
+> consistency
+> filter hallucinations
+> remove low-
+> quality samples
+> High-quality
+> candidates
+> Rule script
+> • format check
+> • length check
+> • evidence check
+> •...
+> Human review
+
++   
+
+> Base MLLM
+> (Qwen2.5-VL)
+> Reasoning
+> Initialization
+> Stage 1: FAS-R1-23K Construction and Cold-Start Training
+
+1
+
+> Images
+> Cold-start
+> Supervised Finetuning
+> on FAS-R1-23K
+> Cold-start
+> Model
+> Image-quality variations
+> Imbalanced task–attack
+> learning
+> Key Challenges
+
+Figure 2: Stage 1: long-CoT cold start with annotation-constrained generation, external verification, and rule/manual filtering. tured and inspectable FAS prediction. FAS-R1 uses a shared generation interface for authenticity classification, attack-type recognition, coarse spoof-region localization, and ratio-nale generation, while improving evidence grounding within this interface. Stage 1 uses FAS-R1-23K for high-quality long-CoT cold-start SFT. Stage 2 performs FAS-specific GRPO: DSA groups clean/degraded rollouts to encourage stable spoof-cue reasoning under visual-quality shifts, and DA-GRPO redirects updates to persistently unreliable task– attack groups for complex samples. Fig. 2 and Fig. 3 summa-rize the two-stage pipeline. Our contributions are threefold: 
+
+• We introduce FAS-R1, a two-stage reasoning-oriented MLLM framework for evidence-grounded structured FAS, together with FAS-R1-23K, a 22,996-sample high-quality CoT dataset. 
+
+• We develop FAS-specific GRPO with DSA for sta-ble spoof-cue learning and DA-GRPO for easy-sample-dominated task–attack optimization. 
+
+• FAS-R1 achieves strong multi-task, cross-domain, lo-calization, scaling, and answer-and-rationale results on WMCA(George et al. 2019), PADISI-Face(Rostami et al. 2021), and SiW-Mv2(Guo et al. 2022). 
+
+Related Work 
+
+Face Anti-Spoofing 
+
+Traditional FAS Traditional FAS methods first rely on hand-crafted texture descriptors and shallow classifiers, such as micro-texture analysis and local binary patterns (Määttä, Hadid, and Pietikäinen 2011; Chingovska, Anjos, and Marcel 2012). Deep models then learn spoof-related representations end-to-end (Atoum et al. 2017; George and Marcel 2019; Yang et al. 2019), and open-set or domain-generalization methods further improve transfer with domain-invariant rep-resentations, gradient alignment, and face-security pretrain-ing (Liu et al. 2019, 2023b; Le and Woo 2024; Wang et al. 2025a). These studies establish strong discriminative base-lines, but most of them still treat FAS mainly as label pre-diction. As a result, they offer limited attack semantics or spatial evidence when the prediction is wrong or ambiguous. FAS-R1 keeps the discriminative goal of FAS, but extends the output space to attack semantics, coarse regions, and image-specific rationales in a unified generative interface. 
+
+Vision-Language FAS Vision-language FAS methods add semantic supervision to this label-centric paradigm. CLIP-based approaches align facial observations with textual con-cepts or local/global visual-language correspondences for cross-domain recognition (Radford et al. 2021; Srivatsan, Naseer, and Nandakumar 2023; Liu et al. 2024; Liu, Wang, and Yuen 2024; Mu et al. 2023; Yu et al. 2025a), but their out-puts are still usually classification-oriented. MLLM-based studies further evaluate or generate natural-language FAS explanations (Liu et al. 2023a; Shi et al. 2025; Zhang et al. 2025, 2026a). FaceShield is an important step because it uni-fies authenticity classification, attack-type recognition, and attack-region localization in one MLLM framework (Wang et al. 2025b), yet its SFT-centered training can still pro-duce short, template-like rationales with limited optimization of sampled reasoning trajectories. Recent task-solving rein-forcement fine-tuning, tool-augmented reasoning, and path-augmented RL methods explore post-training for FAS (Jiang et al. 2025; Zhang et al. 2026b; Ma et al. 2026), but they do not explicitly target stable spoof-cue learning under visual-quality shifts or easy-sample-dominated optimization. FAS-R1 addresses these gaps with a high-quality long-CoT cold start and FAS-specific GRPO components for cue stability and hard subgroup learning. 
+
+Method 
+
+Stage 1: Cold Start 
+
+Data Construction As summarized in Fig. 2, FAS-R1-23K is built from WMCA (George et al. 2019), PADISI-Face (Rostami et al. 2021), and SiW-Mv2 (Guo et al. 2022). Gemini 2.5 Flash (Google 2025a) gen-erates annotation-constrained candidate rationales, and GPT-5 (OpenAI 2025a) verifies answer correctness and annotation–rationale consistency. Rule-based filters check Policy update 
+
+Stage 2: Reinforcement Optimization with DSA and DA-GRPO 2
+
+> DSA: Degradation-
+> Simulated Augmentation
+
+1 
+
+> Paired clean / degraded rollouts
+> Clean
+
+...  
+
+> Degraded
+
+...     
+
+> Degradation operators
+> Paired clean/degraded
+> rollouts for stable evidence learning
+> brightness contrast gamma noise JPEG
+> Task-Conditional Rewards
+
+2 
+
+> Sampled outputs in a rollout group
+> <answer> Spoof </answer>
+> <attack> Replay </attack> ...
+
+O1
+
+> <answer> Spoof </answer>
+> <attack> Makeup </attack> ...
+
+O2
+
+> <answer> Real </answer>
+> <attack> No attack </attack> ...
+
+OG  
+
+> ...
+> Sample Rewards
+> R1R2RG
+
+... 
+
+> Difficulty-Aware( DA)-GRPO:
+
+3
+
+> Task–Attack Subgroup Proficiency Map
+> authenticity
+> attack type
+> localization
+> reasoning
+> print replay mask makeup ...
+> Task
+> high
+> low
+> Attack types
+> EMA competence
+> mi,a
+> (per subgroups)
+> Weighting
+> wi,a
+> (harder)
+> Weighted advantage
+> Under-learned subgroups
+> receive larger weights
+
+4   
+
+> Policy
+> Model
+> Clipped GRPO
+> objective
+> +
+> KL regularization
+> Policy Update
+> Reward signals (four aspects)
+> Format (structure) Accuracy (correctness) IoU (localization) Rationale–Answer
+> Consistency
+> Policy
+> Optimization
+
+Figure 3: Stage 2: FAS-specific reinforcement optimization. DSA constructs paired clean/degraded rollouts, while DA-GRPO reweights task–attack subgroups according to online proficiency. Table 1: MLLM-based FAS datasets. FAS-R1-23K uniquely combines authenticity, attack-type, localization, and long-CoT annotations. 
+
+Resource Scale Bona fide Attack Region Long /spoof type loc. CoT 
+
+I-FAS (Zhang et al. 2025) 12 ds. ✓ – – –FaceCoT (Zhang et al. 2026a) 1.08M ✓ – – ✓
+
+PA-FAS (Ma et al. 2026) 800 paths ✓ – – Path FaceShield (Wang et al. 2025b) 45K ✓ ✓ ✓ –
+
+FAS-R1-23K 23K ✓ ✓ ✓ ✓
+
+format, answer type, prompt leakage, contradictions, and ir-relevant reasoning, followed by manual inspection of flagged samples. The final corpus retains 22,996 samples in the 
+
+<think>...</think><answer>...</answer> 
+
+format. Authenticity labels, attack categories, and localization an-notations are inherited from the original datasets rather than generated by MLLMs. The rationales must contain task-specific visual evidence, and localization uses the manually annotated attack-region boxes; global attacks use the visible face or presentation region as the target. FAS-R1-23K is an annotation-constrained rationale-supervision corpus rather than a human-authored explanation benchmark. This design targets a supervision gap in current MLLM-based FAS data. As shown in Table 1, FAS-R1-23K uniquely combines authenticity, explicit attack-type QA, localization, and long-CoT supervision with annotation verification. 
+
+Model Training We perform full-parameter SFT of Qwen2.5-VL-3B and Qwen2.5-VL-7B (Bai et al. 2025) with 
+
+LLaMA-Factory (Zheng et al. 2024). The vision encoder, multimodal projector, and language model are all train-able. Unless specified otherwise, SFT uses a learning rate 
+
+Algorithm 1 Two-stage FAS-R1 training 
+
+Require: Policy πθ , reference πref , CoT set Dcot , RL set D, degra-dation operator A, group size G
+
+1: Train πθ on Dcot by SFT 2: for each RL step do 
+
+3: Sample {(pi, I i, t i, a i)} from D
+
+4: Generate clean and degraded rollouts from Ii and A(Ii)
+
+5: Compute task-specific rewards and GRPO advantages ˆAi,j 
+
+6: Update the EMA proficiency of each observed (ti, a i) sub-group 7: Set eAi,j = wti,a i ˆAi,j after warm-up 8: Update πθ with the clipped GRPO objective 9: end for 
+
+of 1.0 × 10 −6 for two epochs. This stage establishes task semantics, output structure, and domain-specific rationale generation before on-policy optimization. 
+
+Stage 2: Reinforcement Learning 
+
+After cold-start SFT, we apply GRPO-based optimization. Prior FAS reasoning models have explored reinforcement fine-tuning or path/tool-augmented reasoning (Jiang et al. 2025; Zhang et al. 2026b; Ma et al. 2026), but generic GRPO does not explicitly handle two FAS-specific issues: spoof cues should remain stable under visual-quality shifts, and easy subgroups can dominate optimization while harder task– attack cases receive weak corrective signals. We therefore introduce Degradation-Simulated Augmentation (DSA) for paired clean/degraded rollouts and Difficulty-Aware GRPO (DA-GRPO) for adaptive task–attack optimization. Algorithm 1 summarizes the training procedure, and Fig. 4 illustrates their interaction. Po licy 
+
+> Model
+
+),
+
+~
+
+( qI
+
+),( qI 1A
+
+~
+
+> n
+
+A
+
+~
+
+> 1n
+
+A
+
+~
+
+> n2
+
+A
+
+~
+
+> ...
+> ...
+> Po licy Update
+
+)(
+
+~ IAI  EMA Reward Competence 
+
+> ,t
+
+m     
+
+> ),), ,max( (wmax min ,t, wwmmed Clip tt
+> 
+> 
+> 01
+> n
+
+O
+
+> 1n
+
+O
+
+> n
+
+O2
+
+> ...
+> ...
+> 1
+
+O 
+
+> jitji
+
+Aw ii ,,,A
+
+~  
+
+> Weighting ：
+> Task Type i
+
+t Attack Type i
+
+    
+
+> Original Exposure Gamma Compression
+> ...
+> Degradation-Simulated Augmentation Difficulty-Aware GRPO
+
+Figure 4: FAS-specific GRPO optimization. DSA mixes clean and degraded trajectories in each rollout group, and DA-GRPO estimates task–attack proficiency to rescale advantages after warm-up. 
+
+Reward Design We use task-conditional rewards for output format, answer correctness, localization IoU, and GPT-5-based rationale–answer consistency. All RL variants share the same verifier, reward definitions, prompts, and weights; only rollout construction and advantage weighting differ. The normalized rewards are 
+
+RQA = ˜ ωf rQA fmt + ˜ ωaracc + ˜ ωtrthink , (1) 
+
+RLoc = ˜ ωbrbox fmt + ˜ ωirIoU . (2) We use QA weights 0.1/0.5/0.4, localization weights 
+
+0.2/0.8, and τ = 0 .5.
+
+Degradation-Simulated Augmentation Spoof cues should be learned from stable evidence rather than inci-dental image quality. However, applying degradation to all rollouts may remove clean visual references and destabilize GRPO optimization. DSA addresses this issue by placing paired clean and synthetically degraded trajectories within the same rollout group. This makes the policy compare rewards across clean and perturbed views of the same annotated sample, encouraging the reasoning trajectory to retain attack-relevant cues instead of overfitting to a specific image quality. For each image–prompt pair (Ii, p i), clean trajectories are sampled as 
+
+{yci,k }nc 
+
+> k=1
+
+∼ πθ (·| pi, I i), (3) and degraded trajectories are sampled as 
+
+{ydi,k }nd 
+
+> k=1
+
+∼ πθ (·| pi, A (Ii)) , (4) where A applies moderate brightness, contrast, gamma, Gaussian noise, and JPEG perturbations. Clean and degraded trajectories share identical annotations and reward functions, and are combined into the same rollout group. DSA does not introduce a new image-degradation model; its distinction lies in placing clean and synthetically degraded views of the same annotated input within the same on-policy rollout group. Let Gi denote the union of clean and degraded trajectories for sample i, with G = nc + nd. We optimize this mixed rollout group with a clipped group-relative objective (Shao et al. 2024): 
+
+JDSA = E(pi,I i)
+
+ 1
+
+G
+
+> G
+
+X
+
+> j=1
+
+min( ri,j ˆAi,j , ¯ri,j ˆAi,j )
+
+−βD KL (πθ ∥πref )] ,
+
+(5) where Gi = {yci,k }nc 
+
+> k=1
+
+∪ { ydi,k }nd
+
+> k=1
+
+, ri,j is the policy ratio with token indices suppressed, ¯ri,j = clip( ri,j , 1 − ϵ, 1 + ϵ),and ˆAi,j = ( Ri,j − μi)/(σi + δ) is normalized within Gi.Different from offline augmentation, DSA directly modifies on-policy exploration while maintaining clean visual anchors and encouraging consistent task behavior across clean and perturbed views. 
+
+Difficulty-Aware GRPO Multi-task FAS exhibits hetero-geneous learning dynamics: easy subgroups can be opti-mized quickly, while difficult task–attack cases may keep receiving weak or misleading corrective signals under vanilla GRPO. DA-GRPO addresses this imbalance by defining dif-ficulty at the task–attack subgroup level. Instead of treating every low-reward sample equally, it tracks whether a se-mantic subgroup remains unreliable relative to other attacks within the same task and then increases its on-policy learning signal. Let ¯R(s) 
+
+> t,a
+
+denote the mean reward of subgroup (t, a ) at training step s. The online proficiency is updated as 
+
+m(s) 
+
+> t,a
+
+= ρm (s−1)  
+
+> t,a
+
++ (1 − ρ) ¯R(s) 
+
+> t,a
+
+. (6) Difficulty is compared only within the same task to avoid mixing reward scales. Given the median proficiency med t
+
+across attack categories in task t as a robust within-task reference, the preliminary weight is 
+
+w′ 
+
+> t,a
+
+= Clip(1+ λ max(0 , med t −mt,a ), w min , w max ). (7) Weights are normalized to unit mean within each task. After warm-up, the GRPO advantage becomes Table 2: In-domain comparison on authenticity classification, attack-type recognition, and attack-region localization (%). AP@ t
+
+denotes single-box IoU-threshold success rate. Best and second-best results are bold and underlined.                                                                                                   
+
+> Category Model Coarse-grained Fine-grained Localization
+> ACC ↑HTER ↓ACC ↑AP@40 ↑AP@50 ↑
+> Trad. ResNet (He et al. 2016) 97.55 2.32 –––PatchNet (Wang et al. 2022) 98.22 1.78 –––CoOp (Zhou et al. 2022) 98.73 1.27 –––MLLM LLaVA (Liu et al. 2023a) 65.54 27.76 16.39 ––Qwen-VL (Bai et al. 2023) 51.94 38.70 16.55 2.07 1.49 MiniGPT-4 (Zhu et al. 2023) 26.86 65.50 19.51 ––Lenna (Wei et al. 2023) –––37.77 35.41 Sphinx (Lin et al. 2023) –––47.86 46.30 Bunny (He et al. 2024) 81.20 17.87 27.03 73.50 71.65 Claude-Sonnet-4.5 (Anthropic 2025) 71.33 28.67 58.33 55.68 51.13 GPT-5.2 (OpenAI 2025b) 69.33 30.67 44.00 48.10 43.04 Gemini-3-Pro (Google 2025b) 93.27 6.80 79.67 89.66 89.66 FaceShield (Wang et al. 2025b) 95.95 3.61 93.24 73.79 70.23 PA-FAS (Ma et al. 2026) 97.93 2.07 91.82 92.62 91.30 Ours FAS-R1 (Ours) 98.75 1.17 93.33 96.30 94.73
+
+eAi,j = w′
+
+> ti,a i
+
+Ea|ti [w′
+
+> ti,a
+
+] ˆAi,j . (8) The default settings use a five-step warm-up, ρ = 0 .98 ,
+
+λ = 2 .0, wmin = 0 .7, and wmax = 2 .0. We update a sub-group only when at least four prompts are observed; clipping, warm-up, and unit-mean normalization stabilize the policy-update scale. Unlike conventional hard-example weighting, DA-GRPO estimates difficulty over semantic task–attack subgroups, compares proficiency within each task, and reweights on-policy GRPO advantages rather than supervised losses. The two stages therefore set up the experimental questions: whether FAS-R1 can improve multi-task accuracy, preserve cross-domain generalization, produce inspectable rationales, and isolate the effects of DSA and DA-GRPO. 
+
+Experiments 
+
+We test multi-task accuracy, cross-domain transfer, rationale quality, and the effects of DSA and DA-GRPO. Unless other-wise specified, the main tables report Qwen2.5-VL-3B, while Table 7 additionally reports 7B. 
+
+Evaluation Protocols 
+
+Following FaceShield (Wang et al. 2025b), we evaluate three tasks on WMCA (W) (George et al. 2019), PADISI-Face (P) (Rostami et al. 2021), and SiW-Mv2 (S) (Guo et al. 2022). For in-domain evaluation, the merged images are split at the image level into training, validation, and test sets with an 8:1:1 ratio. FAS-R1-23K is constructed only from the train-ing set, while validation and test images are excluded from corpus construction. For cross-domain evaluation, both cor-pus construction and training use source domains only. We report ACC/HTER, ACC, and AP@40/AP@50 for the three tasks, respectively. Trainable MLLM baselines are evaluated using the same training data and prompt templates. As other MLLM-based FAS methods have not released their source code or model checkpoints, the task-specific evaluation is primarily conducted against FaceShield and PA-FAS. 
+
+Implementation Details 
+
+The Qwen2.5-VL-3B/7B backbones (Bai et al. 2025) are trained on four NVIDIA A800 80GB GPUs with two full-parameter epochs, six rollouts per sample, learning rate 1 ×
+
+10 −6, and global batch size 128. DSA is applied to half of the rollouts, and all RL variants share reward functions and weights. Generic MLLMs are prompt-only references, while FaceShield (Wang et al. 2025b) and PA-FAS (Ma et al. 2026) are trained with FAS-R1-23K. 
+
+In-Domain Evaluation 
+
+Table 2 evaluates whether FAS-R1 preserves classification accuracy while adding attack semantics and spatial evidence. 
+
+Coarse-grained classification. The 3B FAS-R1 reaches 98.75% ACC and 1.17% HTER, matching strong discrimi-native baselines while also producing attack semantics and rationales. 
+
+Fine-grained classification. FAS-R1 reaches 93.33% ACC, slightly above FaceShield (Wang et al. 2025b). Bona fide samples are correct by construction, so this score should be read together with authenticity accuracy. 
+
+Attack-region localization. FAS-R1 improves over FaceShield from 73.79/70.23 to 96.30/94.73 AP@40/AP@50 and outperforms PA-FAS at 92.62/91.30. 
+
+Cross-Domain Generalization 
+
+We next test transfer to unseen acquisition conditions. In Ta-ble 3, the 3B FAS-R1 achieves competitive results across all protocols; together with Table 7, the strongest FAS-R1 checkpoint obtains the best compared result on all three set-tings. We focus on authenticity because attack taxonomies and spatial annotations are not fully aligned across datasets. 
+
+Answer-and-Rationale Quality 
+
+Accuracy alone does not indicate whether the generated rationales support the final decision. Following VERI-TAS (Tan et al. 2026), Claude-Sonnet-4.5 (Anthropic 2025) and Gemini-3-Pro (Google 2025b) assess answer correct-ness, visual relevance, coherence, and clarity, with pairwise preferences converted into Elo ratings. Both judge models Table 3: Cross-domain authenticity generalization (%). W, P, and S denote WMCA, PADISI-Face, and SiW-Mv2; each protocol trains on two datasets and tests on the held-out dataset. 
+
+W & S →P W & P →S S & P →WMethods ACC(%) ↑ HTER(%) ↓ ACC(%) ↑ HTER(%) ↓ ACC(%) ↑ HTER(%) ↓
+
+ResNet (He et al. 2016) 46.12 50.00 53.36 49.16 74.01 29.75 PatchNet (Wang et al. 2022) 77.18 22.87 56.16 45.37 78.15 41.50 IADG (Zhou et al. 2023) 72.96 27.01 57.20 42.81 78.55 26.27 FAS-AUG (Cai et al. 2024) 91.70 7.30 88.20 11.70 87.90 13.10 FaceShield (Wang et al. 2025b) 88.40 12.14 92.63 7.58 91.91 5.80 PA-FAS (Ma et al. 2026) 92.74 6.14 92.68 6.72 92.83 6.01 
+
+FAS-R1 (Ours) 92.39 6.35 93.42 5.52 93.49 5.34 FAS-R1 PA-FAS Gemini-3      
+
+> -pro
+> FaceShield Claude
+> sonnet-4-5
+> GPT-5.2
+> 0
+> 300
+> 600
+> 900
+> 1200
+> Number of comparisons
+> 912
+> 100
+> 188
+> 796
+> 85
+> 319
+> 774
+> 102
+> 324
+> 561
+> 14
+> 625
+> 545
+> 131
+> 524
+> 144
+> 23
+> 1033
+> Win Tie Loss Win rate
+> 0%
+> 25%
+> 50%
+> 75%
+> 100% Win rate
+
+Figure 5: Automated pairwise answer-and-rationale compar-ison. Bars show wins, ties, and losses over 1,200 compar-isons, and the line reports win rate. are also included as candidate systems and assign FAS-R1 higher scores than their own outputs, further supporting con-sistency across judges. FAS-R1 achieves the highest scores (4.79/4.70) and Elo rating (1803.34). Table 4: Answer-and-rationale quality. Judge scores use a 1–5 scale; pairwise preferences are reported as Elo ratings. 
+
+Model Judge scores Elo(Initial 1500) Claude-Sonnet-4.5 Gemini-3-Pro GPT-5.2 2.23 2.16 1203.26 Claude-Sonnet-4.5 3.40 3.48 1298.42 Gemini-3-Pro 4.26 4.31 1687.34 FaceShield 3.56 3.67 1385.25 PA-FAS (Ma et al. 2026) 4.35 4.41 1704.82 
+
+FAS-R1 (Ours) 4.79 4.70 1803.34 
+
+Ablation Study 
+
+Table 5 summarizes the progressive component ablation, Fig. 6 provides further analysis of DSA and DA-GRPO, and Table 6 compares alternative GRPO variants. We analyze the contribution of each component below. 
+
+Two-Stage Training Strategy. The progression from the base model to cold-start SFT and GRPO shows that SFT establishes the structured task interface, while on-policy op-timization further improves the performance of three tasks. 
+
+Effect of DSA. Relative to GRPO, introducing DSA con-sistently improves all five metrics, with AP@40 increasing from 95.58% to 96.44%. This result supports the effective-ness of placing paired clean and degraded views within the same rollout group. Table 5: Component ablation of FAS-R1 with the 3B back-bone. Best and second-best results are bold and underlined.                                                                 
+
+> Variant Components Coarse Fine Localization SFT RL DSA DA ACC ↑HTER ↓ACC ↑AP@40 ↑AP@50 ↑
+> Base ––––69.72 28.75 54.88 11.39 8.43 Cold-start ✓–––93.82 4.07 90.71 93.79 92.11 GRPO ✓✓––94.02 3.98 92.57 95.58 94.29
+> +DSA ✓✓✓–94.45 3.77 92.91 96.44 94.59
+> FAS-R1 ✓✓✓✓98.75 1.17 93.33 96.30 94.73 0.0 0.2 0.4
+> Improvement over GRPO (pp)
+> Coarse ACC
+> HTER (reduction)
+> Attack ACC
+> +0.43
+> +0.21
+> +0.34
+> (a) DSA: held-out classification
+> 70 80 90 100
+> Coarse ACC (%)
+> Hard
+> Easy
+> +22.90 pp
+> 167 W →C / 1 C →W
+> +0.94 pp
+> (b) DA-GRPO: difficulty focus
+> w/o DA +DA
+
+Figure 6: FAS-specific RL diagnostics: (a) DSA improves held-out metrics over GRPO; (b) DA-GRPO substantially improves performance on challenging samples. 
+
+Effect of DA-GRPO. Adding DA-GRPO on top of GRPO+DSA increases coarse-grained ACC from 94.45% to 98.75% and reduces HTER from 3.77% to 1.17%. Fine-grained ACC also improves, while localization remains sta-ble. The challenging-sample analysis in Fig. 6 further shows substantial performance gains. 
+
+Comparison with GRPO Variants. Under the same cold-start checkpoint and reward setting, neither DAPO(Yu et al. 2025b) nor GSPO(Zheng et al. 2025) matches the overall performance of FAS-R1. This indicates that the gains are not obtained by simply replacing GRPO with a generic variant, but arise from the FAS-specific combination of DSA and DA-GRPO. 
+
+Model Scaling. Table 7 shows that FAS-R1 performs strongly with the 3B backbone, while applying the strategy to 7B further improves all in-domain metrics and most cross-domain results, validating its effectiveness and scalability. 
+
+Qualitative Analysis 
+
+To further examine FAS-R1, we visualize its predictions for authenticity classification and attack-region localization. As FaceShield ：The face in the image is a spoof , as it is a digitally manipulated image designed 
+
+to deceive facial recognition systems .
+
+Users ：Is the face in the image 
+
+real or spoof ? 
+
+GroundTruth ：Spoof 
+
+Claude-sonnet-4-5 ：I'll analyze this image for face liveness 
+
+detection. **Observations: **. **Image Quality **: The image appears to be a standard 
+
+webcam or phone camera capture with natural resolution and compression artifacts 
+
+typical of genuine captures. ..... <answer>Real</answer> .
+
+Gemini3-pro ：Based on the visual analysis of the image, here are the key 
+
+observations: **Lighting and Depth: ** The face exhibits natural 3D lighting 
+
+characteristics. There are strong highlights on the nose, forehead, and chin, along 
+
+with consistent shadows ...... <answer>Real</answer> .
+
+LLaVA ： The face in the image is real .
+
+MiniGPT4 ：Unknown .
+
+Qwen ： Real .
+
+Bunny ： The face in the image is a real .
+
+FasR1 ：<think>The image shows a close-up of a person's face wearing glasses. To determine if the face is real or spoofed, I need to examine the image 
+
+for visual cues that differentiate a live face from a presentation attack like a photo, video, or mask.\n\nFirst, I observe the overall quality and texture of the 
+
+face. The skin appears somewhat smooth, and the details might not be as sharp as expected from a high-quality capture of a real face.\n\nNext, I focus on 
+
+specific features that can reveal spoofing artifacts. The most prominent feature is the pair of glasses. There are very strong, bright reflections on the lenses 
+
+of the glasses. These reflections are quite large and cover a significant portion of the lenses. The shape and intensity of these reflections are highly 
+
+indicative of light sources reflecting off a flat, glossy surface, such as a screen. Real glasses worn by a person in a real environment would typically have 
+
+reflections from the surrounding light sources, but the nature of these reflections, particularly their size and intensity, suggests they are originating from a 
+
+display .\n\nI also consider other potential artifacts like moir é patterns, pixelation, or unnatural edges, but these are not clearly visible or strongly present in 
+
+this image. The reflections on the glasses are the most compelling evidence.\n\n Based on the presence of these strong, screen-like reflections on the 
+
+glasses, which are a common artifact in replay attacks where a video or image is displayed on a screen, I conclude that the face is likely a spoof.</think> 
+
+<answer>Spoof</answer> .Figure 7: Authenticity example on a replay attack. FAS-R1 identifies image-specific reflective cues and correctly predicts spoof, while several baselines either misclassify the sample or provide generic descriptions. Test im age Claude-sonnet-4-5 GPT-5.2  
+
+> FAS-R1(Ours)
+> Gemini3-pro
+> Bunny FaceShield GroundTruth
+
+Figure 8: Localization example on a partial-eye attack. Table 6: Comparison with GRPO variants under the same setting. G+D denotes GRPO+DSA. 
+
+Variant Coarse Fine Localization ACC ↑ HTER ↓ ACC ↑ AP@40 ↑ AP@50 ↑
+
+GRPO 94.02 3.98 92.57 95.58 94.29 DAPO 93.45 3.56 91.98 96.09 94.52 GSPO 92.27 4.43 91.23 95.22 93.78 G+D 94.45 3.77 92.91 96.44 94.59 
+
+FAS-R1 98.75 1.17 93.33 96.30 94.73 
+
+shown in Fig. 7, FAS-R1 identifies localized reflective arti-facts in a print attack and correctly predicts spoof, whereas several baselines either misclassify the sample as bona fide or provide generic descriptions weakly related to the im-age. In Fig. 8, FAS-R1 localizes the annotated eye region of a partial-eye attack, while other predictions are broader or spatially shifted. Together, these examples demonstrate the strong qualitative performance of FAS-R1. Table 7: Backbone scaling on in-domain multi-task perfor-mance and cross-domain authenticity generalization. 
+
+In-domain Backbone Coarse Fine Localization 
+
+ACC ↑ HTER ↓ ACC ↑ AP@40 ↑ AP@50 ↑
+
+3B 98.75 1.17 93.33 96.30 94.73 7B 99.55 0.32 94.68 97.07 95.79 Cross-domain (Coarse) Backbone W&S →P W&P →S S&P →W
+
+ACC ↑ HTER ↓ ACC ↑ HTER ↓ ACC ↑ HTER ↓
+
+3B 92.39 6.35 93.42 5.52 93.49 5.34 
+
+7B 93.16 6.04 94.04 5.08 93.26 5.65 
+
+Conclusion 
+
+In this work, we presented FAS-R1, a two-stage reasoning-oriented MLLM framework that advances face anti-spoofing from label-centric classification to evidence-grounded reasoning. First, we constructed FAS-R1-23K, a high-quality long-CoT dataset, for cold-start supervised fine-tuning. Following this initialization, we introduced a FAS-specific reinforcement learning paradigm. Within this stage, Degradation-Simulated Augmentation (DSA) places paired clean and synthetically degraded trajectories into the same rollout group, forcing the model to anchor on stable spoof-ing evidence rather than incidental image variations. Fur-thermore, Difficulty-Aware GRPO (DA-GRPO) dynamically tracks the proficiency of semantic task-attack subgroups and adaptively reweights advantages for unreliable categories, preventing easy-sample dominance and ensuring complex at-tacks are fully optimized. Extensive experiments demonstrate this two-stage approach achieves state-of-the-art multi-task accuracy, cross-domain generalization, and rationale quality. References 
+
+Anthropic. 2025. Introducing Claude Sonnet 4.5. https: //www.anthropic.com/news/claude-sonnet-4-5. Accessed 2026-02-12. Atoum, Y.; Liu, Y.; Jourabloo, A.; and Liu, X. 2017. Face Anti-Spoofing Using Patch and Depth-Based CNNs. In Inter-national Joint Conference on Biometrics (IJCB) , 319–328. Bai, J.; Bai, S.; Yang, S.; Wang, S.; Tan, S.; Wang, P.; Lin, J.; Zhou, C.; and Zhou, J. 2023. Qwen-VL: A Versatile Vision-Language Model for Understanding, Localization, Text Reading, and Beyond. arXiv preprint arXiv:2308.12966 .Bai, S.; Chen, K.; Liu, X.; Wang, J.; Ge, W.; Song, S.; Dang, K.; Wang, P.; Wang, S.; Tang, J.; Zhong, H.; Zhu, Y.; Yang, M.; Li, Z.; Wan, J.; Wang, P.; Ding, W.; Fu, Z.; Xu, Y.; Ye, J.; Zhang, X.; Xie, T.; Cheng, Z.; Zhang, H.; Yang, Z.; Xu, H.; Lin, J.; et al. 2025. Qwen2.5-VL Technical Report. arXiv preprint arXiv:2502.13923 .Cai, R.; Soh, C.; Yu, Z.; Li, H.; Yang, W.; and Kot, A. 2024. Towards Data-Centric Face Anti-Spoofing: Improving Cross-domain Generalization via Physics-based Data Synthesis. 
+
+arXiv preprint arXiv:2409.03501 .Chingovska, I.; Anjos, A.; and Marcel, S. 2012. On the Ef-fectiveness of Local Binary Patterns in Face Anti-Spoofing. In BIOSIG .George, A.; and Marcel, S. 2019. Deep Pixel-wise Binary Supervision for Face Presentation Attack Detection. In In-ternational Conference on Biometrics (ICB) .George, A.; Mostaani, Z.; Geissenbuhler, D.; Nikisins, O.; Anjos, A.; and Marcel, S. 2019. Biometric Face Presentation Attack Detection with Multi-Channel Convolutional Neural Network. IEEE Transactions on Information Forensics and Security , 15: 42–55. Google. 2025a. Gemini 2.5 Flash. https://ai.google.dev/. Accessed: 2026-03-03. Google. 2025b. Gemini models: Gemini 3 Pro. https://ai. google.dev/gemini-api/docs/models. Accessed 2026-02-12. Guo, X.; Liu, Y.; Jain, A.; and Liu, X. 2022. Multi-domain Learning for Updating Face Anti-spoofing Models. arXiv preprint arXiv:2208.11148 .He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016. Deep Residual Learning for Image Recognition. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .He, M.; Liu, Y.; Wu, B.; Yuan, J.; Wang, Y.; Huang, T.; and Zhao, B. 2024. Efficient Multimodal Learning from Data-centric Perspective. arXiv preprint arXiv:2402.11530 .Bunny. Jiang, F.; Li, Q.; Wang, W.; Wang, G.; Liu, B.; and Sun, Z. 2025. Exploring Task-Solving Paradigm for Generalized Cross-Domain Face Anti-Spoofing via Reinforcement Fine-Tuning. arXiv:2506.21895. Le, B. M.; and Woo, S. S. 2024. Gradient Alignment for Cross-Domain Face Anti-Spoofing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Lin, Z.; Liu, C.; Zhang, R.; Gao, P.; Qiu, L.; Xiao, H.; Qiu, H.; Lin, C.; Shao, W.; Chen, K.; et al. 2023. Sphinx: The joint mixing of weights, tasks, and visual embeddings for multi-modal large language models. arXiv preprint arXiv:2311.07575 .Liu, A.; Xue, S.; Gan, J.; et al. 2024. CFPL-FAS: Class Free Prompt Learning for Generalizable Face Anti-spoofing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Liu, H.; Li, C.; Wu, Q.; and Lee, Y. J. 2023a. Visual Instruc-tion Tuning. In Advances in Neural Information Processing Systems (NeurIPS) .Liu, S.-Q.; Wang, Q.; and Yuen, P. C. 2024. Bottom-Up Domain Prompt Tuning for Generalized Face Anti-Spoofing. In European Conference on Computer Vision (ECCV) .Liu, Y.; Stehouwer, J.; Jourabloo, A.; and Liu, X. 2019. Deep Tree Learning for Zero-Shot Face Anti-Spoofing. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Liu, Y.; et al. 2023b. Towards Unsupervised Domain Gen-eralization for Face Anti-Spoofing. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .Ma, Y.; Lin, X.; Xu, Y.; Xie, W.; and Yu, Z. 2026. PA-FAS: Towards Interpretable and Generalizable Multimodal Face Anti-Spoofing via Path-Augmented Reinforcement Learn-ing. In Proceedings of the AAAI Conference on Artificial Intelligence . Oral. Määttä, J.; Hadid, A.; and Pietikäinen, M. 2011. Face Spoof-ing Detection from Single Images Using Micro-Texture Anal-ysis. In International Joint Conference on Biometrics (IJCB) .Mu, L.; Bai, J.; He, X.; et al. 2023. TeG-DG: Textu-ally Guided Domain Generalization for Face Anti-Spoofing. 
+
+arXiv preprint arXiv:2311.18420 .OpenAI. 2025a. GPT-5. https://openai.com/. Accessed: 2026-03-03. OpenAI. 2025b. Update to GPT-5 System Card: GPT-5.2. https://cdn.openai.com/pdf/3a4153c8-c748-4b71-8e31-aecbde944f8d/oai_5_2_system-card.pdf. Accessed 2026-02-12. Radford, A.; Kim, J. W.; Hallacy, C.; et al. 2021. Learning Transferable Visual Models From Natural Language Super-vision. In Proceedings of the 38th International Conference on Machine Learning (ICML) .Rostami, M.; Spinoulas, L.; Hussein, M.; Mathai, J.; and Abd-Almageed, W. 2021. Detection and Continual Learning of Novel Face Presentation Attacks. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y.; Wu, Y.; and Guo, D. 2024. DeepSeek-Math: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv preprint arXiv:2402.03300 .Shi, Y.; Gao, Y.; Lai, Y.; Wang, H.; Feng, J.; He, L.; Wan, J.; Chen, C.; Yu, Z.; and Cao, X. 2025. SHIELD: An Evaluation Benchmark for Face Spoofing and Forgery Detection with Multimodal Large Language Models. Visual Intelligence .Srivatsan, K.; Naseer, M.; and Nandakumar, K. 2023. FLIP: Cross-domain Face Anti-spoofing with Language Guidance. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .Tan, H.; Lan, J.; Tan, Z.; Shi, S.; Liu, A.; Song, C.; Zhu, H.; Wang, W.; Wan, J.; and Lei, Z. 2026. Veritas: Generalizable Deepfake Detection via Pattern-Aware Reasoning. In Inter-national Conference on Learning Representations (ICLR) .Oral. Wang, C.-Y.; Lu, Y.-D.; Yang, S.-T.; and Lai, S.-H. 2022. PatchNet: A Simple Face Anti-Spoofing Framework via Fine-Grained Patch Recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Wang, G.; Lin, F.; Wu, T.; Liu, Z.; Ba, Z.; and Ren, K. 2025a. FSFM: A Generalizable Face Security Foundation Model via Self-Supervised Facial Representation Learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Wang, H.; Shi, Y.; Tao, Z.; Gao, Y.; Zhang, L.; Lin, X.; Feng, J.; Yuan, X.; Yu, Z.; and Cao, X. 2025b. FaceShield: Explain-able Face Anti-Spoofing with Multimodal Large Language Models. arXiv preprint arXiv:2505.09415 .Wei, F.; Zhang, X.; Zhang, A.; Zhang, B.; and Chu, X. 2023. Lenna: Language Enhanced Reasoning Detection Assistant. 
+
+arXiv preprint arXiv:2312.02433 .Yang, X.; Luo, W.; Bao, L.; Gao, Y.; Gong, D.; Zheng, S.; Li, Z.; and Liu, W. 2019. Face Anti-Spoofing: Model Matters, so Does Data. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 3507– 3516. Yu, J.; Kim, S.; Lee, K.; Kwon, T.; Shin, W.-Y.; and Kim, H. Y. 2025a. Multi-View Slot Attention Using Para-phrased Texts for Face Anti-Spoofing. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,21117–21128. Yu, Q.; Zhang, Z.; Zhu, R.; Yuan, Y.; Zuo, X.; Yue, Y.; Dai, W.; Fan, T.; Liu, G.; Liu, L.; Liu, X.; Lin, H.; Lin, Z.; Ma, B.; Sheng, G.; Tong, Y.; Zhang, C.; Zhang, M.; Zhang, W.; Zhu, H.; Zhu, J.; Chen, J.; Chen, J.; Wang, C.; Yu, H.; Song, Y.; Wei, X.; Zhou, H.; Liu, J.; Ma, W.-Y.; Zhang, Y.-Q.; Yan, L.; Qiao, M.; Wu, Y.; and Wang, M. 2025b. DAPO: An Open-Source LLM Reinforcement Learning System at Scale. arXiv preprint arXiv:2503.14476 .Yu, Z.; Qin, Y.; Li, X.; Zhao, C.; Lei, Z.; and Zhao, G. 2022. Deep learning for face anti-spoofing: A survey. IEEE transactions on pattern analysis and machine intelligence ,45(5): 5609–5631. Yu, Z.; Zhao, C.; Wang, Z.; Qin, Y.; Su, Z.; Li, X.; Zhou, F.; and Zhao, G. 2020. Searching Central Difference Convolu-tional Networks for Face Anti-Spoofing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Zhang, G.; Wang, K.; Yue, H.; Liu, A.; Zhang, G.; Yao, K.; Ding, E.; and Wang, J. 2025. Interpretable face anti-spoofing: Enhancing generalization with multimodal large language models. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, 9896–9904. Zhang, H.; Fang, Z.; Zhao, N.; Hou, S.; Ma, L.; Pei, R.; and He, Z. 2026a. Harnessing Chain-of-Thought Reasoning in Multimodal Large Language Models for Face Anti-Spoofing. Accepted to CVPR 2026, arXiv:2506.01783. Zhang, H.; Wang, K.; Zhang, G.; Yue, H.; Tan, Z.; Peng, S.; Zhang, T.; Tan, X.; Chen, K.; He, W.; Wang, J.; Liu, A.; Zhu, X.; and Lei, Z. 2026b. From Intuition to In-vestigation: A Tool-Augmented Reasoning MLLM Frame-work for Generalizable Face Anti-Spoofing. ArXiv preprint, arXiv:2603.01038. Zheng, C.; Liu, S.; Li, M.; Chen, X.-H.; Yu, B.; Gao, C.; Dang, K.; Liu, Y.; Men, R.; Yang, A.; Zhou, J.; and Lin, J. 2025. Group Sequence Policy Optimization. arXiv preprint arXiv:2507.18071 .Zheng, Y.; Zhang, R.; Zhang, J.; Ye, Z.; Luo, N.; Jin, Y.; et al. 2024. LlamaFactory: Unified Efficient Fine-Tuning of 100+ Language Models. arXiv preprint arXiv:2403.13372 .Zhou, K.; Yang, J.; Loy, C. C.; and Liu, Z. 2022. Conditional Prompt Learning for Vision-Language Models. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . CoOp. Zhou, Q.; Zhang, K.-Y.; Yao, T.; Lu, X.; Yi, R.; Ding, S.; and Ma, L. 2023. Instance-Aware Domain Generalization for Face Anti-Spoofing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Zhu, D.; Chen, J.; Shen, X.; Li, X.; and Elhoseiny, M. 2023. MiniGPT-4: Enhancing Vision-Language Understand-ing with Advanced Large Language Models. arXiv preprint arXiv:2304.10592 .

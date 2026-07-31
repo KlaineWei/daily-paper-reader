@@ -1,0 +1,340 @@
+Title: Cybersecurity Detection Classification with Reasoning-enabled Language Models
+
+URL Source: https://arxiv.org/pdf/2607.28460v1
+
+Published Time: Fri, 31 Jul 2026 01:18:51 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Cybersecurity Detection Classification with Reasoning-enabled Language Models 
+
+# Amol Khanna ∗, Manu Nandan, Cristian Viorel Popa, Joan Pujol-Roig, Diana Bolocan, Laura Vasilie, Alexandru Apostu, Chase Helwig, Mihaela Gaman, Michael Brautbar, Edward Raff, Chase Midler, Sven Krasser ∗
+
+CrowdStrike 
+
+amol.khanna@crowdstrike.com; sven@crowdstrike.com 
+
+Abstract 
+
+A major issue in Security Operations Centers (SOCs) is alert fatigue, as the number of detections reported is more than staff can triage in a given day. Prior work prompts or fine-tunes large language models (LLMs) to emit a triage label directly, but does not train them to reason about whether a detection is a genuine threat. We train a chain-of-thought (CoT) reasoning-enabled triage classifier on real, human-labeled Windows end-point detections by combining automated prompt optimiza-tion, self-training, and reinforcement learning with verifiable rewards. We find that CoT reasoning also degrades the label-token probabilities that automated triage relies on, so we sep-arately train a calibrator that reads the full reasoning trace and estimates the probability that the verdict is correct. Our sys-tem reaches 82.6% test accuracy and, at the high-confidence operating point that governs automated triage, improves be-nign recall by 43.0% and malicious recall by 18.3% over a direct-label LLM classifier. We further show that the trained calibrator is necessary—an untrained confidence judge col-lapses high-confidence recall to zero—and that a finetuned 30B model significantly outperforms frontier general-purpose models, motivating targeted training over scale. 
+
+# Introduction 
+
+Modern corporate cybersecurity software produces an unre-lenting stream of detections in an effort to surface both clearly malicious and potentially suspicious behavior. In large orga-nizations, these detections are processed by Security Opera-tions Centers (SOCs), which triage detections as malicious or benign. While analysts are essential in SOCs, human ef-fort cannot scale with the ever-expanding domain of cyber-security sensors and the growing technological footprint of companies (Alahmadi, Axon, and Martinovic 2022). More-over, triage is costly: an analyst spends on the order of 1 hour reviewing each detection, so analyst labor—not detec-tion volume alone—bounds how much of the stream a SOC can review. As a result, automating triage and making it more efficient are long-standing pursuits in the cybersecurity in-dustry (Hassan et al. 2019). Triage is a reasoning-driven task, but existing research prompts and post-trains large language models (LLMs) to di-rectly produce a label after reading a detection (Habibzadeh, Feyzi, and Ebrahimi Atani 2025; Daniel et al. 2024). This 
+
+> ∗
+
+Corresponding author. 
+
+approach takes advantage of pre-trained LLMs’ wide range of knowledge and produces a measurable confidence for each classification, which is critical for effective automated triage; however, it does not utilize LLMs’ inference-time reasoning abilities. We seek to bring a reasoning-centric approach to detection triage. In this work, we train an LLM-based triage classifier which uses chain-of-thought (CoT) (Wei et al. 2022). CoT explicitly elicits intermediate reasoning from an LLM before producing an answer, and consistently yields large performance gains across mathematical, logical, and symbolic tasks (Suzgun et al. 2022). In addition to train-ing this classiifer, we identify that CoT interferes with an LLM’s ability to output classification confidence (Tian et al. 2023; Xiong et al. 2024). This is critical for managing false positive and false negative risks, so we train a second model to estimate confidence. Results indicate that our system sig-nificantly outperforms both LLM-based classifiers which do not use CoT and base LLMs using CoT which have not been finetuned on cybersecurity detections. At the high-precision operating point that governs automated triage, our system improves benign recall by 43.0 and malicious recall by 18.3 percentage points over a direct-label classifier while reaching 82.6% overall accuracy. Concretely, we make the following contributions: 
+
+• To our knowledge, the first detection-triage classifier ex-plicitly trained to produce CoT reasoning about whether a security detection is malicious or benign before emitting a label. 
+
+• A four-stage training recipe—prompt optimization, self-training, reinforcement learning with verifiable rewards, and confidence calibration—in which each stage im-proves the calibrated high-confidence operating point. 
+
+• Experiments demonstrating that training the confidence calibrator is necessary : an untrained judge collapses high-confidence recall to zero. 
+
+• Evidence that a domain-specialized 30B model outper-forms general-purpose models on this task, motivating targeted training over scale. 
+
+# Related Work 
+
+Cybersecurity Triage 
+
+Cybersecurity detection triage has a long lineage. Early sys-tems matched host and network activity against hand-written arXiv:2607.28460v1 [cs.LG] 30 Jul 2026 signatures and rules (Roesch 1999), and later work added alarm clustering, learned classifiers, and anomaly detectors to cut false positives and prioritize alerts (Julisch 2003; Pietraszek 2004). Such data-driven detectors proved hard to operationalize, however: anomaly-based methods contend with a wide semantic gap and extreme class imbalance (Som-mer and Paxson 2010) and degrade under the temporal and spatial distribution shift typical of security data (Pendlebury et al. 2019). Deep sequence models (Du et al. 2017; van Ede et al. 2022) and provenance-graph methods (Hassan et al. 2019; Milajerdi et al. 2019) later improved coverage and re-duced alert fatigue, yet, like their predecessors, they emit an opaque verdict rather than the human-readable reasoning an analyst can audit. Large language models (LLMs) have also been applied across the SOC (Habibzadeh, Feyzi, and Ebrahimi Atani 2025; Zhang et al. 2024). The most direct approach prompts or fine-tunes an LLM to read a detection and emit a la-bel, as when Daniel et al. (2024) classify intrusion-detection rules by MITRE ATT&CK technique. Others use the LLM as an explanation layer over a separate detector, attaching natural-language rationales to an anomaly classifier (Ali and Kostakos 2023) or applying it to log-based anomaly detec-tion (Qi et al. 2023). A growing agentic line instead embeds LLMs in the analyst workflow—co-teaming with human op-erators (Albanese et al. 2025), filtering false positives from static-analysis alerts (Xiong and Zhang 2026), and serving as benchmarks for incident-analysis tasks including triage (Ja-jodia et al. 2026). In nearly all of these, however, the LLM either labels a detection directly or narrates a verdict reached elsewhere; it is not trained to reason about whether the de-tection is itself a true or false positive. The most mature LLM triage systems instead target IT and cloud operations: RCACopilot routes incidents and predicts root-cause categories with explanatory narratives (Chen et al. 2023), and PACE-LM augments such predictions with cali-brated confidence estimates (Zhang et al. 2023). This work foreshadows two ideas central to our approach—reasoning over an incident and attaching a trustworthy confidence—but does not carry them into security-detection triage. We close this gap: to our knowledge, we are the first to show that ex-plicitly training a model to reason about security detections yields significant gains in triage accuracy, paired with a ded-icated calibrator that estimates the probability the verdict is correct. 
+
+Training LLMs to Produce CoT 
+
+Many works have developed methods to train LLMs to rea-son through specific tasks. Our approach, presented in the next section, employs four stages: prompt optimization, self-training, reinforcement learning, and confidence calibration. We provide key background for each of these stages here. 
+
+Prompt Optimization LLM performance is highly sen-sitive to prompt wording, yet manual prompt engineering is brittle, labor-intensive, and difficult to reproduce. Au-tomated optimizers instead search the instruction space: APE selects among model-generated candidates (Zhou et al. 2023), OPRO iteratively conditions on previously scored prompts (Yang et al. 2024), and EvoPrompt evolves a popu-lation with LLM-guided mutation and crossover (Guo et al. 2024). We adopt GEPA (Agrawal et al. 2025), which mu-tates prompts using natural-language reflection over execu-tion traces to make targeted edits and reports state-of-the-art performance across a range of tasks; it is distributed as part of the DSPy framework (Khattab et al. 2023). 
+
+Self-training Self-training methods improve a model’s reasoning using its own generations rather than human-written chains of thought. The foundational method, STaR (Zelikman et al. 2022), samples rationales from the model and retains those that reach the correct answer. For samples the model gets wrong, it rationalizes , generating a reasoning trace conditioned on the ground-truth answer; the model is then fine-tuned on all retained rationales, and the process proceeds iteratively. A variety of methods ex-tend STaR, generalizing it beyond curated question answer-ing (Zelikman et al. 2024), training verifiers on the solu-tions it discards (Hosseini et al. 2024), and reframing self-training as offline reinforcement learning or expectation– maximization over self-generated data (Gulcehre et al. 2023; Singh et al. 2024; Yuan et al. 2023; Phan et al. 2023). Among these, AdaSTaR augments the STaR loop with an adaptive difficulty curriculum so that training effort concentrates on the cases a model has not yet mastered (Koh et al. 2025). 
+
+Reinforcement Learning Reinforcement learning was first applied to LLMs for alignment, optimizing a learned model of human preferences with PPO (Ouyang et al. 2022; Schulman et al. 2017). Recent post-training in-stead targets reinforcement learning with verifiable rewards (RLVR), in which outputs are checked for correctness programmatically—for instance, in math, coding, and clas-sification problems. DeepSeek introduced the GRPO algo-rithm for this setting (Shao et al. 2024) and demonstrated that large-scale RLVR elicits sophisticated reasoning, even directly from a base model (DeepSeek-AI 2025). Subsequent reports corroborated these gains (Kimi Team 2025; Lambert et al. 2024), and simpler estimators such as RLOO remain competitive (Ahmadian et al. 2024), sparking broad interest in RLVR for verifiable problems. 
+
+Confidence Calibration Confidence calibration turns a model’s raw outputs into a probability trustworthy enough to act on. Classical post-hoc methods rescale a classifier’s scores—e.g., Platt scaling (Platt 1999) and temperature scal-ing (Guo et al. 2017)—but LLMs complicate the picture because their token- and sequence-level probabilities are themselves poorly calibrated, especially after instruction tun-ing (Kadavath et al. 2022; Tian et al. 2023). Three families of confidence signal have emerged in response: verbalized methods prompt the model to state its certainty directly (Lin, Hilton, and Evans 2022; Xiong et al. 2024); sampling-based methods estimate confidence from the agreement of multiple stochastic generations (Kuhn, Gal, and Farquhar 2023); and trained probes attach a separate predictor of correctness (Ka-davath et al. 2022; Cobbe et al. 2021). Methods 
+
+Task Formulation 
+
+We frame detection triage as binary classification. Each sam-ple consists of a detection , which is a multi-field JSON record describing a cybersecurity sensor record, and a label 
+
+which is either malicious or benign . The LLM classi-fier generates a reasoning trace and then a label in the format 
+
+<think>...</think> label , and the label is parsed from that output. We chose to finetune Nemotron-3-Nano-30B (NVIDIA 2025) for the classifier model. A detection aggregates heterogeneous fields an analyst would consider: process lineage (the command lines, file names, and file paths of the trigger process, its parent, and its grandparent), local and global prevalence, MITRE ATT&CK tactic and technique mappings, detection metadata from the sensor (severity and pattern disposition), and free-text analyst context from related detections if available. Fields can be missing from detections. 
+
+Prompt Optimization 
+
+We began training with prompt optimization to yield the strongest possible starting point before the more expensive next stages. We used the GEPA optimizer, and extended this with a custom metric function and a token-limited instruc-tion proposer. Nemotron-3-Super-120B (NVIDIA 2026) was used as GEPA’s reflection LLM. GEPA recommends using the strongest-possible LLM for reflection, but our legal en-vironment restricted us to open-weight models approved by corporate security. To compensate, we modified GEPA’s hy-perparameters to use significantly more resources than the “heavy” defaults in DSPy. Details about prompt optimiza-tion, including the prompts we used for each LLM and hy-perparameter modifications, can be found in the appendix. 
+
+Custom Metric Function In preliminary experiments us-ing only accuracy as a metric, GEPA achieved ∼87.5% ac-curacy but converged on decision-tree style instructions con-taining hard numeric thresholds (e.g., “ if prevalance 
+
+≥ 70, output benign. ”) While these instructions scored well, they produce CoTs which are unhelpful to ana-lysts, encode brittle rules with exceptions that degrade confi-dence, and undermine downstream confidence estimation. To prevent this, we implement an LLM-as-a-judge approach us-ing Nemotron-3-Super-120B to score candidate instructions on five dimensions: multi-field reasoning, threshold rigidity, reasoning encouragement, field coverage, and generalization potential. Each dimension was rated from 0.0 to 1.0, and the metric function multiplied the minimum of these five scores with accuracy, encouraging the model to output reasonable and comprehensive CoTs. 
+
+Token-limited Instructions Unconstrained instruction optimization tended to produce increasingly verbose system prompts. To prevent this, we implemented a custom GEPA proposal function that enforces a hard ceiling of 1,024 tokens on all candidate instructions. 
+
+Self-training 
+
+After prompt optimization, we employed self-training to im-prove the model’s accuracy. We built on AdaSTaR (Koh et al. 2025), iteratively sampling from a priority heap which pri-oritizes difficult samples, generating reasoning traces with the partially trained model, verifying the reasoning traces for format consistency and correctness, rationalizing incor-rect samples, performing low-rank (LoRA) (Hu et al. 2022) finetuning, and updating the priority heap. We largely used AdaSTaR’s open-source codebase, with significant modifica-tions only for the rationalization component. Further details on self-training, including rationalization, can be found in the appendix. 
+
+Rationalization STaR-based methods (Zelikman et al. 2022) use rationalization to produce correct CoTs for samples which the partially finetuned model gets incor-rect. This converts difficult examples into training data. Rationalization is typically achieved by prompting an LLM to read a sample with its correct output, and ex-plain why this output is correct. However, when we tried this, we found the LLM would often produce outputs similar to “ the answer is provided, and thus the correct answer is malicious. ” To fix this, we developed a detailed rationalization system prompt and used LLM-as-a-judge scoring to only retain rationalizations which read as genuine independent analysis. 
+
+Reinforcement Learning 
+
+Our classification problem can be framed as a verifiable re-ward environment. As such, we used GRPO (Shao et al. 2024), the canonical RLVR optimization algorithm, for fur-ther training from the self-training checkpoint. RLVR im-proves upon self-training since self-training only imitates training traces, while RLVR enables the model to discover novel reasoning strategies (DeepSeek-AI 2025). Our reward function was 1.0 if and only if (a) the response follows the 
+
+<think>...</think> label format and (b) the pre-dicted label matches the ground truth; otherwise, the reward is 0.0. Further details can be found in the appendix. 
+
+Confidence Calibration 
+
+After RLVR, the policy model produces CoTs which commit to a conclusion before emitting a label to-ken. For example, an LLM response may read “<think>...based on this evidence, the detection is malicious. Thus output malicious.</think>malicious .” This is natural in a CoT, but makes the label token ( malicious ) near-certain under the model’s next token distribution. Therefore, the output probability of the label token is not a useful confidence signal—it is pathologically overconfident for both correct and incorrect predictions. To address this, we trained a separate calibrator model which judges whether the LLM’s prediction is correct (Ka-davath et al. 2022; Cobbe et al. 2021). We finetuned an-other Nemotron-3-Nano-30B with LoRA using supervised finetuning to read a detection, CoT, and label, and output a single-token verdict: correct or incorrect . We could then extract confidence by taking the softmax of logits of these tokens, yielding a score in [0 , 1] that reflects the calibra-tor’s certainty. Further details can be found in the appendix. 
+
+# Experiments 
+
+Setup and Metrics 
+
+Our dataset consists of human-labeled Windows endpoint sensor detections collected from a large SOC at a cybersecu-rity company. The training/validation/testing datasets have 388,336/59,162/42,686 detections and were collected over consecutive 8/2/1 week periods, respectively. An example of a detection is in Figure 3. All training and inference com-pute was performed with 32 B200 GPUs. Nvidia Automodel, Nvidia Megatron Bridge, and Nvidia Nemo RL were used for finetuning. Working with SOC analysts, we defined three metrics of interest: 1. Benign recall at 98% (high) precision: at this precision, analysts feel comfortable automatically closing detec-tions. A high recall indicates that many truly benign sam-ples will be closed. 2. Malicious recall at 99% (high) precision: at this precision, analysts feel comfortable prioritizing detections. A high recall indicates that many truly malicious samples will be prioritized. 3. Accuracy: the CoT and label from a model with high accuracy can be shown to analysts to improve efficiency. In addition to these metrics, we also calculate recall at 95% (medium) and 90% (low) precision for benign samples and 90% (medium) and 80% (low) precision for malicious sam-ples. These thresholds were provided by analysts as indicators of model confidence. 
+
+Training 
+
+Prompt Optimization We ran prompt optimization with 100 candidate equivalents, a reflection minibatch size of 8, up to 15 merge invocations, and 16 parallel threads. We used this setting to compensate for a weaker reflection model since it produces significantly more metric evaluations than the de-fault “heavy” setting in DSPy. Our hand-written prompt had 62.0% accuracy on the validation set. Prompt optimization without an LLM-as-a-judge guardrail for reasoning yielded a prompt with 87.5% accuracy; however, the prompt produced with the guardrail yielded 72.0% accuracy. 
+
+Self-training We self-trained the LLM for 25 iterations. The model was evaluated on the full validation set after every iteration, and a random subset of 2,048 samples was chosen to evaluate model consistency by generating 8 responses to each sample at temperature 1.0. Iteration 25 was chosen as the final checkpoint based on peak validation accuracy, but performance gains largely plateaued after iteration 18. Figure 1 summarizes the self-training run. Loss decreases rapidly in the first 100 steps, reflecting the model’s initial adaptation to the expected output format. The absence of loss spikes confirms the optimizer-state accumulation across iterations provides stable training. The model’s accuracy also improves by nearly 10 percentage points to 81.7%, indicat-ing that the training generalizes to the held-out validation set. Finally, the fraction of always incorrect examples when evaluating consistency decreases, indicating the model is ca-pable of producing correct responses and is well-suited for GRPO. 
+
+Reinforcement Learning We ran GRPO for 8000 steps, beginning with the Nemotron-3-Nano-30B base model merged with the self-training LoRA adapter. The model was evaluated on a randomly selected set of 512 validation samples after every 50 steps. Step 8000 was selected based on peak validation accuracy, but performance gains largely plateaued after step 5000. Figure 2 summarizes the GRPO run. Reward remained consistent during training. Importantly, the fraction of sam-ples which are consistently correct significantly rises dur-ing training. This is important because during deployment, a model which performs consistently is more trustworthy and easier to integrate. The model’s validation accuracy also improves by 6 percentage points over the self-training check-point to 87.7%. Interestingly, until step 5000, the model’s mean validation response length decreases. This is also help-ful during deployment, since it means the model became more accurate and succinct, which saves compute costs and human effort. 
+
+Confidence Calibration To train the calibrator, we gen-erated 4 rollouts at temperature 1.0 for each sample in the training set. We then labeled samples as correct or 
+
+incorrect , and trained the calibrator for 3 epochs. To choose which checkpoint to use, we identified the one which yielded the highest recall at 98% precision for benign sam-ples on the validation set. This recall was computed over sam-ples which calibrator labels as correct , since the CoTs as-sociated with these detections are consistent with calibration and can be surfaced to analysts. 
+
+Results 
+
+Overall Metrics Table 1 compares our full system against a direct-label SFT baseline: a Nemotron-3-Nano-30B model trained to only output a label. The log-probabilities of this output can be used directly, since chain-of-thought does not interfere with probabilities (Habibzadeh, Feyzi, and Ebrahimi Atani 2025; Daniel et al. 2024). This represents the conventional automated triage approach and isolates the contribution of CoT reasoning and calibrator training. The most important comparison is at the high confi-dence tier, which governs automated deployment. Our system achieves 64.8% benign recall and 53.0% malicious recall— gains of +43.0 and +18.3 percentage points over the direct-label baseline (benign 21.8%, malicious 34.7%). This im-provement is attributable to the trained calibrator reading the GRPO policy’s full reasoning trace, which provides a richer confidence signal than the detection alone: the calibrator can assess whether the stated reasoning supports the conclusion, endorsing a far larger fraction of correct predictions with high confidence. Figure 3 shows this end to end on a representative benign detection. However, it is important to note that benign high precision drifts from 98.0% on validation to 90.8% on 0 1,000 2,000 3,000 
+
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+
+Cumulative Training Step 
+
+> Cross-Entropy Loss
+
+Loss  
+
+> 10 20
+> 0
+> 20
+> 40
+> 60
+> 80
+
+Iteration 
+
+> Validation Accuracy (%)
+
+Accuracy  
+
+> Self-training
+> Prompt Optimization
+> 10 20
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+
+Iteration 
+
+> Validation Subset (%)
+
+Consistency 
+
+> Always Correct
+> Mixed
+> Always Incorrect
+
+Figure 1: Self-training dynamics across AdaSTaR iterations. (a) Cross-entropy training loss over cumulative steps drops sharply as the model adapts to the output format and stays stable (no spikes) across iterations. (b) Stochastic (temperature 1.0) validation accuracy against the GEPA-only prompt baseline (72.0%, dashed). Accuracy is below the baseline for the first several iterations— reflecting early training instability and overfitting before the model adapts—then surpasses it and peaks at 81.7%. (c) Prediction consistency on a randomly selected 2,048-example validation subset: the always-incorrect fraction falls from 39.5% to 5.4% while the always-correct fraction grows.                                                        
+
+> Validation Test System Label Confidence Precision (%) Recall (%) Precision (%) Recall (%) Direct-label SFT Benign High 98.9 7.2 98.3 21.8 Medium 95.7 85.1 89.2 75.6 Low 95.7 85.1 89.2 75.6 Malicious High 99.0 23.8 98.3 34.7 Medium 96.1 36.1 98.1 45.7 Low 85.0 87.6 89.7 88.6
+> CoT+Calibration (ours)
+> Benign High 98.0 80.0 90.8 64.8
+> Medium 95.0 84.4 87.2 74.0 Low 94.6 84.6 86.7 74.6 Malicious High 99.0 46.5 98.9 53.0
+> Medium 92.6 79.1 92.5 82.2 Low 92.6 79.1 92.5 82.2
+
+Table 1: Precision and recall for the direct-label SFT baseline and our CoT and calibration system at three precision-targeted confidence tiers. test for our system, driven by the 4.4-point policy accuracy gap between the validation and test distributions; malicious high transfers nearly perfectly. By contrast, the direct-label baseline’s benign high precision drifts by only 0.6 percentage points, demonstrating that the calibrator’s precision advan-tage is partly offset by greater distribution sensitivity. At medium and low tiers, both systems perform compa-rably, confirming that CoT training does not degrade cov-erage at lower confidence targets. However, in some in-stances, medium- and low-confidence precision/recall met-rics are identical. This is because confidence distributions for predictions are bimodal—when the model is confident, its predictions tend to clear the high-confidence threshold, but when it is not confident, its predictions default to very low confidence. 
+
+Training Stage Ablation Table 2 ablates each training stage by comparing high-confidence performance after each step in the pipeline. The +self-training row uses the above mentioned iteration 25 as the policy checkpoint—the run depicted in Figure 1—paired with a calibrator trained from scratch on that policy’s rollouts. Each subsequent stage im-proves policy accuracy and benign recall monotonically. Self-training raises benign recall by 13 percentage points with a modest malicious recall gain . The +RLVR (no self-training) row applies GRPO directly to the GEPA-optimized base model, bypassing AdaSTaR entirely, using the same reward function as the full pipeline. This single-stage ap-proach reaches 61.6% benign recall—exceeding self-training alone—and lifts policy accuracy to 81.7%, demonstrating the raw power of reinforcement learning from verifiable rewards on a well-prompted model. Training plots for this configura-tion are provided in the appendix. 0.6
+
+0.8
+
+1
+
+> Mean Batch Reward
+
+Reward 
+
+0
+
+20 
+
+40 
+
+60 
+
+80 
+
+100 
+
+> Prompts (%)
+
+Consistency 
+
+> All Correct
+> Mixed
+> All Incorrect
+
+0 2,000 4,000 6,000 8,000 
+
+75 
+
+80 
+
+85 
+
+90 
+
+GRPO Training Step 
+
+> Accuracy (%)
+
+Validation Accuracy 
+
+0 2,000 4,000 6,000 8,000 
+
+250 
+
+300 
+
+350 
+
+400 
+
+450 
+
+GRPO Training Step 
+
+> Tokens
+
+Response Length Figure 2: GRPO reinforcement-learning dynamics over 8,000 training steps; all panels share the training step on the x-axis. (a) 
+
+Mean batch reward (per-step in light, smoothed in bold) stays high and stable ( ∼0.8) throughout. (b) Prompt consistency: the fraction of prompts whose sampled rollouts are all correct grows from about half to roughly three-quarters as mixed-outcome prompts resolve, leaving a small residual set that remains consistently incorrect. (c) Validation accuracy rises to 87.7%. (d) 
+
+Mean validation response length falls from 426 to under 300 tokens by step ∼5,000 before leveling off, so the policy becomes both more accurate and more succinct.                           
+
+> Benign High Malicious High System Acc. Precision Recall Precision Recall Optimized Prompt 66.1 88.7 39.2 99.2 42.4 +Self-training 76.0 90.8 52.2 99.7 44.1 +RLVR (no self-training) 81.7 92.1 61.6 98.8 44.8
+> +Self-training+RLVR (ours) 82.6 90.8 64.8 99.0 53.0
+
+Table 2: Ablating each finetuning stage (test set). All num-bers are percentages. Each row’s calibrator is trained inde-pendently, using the checkpoint that maximizes benign vali-dation recall at 98% precision. Benign- and malicious-high recall improve monotonically with each stage. Despite its strong benign recall, RLVR without self-training falls short on malicious recall. Combining both stages delivers the strongest performance on every axis, con-firming that self-training and RL are complementary. Ma-licious precision remains stable near 99% across all con-figurations, indicating that the calibrator reliably identifies high-confidence malicious predictions regardless of which policy stage is used. 
+
+CoT and Calibration Ablation Table 3 isolates the con-tributions of the two key training decisions: CoT policy fine-tuning and calibrator training. Base refers to Nemotron-3-Nano-30B with the GEPA-optimized system prompt but no parameter updates, and finetuned to the trained counterpart (GRPO policy or trained calibrator, respectively). The cali-brator for each finetuned calibrator row was trained on that 
+
+Val Benign Test Benign Test Benign Policy Calibrator Recall Recall Precision Base Base 0.0 0.0 —Base Finetuned 67.9 39.2 88.7 Finetuned Base 0.0 0.0 —Finetuned Finetuned 80.0 64.8 90.8 
+
+Table 3: Ablating CoT training and calibrator training at the high-confidence benign precision target. All numbers are per-centages. Base is Nemotron-3-Nano-30B without finetuning. row’s policy rollouts using the same pipeline as the full sys-tem. The two zero-recall rows reveal a structural failure of an untrained confidence judge. The base model’s confidence output clusters tightly near σ(±1) ≈ 0.731 , regardless of whether the underlying policy is finetuned. Precision-targeted thresholds therefore land in a flat region of the confidence distribution with effectively no predictions above them, collapsing recall to zero in both cases. Calibrator train-ing is therefore a necessary component, not merely helpful: without it, neither policy quality nor reasoning accuracy is recoverable at high precision. When paired with a finetuned calibrator, even the unfine-tuned base policy achieves 39.2% high-confidence benign recall on the test dataset. Policy finetuning then adds a fur-ther 25.6 percentage points, confirming that both training stages contribute meaningfully. The calibrator-training con-tribution dwarfs the policy-training contribution, underscor-Detection        
+
+> tactic / tech. Defense Evasion / Process Injection
+> cmdline POWERPNT.EXE -Embedding
+> parent svchost.exe -k DcomLaunch -p
+> prevalence common (local), common (global)
+> precision 0.0
+> threatpct 0.0
+> disposition Parent process was killed
+
+Model output               
+
+> <think> POWERPNT.EXE -Embedding launched by
+> svchost.exe -k DcomLaunch under services.exe is a legiti-mate DCOM/OLE launch chain, not an injection by a suspicious process. [. . . ] Prevalence is common and both precision (0.0) and threatpct (0.0) are very low, so this is likely benign.
+> </think>
+> Label: benign
+> Calibrator: Correct — confidence 0.99
+
+Figure 3: A representative test-set detection (reasoning trace abridged). The classifier dismisses a severe-sounding process injection alert as benign from the legitimate DCOM/OLE launch chain, and the calibrator endorses it with high confidence—so it can be auto-closed.                                
+
+> Benign Malicious Model Acc. Precision Recall Precision Recall Nemotron-3-Nano-30B (base) 65.8 55.5 63.7 74.2 67.2 Nemotron-3-Super-120B (base) 62.1 51.0 80.6 80.1 50.3 Claude Haiku 4.5 54.8 46.1 91.3 84.9 31.4 Claude Sonnet 4.6 64.6 52.9 85.9 84.9 50.9 Claude Opus 4.6 66.6 54.1 97.2 96.3 47.0
+
+Table 4: Five base models on a 1,000-sample test subset at T =0 ; All numbers are percentages. Precision/recall are computed from raw binary predictions with no confidence threshold, unlike the precision-targeted tiers in Table 1. ing that a well-trained confidence judge is the more critical factor, while a stronger CoT policy provides a complemen-tary but substantial additional gain. 
+
+Comparison with Frontier Models Table 4 compares the performance of five base models on the classification task. All models achieve broadly similar overall accuracy (55– 67%), and the top-ranked zero-shot model (Claude Opus) is only marginally ahead of the Nemotron-3-Nano-30B. 
+
+Larger or more capable general-purpose models do not au-tomatically transfer to this specialized domain : Nemotron-3-Super underperforms Nano despite being a larger model, and Claude Opus—the strongest general-purpose model tested— roughly ties Nano on accuracy. Precision and recall reveal a systematic bias in all Claude models: they predict benign with high recall (86–97%) and rarely predict malicious, yielding very high malicious preci-sion but correspondingly low malicious recall. Claude Opus, for example, predicts malicious on only 47% of truly ma-licious detections, but is correct 96% of the time when it does. Nemotron base is considerably more balanced—74% malicious precision at 67% recall. Notably, benign precision is low across all models, indi-cating that benign predictions carry substantial uncertainty at zero shot: a significant fraction of detections labeled as benign are actually malicious. The trained CoT pipeline (Ta-ble 2) achieves 82.6% policy accuracy, a substantial gain over every zero-shot baseline, with the calibrated high-confidence tier further raising the actionable precision to over 90%. 
+
+# Conclusion 
+
+We presented a detection-triage system that is explicitly trained to reason about whether a security detection is a true or false positive, paired with a calibrator that turns the result-ing reasoning trace into a trustworthy confidence. Trained with prompt optimization, self-training, and reinforcement learning on real Windows endpoint detections, the system improves high-confidence benign and malicious recall by 43.0 and 18.3 percentage points over a conventional direct-label classifier and reaches 82.6% accuracy—well above ev-ery zero-shot baseline, including frontier models far larger than our 30B classifier. This work addresses a severe bottleneck in the cybersecu-rity domain. The SOC we collaborated with processes nearly 1 million events in a single quarter, and scaling manual triage to meet this is impossible. It requires a massive team of ex-pert analysts, which 1) is difficult to build and retain, 2) is prohibitively expensive, and 3) suffers from alert fatigue. By automating the high-confidence triage tier, our system mit-igates these challenges and allows organizations to allocate their human capital to the most complex threats. Two technical findings stand out. First, the training stages compound: prompt optimization, self-training, and reinforce-ment learning each lift the calibrated high-confidence oper-ating point. Second, the calibrator is not an optional add-on but a prerequisite for high-precision automation—without it, high-confidence recall collapses to zero. We also observe that the benign high-precision operating point is sensitive to distribution shift, drifting from validation to test, which argues for continued monitoring and periodic recalibration in deployment. Several directions remain. Our task is binary and limited to Windows endpoint detections; extending the approach to multi-class triage, additional sensor platforms, and tighter control of the validation-to-test precision gap are natural next steps toward broader operational use. References 
+
+Agrawal, L. A.; Tan, S.; Soylu, D.; Ziems, N.; Khare, R.; Opsahl-Ong, K.; Singhvi, A.; Shandilya, H.; Ryan, M. J.; Jiang, M.; Potts, C.; Sen, K.; Dimakis, A. G.; Stoica, I.; Klein, D.; Zaharia, M.; and Khattab, O. 2025. GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning. arXiv:2507.19457. Ahmadian, A.; Cremer, C.; Gallé, M.; Fadaee, M.; Kreutzer, J.; Pietquin, O.; Üstün, A.; and Hooker, S. 2024. Back to Ba-sics: Revisiting REINFORCE Style Optimization for Learn-ing from Human Feedback in LLMs. In Annual Meeting of the Association for Computational Linguistics (ACL) .Alahmadi, B. A.; Axon, L.; and Martinovic, I. 2022. 99% False Positives: A Qualitative Study of SOC Analysts’ Per-spectives on Security Alarms. In 31st USENIX Security Sym-posium (USENIX Security 22) , 2783–2800. USENIX Asso-ciation. Albanese, M.; Ou, X.; Lybarger, K.; Lende, D.; and Goldgof, D. 2025. Towards AI-Driven Human-Machine Co-Teaming for Adaptive and Agile Cyber Security Operation Centers. arXiv:2505.06394. Ali, T.; and Kostakos, P. 2023. HuntGPT: Integrating Ma-chine Learning-Based Anomaly Detection and Explainable AI with Large Language Models. arXiv:2309.16021. Chen, Y.; Xie, H.; Ma, M.; Kang, Y.; Gao, X.; Shi, L.; Cao, Y.; Gao, X.; Fan, H.; Wen, M.; Zeng, J.; Ghosh, S.; Zhang, X.; Zhang, C.; Lin, Q.; Rajmohan, S.; Zhang, D.; and Xu, T. 2023. Automatic Root Cause Analysis via Large Language Models for Cloud Incidents. arXiv:2305.15778. Cobbe, K.; Kosaraju, V.; Bavarian, M.; Chen, M.; Jun, H.; Kaiser, L.; Plappert, M.; Tworek, J.; Hilton, J.; Nakano, R.; Hesse, C.; and Schulman, J. 2021. Training Verifiers to Solve Math Word Problems. arXiv:2110.14168. Daniel, N.; Kaiser, F. K.; Giladi, S.; Sharabi, S.; Moyal, R.; Shpolyansky, S.; Murillo, A.; Elyashar, A.; and Puzis, R. 2024. Labeling NIDS Rules with MITRE ATT&CK Techniques: Machine Learning vs. Large Language Models. arXiv:2412.10978. DeepSeek-AI. 2025. DeepSeek-R1: Incentivizing Rea-soning Capability in LLMs via Reinforcement Learning. arXiv:2501.12948. Du, M.; Li, F.; Zheng, G.; and Srikumar, V. 2017. DeepLog: Anomaly Detection and Diagnosis from System Logs through Deep Learning. In Proceedings of the 2017 ACM SIGSAC Conference on Computer and Communications Se-curity (CCS) .Gulcehre, C.; Paine, T. L.; Srinivasan, S.; Konyushkova, K.; Weerts, L.; Sharma, A.; Siddhant, A.; Ahern, A.; Wang, M.; Gu, C.; Macherey, W.; Doucet, A.; Firat, O.; and de Fre-itas, N. 2023. Reinforced Self-Training (ReST) for Language Modeling. arXiv:2308.08998. Guo, C.; Pleiss, G.; Sun, Y.; and Weinberger, K. Q. 2017. On Calibration of Modern Neural Networks. In International Conference on Machine Learning (ICML) .Guo, Q.; Wang, R.; Guo, J.; Li, B.; Song, K.; Tan, X.; Liu, G.; Bian, J.; and Yang, Y. 2024. Connecting Large Lan-guage Models with Evolutionary Algorithms Yields Pow-erful Prompt Optimizers. In International Conference on Learning Representations (ICLR) .Habibzadeh, A.; Feyzi, F.; and Ebrahimi Atani, R. 2025. Large Language Models for Security Operations Centers: A Comprehensive Survey. arXiv:2509.10858. Hassan, W. U.; Guo, S.; Li, D.; Chen, Z.; Jee, K.; Li, Z.; and Bates, A. 2019. NoDoze: Combatting Threat Alert Fa-tigue with Automated Provenance Triage. In Proceedings of the 26th Annual Network and Distributed System Security Symposium (NDSS) .Hosseini, A.; Yuan, X.; Malkin, N.; Courville, A.; Sordoni, A.; and Agarwal, R. 2024. V-STaR: Training Verifiers for Self-Taught Reasoners. arXiv:2402.06457. Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.; Wang, L.; and Chen, W. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In International Conference on Learning Representations (ICLR) .Jajodia, S.; Sultana, M.; Majumdar, S.; Taylor, A.; and Vandenberghe, G. 2026. Before You Hand Over the Wheel: Evaluating LLMs for Security Incident Analysis. arXiv:2603.06422. Julisch, K. 2003. Clustering Intrusion Detection Alarms to Support Root Cause Analysis. ACM Transactions on Infor-mation and System Security , 6(4): 443–471. Kadavath, S.; Conerly, T.; Askell, A.; Henighan, T.; Drain, D.; Perez, E.; et al. 2022. Language Models (Mostly) Know What They Know. arXiv:2207.05221. Khattab, O.; Singhvi, A.; Maheshwari, P.; Zhang, Z.; San-thanam, K.; Vardhamanan, S.; Haq, S.; Sharma, A.; Joshi, T. T.; Moazam, H.; Miller, H.; Zaharia, M.; and Potts, C. 2023. DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines. arXiv:2310.03714. Kimi Team. 2025. Kimi k1.5: Scaling Reinforcement Learn-ing with LLMs. arXiv:2501.12599. Koh, W.; Oh, W.; Jang, J.; Lee, M.; Kim, H.; Kim, A. Y.; Kim, J.; Lee, J.; Kim, T.; and Yun, S.-Y. 2025. AdaSTaR: Adaptive Data Sampling for Training Self-Taught Reason-ers. In Advances in Neural Information Processing Systems (NeurIPS) .Kuhn, L.; Gal, Y.; and Farquhar, S. 2023. Semantic Uncer-tainty: Linguistic Invariances for Uncertainty Estimation in Natural Language Generation. In International Conference on Learning Representations (ICLR) .Lambert, N.; Morrison, J.; Pyatkin, V.; Huang, S.; Ivison, H.; Brahman, F.; Miranda, L. J. V.; Liu, A.; Dziri, N.; Lyu, S.; Gu, Y.; Malik, S.; Graf, V.; Hwang, J. D.; Yang, J.; Le Bras, R.; Tafjord, O.; Wilhelm, C.; Soldaini, L.; Smith, N. A.; Wang, Y.; Dasigi, P.; and Hajishirzi, H. 2024. Tülu 3: Pushing Frontiers in Open Language Model Post-Training. arXiv:2411.15124. Lin, S.; Hilton, J.; and Evans, O. 2022. Teaching Models to Express Their Uncertainty in Words. Transactions on Machine Learning Research .Milajerdi, S. M.; Gjomemo, R.; Eshete, B.; Sekar, R.; and Venkatakrishnan, V. N. 2019. HOLMES: Real-Time APT Detection through Correlation of Suspicious Information Flows. In 2019 IEEE Symposium on Security and Privacy (SP) .NVIDIA. 2025. Nemotron 3 Nano: Open, Efficient Mixture-of-Experts Hybrid Mamba-Transformer Model for Agentic Reasoning. arXiv:2512.20848. NVIDIA. 2026. Nemotron 3 Super: Open, Efficient Mixture-of-Experts Hybrid Mamba-Transformer Model for Agentic Reasoning. arXiv:2604.12374. Ouyang, L.; Wu, J.; Jiang, X.; Almeida, D.; Wainwright, C. L.; Mishkin, P.; Zhang, C.; Agarwal, S.; Slama, K.; Ray, A.; Schulman, J.; Hilton, J.; Kelton, F.; Miller, L.; Simens, M.; Askell, A.; Welinder, P.; Christiano, P.; Leike, J.; and Lowe, R. 2022. Training Language Models to Follow In-structions with Human Feedback. In Advances in Neural Information Processing Systems (NeurIPS) .Pendlebury, F.; Pierazzi, F.; Jordaney, R.; Kinder, J.; and Cavallaro, L. 2019. TESSERACT: Eliminating Experimen-tal Bias in Malware Classification across Space and Time. In 28th USENIX Security Symposium (USENIX Security 19) ,729–746. USENIX Association. Phan, D.; Hoffman, M. D.; Dohan, D.; Douglas, S.; Le, T. A.; Parisi, A.; Sountsov, P.; Sutton, C.; Vikram, S.; and Saurous, R. A. 2023. Training Chain-of-Thought via Latent-Variable Inference. In Advances in Neural Information Processing Systems (NeurIPS) .Pietraszek, T. 2004. Using Adaptive Alert Classification to Reduce False Positives in Intrusion Detection. In Recent Advances in Intrusion Detection (RAID) .Platt, J. C. 1999. Probabilistic Outputs for Support Vec-tor Machines and Comparisons to Regularized Likelihood Methods. In Advances in Large Margin Classifiers , 61–74. MIT Press. Qi, J.; Huang, S.; Luan, Z.; Fung, C.; Yang, H.; and Qian, D. 2023. LogGPT: Exploring ChatGPT for Log-Based Anomaly Detection. arXiv:2309.01189. Roesch, M. 1999. Snort: Lightweight Intrusion Detection for Networks. In Proceedings of the 13th USENIX Conference on System Administration (LISA ’99) , 229–238. USENIX Association. Schulman, J.; Wolski, F.; Dhariwal, P.; Radford, A.; and Klimov, O. 2017. Proximal Policy Optimization Algorithms. arXiv:1707.06347. Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y. K.; Wu, Y.; and Guo, D. 2024. DeepSeekMath: Pushing the Limits of Mathematical Rea-soning in Open Language Models. arXiv:2402.03300. Singh, A.; Co-Reyes, J. D.; Agarwal, R.; et al. 2024. Beyond Human Data: Scaling Self-Training for Problem-Solving with Language Models. Transactions on Machine Learn-ing Research .Sommer, R.; and Paxson, V. 2010. Outside the Closed World: On Using Machine Learning for Network Intrusion Detec-tion. In 2010 IEEE Symposium on Security and Privacy ,305–316. IEEE. Suzgun, M.; Scales, N.; Schärli, N.; Gehrmann, S.; Tay, Y.; Chung, H. W.; Chowdhery, A.; Le, Q. V.; Chi, E. H.; Zhou, D.; and Wei, J. 2022. Challenging BIG-Bench Tasks and Whether Chain-of-Thought Can Solve Them. arXiv:2210.09261. Tian, K.; Mitchell, E.; Zhou, A.; Sharma, A.; Rafailov, R.; Yao, H.; Finn, C.; and Manning, C. D. 2023. Just Ask for Cali-bration: Strategies for Eliciting Calibrated Confidence Scores from Language Models Fine-Tuned with Human Feedback. In Proceedings of the 2023 Conference on Empirical Meth-ods in Natural Language Processing (EMNLP) .van Ede, T.; Aghakhani, H.; Spahn, N.; Bortolameotti, R.; Cova, M.; Continella, A.; van Steen, M.; Peter, A.; Kruegel, C.; and Vigna, G. 2022. DeepCASE: Semi-Supervised Con-textual Analysis of Security Events. In 2022 IEEE Sympo-sium on Security and Privacy (SP) .Wei, J.; Wang, X.; Schuurmans, D.; Bosma, M.; Ichter, B.; Xia, F.; Chi, E. H.; Le, Q. V.; and Zhou, D. 2022. Chain-of-Thought Prompting Elicits Reasoning in Large Language Models. In Advances in Neural Information Processing Sys-tems (NeurIPS) .Xiong, M.; Hu, Z.; Lu, X.; Li, Y.; Fu, J.; He, J.; and Hooi, B. 2024. Can LLMs Express Their Uncertainty? An Empirical Evaluation of Confidence Elicitation in LLMs. In Interna-tional Conference on Learning Representations (ICLR) .Xiong, Y.; and Zhang, T. 2026. Sifting the Noise: A Compar-ative Study of LLM Agents in Vulnerability False Positive Filtering. arXiv:2601.22952. Yang, C.; Wang, X.; Lu, Y.; Liu, H.; Le, Q. V.; Zhou, D.; and Chen, X. 2024. Large Language Models as Optimizers. In International Conference on Learning Representations (ICLR) .Yuan, Z.; Yuan, H.; Li, C.; Dong, G.; Lu, K.; Tan, C.; Zhou, C.; and Zhou, J. 2023. Scaling Relationship on Learn-ing Mathematical Reasoning with Large Language Models. arXiv:2308.01825. Zelikman, E.; Harik, G.; Shao, Y.; Jayasiri, V.; Haber, N.; and Goodman, N. D. 2024. Quiet-STaR: Language Models Can Teach Themselves to Think Before Speaking. arXiv:2403.09629. Zelikman, E.; Wu, Y.; Mu, J.; and Goodman, N. D. 2022. STaR: Bootstrapping Reasoning With Reasoning. arXiv:2203.14465. Zhang, D.; Zhang, X.; Bansal, C.; Las-Casas, P.; Fonseca, R.; and Rajmohan, S. 2023. PACE-LM: Prompting and Aug-mentation for Calibrated Confidence Estimation with GPT-4 in Cloud Incident Root Cause Analysis. arXiv:2309.05833. Zhang, J.; Bu, H.; Wen, H.; Liu, Y.; Fei, H.; Xi, R.; Li, L.; Yang, Y.; Zhu, H.; and Meng, D. 2024. When LLMs Meet Cybersecurity: A Systematic Literature Review. arXiv:2405.03644. Zhou, Y.; Muresanu, A. I.; Han, Z.; Paster, K.; Pitis, S.; Chan, H.; and Ba, J. 2023. Large Language Models Are Human-Level Prompt Engineers. In International Conference on Learning Representations (ICLR) .Nemotron Models 
+
+We use two open-weight Nemotron-3 models (NVIDIA 2025, 2026), both hybrid Mamba-2/attention mixture-of-experts (MoE) architectures with native <think> reason-ing. Nano (30B total, 3B active) is both the classifier and the calibrator. Super (120B total, 12B active) is GEPA’s re-flection LM and the LLM judge for instruction quality and rationalization. Super is weaker at reasoning than frontier proprietary models, which we compensate for with a larger GEPA search budget. 
+
+# Prompt Optimization 
+
+GEPA (Agrawal et al. 2025) ran with 100 candidate-equivalents, a reflection minibatch of 8, up to 15 merge invocations, and 16 threads ( ∼166K metric evaluations). The task LM (Nano) generated at T =1 .0 with a 1,024-token limit; the reflection LM (Super) used a 16,384-token limit. A custom proposer caps every candidate instruction at 1,024 tokens. The instruction-quality judge (Super) scores each candidate on five dimensions—multi-field reasoning, threshold rigidity, reasoning encouragement, field coverage, and generalization—each in [0 , 1] , and the optimization met-ric is accuracy × min(dimensions) , so one weak dimension caps the score. The hand-written seed prompt below (a Char-lotte AI persona with per-field documentation) scored 62.0% on validation: 
+
+You are Charlotte AI, an AI assistant with high knowledge in cybersecurity. You are specialized in helping the CrowdStrike customers with their detections within the Falcon platform. You are given a detection document below which contains a list of fields related to a detection from CrowdStrike Falcon sensor. Your task is to choose the appropriate label (TRUE POSITIVE or FALSE POSITIVE) for the given detection. The documentation regarding the meaning of each field can be found below: - ‘cmdline‘: the command line used to create the target process. - ‘filename‘: the file name of the main executable for the target process. - ‘filepath‘: the full path to the main executable for the target process. - ‘description‘: a short description of the Indicator of Attack. - ‘tactic‘ / ‘technique‘: the MITRE ATT&CK tactic and technique. - ‘severity‘: the degree of severity given by the sensor. - ‘local_prevalence‘ /‘global_prevalence‘: how widely the file was seen in the current customer’s environment and across all customers. - ‘parent_*‘ / ‘grandparent_*‘: the corresponding fields for the parent and grandparent process. - ‘overwatch_note‘: a security assessment from CrowdStrike’s elite threat-hunting team; highly valuable and should be prioritized. - ‘pattern_disposition‘: the remediation actions the sensor took (or should have taken) against a possible malicious process. - ‘device_type‘: Workstation, Server, or Domain Controller. - ‘detection_description‘: analytical reasoning explaining why the detection was generated. - ‘precision‘: a 0-100 percentage indicating how accurate the detection mechanism is overall. - ‘threatpct‘: a 0-100 percentage of detections confirmed as malicious threats. Select the appropriate label based on the above fields. - TRUE POSITIVE means it is malicious or performs an unwanted, dangerous action on the user’s computer. - FALSE POSITIVE means it is not malicious; it was flagged by mistake but is regular user usage. Answer only with the label. 
+
+GEPA without the judge reached 87.5% but converged on brittle numeric thresholds, whereas GEPA with the judge produced the 72.0% prompt used downstream: 
+
+You are Charlotte AI, a cybersecurity assistant for CrowdStrike Falcon. Given a detection JSON containing fields such as cmdline, filename, filepath, description, tactic, technique, severity, local_prevalence, global_prevalence, parent_*, grandparent_*, overwatch_note, pattern_disposition, device_type, detection_description, precision, and threatpct, decide whether it is TRUE_POSITIVE or FALSE_POSITIVE. Evaluate all available evidence comparatively: weigh overwatch_note and detection_description for contextual insight, compare prevalence values (higher vs. lower) to assess rarity, examine parent and grandparent process lineage for legitimacy, consider the MITRE tactic and technique against the observed behavior, and factor in severity and threatpct as relative confidence indicators. No single field should deterministically decide the outcome; instead, collectively weigh the signals using relative language (e.g., more typical, less typical, higher likelihood, lower likelihood). Output only the label as TRUE_POSITIVE or FALSE_POSITIVE. Self-Training 
+
+We finetune Nano with LoRA (rank 8, α=8 ) for 25 AdaSTaR iterations (peak; 28 run), one epoch each, global batch 32, learning rate 5 × 10 −7 → 3 × 10 −6, sequences packed to 16,384 tokens, expert parallelism 8. Each iteration samples from a priority heap keyed by (last-sampled iteration, K=10 
+
+sliding-window win rate); the SFT-set cap grows as si =
+
+⌊2560 · 1.2 i−1⌋ and the per-iteration update budget is ⌊m ·
+
+acc 2⌋. Incorrect examples are rationalized : we sample 3 hint-guided traces from the base model ( T =1 .0, two few-shot examples per class) and keep a trace only if a Super judge (T =0 .3) scores it ≥ 3 on a 1–5 genuineness scale. The rationalization prompt and the judge prompt: 
+
+You are Charlotte AI, a CrowdStrike Falcon detection analyst. You will be given adetection with its correct classification. Your job is to write adetailed evidence-based analysis explaining why the detection is classified that way. Your OUTPUT (after thinking) must be athorough analysis that: (1) examines the cmdline and filename; (2) checks the parent/grandparent process chain; (3) notes pattern_disposition; (4) considers prevalence, precision, threatpct; (5) reaches a well-supported conclusion citing specific field values. CRITICAL RULES: - Do NOT reference or acknowledge that you were told the correct answer. Write as if you are determining the classification yourself from the evidence. - Do NOT mention "the correct classification", "we are told", "given that this is", or any similar phrasing. - Do NOT end your output with the classification label; output ONLY the evidence-based analysis. The label is appended separately. You are evaluating a reasoning trace for acybersecurity detection classification. The trace was produced by a model that was given the correct classification and asked to write an evidence-based analysis. Determine whether the trace reads as genuine independent analysis or reveals awareness of being told the answer. Scoring: 1 = DISQUALIFIED. References being told the answer ("we are told", "the correct classification is"), OR opens with meta-reasoning ("We need to...", "Let me..."), OR is generic and cites no specific field values, OR is a bare label, OR is truncated. 2 = Superficial; mentions some fields but does not examine them in depth. 3 = Adequate; examines multiple fields with specific values. Minor issues tolerated. 4 = Strong; examines cmdline, parent context, disposition, and prevalence with specific values. 5 = Excellent; systematic evidence analysis citing specific field values and reaching a well-supported conclusion. Output only the numeric score (1-5). 
+
+# Reinforcement Learning 
+
+GRPO (Shao et al. 2024) starts from the AdaSTaR checkpoint merged into the base weights, with a fresh LoRA adapter (rank 32, α=128 ). Each step samples 48 prompts × 16 roll-outs ( T =1 .0, 1,024-token limit); the binary reward is 1 if and only if the response is well-formatted and correct. Ad-vantages use a leave-one-out group baseline, and the clipped objective uses an asymmetric ratio clip [0 .2, 0.28] with no KL penalty. Adam runs at a constant 3×10 −6 (10-step warmup); we validate every 50 steps on 512 samples and select step 8,000. Compute is 32 B200 GPUs in a non-colocated layout: Megatron-Core training (tensor parallel 2, expert parallel 4, data parallel 2) and vLLM generation (tensor parallel 4), with Ray orchestration and ZMQ weight synchronization. 
+
+# Confidence Calibration 
+
+The calibrator is a separate Nano finetuned with LoRA (rank 32, α=32 , thinking disabled) to read a detection, the policy’s reasoning trace, and its label, and emit a sin-gle token correct or incorrect . Writing ℓc, ℓ i for the two token log-probabilities, the probability of correctness is 
+
+p = eℓc /(eℓc + eℓi ), and the reported confidence is s = p if the verdict is correct and s = 1 − p otherwise. To form tiers, for each label we sort predictions by descending s and take, as the threshold, the s at the deepest rank whose cumu-lative precision still meets the target τ ; the high/medium/low tiers use the precision targets from the Experiments section. Thresholds are fit on validation and applied unchanged to test. Training data is 4 rollouts per detection ( T =1 .0), split 90/10 and balanced 50/50 by class, with label smoothing ε=0 .05 ;we train 3 epochs (Adam, cosine 1 × 10 −5 → 1 × 10 −6,100-step warmup), checkpoint every 50 steps, and find the strongest operating points at early checkpoints. The calibra-tor judge prompt: 
+
+You are a quality-assurance reviewer for cybersecurity incident classifications. You will be shown a security detection (raw incident data) followed by another analyst’s reasoning and final verdict (TRUE_POSITIVE or FALSE_POSITIVE). 0 400 800 1,200    
+
+> 0.6
+> 0.8
+> 1
+> GRPO Training Step
+> Mean Batch Reward
+> Reward
+> 0400 800 1,200
+> 70
+> 80
+> 90
+> GRPO Training Step
+> Accuracy (%)
+> Validation Accuracy
+
+Figure 4: RLVR without self-training: GRPO from the GEPA-prompted base model. Validation accuracy peaks at 86.9%. 
+
+Your task: determine whether the analyst’s classification is Correct or Incorrect. Respond with a single word: Correct or Incorrect. 
+
+# RLVR without Self-Training 
+
+Figure 4 shows the +RLVR (no self-training) ablation: GRPO applied directly to the GEPA-prompted base model, bypass-ing AdaSTaR. Validation accuracy rises from 69.9% to a peak of 86.9% and the mean reward climbs steadily, con-firming that RLVR alone reaches strong policy accuracy on a well-prompted model. 1
+
+> 1
+
+This run matches the full pipeline’s GRPO configuration on every major hyperparameter except the learning rate ( 3 × 10 −6 vs. 
+
+1 × 10 −6). We modified learning rate to encourage quicker learning from a weaker (not self-trained) initial model.

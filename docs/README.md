@@ -6,43 +6,32 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-30
-- 运行时间：2026-07-30 20:55:37 UTC
+- 最新运行日期：2026-07-31
+- 运行时间：2026-07-31 21:54:30 UTC
 - 运行状态：成功
-- 本次总论文数：7
-- 精读区：4
+- 本次总论文数：4
+- 精读区：1
 - 速读区：3
 
 ### 今日简报（AI）
-1) 今日七篇前沿研究聚焦网络安全与音频伪造检测，两篇高分精读分别提出多智能体可解释性框架与推理驱动全模态方法。  
-2) 最值得关注的方向：事件中心的可解释网络安全（(EC)²，9.0）与推理驱动的音频伪造检测（ThinkOmni，9.0），两者均属多智能体与多模态交叉创新。  
-3) 建议优先阅读这两篇论文，结合其代码或数据，探索将逻辑推理与多智能体协作应用于实际安全场景。
-- 详情：[/202607/30/README](/202607/30/README)
+今日精读1篇、速读3篇，聚焦视觉语言模型对图像编辑的推理、概念激活向量可解释性、背景篡改检测与网络安全分类。最值得关注的是首篇8.0分精读，探讨VLM能否推理图像编辑；次推概念激活向量用于解释图像相似性。建议普通读者优先看精读结论，后续可关注多模态模型的可信推理与伪造检测方向。
+- 详情：[/202607/31/README](/202607/31/README)
 
 ### 精读区论文标签
-1. [(EC)2: Event-Centric Explainability for Cybersecurity Through Multi-Agent LLM Investigations](/202607/30/2607.26201v1-ec2-event-centric-explainability-for-cybersecurity-through-multi-agent-llm-investigations)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：针对网络安全异常检测的事件中心可解释性
-2. [ThinkOmni: A Reasoning-Driven Omni-Modal LLM Framework for Audio Forgery Detection and Localization](/202607/30/2607.26553v1-thinkomni-a-reasoning-driven-omni-modal-llm-framework-for-audio-forgery-detection-and-localization)  
-   标签：评分：9.0/10、query:xai-objdet
-   evidence：通过显式法医推理实现可解释伪造检测
-3. [FAS-R1: A Unified Multi-Task MLLM for Reasoning Face Anti-Spoofing](/202607/30/2607.26432v1-fas-r1-a-unified-multi-task-mllm-for-reasoning-face-anti-spoofing)  
+1. [Can Vision-Language Models Reason about AI Edits in Images?](/202607/31/2607.28464v1-can-vision-language-models-reason-about-ai-edits-in-images)  
    标签：评分：8.0/10、query:xai-objdet
-   evidence：可解释的人脸反欺骗推理
-4. [Veritas++: Value-aware On-Policy Distillation for Perception-Enhanced AIGI Detection](/202607/30/2607.27113v1-veritas-value-aware-on-policy-distillation-for-perception-enhanced-aigi-detection)  
-   标签：评分：8.0/10、query:xai-objdet
-   evidence：基于MLLM的感知增强AIGI检测与可解释推理
+   evidence：用强化学习训练视觉语言模型推理AI编辑，提供可解释的伪造检测
 
 ### 速读区论文标签
-1. [MiSS: A Logic-Driven Explanation of Minimal Sufficient Coalitions for Point Cloud Classifiers](/202607/30/2607.24074v1-miss-a-logic-driven-explanation-of-minimal-sufficient-coalitions-for-point-cloud-classifiers)  
+1. [Explaining Image Similarity with Automatically Extracted Concept Activation Vectors](/202607/31/2607.28386v1-explaining-image-similarity-with-automatically-extracted-concept-activation-vectors)  
    标签：评分：7.0/10、query:xai-objdet
-   evidence：基于最小充分联盟的点云分类器解释
-2. [Robust Activation Map Rectification for Weakly Supervised Volumetric Segmentation: Temporal Coherence as a Free Lunch](/202607/30/2607.19877v1-robust-activation-map-rectification-for-weakly-supervised-volumetric-segmentation-temporal-coherence-as-a-free-lunch)  
+   evidence：基于概念激活向量的模型无关可解释性框架，可迁移至多种视觉可解释任务
+2. [BG-REAL: A Public Real-Data Anchored Benchmark for Background Manipulation Detection and Localization](/202607/31/2607.26232v1-bg-real-a-public-real-data-anchored-benchmark-for-background-manipulation-detection-and-localization)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：激活图修正用于可解释定位
-3. [Domain-Prior-Regularized Graph Modeling for Anomaly Detection in Cyber-Physical Systems](/202607/30/2607.23197v1-domain-prior-regularized-graph-modeling-for-anomaly-detection-in-cyber-physical-systems)  
+   evidence：篡改检测与定位基准，提供掩码，支持基于定位的可解释伪造检测
+3. [Cybersecurity Detection Classification with Reasoning-enabled Language Models](/202607/31/2607.28460v1-cybersecurity-detection-classification-with-reasoning-enabled-language-models)  
    标签：评分：6.0/10、query:xai-objdet
-   evidence：使用领域先验正则化和LLM进行异常检测，增强可解释性
+   evidence：利用链式推理解释安全检测是否真实威胁，并对推理轨迹进行校准
 
 
 <div class="dpr-home-promo-card">

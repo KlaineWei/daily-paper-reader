@@ -1,0 +1,441 @@
+Title: HyperClaim: Fine-Grained Cross-Modal Hypergraph Reasoning for Video Misinformation Detection
+
+URL Source: https://arxiv.org/pdf/2607.28375v1
+
+Published Time: Fri, 31 Jul 2026 01:14:05 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# HyperClaim: Fine-Grained Cross-Modal Hypergraph Reasoning for Video Misinformation Detection 
+
+# Xiangbo Wang 1, Jiasheng Zhang 2, Xingtong Yu 3, Luoqiang Lei 1, Delvin Ce Zhang 4∗
+
+> 1
+
+School of Communication Engineering, Hangzhou Dianzi University 
+
+> 2
+
+School of Computer Science and Technology, Xidian University 
+
+> 3
+
+School of Computing and Information Systems, Singapore Management University 
+
+> 4
+
+School of Computer Science, University of Sheffield; delvin.ce.zhang@sheffield.ac.uk 
+
+Abstract 
+
+Video misinformation detection is often approached through global multimodal fusion or free-form multimodal reason-ing. Both paradigms can under-represent localized authentic-ity cues that arise from coupled interactions among query phrases, contextual text, and short temporal spans of frames. Because such interactions are inherently higher-order, pair-wise graph formulations are insufficient to capture multi-way cross-modal dependencies, whereas hypergraphs offer a suitable representation for these relations. We propose Hy-perClaim, a discriminative temporal hypergraph framework for sample-level authenticity classification. Using the title or benchmark-provided paired text as a claim-like query, Hy-perClaim constructs a sparse heterogeneous hypergraph over query tokens, evidence tokens, and sampled frames; applies confidence-aware filtering and source budgeting to form com-pact text–frame and short-range temporal evidence units; per-forms adaptive soft-incidence reasoning with residual text– video calibration; and aggregates textual, visual, and hyper-edge states through a discrepancy-aware readout. Without re-lying on generated rationales or external tool calls, Hyper-Claim preserves fine-grained cross-modal and temporal struc-ture that global fusion tends to flatten. Under the FactGuard temporal protocol, it achieves 83.7%, 82.0%, and 87.3% ac-curacy on FakeSV, FakeTT, and FakeVV, respectively, out-performing strong discriminative and reasoning-centric base-lines. Learned incidence and attention weights further reveal token- and frame-level structural evidence paths. 
+
+# Introduction 
+
+Short-form video has become a major channel for online news and public discourse (Qi et al. 2023a; Bu et al. 2024). Its combination of language, imagery, audio-derived text, and temporal editing also enables misinformation that is difficult to identify from any single modality. Misleading content may reuse authentic footage in a new context, modify an entity or location in the accompanying text, or present a short segment under an unsupported narrative (Luo, Darrell, and Rohrbach 2021; Papadopoulos et al. 2024; Bu et al. 2024; Zhang et al. 2025). In such cases, most of the sample may remain plausi-ble while the decisive evidence is confined to a title phrase, a small set of textual cues or frames, or a brief temporal transition. Other cases rely on broader social, contextual, or 
+
+> ∗
+
+Corresponding author. 
+
+Figure 1: HyperClaim (ours) and representative baselines on FakeSV, FakeTT, and FakeVV. editing signals (Qi et al. 2023a,b; Bu et al. 2024). Effective detection should therefore preserve localized cross-modal evidence without assuming that every misleading sample re-duces to a single explicit contradiction. Existing video misinformation detectors exploit multi-modal correlation, social context, creative-process cues, con-sistency modeling, and domain generalization (Shang et al. 2021; Qi et al. 2023a,b; Bu et al. 2024; Zong et al. 2024; Guo et al. 2025; Wang et al. 2025b). Most condense hetero-geneous evidence into modality- or sample-level represen-tations. Although effective for capturing global semantics, this aggregation can dilute inconsistencies involving only a specific token, frame, or short temporal relation. Reasoning-centric systems pursue a different direction: Fact-R1 learns long-form multimodal reasoning through instruction tuning, preference optimization, and reinforcement learning (Zhang et al. 2025), while FactGuard performs ambiguity-aware ver-ification with selective tool use (Li et al. 2026c). These approaches are valuable for open-ended inference and ex-ternally grounded verification. We study a complementary closed-input setting in which the relevant signal is already arXiv:2607.28375v1 [cs.AI] 30 Jul 2026 present but distributed across the title, contextual text, and temporally ordered frames. The central challenge is to repre-sent and aggregate this localized evidence structure without losing it through global fusion. We propose HyperClaim, a fine-grained cross-modal hy-pergraph framework for video misinformation detection. The title or benchmark-provided paired text serves as a claim-like query that organizes the remaining evidence, while the prediction target remains the original real/fake la-bel. Hypergraphs naturally represent higher-order evidence units involving a textual anchor and multiple related frames while preserving claim context, evidence-source structure, and short-range temporal relations (Feng et al. 2019; Bai, Zhang, and Torr 2021). H-Forge constructs sparse claim, evidence, temporal, and cross-modal hyperedges through confidence-aware filtering and claim-aware source budget-ing. Aether calibrates text–video interactions, learns soft node–hyperedge memberships, and propagates information within and across evidence units. Cred aggregates textual, visual, and hyperedge states and models claim–video agree-ment and discrepancy for authenticity prediction. Closest to our work, HGTMFC performs fine-grained static image– text verification through hypergraph and line-graph propaga-tion (Pang et al. 2025); HyperClaim extends this principle to temporally ordered video with sparse query–text–frame con-struction and adaptive evidence routing. Learned incidence and attention weights further support token- and frame-level structural evidence tracing rather than free-form or causal explanation. Our contributions are as follows: 
+
+• We introduce a claim-oriented sparse temporal hyper-graph representation that preserves localized query–text– frame and short-range temporal relations instead of col-lapsing heterogeneous evidence into global modality-level summaries. 
+
+• We develop HyperClaim, integrating confidence-aware hypergraph formation, adaptive soft-incidence reasoning, residual text–video calibration, and discrepancy-aware node- and hyperedge-level readout for real/fake predic-tion. 
+
+• Under the FactGuard temporal protocol, HyperClaim im-proves accuracy and F1 on FakeSV, FakeTT, and FakeVV, while supporting token- and frame-level structural evi-dence tracing. 
+
+# Related Work 
+
+Video misinformation detection. Existing systems ex-ploit multimodal clues, social context, creation cues, con-sistency, and domain generalization (Shang et al. 2021; Choi and Ko 2021; Qi et al. 2023a,b; Bu et al. 2024; Zong et al. 2024; Wang et al. 2025a; Guo et al. 2025; Li et al. 2026b; Wang et al. 2025b). These methods establish the value of heterogeneous evidence but generally summarize it at the modality or sample level. HyperClaim instead preserves lo-calized token–frame and short-range temporal relations. 
+
+Cross-modal evidence grounding. Multimodal misinfor-mation can arise when each modality appears plausible in iso-lation but the modalities are jointly inconsistent. NewsCLIP-pings and VERITE investigate out-of-context mismatches and unimodal shortcuts (Luo, Darrell, and Rohrbach 2021; Papadopoulos et al. 2024), while MOCHEG and subsequent surveys emphasize the retrieval and aggregation of claim-relevant multimodal evidence (Yao et al. 2023; Akhtar et al. 2023). These studies show that effective verification requires more than global feature fusion, particularly when the deci-sive inconsistency is confined to a specific entity, event, or temporal cue. HyperClaim extends this perspective to video by preserving localized query–text–frame relations as ex-plicit higher-order evidence units. 
+
+Hypergraph reasoning for multimodal verification. Hy-pergraph neural networks provide a general mechanism for representing relations involving more than two ele-ments (Feng et al. 2019; Bai, Zhang, and Torr 2021). Most closely related to our work, HGTMFC combines hypergraph and line-graph propagation to model fine-grained claim– evidence interactions in static image–text verification (Pang et al. 2025). HyperClaim extends this line of research to tem-porally ordered video by introducing sparse claim-oriented construction, overlapping temporal hyperedges, adaptive soft incidence, residual text–video calibration, and discrepancy-aware readout. 
+
+Reasoning-centric verification. Fact-R1 learns long-form multimodal reasoning, whereas FactGuard combines ambi-guity estimation, selective tool use, and reinforcement learn-ing (Zhang et al. 2025; Li et al. 2026c). These approaches are valuable for open-ended or externally grounded verifica-tion. HyperClaim addresses the complementary closed-input setting by reasoning discriminatively over explicit local evi-dence structure. 
+
+# Methodology 
+
+Problem Formulation and Overview 
+
+The evaluated benchmarks formulate video misinformation detection as sample-level authenticity classification rather than independently annotated claim–evidence entailment. Given a video-news sample x = ( q, E, v ), where q denotes its title or benchmark-provided paired text, E contains the remaining textual context, and v is the associated video, the goal is to predict the original benchmark label 
+
+y ∈ { Real , Fake }. (1) We use the term claim operationally to refer to the title-derived or benchmark-provided query q. It is the proposition around which the remaining multimodal content is organized, but it is not an independently annotated fact-checking claim. For FakeSV (Qi et al. 2023a) and FakeTT (Bu et al. 2024), the video title is used as q, while available non-title fields— including comments, automatic speech recognition (ASR) transcripts, optical character recognition (OCR) text, key-words, and captions—form E. Each textual item is retained as a separate evidence source. For FakeVV (Zhang et al. 2025), the benchmark-provided text paired with the video serves as q. Query and evidence tokens are assigned to dis-joint node sets, and the query is not duplicated in E.Figure 2: Overview of HyperClaim. H-Forge constructs a sparse temporal heterogeneous hypergraph from claim-like query tokens, textual-evidence tokens, and sampled frames. Each Aether layer first performs lightweight bidirectional text–video calibration and then adaptive soft-incidence node–hyperedge reasoning; a line-graph layer subsequently refines interactions among evidence units. Cred pools textual, visual, and hyperedge states and predicts the original real/fake label from claim– video agreement and discrepancy. The bottom panel shows the two-stage optimization strategy. Accordingly, HyperClaim predicts the original real/fake label rather than a separate entailment label. Claim con-ditioning is used to prioritize and summarize title-relevant evidence; it does not assume that every fake sample is re-ducible to one explicit contradiction between the query and the observed content. As illustrated in Figure 2, HyperClaim contains four stages: (1) claim and evidence encoding; (2) sparse tempo-ral hypergraph formation with H-Forge ; (3) adaptive tem-poral hypergraph reasoning with Aether ; and (4) claim-conditioned authenticity prediction with Cred . The model is trained discriminatively using the original benchmark labels. 
+
+Design rationale. Dense text–frame fusion propagates re-dundancy, so H-Forge retains a bounded set of reliable textual anchors and constructs explicit local evidence units. Similarity-based candidates need not be factually reliable, so 
+
+Aether recalibrates cross-modal states and learns context-dependent soft memberships and message weights. Finally, 
+
+Cred preserves complementary textual, visual, and edge-level summaries while exposing claim–video agreement and discrepancy. This decomposition separates candidate con-struction, evidence routing, and prediction instead of leaving all three to a single dense fusion block. 
+
+Claim and Evidence Encoding 
+
+We use Qwen3-VL-Embedding-2B (Li et al. 2026a) as a uni-fied multimodal encoder. For the claim-like query and each textual evidence item, we retain token-level hidden states in 
+
+Rd, where d = 2048 . Token-level representations are impor-tant because factual conflicts often depend on local entities, actions, numbers, and relations that may disappear under sentence-level pooling. For the visual branch, we retain one frame every 30 orig-inal frames until either 16 frames have been collected or the video ends. The retained frames remain in chronolog-ical order, and each is represented by a frame-level visual embedding. This asymmetric representation keeps language evidence fine-grained while bounding the number of visual nodes. Let C = {ck}, X = {xi}, and V = {vj }Tj=1 denote the claim-token, evidence-token, and sampled-frame repre-sentations, respectively. 
+
+H-Forge : Claim-Oriented Sparse Hypergraph Formation 
+
+We construct a heterogeneous hypergraph G = ( V, H) with 
+
+V = Vc ∪ V e ∪ V v , (2) where Vc, Ve, and Vv contain claim tokens, evidence to-kens, and sampled frames. Four complementary hyperedge families are instantiated: 
+
+H = Hc ∪ H e ∪ H v ∪ H tv . (3) 
+
+Hc contains one intra-claim hyperedge connecting all tokens of q. Each item in E contributes one hyperedge in He con-necting all tokens encoded from that item; thus, individual comments, ASR segments, OCR entries, keywords, or cap-tions remain source-specific. Hv preserves local temporal context with overlapping windows of three consecutive sam-pled frames and stride one. If fewer than three frames are available, all available frame nodes form one temporal hy-peredge; boundary padding is not used. Finally, Htv contains sparse cross-modal verification units connecting a textual an-chor to its strongest frame matches. 
+
+Confidence-aware cross-modal filtering. A dense text– frame graph introduces many irrelevant links because short videos contain redundant frames and social text contains noisy evidence. H-Forge therefore constructs Htv through a claim-oriented filtering process. Let ui denote a textual source node from Vc ∪ V e. For frame node vj , we compute 
+
+sij = u⊤ 
+
+> i
+
+vj
+
+∥ui∥2∥vj ∥2
+
+. (4) Let j1(i) and j2(i) denote the highest- and second-highest-scoring frames. Define the best-match score s⋆i = si,j 1(i) and margin mi = si,j 1(i) − si,j 2(i). We retain 
+
+S = {i : s⋆i ≥ δs, m i ≥ δm}, (5) where δs = 0 .14 and δm = 0 .003 . Retained anchors are ranked by 
+
+ri = s⋆i + ηm i, η = 0 .1. (6) The first term measures cross-modal matching strength, while the margin term favors anchors whose best frame match is less ambiguous. This heuristic is fixed across all three datasets. 
+
+Claim-aware source budgeting. We use a textual-anchor budget of Bs = 48 and reserve approximately 35% of the slots (17 by default) for claim-token anchors; the remaining slots are assigned to evidence-token anchors. Claim prior-ity is therefore introduced through source-aware budgeting rather than an additional ranking term. Within each source type, anchors are selected by ri, and each retained anchor is connected to its two highest-scoring frames. The complete query is not copied into every cross-modal hyperedge: query context enters directly through claim-token anchors and indi-rectly through Hc, Aether propagation, and the Cred read-out. 
+
+Aether : Adaptive Temporal Hypergraph Reasoning 
+
+The initial graph contains plausible evidence units, but en-coder similarity alone should not determine their final con-tribution. Node features are first projected by type-specific linear layers into a shared hidden space of dimension 512. 
+
+Aether contains two reasoning layers, each combining lightweight bidirectional text–video calibration with adap-tive node–hyperedge propagation; a final line-graph layer refines interactions among hyperedges. 
+
+Bidirectional text–video calibration. At reasoning layer 
+
+ℓ, a lightweight cross-attention block (Vaswani et al. 2017) recalibrates the current textual and visual states: 
+
+eT(ℓ), eV(ℓ) = XAttnBlock  T(ℓ), V(ℓ). (7) The block forms one scaled text–video affinity matrix. It is normalized over video nodes for messages to text and over text nodes for the reverse direction. Each attention distribu-tion is mixed with a 0.05 uniform residual; the two mes-sages are added with scale 0.35 and followed by Layer Nor-malization (Ba, Kiros, and Hinton 2016). The module uses one full-dimensional attention head, temperature 1.0, and no feed-forward sublayer. The calibrated states eT(ℓ) and eV(ℓ) re-place the current states in the subsequent soft-incidence and node–hyperedge updates of the same layer. After the sec-ond layer, Cred pools the final calibrated textual and visual states. Thus, the calibration outputs are part of the prediction path rather than auxiliary representations, while the discrete candidate structure remains unchanged. 
+
+Soft incidence and node–hyperedge propagation. For hyperedge h with members N (h), the seed state ¯hh is the mean of its current member states. Let qh = Wq ¯hh and 
+
+ki = Wkhi. We compute 
+
+eih = q⊤ 
+
+> h
+
+ki/τ, αih = softmax   
+
+> i∈N (h)
+
+(eih ),
+
+ehih = (1 − ρ)αih + ρ/ |N (h)|.
+
+(8) Here τ = 1 .0 and ρ = 0 .10 . The matrix eH ∈ R|V|×|H| 
+
+reweights only the sparse candidate memberships con-structed by H-Forge .A grouped aggregation module first forms member-group means and then applies attention to obtain the hyperedge state zh. Let qni = WQhi and keh = WK zh. Each node attends to its incident hyperedges using 
+
+aih = softmax  
+
+> h∈N (i)
+
+ (qni )⊤keh
+
+√dh
+
++ log( ehih + ϵ)
+
+
+
+. (9) The implementation uses a hidden size of 512 and eight at-tention heads. The resulting message is combined with the node state using residual weight β = 0 .5, Layer Normaliza-tion, and dropout 0.1. Soft incidence is recomputed in each reasoning layer. 
+
+Inter-hyperedge refinement. After the two node– hyperedge layers, we construct a weighted line graph 
+
+AL = eH⊤ eH. (10) We remove its diagonal and apply one degree-normalized GCN-style layer (Kipf and Welling 2017) with a linear pro-jection, ReLU, residual connection, and Layer Normaliza-tion. This allows overlapping evidence units to exchange in-formation without collapsing their individual states. 
+
+Cred : Claim-Conditioned Discrepancy Readout 
+
+Cred operates on the final node states and line-graph-refined hyperedge states. The claim representation is the mean of the final claim-token states: 
+
+qc = MeanPool ( {hi : i ∈ V c}) . (11) Figure 3: Structural evidence trace produced by HyperClaim. High-weight evidence units connect localized query phrases, textual cues, and temporally relevant frames. Textual nodes and all hyperedges of the sample are sum-marized by learned linear attention, whereas visual nodes are pooled by attention conditioned on qc. For each source 
+
+m ∈ { t, v, e }, the corresponding summary has the common form 
+
+hm = X
+
+> i
+
+π(m) 
+
+> i
+
+s(m) 
+
+> i
+
+, (12) where s(t) 
+
+> i
+
+= hi, s(v) 
+
+> i
+
+= hi, and s(e) 
+
+> i
+
+= zi. Text and hyper-edge scores are produced by learned linear scorers; visual scores use the dot product between projected qc and pro-jected frame states. All pooling temperatures are 1.0. Let 
+
+dcv = |bqc − bhv | and pcv = bqc ⊙ bhv , where the hats denote 
+
+ℓ2 normalization. The classifier input is 
+
+z = [ ht; hv ; he; dcv ; pcv ] ∈ R2560 . (13) The difference term exposes claim–video discrepancy, whereas the element-wise product represents feature-level agreement. The verdict distribution is produced by a multi-layer perceptron (MLP): 
+
+p(y | q, E, v ) = MLP( z), (14) where the classifier comprises Linear(2560 , 512) –GELU (Hendrycks and Gimpel 2016)– Dropout (0 .1) –
+
+Linear(512 , 2) .
+
+Structural Evidence Tracing 
+
+HyperClaim does not generate free-form rationales. Instead, learned incidence ehih , node–hyperedge attention aih , and readout weights expose high-weight information paths that can be mapped back to query tokens, evidence tokens, and frame timestamps. We visualize these paths as structural evidence traces. They indicate routing salience rather than causal or faithfulness-certified explanations. 
+
+Training Objective 
+
+The model is optimized with cross-entropy: 
+
+Lcls = − log p(y | q, E, v ). (15) We adopt a two-stage optimization strategy. In Stage 1, Qwen3-VL-Embedding-2B (Li et al. 2026a) is frozen, and the hypergraph reasoning, pooling, and prediction mod-ules are optimized on precomputed multimodal features. In Stage 2, all downstream modules—including H-Forge ,
+
+Aether , Cred , the pooling scorers, and the classifier— remain frozen. Only LoRA adapters (Hu et al. 2022) in both the visual and textual attention and feed-forward projections of the multimodal encoder are optimized on raw multimodal Model FakeSV FakeTT FakeVV Acc Prec Rec F1 Acc Prec Rec F1 Acc Prec Rec F1 BERT † 65.4 66.0 66.5 66.2 68.7 67.5 67.5 67.5 60.4 57.9 56.8 57.3 ViT † 57.5 57.9 58.1 58.0 59.3 59.1 59.5 59.3 55.5 59.3 58.7 59.0 TikTec † 64.8 63.2 61.9 62.5 61.1 64.8 64.2 64.5 59.3 59.1 59.5 59.3 FANVM † 65.4 66.1 64.3 65.2 68.9 64.7 68.8 67.1 61.9 60.7 60.8 60.8 SV-FEND † 67.1 67.4 66.3 66.8 67.6 72.2 69.0 70.6 70.9 71.4 71.3 71.3 FakingRec † 69.5 69.7 70.4 70.0 71.0 71.9 72.0 72.0 72.1 72.4 71.6 72.0 Gemini2-thinking † 63.1 61.8 61.9 61.9 56.6 55.2 55.3 55.3 51.5 46.0 46.0 48.6 GPT-4o † 66.6 65.2 64.7 64.9 57.9 57.8 62.9 63.7 56.0 60.4 35.0 44.3 GPT-o1-mini † 60.3 57.7 56.5 57.1 52.5 51.6 51.7 51.7 47.5 46.9 37.6 41.8 DeepSeek-R1 † 61.8 60.4 60.3 60.3 49.8 52.6 52.5 52.6 53.5 58.1 25.2 35.1 Qwen2.5-VL-7B † 55.6 55.5 55.7 55.6 54.9 54.0 54.1 54.0 52.9 51.1 51.1 51.1 Qwen2.5-VL-72B † 57.6 55.4 55.2 55.3 59.2 58.1 58.3 58.2 54.0 60.0 24.0 34.3 QVQ-72B-preview † 60.8 59.0 58.8 58.9 58.1 54.0 52.8 53.4 53.5 52.6 52.6 52.6 InternVL2.5-8B † 49.8 52.6 52.5 52.6 43.9 44.0 44.0 44.0 53.5 58.5 24.0 34.0 InternVL2.5-78B-MPO † 57.5 53.0 52.0 52.5 59.2 57.1 56.7 56.9 54.0 60.0 24.0 34.3 Fact-R1 † 75.6 77.7 72.0 74.7 74.4 77.8 68.3 72.7 81.2 84.5 76.4 80.3 FactGuard ‡ 79.3 82.2 80.6 81.4 75.3 73.8 76.7 75.2 83.0 85.8 82.1 83.9 
+
+HyperClaim (ours) 83.7 84.6 85.3 84.2 82.0 81.3 77.9 79.5 87.3 88.7 84.8 86.1 
+
+Table 1: Performance (%) on FakeSV, FakeTT, and FakeVV.  
+
+> †From Fact-R1 (Zhang et al. 2025); ‡from FactGuard (Li et al. 2026c); baseline results were not rerun.
+
+inputs. Stage 1 establishes a stable evidence-routing and deci-sion function, while Stage 2 adapts encoder representations to this fixed downstream structure without perturbing the learned reasoning path. 
+
+# Experiments 
+
+Experimental Settings 
+
+Datasets and evaluation. We evaluate on FakeSV (Qi et al. 2023a), FakeTT (Bu et al. 2024), and FakeVV (Zhang et al. 2025). FakeSV/FakeTT use titles as queries and non-title fields as evidence; FakeVV uses its paired text as the query. Following FactGuard (Li et al. 2026c), the chronologically latest 15% of each dataset form the test set. We report ac-curacy, precision, recall, and F1 following Fact-R1 (Zhang et al. 2025). 
+
+Baselines. We compare HyperClaim with conven-tional discriminative systems, general-purpose multi-modal/reasoning models, and task-aligned reasoning sys-tems. The conventional group contains BERT, ViT, Tik-Tec, FANVM, SV-FEND, and FakingRec (Devlin et al. 2019; Dosovitskiy et al. 2021; Shang et al. 2021; Choi and Ko 2021; Qi et al. 2023a; Bu et al. 2024). The general-purpose group contains Gemini2-thinking, GPT-4o, GPT-o1-mini, DeepSeek-R1, Qwen2.5-VL-7B/72B, QVQ-72B-preview, and InternVL2.5-8B/78B-MPO. Their values, to-gether with Fact-R1, are taken from the unified comparison in Fact-R1 (Zhang et al. 2025); FactGuard values are taken from its corresponding evaluation (Li et al. 2026c). For mod-els without native video input, Fact-R1 uses news-domain video descriptions as textual surrogates. The comparison therefore covers text-only, vision-only, multimodal fusion, zero-shot multimodal reasoning, and task-specific verifica-tion paradigms, while the shared temporal split controls the principal evaluation protocol. 
+
+Implementation details. We use Qwen3-VL-Embedding-2B (Li et al. 2026a), sample one frame every 30 raw frames (maximum 16), and construct three-frame windows with stride one. H-Forge uses (δs, δ m, η ) = (0 .14 , 0.003 , 0.1) ,at most 48 anchors, a 35% claim quota, and two frame matches per anchor. Aether uses two 512-dimensional eight-head node–hyperedge layers and one line-graph layer, with (τh, ρ h, β ) = (1 .0, 0.10 , 0.5) and (τtv , ρ tv , λ tv ) =(1 .0, 0.05 , 0.35) . Readout temperature is 1.0; Cred uses a 512-dimensional GELU classifier with dropout 0.1. AdamW uses weight decay 10 −4 (Loshchilov and Hutter 2019). Stage 1 learning rates are 10 −4 for hypergraph modules and 5 × 10 −4 for pooling/classification, with effective batch size 32. Stage 2 trains only Qwen LoRA parameters at 
+
+2 × 10 −5 with effective batch size 16 on one A100. Both stages use three epochs of linear warmup, cosine annealing to 10 −7 (Loshchilov and Hutter 2017), and gradient clipping at 1.0. LoRA (Hu et al. 2022) is applied to visual/textual attention and feed-forward projections with r = α = 32 and dropout 0.05. 
+
+Main Results 
+
+Overall performance. As summarized in Figure 1 and detailed in Table 1, HyperClaim achieves the highest ac-curacy and F1 on all three benchmarks. It reaches 83.7% Variant Acc Prec Rec F1 Text only 70.4 70.8 69.6 70.1 Text + Video 80.5 80.9 79.4 80.5 Text + ASR 73.2 73.6 72.1 72.7      
+
+> Full model (w/o LoRA )81.6 82.1 80.3 81.2
+
+Table 2: Multi-modal Combination Ablation; Values are per-centages. accuracy and 84.2% F1 on FakeSV, 82.0% accuracy and 79.5% F1 on FakeTT, and 87.3% accuracy and 86.1% F1 on FakeVV. The consistency of these gains is important be-cause the benchmarks differ in language, platform, scale, and construction procedure, suggesting that localized high-order evidence modeling is not restricted to a single entity-replacement dataset. 
+
+Comparison with task-aligned reasoning systems. Com-pared with Fact-R1, HyperClaim improves accuracy by 8.1, 7.6, and 6.1 percentage points on FakeSV, FakeTT, and FakeVV, respectively. Relative to FactGuard, the gains are 4.4, 6.7, and 4.3 points. Notably, the largest margin over FactGuard occurs on FakeTT, showing that the improvement is not confined to FakeVV’s entity-replacement construction. These results do not imply that discriminative reasoning uni-versally dominates open-world agentic verification. Rather, under the shared closed-benchmark setting, explicit local evidence structure provides a strong decision path without making the final verdict contingent on generated reasoning trajectories or tool calls. 
+
+General models and dataset effects. Zero-shot multi-modal large language models remain substantially weaker than task-aligned systems; for example, GPT-4o obtains 56.0% accuracy and 44.3% F1 on FakeVV. The strongest HyperClaim result also occurs on FakeVV, whose entity-replacement construction aligns with the localized relations targeted by H-Forge (Zhang et al. 2025). Improvements on FakeSV and FakeTT indicate that the benefit extends beyond this construction. 
+
+Ablation Studies 
+
+Input evidence. Table 2 evaluates evidence composition on FakeSV. Text alone provides a relatively strong signal, but adding video increases F1 from 70.1% to 80.5%. ASR evidence alone contributes less than visual evidence, whereas the full configuration is strongest. This pattern supports the central motivation: the decision cannot be reduced to textual plausibility, and the full model benefits from jointly modeling modalities rather than merely concatenating them. 
+
+Claim-conditioned readout and discrepancy modeling. 
+
+Table 3 isolates the prediction stage on FakeSV. Replacing learned aggregation with global mean pooling reduces F1 to 73.2%, indicating that evidence selection must preserve source- and claim-dependent relevance. Claim-conditioned visual attention improves the result even without discrepancy features. Hard top-k pooling is stronger than mean pooling                                        
+
+> Component Metrics (%) Variant CQ DF AP Acc Prec Rec F1 Mean readout ✗✗✗74.3 74.8 73.0 73.2 Without discrepancy ✓✗✓77.1 78.7 76.5 77.4 Hard top-kpooling ✓✓✗79.4 79.9 78.6 78.9
+> Full Cred (w/o LoRA )✓✓✓81.6 82.1 80.3 81.2
+
+Table 3: CQ: claim query; DF: discrepancy features; AP: attention pooling.                                  
+
+> Component Metrics (%) Variant SI TVC Acc Prec Rec F1 Static hypergraph ✗✗76.1 76.6 74.8 75.7 Soft incidence only ✓✗78.5 79.0 77.1 78.0 Calibration only ✗✓79.6 80.1 78.2 79.1
+> Full Aether (w/o LoRA )✓✓81.6 82.1 80.3 81.2
+
+Table 4: SI: soft incidence; TVC: text–video calibration. but remains below the full model, showing that soft evi-dence weighting is preferable to committing to a fixed subset. The complete Cred module reaches 81.2% F1 by combining learned textual/edge pooling, claim-conditioned visual pool-ing, and explicit claim–video agreement and discrepancy. 
+
+Adaptive evidence routing. Table 4 evaluates the two adaptive components of Aether on FakeSV. A static candi-date hypergraph reaches 75.7% F1. Learning soft incidence improves F1 to 78.0% by suppressing unreliable candidate memberships, while residual text–video calibration reaches 79.1% by recovering complementary continuous alignment. Combining both mechanisms yields 81.2% F1, indicating that sparse structured propagation and continuous calibra-tion are complementary rather than interchangeable. 
+
+Hyperparameter ablations. Detailed hyperparameter ab-lations of H-Forge, Aether, adaptive mechanisms, and input regularization are provided in the supplementary material. 
+
+Qualitative structural evidence tracing. Figure 3 visu-alizes high-weight hyperedges and routing paths that con-nect query phrases such as “evacuation orders,” “fast-moving wildfire,” and “near Malibu” with relevant transcript/OCR cues and video frames. Compared with a single video-level importance score, these traces localize the textual and visual elements emphasized during prediction. They reflect learned routing salience and should not be interpreted as causal or faithfulness-certified explanations. 
+
+# Conclusion 
+
+We introduced HyperClaim, a sparse temporal hypergraph framework for video misinformation detection. It preserves localized query–text–frame and temporal relations through claim-oriented construction, adaptive node–hyperedge rea-soning, and discrepancy-aware readout. Across three bench-marks, HyperClaim improves accuracy and F1 while sup-porting structural evidence tracing. Supplementary Material 
+
+This supplement reports implementation details, repro-ducibility information, and controlled hyperparameter anal-yses for HyperClaim. Unless stated otherwise, all ablations use FakeSV (Qi et al. 2023a) without low-rank adaptation (LoRA) (Hu et al. 2022) and report accuracy (Acc), preci-sion (Prec), recall (Rec), and F1-score (F1) as percentages. The sweeps characterize local sensitivity around the canon-ical operating point rather than global optimality. Motivated by prior short-video work on multimodal evidence and cross-modal consistency (Qi et al. 2023a,b; Wang et al. 2025b), we examine evidence sparsity, propagation depth, and learned cross-modal adaptation. 
+
+# Implementation and Reproducibility Details 
+
+Feature extraction. We use Qwen3-VL-Embedding-2B (Li et al. 2026a) as a unified multimodal encoder. For the claim-like query and each textual evidence item, we re-tain token-level hidden states in Rdenc , where denc = 2048 .For video, we sample one frame every 30 raw frames and retain at most 16 frames per instance. Frame-level repre-sentations are extracted with the same encoder, ensuring that textual and visual inputs are represented within a com-mon semantic space. Type-specific linear projections then map query-token, evidence-token, and frame features into a shared 512-dimensional hidden space. The projections are not shared across node types, which allows the model to pre-serve modality-specific statistics while enforcing a common dimensionality for subsequent message passing. 
+
+Candidate hypergraph construction. Hypergraphs pro-vide a natural representation for multiway relations that can-not be reduced to a single pairwise edge without loss of structure; this motivation underlies a range of hypergraph neural architectures (Feng et al. 2019; Yadati et al. 2019; Chien et al. 2022). In HyperClaim, the heterogeneous can-didate hypergraph G = ( V, E) contains three node types: query (claim) tokens Vq , evidence tokens Ve, and sampled frames Vf . We instantiate four hyperedge families: (i) claim-to-anchor hyperedges that connect the query to selected tex-tual anchors; (ii) intra-textual hyperedges that preserve local evidence structure; (iii) cross-modal hyperedges that asso-ciate textual anchors with matched video frames; and (iv) temporal hyperedges that connect neighboring frames using a window of size 3 and stride 1. The default H-Forge configuration retains at most Bs =48 anchors, allocates 35% of the anchor budget to claim-token anchors, and attaches the top-2 frame matches to each textual anchor. Cross-modal filtering uses (δs, δ m, η ) = (0 .14 , 0.003 , 0.1) . These values define a sparse candidate structure; they do not by themselves determine the final con-tribution of each node–hyperedge relation, which is subse-quently refined by the adaptive incidence mechanism. 
+
+Hypergraph reasoning. Aether contains two 512-dimensional, eight-head node–hyperedge propagation layers followed by one line-graph layer. The node–hyperedge up-dates alternate aggregation from nodes to hyperedges and from hyperedges back to nodes, consistent with the gen-eral message-passing view adopted by modern hypergraph networks (Feng et al. 2019; Chien et al. 2022). A resid-ual coefficient β = 0 .5 combines hyperedge-derived mes-sages with the current node states. The soft-incidence mod-ule uses (τh, ρ h) = (1 .0, 0.10) , while text–video calibration uses (τtv , ρ tv , λ tv ) = (1 .0, 0.05 , 0.35) . Learning or refining incidence structure is motivated by the fact that a constructed hypergraph can contain noisy, task-irrelevant, or missing re-lations (Cai et al. 2022); in our model, the candidate structure serves as an inductive prior rather than an immutable graph. 
+
+Readout and classifier. Cred performs claim-conditioned attention over the calibrated textual, visual, and hyperedge states. The readout temperature is τr = 1 .0. The aggregated representation is passed to a 512-dimensional classifier with a Gaussian Error Linear Unit (GELU) nonlinearity (Hendrycks and Gimpel 2016) and dropout probability 0.1 (Srivastava et al. 2014). 
+
+Optimization. We train HyperClaim with AdamW (Loshchilov and Hutter 2019) and weight decay 10 −4. For the ablations reported here, the learning rate is 10 −4 for the hypergraph modules and 5 × 10 −4 for pooling and classi-fication, with an effective batch size of 32. Training begins with three epochs of linear warmup and then follows cosine annealing to a terminal learning rate of 10 −7, using the stan-dard cosine-scheduling family (Loshchilov and Hutter 2017). Gradients are clipped to a maximum norm of 1.0. 
+
+Execution environment and reporting protocol. The im-plementation is based on PyTorch (Paszke et al. 2019) and is executed on a single NVIDIA A100 GPU. All rows in the re-ported sweeps use the same fixed random seed and the same default settings for every non-ablated factor. Consequently, the tables provide controlled point estimates under a com-mon protocol; they do not provide run-to-run uncertainty or statistical significance estimates. 
+
+# Ablation Protocol and Interpretation 
+
+We vary one hyperparameter per subtable while holding all others fixed. This protocol isolates local sensitivity but nei-ther estimates factorial interactions nor establishes global optima. Because every row is a fixed-seed point estimate, nu-merical differences are interpreted descriptively, and mech-anistic explanations are presented only as hypotheses con-sistent with the trends. We emphasize F1 while retaining all metrics; boldface marks the highest F1 in each block and †
+
+the canonical default. Across the sweeps, the central trade-off is between evidence coverage and structural selectivity. 
+
+H-Forge: Constructing Sparse Evidence Units 
+
+H-Forge determines which textual and visual elements enter the candidate hypergraph. Because the downstream reason-ing layers operate on this structure, changes in anchor cover-age or cross-modal connectivity affect both the available evi-dence and the routes through which messages can propagate. The goal of this stage is therefore not maximal connectivity, but selective coverage of claim-relevant evidence. Anchor budget and claim-aware evidence quota The an-chor budget Bs limits the number of textual spans that can seed evidence units. Anchors serve as cross-modal hubs, so increasing Bs simultaneously expands textual coverage and the number of potential anchor–frame connections. Table 5(a) shows a non-monotonic response. Increasing the budget from Bs = 24 to Bs = 48 improves F1 from 78.8% to 81.2% ( +2 .4 points) and recall from 76.2% to 80.3% ( +4 .1 points). This pattern is consistent with under-coverage at the smallest budget: the candidate graph may not retain enough secondary evidence to support claim ver-ification. Increasing the budget further to Bs = 64 reduces F1 to 80.5% and precision from 82.1% to 80.3%. The latter change is consistent with a reduction in structural precision when lower-ranked anchors are admitted, although the table alone does not directly measure anchor quality. At fixed Bs = 48 , the 35% claim-aware quota also occu-pies an interior optimum. Reducing the quota to 20% lowers F1 by 1.4 points and recall by 3.1 points relative to the de-fault, whereas increasing it to 50% lowers F1 by 1.1 points. Thus, within the tested range, retaining a moderate amount of non-anchor textual context is preferable to either aggressive pruning or broad evidence retention. Together, the two con-trols implement complementary forms of sparsification: Bs
+
+limits the number of evidence hubs, while the quota limits the contextual breadth around those hubs. 
+
+Cross-modal filtering thresholds After textual evidence units are formed, H-Forge applies semantic and mismatch criteria to candidate anchor–frame links. The pair (δs, δ m)
+
+therefore controls which visual nodes are eligible to par-ticipate in cross-modal hyperedges, while η is fixed at 0.1 throughout this sweep. Table 5(b) again exhibits a non-monotonic pattern. At 
+
+δm = 0 .003 , the default δs = 0 .14 reaches 81.2% F1, ex-ceeding δs = 0 .10 and δs = 0 .18 by 1.5 and 1.3 points, respectively. At δs = 0 .14 , the default δm = 0 .003 exceeds 
+
+δm = 0 .001 by 1.7 F1 points and δm = 0 .005 by 0.8 points. Notably, the (0 .14 , 0.005) setting obtains slightly higher pre-cision (82.2%) but lower recall (79.9%) and F1 (80.4%) than the default. This metric divergence indicates that the thresh-olds affect not only the amount of retained visual evidence but also the balance between conservative and inclusive pre-dictions. The selected pair (0 .14 , 0.003) is therefore the strongest point in the evaluated grid under F1. More generally, the re-sults support a selective-alignment regime in which neither endpoint of the tested threshold range is preferred. We de-liberately limit this conclusion to the evaluated grid rather than treating the selected pair as a globally optimal threshold combination. 
+
+Aether: Reasoning Over the Heterogeneous Hypergraph 
+
+Aether propagates information over the candidate structure produced by H-Forge . We study three aspects of its effec-tive receptive field: propagation depth, the number of visual matches attached to each textual anchor, and the temporal extent of frame-level hyperedges. Table 5: H-Forge hyperparameter sensitivity on FakeSV without LoRA.                                                          
+
+> Configuration Acc Prec Rec F1
+> (a) Anchor budget Bsand claim-aware quota
+> Bs= 24 , quota 35% 79.4 79.7 76.2 78.8
+> Bs= 32 , quota 35% 80.7 81.0 77.6 80.2
+> Bs= 48 , quota 35% †81.6 82.1 80.3 81.2
+> Bs= 64 , quota 35% 81.1 80.3 79.1 80.5
+> Bs= 48 , quota 20% 80.6 80.5 77.2 79.8
+> Bs= 48 , quota 50% 80.8 81.1 78.4 80.1
+> (b) Cross-modal thresholds (δs, δ m)
+> (0.10, 0.003) 80.4 79.4 77.1 79.7 (0.14, 0.001) 80.8 80.9 77.4 79.5 (0.14, 0.003) †81.6 82.1 80.3 81.2
+> (0.14, 0.005) 81.0 82.2 79.9 80.4 (0.18, 0.003) 80.5 80.4 77.5 79.9
+
+Number of reasoning layers Table 6(a) varies the number of node–hyperedge reasoning layers. A single layer obtains 79.1% F1, whereas two layers improve F1 to 81.2% ( +2 .1
+
+points). The improvement supports the need for more than one propagation step when information must pass among claim tokens, evidence anchors, and visual nodes. A third layer slightly increases accuracy from 81.6% to 81.7% and precision from 82.1% to 82.9%, but decreases re-call from 80.3% to 79.6% and F1 from 81.2% to 80.8%. Thus, two layers provide the strongest precision–recall balance even though they do not maximize every individual metric. The decline at greater depth is consistent with the broader ob-servation that repeated graph propagation can smooth node representations and attenuate local distinctions (Li, Han, and Wu 2018); however, the present ablation does not directly measure representation similarity, so over-smoothing should be understood as a plausible explanation rather than a demon-strated mechanism. 
+
+Frame matches per textual anchor Table 6(b) controls the cross-modal neighborhood size of each textual anchor. Expanding from the top-1 to the top-2 matched frames in-creases F1 from 79.7% to 81.2% and recall from 77.2% to 80.3%. This indicates that a single visual match does not provide sufficient coverage for the best-performing configu-ration. The gains saturate after two matches. Top-3 and top-4 matching reduce F1 to 80.7% and 80.4%, respectively. Since the added frames are lower-ranked under the matching func-tion, this trend is consistent with diminishing evidence qual-ity as the neighborhood expands. The empirical conclusion is limited but clear: among the tested fixed neighborhood sizes, top-2 matching provides the best balance between vi-sual coverage and cross-modal selectivity. 
+
+Temporal hyperedge window size Table 6(c) varies the local temporal window used to construct frame–frame hy-peredges. A window of 2 yields 80.0% F1. Expanding the window to 3 improves F1 by 1.2 points, while a further ex-pansion to 5 reduces F1 to 80.6%. The intermediate window therefore provides the strongest result within the tested range. Table 6: Aether depth and structural sensitivity on FakeSV without LoRA.                                               
+
+> Configuration Acc Prec Rec F1
+> (a) Number of Aether reasoning layers
+> 1 layer 79.7 80.2 76.5 79.1 2 layers †81.6 82.1 80.3 81.2
+> 3 layers 81.7 82.9 79.6 80.8
+> (b) Frame matches per textual anchor
+> Top-1 frame 80.4 79.4 77.2 79.7 Top-2 frames †81.6 82.1 80.3 81.2
+> Top-3 frames 81.4 80.5 79.4 80.7 Top-4 frames 81.1 80.2 79.0 80.4
+> (c) Temporal hyperedge window size
+> Window size 2 80.7 78.8 77.5 80.0 Window size 3 †81.6 82.1 80.3 81.2
+> Window size 5 81.2 81.8 79.8 80.6
+
+This pattern supports local rather than global temporal aggregation. A very narrow window limits the temporal con-text available to each matched frame, whereas a broader window increases the chance that distinct visual moments are pooled into the same higher-order relation. Although the ablation does not identify the specific events responsible for the change, it establishes that the temporal receptive field is a material design choice rather than an inconsequential implementation detail. 
+
+Adaptive Structure and Cross-Modal Calibration 
+
+Aether combines two forms of adaptation. Soft incidence modifies the strength of node–hyperedge membership rela-tive to the candidate structure, while text–video calibration adjusts continuous node representations using cross-modal agreement. This separation mirrors a useful distinction in adaptive hypergraph learning: the model can refine which relations are trusted and how the participating features are calibrated (Cai et al. 2022). 
+
+Soft-incidence parameters The temperature τh controls the scale of the learned membership scores, and the resid-ual gate ρh controls the contribution of the learned update relative to the candidate incidence. Table 7(a) shows that 
+
+(τh, ρ h) = (1 .0, 0.10) yields the highest F1 within the eval-uated grid. At fixed τh = 1 .0, disabling the learned update with 
+
+ρh = 0 reduces F1 from 81.2% to 79.7% ( −1.5 points), indicating that the static candidate incidence is not sufficient for the strongest result. A smaller nonzero gate ( ρh = 0 .05 )reaches 80.5% F1, whereas a larger gate ( ρh = 0 .20 ) reaches 80.6%. These values show that refinement is beneficial, but the tested setting with the largest update is not the best one; the candidate structure remains a useful prior. At fixed ρh = 0 .10 , changing τh from 1.0 to 0.5 or 2.0 reduces F1 by 1.0 and 1.8 points, respectively. The central temperature is therefore preferred within this sweep. This conclusion is purely empirical and does not rely on assigning “sharper” or “flatter” behavior to a temperature value, which Table 7: Adaptive-mechanism sensitivity on FakeSV without LoRA.                                                     
+
+> Configuration Acc Prec Rec F1
+> (a) Soft-incidence parameters (τh, ρ h)
+> (0.5, 0.10) 80.7 80.4 77.4 80.2 (1.0, 0.00) 80.9 80.5 77.1 79.7 (1.0, 0.05) 81.1 81.3 78.0 80.5 (1.0, 0.10) †81.6 82.1 80.3 81.2
+> (1.0, 0.20) 81.2 81.8 79.1 80.6 (2.0, 0.10) 80.8 80.9 77.5 79.4
+> (b) Calibration parameters (ρtv , λ tv )
+> (0.00, 0.35) 80.7 80.2 77.3 79.5 (0.05, 0.20) 80.5 80.0 77.1 79.9 (0.05, 0.35) †81.6 82.1 80.3 81.2 (0.05, 0.50) 81.2 80.9 79.8 81.6 (0.10, 0.35) 81.4 81.7 79.4 81.8
+
+depends on the exact normalization convention used in the implementation. 
+
+Text–video calibration parameters The calibration weight ρtv controls the magnitude of the cross-modal cor-rection, while λtv controls residual mixing with the original state; τtv = 1 .0 is held fixed in this sweep. Removing cal-ibration by setting ρtv = 0 lowers F1 to 79.5%, 1.7 points below the canonical setting (0 .05 , 0.35) . Similarly, reducing 
+
+λtv to 0.20 yields 79.9% F1. These comparisons show that a nontrivial calibration pathway contributes to the reported performance. Importantly, Table 7(b) does not identify the canonical set-ting as the numerical F1 maximizer. Increasing λtv to 0.50 yields 81.6% F1, and increasing ρtv to 0.10 yields 81.8% F1. The latter is 0.6 points above the canonical setting. We retain 
+
+(0 .05 , 0.35) as the default because it is the fixed configu-ration used to define the operating point for the remaining ablations and the main experimental pipeline, not because this single-run sweep establishes it as uniquely optimal. In the absence of repeated-run uncertainty estimates, the 0.4– 0.6 point differences among these high-performing settings should be treated as descriptive rather than statistically re-solved. Overall, the sweep indicates a reasonably broad effec-tive region for calibration, with clear degradation only when the calibration path is removed or substantially weakened. 
+
+Input Granularity and Regularization 
+
+The final group of ablations examines how much visual in-formation enters the model and how strongly the classifier is regularized. These settings affect computational redun-dancy, evidence coverage, and the concentration of the final claim-conditioned readout. 
+
+Frame sampling density Table 8(a) compares temporal stride and frame-cap settings. With a maximum of 16 frames, sampling every 30 raw frames reaches 81.2% F1. Denser sampling every 15 frames yields 80.8% F1, while sparser sampling every 60 frames yields 79.7% F1. The compara-tively small 0.4-point difference between strides 15 and 30 Table 8: Input and regularization sensitivity on FakeSV with-out LoRA.                                                      
+
+> Configuration Acc Prec Rec F1
+> (a) Frame sampling density
+> Every 15 frames, max 16 81.4 81.9 79.4 80.8 Every 30 frames, max 16 †81.6 82.1 80.3 81.2
+> Every 60 frames, max 16 80.3 80.4 77.1 79.7 Every 30 frames, max 8 80.7 80.5 77.5 80.0 Every 30 frames, max 24 81.3 81.5 79.5 80.7
+> (b) Dropout rate
+> 0.0 80.9 81.4 77.6 80.3 0.1 †81.6 82.1 80.3 81.2
+> 0.2 81.3 81.6 79.2 80.7 0.3 80.8 80.4 78.5 80.1
+> (c) Readout temperature τr
+> 0.5 80.7 80.1 77.4 80.0 1.0 †81.6 82.1 80.3 81.2
+> 2.0 81.1 81.5 79.0 80.5
+
+suggests that the denser sequence is largely redundant un-der the fixed 16-frame cap, whereas the 1.5-point reduction at stride 60 indicates a greater risk of omitting informative moments. At a fixed stride of 30, reducing the frame cap from 16 to 8 lowers F1 by 1.2 points. Increasing the cap to 24 also lowers F1, but only by 0.5 points. These results identify the 16-frame cap as the strongest tested compromise between coverage and redundancy. Because video duration and frame rate can vary across instances, the conclusion should be interpreted as specific to the adopted preprocessing pipeline rather than as a universal sampling rate. 
+
+Dropout rate Table 8(b) evaluates dropout in the final clas-sifier. Removing dropout reduces F1 from 81.2% to 80.3%. Increasing the rate to 0.2 and 0.3 yields 80.7% and 80.1% F1, respectively. Thus, light regularization is beneficial, but stronger dropout progressively reduces the retained task sig-nal. This behavior is consistent with the standard role of dropout as a regularizer that must be balanced against repre-sentational capacity (Srivastava et al. 2014). 
+
+Readout temperature Table 8(c) varies the temperature τr
+
+used by the claim-conditioned attention readout in Cred . The default τr = 1 .0 reaches 81.2% F1, compared with 80.0% at τr = 0 .5 and 80.5% at τr = 2 .0. The intermediate setting therefore provides the best tested balance. As with the soft-incidence temperature, the empirical result is independent of whether a larger numerical value corresponds to a sharper or flatter distribution under the implementation’s exact scaling convention. 
+
+# Cross-Ablation Synthesis 
+
+The one-factor-at-a-time design does not estimate statisti-cal interactions between hyperparameters. Nevertheless, the marginal trends are mutually consistent and identify a com-mon operating regime. 
+
+Moderate evidence density and shallow propagation. 
+
+The anchor sweep favors Bs = 48 over both smaller and larger budgets, while the depth sweep favors two layers over one or three. Considered together, these independent results support a hypergraph that is sufficiently connected for multi-step evidence integration but not so dense or deep that weak relations are repeatedly propagated. This is a cross-ablation synthesis, not a direct test of the Bs×depth interaction. 
+
+Selective cross-modal matching with local temporal sup-port. The strongest frame-matching setting attaches two frames to each textual anchor, and the strongest temporal setting uses a window of three frames. Both sweeps there-fore favor small local neighborhoods over either minimal or broader connectivity. The resulting design separates two roles: anchor–frame links select visually relevant moments, whereas temporal hyperedges supply limited context around those moments. 
+
+Candidate structure and learned adaptation. Soft inci-dence and text–video calibration operate at different repre-sentational levels. The former adjusts node–hyperedge mem-bership, while the latter modifies continuous cross-modal states. As reported in Table 4, removing either mechanism decreases F1 relative to the full configuration (from 81.2% to 79.1% without soft incidence and to 78.0% without cal-ibration). These component ablations indicate that neither mechanism is redundant. They do not, by themselves, estab-lish a formal interaction effect or identify a unique causal decomposition of the gain. 
+
+# Consolidated Default Configuration 
+
+For reproducibility, Table 9 consolidates the settings that define the canonical ablation operating point. The table dis-tinguishes between the canonical default and the numerically best point in every isolated sweep; as discussed above, these coincide for most factors but not for the calibration sweep. 
+
+# Summary 
+
+The supplementary analyses support a consistent empirical principle: HyperClaim performs best in a sparse, locally con-nected regime that preserves claim-relevant evidence with-out indiscriminately expanding the reasoning graph. In H-Forge , this regime is represented by Bs = 48 , a 35% claim-aware quota, and the tested cross-modal threshold pair 
+
+(0 .14 , 0.003) . In Aether , it is represented by two reasoning layers, top-2 anchor–frame matching, and temporal windows of size 3. Soft-incidence learning improves over a static can-didate structure, and nonzero text–video calibration improves over removing the calibration path. The input analyses fur-ther favor moderate frame sampling, light dropout, and an intermediate readout temperature. These conclusions are intentionally local to FakeSV, the no-LoRA setting, the evaluated parameter grids, and the fixed-seed protocol. Most canonical defaults maximize F1 within their respective sweeps. The calibration default is the principal exception: nearby settings yield modestly higher point estimates, indicating a high-performing region rather Table 9: Canonical configuration used for the controlled ab-lations.                                         
+
+> Component Setting Encoder Qwen3-VL-Embedding-2B; encoder di-mension 2048; projected hidden dimension 512 Frame input One frame per 30 raw frames; maximum 16 frames
+> H-Forge sparsity Bs= 48 anchors; 35% claim-aware evi-dence quota Cross-modal links Top-2 frame matches; (δs, δ m, η )=(0 .14 ,0.003 ,0.1)
+> Temporal links Window size 3; stride 1
+> Aether backbone Two 512-dimensional, eight-head node– hyperedge layers; one line-graph layer; β=0.5
+> Soft incidence (τh, ρ h) = (1 .0,0.10)
+> Calibration (τtv , ρ tv , λ tv ) = (1 .0,0.05 ,0.35)
+> Cred readout τr= 1 .0; 512-dimensional GELU classi-fier; dropout 0.1 Optimization AdamW; weight decay 10 −4; learning rates
+> 10 −4and 5×10 −4; effective batch size 32 Schedule/stability Three warmup epochs; cosine annealing to
+> 10 −7; gradient clipping at 1.0 Hardware Single NVIDIA A100 GPU
+
+than a uniquely identified optimum. Taken together, the re-sults substantiate the architectural emphasis on fine-grained, claim-conditioned cross-modal reasoning while avoiding claims of global optimality or statistical significance that are not supported by the present experiments. 
+
+# References 
+
+Akhtar, M.; Schlichtkrull, M.; Guo, Z.; Cocarascu, O.; Sim-perl, E.; and Vlachos, A. 2023. Multimodal Automated Fact-Checking: A Survey. In Findings of the Association for Computational Linguistics: EMNLP 2023 , 5430–5448. Singapore: Association for Computational Linguistics. Ba, J. L.; Kiros, J. R.; and Hinton, G. E. 2016. Layer Nor-malization. arXiv preprint arXiv:1607.06450 .Bai, S.; Zhang, F.; and Torr, P. H. S. 2021. Hypergraph Con-volution and Hypergraph Attention. Pattern Recognition ,110: 107637. Bu, Y.; Sheng, Q.; Cao, J.; Qi, P.; Wang, D.; and Li, J. 2024. FakingRecipe: Detecting Fake News on Short Video Platforms from the Perspective of Creative Process. In Pro-ceedings of the 32nd ACM International Conference on Mul-timedia .Cai, D.; Song, M.; Sun, C.; Zhang, B.; Hong, S.; and Li, H. 2022. Hypergraph Structure Learning for Hypergraph Neural Networks. In Proceedings of the Thirty-First International Joint Conference on Artificial Intelligence , 1923–1929. Chien, E.; Pan, C.; Peng, J.; and Milenkovic, O. 2022. You Are AllSet: A Multiset Function Framework for Hypergraph Neural Networks. In International Conference on Learning Representations .Choi, H.; and Ko, Y. 2021. Using Topic Modeling and Ad-versarial Neural Networks for Fake News Video Detection. In Proceedings of the 30th ACM International Conference on Information and Knowledge Management , 2950–2954. Devlin, J.; Chang, M.-W.; Lee, K.; and Toutanova, K. 2019. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. In Proceedings of NAACL-HLT ,4171–4186. Dosovitskiy, A.; Beyer, L.; Kolesnikov, A.; Weissenborn, D.; Zhai, X.; Unterthiner, T.; Dehghani, M.; Minderer, M.; Heigold, G.; Gelly, S.; Uszkoreit, J.; and Houlsby, N. 2021. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. In International Conference on Learn-ing Representations .Feng, Y.; You, H.; Zhang, Z.; Ji, R.; and Gao, Y. 2019. Hypergraph Neural Networks. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 33, 3558–3565. Guo, H.; Shi, W.; Li, M.; Li, J.; Chen, H.; Cui, Y.; Xu, J.; Zhu, J.; Shen, J.; Chen, Z.; and Han, S. 2025. Consistent and Invariant Generalization Learning for Short-video Mis-information Detection. In Proceedings of the 33rd ACM International Conference on Multimedia , 2254–2263. Hendrycks, D.; and Gimpel, K. 2016. Gaussian Error Linear Units (GELUs). arXiv preprint arXiv:1606.08415 .Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.; Wang, L.; and Chen, W. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In International Conference on Learning Representations .Kipf, T. N.; and Welling, M. 2017. Semi-Supervised Classifi-cation with Graph Convolutional Networks. In International Conference on Learning Representations .Li, M.; Zhang, Y.; Long, D.; Chen, K.; Song, S.; Bai, S.; Yang, Z.; Xie, P.; Yang, A.; Liu, D.; Zhou, J.; and Lin, J. 2026a. Qwen3-VL-Embedding and Qwen3-VL-Reranker: A Unified Framework for State-of-the-Art Multimodal Re-trieval and Ranking. arXiv preprint arXiv:2601.04720 .Li, N.; Xiong, Y.; Liu, C.; Wen, J.; and Huang, C. 2026b. Detecting Fake News in Short Videos Through Multi-View Aggregation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, 632–640. Li, Q.; Han, Z.; and Wu, X.-M. 2018. Deeper Insights into Graph Convolutional Networks for Semi-Supervised Learn-ing. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 32, 3538–3545. Li, Z.; Yu, H.; Jiang, H.; Sheng, Q.; Xu, Y.; Bi, B.; Li, Y.; Yuan, Z.; Cai, Y.; and Wang, Z. 2026c. FactGuard: Agentic Video Misinformation Detection via Reinforcement Learn-ing. arXiv preprint arXiv:2602.22963 .Loshchilov, I.; and Hutter, F. 2017. SGDR: Stochastic Gradi-ent Descent with Warm Restarts. In International Conference on Learning Representations .Loshchilov, I.; and Hutter, F. 2019. Decoupled Weight Decay Regularization. In International Conference on Learning Representations .Luo, G.; Darrell, T.; and Rohrbach, A. 2021. NewsCLIP-pings: Automatic Generation of Out-of-Context Multimodal Media. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , 6801–6817. On-line and Punta Cana, Dominican Republic: Association for Computational Linguistics. Pang, H.; Li, C.; Zhang, L.; Wang, S.; and Zhang, X. 2025. Beyond Text: Fine-Grained Multi-Modal Fact Verification with Hypergraph Transformers. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, 6389–6397. Papadopoulos, S.-I.; Koutlis, C.; Papadopoulos, S.; and Pe-trantonakis, P. C. 2024. VERITE: A Robust Benchmark for Multimodal Misinformation Detection Accounting for Uni-modal Bias. International Journal of Multimedia Informa-tion Retrieval , 13(1): 4. Paszke, A.; Gross, S.; Massa, F.; Lerer, A.; Bradbury, J.; Chanan, G.; Killeen, T.; Lin, Z.; Gimelshein, N.; Antiga, L.; Desmaison, A.; Köpf, A.; Yang, E.; DeVito, Z.; Raison, M.; Tejani, A.; Chilamkurthy, S.; Steiner, B.; Fang, L.; Bai, J.; and Chintala, S. 2019. PyTorch: An Imperative Style, High-Performance Deep Learning Library. In Advances in Neural Information Processing Systems , volume 32, 8024–8035. Qi, P.; Bu, Y.; Cao, J.; Ji, W.; Shui, R.; Xiao, J.; Wang, D.; and Chua, T.-S. 2023a. FakeSV: A Multimodal Benchmark with Rich Social Context for Fake News Detection on Short Video Platforms. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 37, 14444–14452. Qi, P.; Zhao, Y.; Shen, Y.; Ji, W.; Cao, J.; and Chua, T.-S. 2023b. Two Heads Are Better Than One: Improving Fake News Video Detection by Correlating with Neighbors. In 
+
+Findings of the Association for Computational Linguistics: ACL 2023 , 11947–11959. Shang, L.; Kou, Z.; Zhang, Y.; and Wang, D. 2021. A Multi-modal Misinformation Detector for COVID-19 Short Videos on TikTok. In 2021 IEEE International Conference on Big Data , 899–908. Srivastava, N.; Hinton, G.; Krizhevsky, A.; Sutskever, I.; and Salakhutdinov, R. 2014. Dropout: A Simple Way to Pre-vent Neural Networks from Overfitting. Journal of Machine Learning Research , 15(56): 1929–1958. Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones, L.; Gomez, A. N.; Kaiser, L.; and Polosukhin, I. 2017. At-tention Is All You Need. In Advances in Neural Information Processing Systems , volume 30, 5998–6008. Wang, J.; Liu, J.; Zhang, N.; and Wang, Y. 2025a. Consistency-Aware Fake Videos Detection on Short Video Platforms. In Advanced Intelligent Computing Technology and Applications: ICIC 2025 , volume 15859 of Lecture Notes in Computer Science , 200–210. Springer. Wang, J.; Wang, Y.; Cheng, L.; and Zhong, Z. 2025b. FakeSV-VLM: Taming VLM for Detecting Fake Short-Video News via Progressive Mixture-of-Experts Adapter. In 
+
+Findings of the Association for Computational Linguistics: EMNLP 2025 , 4782–4798. Yadati, N.; Nimishakavi, M.; Yadav, P.; Nitin, V.; Louis, A.; and Talukdar, P. 2019. HyperGCN: A New Method for Training Graph Convolutional Networks on Hypergraphs. In 
+
+Advances in Neural Information Processing Systems , vol-ume 32, 1509–1520. Yao, B. M.; Shah, A.; Sun, L.; Cho, J.-H.; and Huang, L. 2023. End-to-End Multimodal Fact-Checking and Expla-nation Generation: A Challenging Dataset and Models. In 
+
+Proceedings of the 46th International ACM SIGIR Confer-ence on Research and Development in Information Retrieval ,2733–2743. Association for Computing Machinery. Zhang, F.; Li, D.; Zhang, Q.; Chenjun; sinbadliu; Lin, J.; Yan, J.; Liu, J.; and Zha, Z.-J. 2025. Fact-R1: Towards Explain-able Video Misinformation Detection with Deep Reasoning. In Advances in Neural Information Processing Systems , vol-ume 38. Zong, L.; Zhou, J.; Lin, W.; Liu, X.; Zhang, X.; and Xu, B. 2024. Unveiling Opinion Evolution via Prompting and Diffusion for Short Video Fake News Detection. In Findings of the Association for Computational Linguistics: ACL 2024 ,10817–10826.

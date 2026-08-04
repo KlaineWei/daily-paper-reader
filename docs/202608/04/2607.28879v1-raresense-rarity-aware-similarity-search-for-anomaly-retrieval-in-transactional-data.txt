@@ -1,0 +1,1399 @@
+Title: RareSense: Rarity-Aware Similarity Search for Anomaly Retrieval in Transactional Data
+
+URL Source: https://arxiv.org/pdf/2607.28879v1
+
+Published Time: Mon, 03 Aug 2026 00:15:29 GMT
+
+Number of Pages: 38
+
+Markdown Content:
+# RareSense: Rarity-Aware Similarity Search for Anomaly Retrieval in Transactional Data 
+
+## Sidahmed Benabderrahmane and Talal Rahwan 
+
+New York University NYUAD, Department of Computer Science, Division of Science . *Corresponding author(s). E-mail(s): sidahmed.benabderrahmane@nyu.edu; Contributing authors: talal.rahwan@nyu.edu; 
+
+Abstract 
+
+Similarity search over sparse set-valued data is often dominated by frequent background attributes because classical measures such as Jaccard, cosine, and Hamming compare objects through atomic overlap. IDF (Inverse document frequency) weighting partially reduces this effect but remains atom-wise and cannot explicitly represent informative higher-order co-occurrences. We introduce RareSense, a rarity-aware similarity framework for sparse transactional anomaly data. RareSense mines mini-mal rare itemsets as intermediate structures, derives reliable rare association rules, maps objects into sparse rare-rule profiles, and compares them using weighted Jaccard similarity. Rule weights com-bine inverse support, confidence, lift, structural complexity, and stability, so that neighborhoods are determined by shared rare evidence rather than uniform feature overlap. We show that IDF-weighted Jaccard is a restricted singleton case of RareSense, and that the induced distance is a pseudomet-ric on the original objects and a metric over equivalence classes defined by identical rule profiles. Experiments across four benchmark families spanning cybersecurity and general categorical domains show that RareSense attains the highest observed macro-average query-conditioned retrieval perfor-mance among the evaluated similarity measures. The statistical analysis indicates significant overall differences, with corrected paired comparisons favoring RareSense over the atomic baselines. The gains remain workload-dependent and are strongest when anomalies share repeatable rare higher-order structure. For global anomaly ranking, RareSense achieves the highest observed macro-average performance while remaining statistically comparable to several strong dedicated detectors. 
+
+Keywords: Similarity search, anomaly retrieval, rare patterns, pattern-based similarity, explainability 
+
+# 1 Introduction 
+
+Similarity search is a fundamental primitive in data mining, information retrieval, and anomaly analysis [1, 2, 3]. Given a query object, a sys-tem returns objects that are close according to a similarity model [4, 5]. In anomaly-analysis workflows this operation appears in two related forms [6]. First, suspicious objects may be glob-ally ranked for inspection. Second, once an analyst confirms an anomaly, that object can be used as a query to retrieve related suspicious cases. The sec-ond setting is especially important operationally: analysts rarely inspect an entire ranking, so the quality of the first few retrieved objects matters more than global separation alone. This paper studies sparse transactional 
+
+anomaly data. Each object is represented as a finite set of atoms, such as active binary features, one-hot attribute–value indicators, discretized 1arXiv:2607.28879v1 [cs.IR] 30 Jul 2026 numerical bins, log templates, event types, or session-level indicators [7, 8, 9, 10]. Such repre-sentations arise naturally in network-traffic and provenance-based security analysis [11, 12]. Classical set and vector similarities compare objects through atomic overlap. Jaccard [13], Dice [14], Hamming [15], cosine [16], and IDF-weighted [17] variants are natural choices. IDF reduces the influence of frequent atoms, but it remains atom-wise: the importance of an atom does not depend on the other atoms with which it co-occurs. This is limiting when anomaly evidence is combinatorial. For example, login_failure ,
+
+outbound , and unusual_port may each be indi-vidually common while their conjunction is rare and operationally meaningful. We propose RareSense, a rarity-aware similar-ity model that moves the comparison from the raw transactional space to a rare-rule evidence space .Rare itemsets are used as an intermediate mining substrate. Reliable association rules derived from them define the final coordinates. Each object is represented by the retained rules whose complete evidence sets occur in the transaction, and two objects are compared by the weighted overlap of those rule profiles. The central distinction is between rare scoring 
+
+and rare similarity . A pointwise rarity score asks: 
+
+> Which objects contain strong rare evidence?
+
+RareSense asks: 
+
+> Which objects share rare evidence with this query?
+
+The latter is a similarity-search question. It can retrieve objects that are related through the same rare conjunction even when their atomic overlap is dominated by common background features. A key methodological choice follows from this objective. We treat nDCG@10 (Normalized Discounted Cumulative Gain) as the pri-mary evaluation criterion [18]. AUROC is useful for measuring global anomaly–normal sep-arability, but it can remain high even when all relevant anomalies occur too deep in the ranking to be inspected. For example, if every anomaly is ranked above almost every normal object but the first anomaly appears only at rank 100, AUROC can be excellent while nDCG@10 is zero. For anomaly search, the latter reflects the operational failure more directly. The contributions are: 
+
+• We introduce a rare-rule representation for sim-ilarity search over sparse transactional data. Minimal rare itemsets are intermediate min-ing structures; reliable rare rules form the final similarity coordinates. 
+
+• We define a weighted-Jaccard similarity over rare-rule profiles and establish its metric inter-pretation on the profile space. We also give a constructive result showing how higher-order coordinates can resolve atom-level similarity ties. 
+
+• We make pairwise explanation exact rather than post hoc: each shared rule has an addi-tive contribution to the final similarity, and the top contributions form a faithful symbolic explanation of the retrieved neighbor. 
+
+• We define a reproducible adaptive configuration that uses an unlabeled upper-tail rarity proxy to set the support ceiling and maximum pattern length per workload. 
+
+• We evaluate query-by-anomaly retrieval on 27 workloads from four benchmark families against four like-for-like query-conditioned atomic similarities—Jaccard, IDF-Jaccard, cosine, and TF–IDF cosine—and report scalar anomaly detectors only as secondary operational ref-erences. Global anomaly ranking is evaluated separately with AUROC. 
+
+• We identify a boundary condition of rarity-aware similarity: when a relevance label is already encoded by common atomic features, or when anomaly profiles share too little rare evidence, classical atomic similarities can be stronger. This limitation motivates hybrid atomic–rare similarity as a natural extension rather than obscuring a negative result. 
+
+# 2 Related Work 
+
+RareSense lies at the intersection of similar-ity search, rare-pattern mining, anomaly detec-tion, and interpretable retrieval. These areas have largely developed independently. Similarity-search methods typically operate on the original fea-ture representation; rare-pattern methods primar-ily aim to discover unusual structures or convert them into scalar anomaly scores; and conven-tional anomaly detectors rank objects according to query-independent abnormality. Our work con-nects these perspectives by using statistically qualified rare patterns to define the similarity 
+
+2representation itself . Consequently, the same sym-bolic representation supports query-conditioned retrieval, global anomaly ranking, and explana-tions based on the rare evidence shared by a query and its retrieved candidates. 
+
+## 2.1 Set similarity and similarity search 
+
+Set-based similarity is a fundamental primitive for comparing binary, categorical, and transactional objects [19]. Classical coefficients such as Jac-card [13] and Dice [14] measure the degree of over-lap between two sets, while cosine and Hamming-derived measures provide related comparisons for binary vector representations [20]. These meth-ods are simple, interpretable, and computation-ally attractive, but all observed attributes are treated as the basic coordinates of the comparison. Consequently, similarity is determined primar-ily by overlap in individual atoms rather than by whether objects share higher-order behavioral structures. Term-weighting schemes provide a first mech-anism for distinguishing common from informa-tive attributes. In particular, IDF-style weight-ing [21] reduces the contribution of frequently occurring features. Weighted Jaccard [22] and related Tanimoto formulations generalize set over-lap to non-uniform, non-negative feature weights [23, 24, 25]. Efficient approximation techniques such as weighted MinHash further make such weighted similarities practical at scale [26]. These approaches, however, still assume that the coor-dinates being compared are given in advance. Weighting changes the importance of a feature, but not the semantics of the feature space itself. A complementary line of research addresses the efficient execution of similarity queries. In metric spaces, the triangle inequality enables pruning through index structures such as M-trees [27] and VP-trees [28]. More general similar-ity spaces often rely on sequential scans, filtering, hashing, or approximate search [1, 2]. Locality-sensitive hashing and MinHash are classical examples of approximation mechanisms for nearest-neighbor and Jaccard-like retrieval [29, 30]. These methods focus primarily on how to search efficiently once a similarity representation has been specified. RareSense addresses a different and comple-mentary question: what should the coordinates of the similarity space represent when similarity is intended to retrieve anomalous objects? Rather than comparing objects directly in the original atomic feature space, we construct a symbolic coordinate system whose dimensions correspond to retained rare-rule evidence. Two objects are therefore similar when they share statistically informative rare structures, not merely when they share many individual attributes. This distinc-tion is central: RareSense is not simply another weighting of Jaccard over the original features; it first transforms the representation through rare-pattern mining and then performs weighted similarity in the resulting pattern space. The resulting representation also preserves a useful connection to classical similarity-search machinery. Once the rare-pattern dictionary is fixed, each object is mapped to a sparse binary activation profile, and weighted Jaccard can be evaluated over these profiles. Moreover, inverted postings over active rare coordinates allow candi-dates with no shared evidence to be filtered before explicit similarity evaluation. Thus, RareSense combines a pattern-derived representation with established principles of sparse set-similarity retrieval. 
+
+## 2.2 Rare-pattern mining and pattern-based anomaly detection 
+
+Pattern mining traditionally focuses on discov-ering combinations of items that occur together in transactional data. Frequent-pattern mining, beginning with association-rule discovery [31] and scalable algorithms such as FP-Growth [32], emphasizes recurring co-occurrences above aminimum-support threshold. Such patterns are valuable for summarizing dominant regulari-ties, but frequent structures are not necessarily the most informative ones for anomaly-oriented retrieval. Rare-pattern mining reverses this perspec-tive by targeting low-support combinations [33]. Rare itemsets can expose unusual co-occurrences that would be removed by conventional frequent-pattern thresholding. Related work has investi-gated mechanisms for identifying sporadic or rare 3rules [34] and for improving the efficiency of rare-itemset discovery [35]. These studies establish that low-frequency combinations can carry infor-mation that is not visible from marginal feature frequencies alone. However, rarity by itself does not necessarily imply usefulness: an extremely infrequent pattern may reflect noise, accidental co-occurrence, or an unstable combination. Mea-sures such as confidence and lift can therefore complement support by indicating whether the items forming a rule exhibit reliable dependence. Existing pattern-based anomaly-detection methods exploit pattern statistics primarily to assign a scalar abnormality score. FPOF [36], for example, relates an object’s abnormality to the frequent patterns in which it participates. Other categorical or distribution-oriented methods operate at the feature level. Attribute Value Fre-quency (AVF) [37] evaluates an object through the empirical frequencies of its observed cate-gorical values. HBOS [38] models feature-wise histograms, ECOD [39] uses empirical cumu-lative distribution functions, and COPOD [40] models multivariate tail probabilities through a copula-based formulation. Although their assumptions differ, their common output is aquery-independent scalar anomaly score. RareSense uses rare-pattern mining for a fun-damentally different purpose. The mined struc-tures are not merely intermediate statistics used to increase or decrease an anomaly score. Instead, they become the coordinates of a new similarity space . Minimal rare structures identify unusual co-occurrences, while retained rules statistically qualify those structures. An object activates a symbolic coordinate when it contains the evidence associated with the corresponding rule. Similar-ity can then be computed between two objects according to which rare coordinates they jointly activate. This distinction has several consequences. First, rarity is transformed from a unary property—“how unusual is this object?”—into a pairwise relation: “which unusual structures do these two objects share?” Second, the represen-tation separates pattern discovery from retrieval: the rare-pattern dictionary can be mined once and then reused across many queries. Third, the same coordinates provide human-readable evidence for the resulting similarity. RareSense therefore con-nects rare-pattern mining with similarity search rather than using rare patterns only as ingredients of a conventional detector. Another important difference concerns the role of individual rare itemsets. In RareSense, rare itemsets serve primarily as intermediate struc-tures for discovering candidate higher-order evi-dence. The final retrieval coordinates are defined by statistically qualified rule evidence rather than by retaining every rare conjunction as an inde-pendent feature. This avoids simply expanding the original transaction space with a potentially redundant collection of itemsets and instead con-structs a compact symbolic representation in which rarity, confidence, lift, and structural com-plexity can contribute to the importance of each coordinate. 
+
+## 2.3 Anomaly detection, ranking, and retrieval 
+
+Unsupervised anomaly detection has produced a broad range of paradigms. Local-density approaches such as LOF [41] identify observations whose neighborhoods differ from those of nearby points. One-class methods estimate the support of the normal data distribution [42], while isolation-based methods detect observations that can be separated rapidly through recursive partitioning [43]. Distance-based formulations rank observa-tions according to their distance from neighboring or reference objects [44, 45]. More recent work has extended anomaly detec-tion through richer statistical and learned rep-resentations. Data-depth methods characterize how centrally or peripherally an observation lies in a multivariate distribution [46]. Generative approaches such as ALGAN [47] exploit adver-sarial learning for time-series anomaly detection. Deep Isolation Forest [48] combines learned rep-resentations with isolation-based detection, while LUNAR [49] learns to unify local outlier signals through graph neural networks. These approaches improve the capacity to model nonlinear or com-plex data distributions, but their principal objec-tive remains the estimation of an anomaly score for each individual observation. This distinction between anomaly ranking 
+
+and anomaly retrieval is important. A detector answers a unary question, “How anomalous is x?” 4whereas similarity retrieval answers a pairwise, query-dependent question, “Which objects are most similar to a given query q?” A highly anomalous object is not necessarily the most relevant neighbor of another anomaly. Two anomalies may originate from entirely different mechanisms, while a moderately ranked candidate may share precisely the rare behavioral structure exhibited by the query. Consequently, sorting can-didates by a global detector score is not equivalent to query-conditioned similarity search. RareSense explicitly supports both views while keeping them conceptually separate. Its rare-pattern representation induces a global rarity-based score that can be used for conventional anomaly ranking, but its primary retrieval mech-anism compares the rare profiles of a query and candidate directly. This makes it possible to retrieve anomalies that are structurally related to the query , rather than simply returning the objects with the largest global outlier scores. In our evaluation, conventional detectors are therefore included as important secondary oper-ational references rather than treated as like-for-like similarity functions. Their rankings indi-cate how well a user would perform by inspect-ing globally suspicious objects, whereas Jaccard-family similarities and RareSense directly answer a query-conditioned retrieval task. The distinction is especially relevant in appli-cations where analysts already possess one sus-picious example and seek related cases. Exam-ples include incident investigation, retrospective threat hunting, fraud analysis, and diagnostic case retrieval. In such settings, the practical objective is often not to inspect the entire anomaly ranking but to prioritize a small set of candidates most rel-evant to the current case. The anomaly-detection literature has long emphasized the importance of ranking quality under limited inspection bud-gets [50, 51, 52]. This motivates our emphasis on top-k retrieval and nDCG@10: relevant anoma-lous objects should not merely appear somewhere in the ranking, but should be concentrated near the top where they can realistically be inspected. RareSense contributes to this setting by uni-fying anomaly evidence and similarity evidence in one representation. Unlike a pipeline in which an anomaly detector first selects objects and an unre-lated similarity measure is then applied afterward, the same rare coordinates that characterize atyp-ical structure also determine pairwise relatedness. The retrieval score therefore has a direct semantic connection to the evidence that makes the objects unusual. 
+
+## 2.4 Explainability and symbolic retrieval 
+
+Explainability methods generally seek to clar-ify the behavior of predictive models. Post-hoc approaches such as SHAP [53] assign fea-ture contributions to individual predictions, while LIME [54] approximates a complex predictor locally using an interpretable surrogate. Counter-factual explanations instead identify changes to an input that would alter a model decision [55]. These methods address important questions such as why a classifier produced a given prediction or what would need to change for its decision to be different. Our explainability objective is different. RareSense does not primarily ask why an indi-vidual object received a particular anomaly label. Instead, it explains why a particular candidate was retrieved as similar to a particular query .This distinction matters because pairwise retrieval explanations require identifying evidence shared by two objects rather than attributing a single model output to features. The RareSense similarity is constructed directly from the weighted overlap of activated rare-rule coordinates. Consequently, each non-zero contribution to the similarity score corre-sponds to explicit symbolic evidence shared by the query and candidate. A retrieval result can there-fore be accompanied by the specific rare structures responsible for its similarity, together with their weights and associated statistics. The explana-tion is thus intrinsic to the retrieval computation rather than generated afterward by a separate surrogate model. This property also differs from explanations based solely on shared atomic features. Report-ing that two objects both contain an individual attribute may be insufficient when that attribute is common in the data. RareSense instead can expose higher-order evidence such as a rare con-junction or statistically qualified rule that is 5jointly activated by both objects. The explanation therefore reflects the same higher-order structure that determined the retrieval score. Because explanation and retrieval share the same representation, no additional post-hoc explainer is required, and there is no discrepancy between the features used to compute similarity and those shown to the analyst. This provides a form of explanation-by-construction : the retrieved objects, their similarity values, and their sym-bolic explanations are all derived from the same rare-pattern dictionary. 
+
+## 2.5 Positioning of RareSense 
+
+The preceding literature reveals a gap between four established research directions. Classical sim-ilarity measures provide efficient pairwise compar-ison but generally operate on predefined atomic features. Rare-pattern mining discovers unusual higher-order structures but is typically used for pattern discovery or scalar anomaly scoring. Conventional anomaly detectors provide powerful global rank-ings but do not naturally define query-conditioned relatedness between anomalous objects. Finally, post-hoc explainability methods can interpret model outputs but are external to the similarity computation itself. RareSense bridges these directions by treating mined rare structures as a similarity representa-tion . Its main distinction from existing approaches can be summarized as rare-pattern discovery 
+
+↓
+
+symbolic coordinates 
+
+↓
+
+weighted similarity and retrieval This design yields three capabilities from the same representation: (i) query-conditioned retrieval based on shared rare evidence, (ii) global anomaly ranking from aggregate rare-pattern evidence, and (iii) intrinsic symbolic explanations obtained directly from the coordinates contributing to the similarity. Accordingly, the novelty of RareSense does not lie simply in proposing another rare-pattern score or another weighted Jaccard variant. The key contribution is the construction of a rarity-aware similarity space : higher-order, statistically qual-ified rare evidence replaces individual observed attributes as the semantic basis of comparison. This makes similarity itself sensitive to unusual structure and turns rare-pattern mining from an anomaly-scoring mechanism into a reusable foun-dation for explainable similarity search. 
+
+# 3 Problem Setting 
+
+Let X = {x1, . . . , x n} be a collection of objects. An object may be a network flow, an IoT traffic record, a system-log session, a process-action row, or a discretized tabular instance. The only input assumption is that each object can be represented as a finite transaction over a discrete alphabet. 
+
+## 3.1 Transactional Input Assumption 
+
+Each object xi is converted into a transaction 
+
+Ti ⊆ A , (1) where A = {a1, . . . , a m} is an alphabet of atoms. The transactional database is 
+
+T = {T1, . . . , T n}. (2) The representation covers the following common cases: 
+
+• Binary event vectors : active columns become atoms. 
+
+• One-hot categorical records : active attribute–value indicators become atoms. 
+
+• Numerical tabular records : numerical attributes are discretized into bins, and bin identifiers become atoms. 
+
+• Log sessions : event templates, template counts, or template transitions become atoms. Labels yi ∈ {0, 1}, where 1 denotes anomaly, are used only for evaluation. Label columns and attack-category columns are excluded from Ti.The support of an itemset p ⊆ A is 
+
+supp( p) = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+1[p ⊆ Ti]. (3) Table 1 summarizes the main notation used throughout the paper. 6Table 1 Key notation used in the RareSense formulation. Minimal rare itemsets are used only as intermediate seeds for rule generation, whereas the retained rare rules define the final similarity coordinates. 
+
+Symbol Meaning 
+
+A = {a1, . . . , a m} Alphabet of behavioral atoms 
+
+Ti ⊆ A Transaction associated with object xi
+
+T = {T1, . . . , T n} Transactional database 
+
+supp( p) Empirical support of itemset p ⊆ A Iτ Minimal rare itemsets mined under support ceiling τr : b ⇒ h Association rule with antecedent b and consequent hE(r) = b ∪ h Complete evidence set associated with rule r
+
+R = {r1, . . . , r M } Retained positive-weight rare-rule dictionary 
+
+ϕr (xi) Indicator that object xi activates rule coordinate rPi ⊆ R Rare-rule profile of object xi
+
+s(r) Empirical stability of rule r across resamples 
+
+w(r) Composite weight of retained rule rSR(xi, x j ) Rare-rule weighted-Jaccard similarity 
+
+DR(xi, x j ) Induced distance 1 − SR(xi, x j )
+
+AR(xi) Total weighted rare-rule evidence score 
+
+## 3.2 Primary task: query-by-anomaly retrieval 
+
+Let X = {x1, . . . , x n} denote the collection of can-didate objects represented as transactions. Given a confirmed anomaly query q, the search task is to return the subset of k objects most similar to q:
+
+TopK( q) = arg max  
+
+> K⊆ X\{ q},|K| =k
+
+X 
+
+> xj∈K
+
+SR(q, x j ), (4) where SR is the rarity-aware similarity func-tion defined in Section 4. With several confirmed queries Q+, a candidate can be ranked by 
+
+R(xj | Q+) = max  
+
+> q∈Q+
+
+SR(q, x j ). (5) This evaluates whether the similarity model retrieves objects that are anomalous in a similar way to known seeds. Our primary benchmark uses binary relevance: any labeled anomaly is relevant. Consequently, the primary task evaluates the operational anomaly-search question “does an anomaly query bring other anomalies to the top of the list?”. 
+
+## 3.3 Secondary task: global anomaly ranking 
+
+The secondary task ranks the objects in X accord-ing to a query-independent anomaly score A(xi).RareSense instantiates this score as the total weighted rare-pattern evidence activated by an object, as formally defined in Section 4.8. This task evaluates whether objects containing larger amounts of strongly weighted rare evidence tend to be anomalous. The global-ranking task is complementary to query-conditioned retrieval. The former asks how much rare evidence an individual object contains, whereas the latter asks whether two objects acti-vate the same rare evidence. We therefore evaluate global ranking separately using AUROC. 
+
+# 4 Rarity-Aware Similarity 
+
+This section defines the core contribution, as summarized in Figure 1. Classical similarities compare objects through shared observed atoms. RareSense compares objects through shared rare explanatory patterns. 
+
+Motivation. 
+
+IDF-weighted Jaccard [21] is a strong baseline that corrects uniform matching by downweighting frequent atoms. However, it remains atom-wise: individually common atoms may form a rare and meaningful conjunction that IDF cannot detect, while individually rare atoms may be unrelated to the anomaly mechanism. RareSense therefore 
+
+extends IDF weighting from atoms to patterns .7Fig. 1 Overview of the RareSense framework. Input objects such as network flows, IoT traffic records, or log sessions are represented as sparse transactions. Rare itemsets are mined under support and length constraints as an intermediate substrate; reliable rare association rules are generated from them and weighted by rarity, confidence, lift, length, and stability to build rare-rule profiles. RareSense then computes rarity-aware similarity over shared rare-rule evidence to support global anomaly ranking, query-by-anomaly retrieval, and symbolic explanation through shared retained rules. 
+
+## 4.1 Rare Behavioral Rule Dictionary 
+
+A non-empty itemset p is rare under threshold τ
+
+when 0 < supp( p) ≤ τ . We mine minimal rare itemsets (MRIs): 
+
+Iτ = {p ⊆ A : 0 < supp( p) ≤ τ, 
+
+supp( q) > τ ∀q ⊊ p, |p| ≤ L}.
+
+(6) Minimality removes redundant rare supersets whose rarity is already explained by a smaller rare subset and makes the mining stage more compact. The parameter ( L) denotes the maximum itemset cardinality, preventing the enumeration of overly long and highly specific patterns. These rare item-set candidates are intermediate structures; they are not retained directly as similarity coordinates. Each p ∈ I τ seeds candidate association rules 
+
+r : b ⇒ h. For partition rules, b ∪ h = p, b ∩ h = ∅,and both sides are non-empty. In the reported implementation we generate both non-trivial par-tition rules and exact closure rules derived from the closure of p. Consequently, a closure-rule evi-dence set can be longer than the MRI seed even though MRI enumeration is bounded by L. For every rule, 
+
+supp( r) = supp( b ∪ h), conf( r) = supp( b ∪ h)supp( b) ,
+
+lift( r) = supp( b ∪ h)supp( b) supp( h) .
+
+(7) Rules with conf( r) ≥ cmin are retained. Lift is used as a dependence quality in the weight rather than as a hard requirement, avoiding brittle thresholding when support is extremely small. Let R = {r1, . . . , r M } be the retained 
+
+RareSense dictionary and define the evidence set 
+
+E(r) = b ∪ h. (8) Importantly, a rule coordinate is active only when its complete evidence set is present: 
+
+ϕr(xi) = 1[E(r) ⊆ Ti]. (9) This is intentionally different from antecedent-only rule firing. The rule is used as a reliability-qualified conjunction; confidence and lift deter-mine the quality of the conjunction, while E(r)
+
+determines activation. The rare-rule profile of an object xi is therefore 
+
+Pi = {r ∈ R : E(r) ⊆ Ti}. (10) 84.2 From Transactional Feature Space to RareSense Space 
+
+Let X = {x1, . . . , x n} denote the same set of original objects in the dataset and let R =
+
+{r1, . . . , r M } be the retained rare-rule dictionary. RareSense maps each object from the original object space to an M -dimensional binary rare-rule activation space: 
+
+ΦR : X → { 0, 1}M ,
+
+ΦR(xi) =  ϕr1 (xi), . . . , ϕ rM (xi). (11) Each rule receives a non-negative weight 
+
+w(r) = 
+
+
+
+log n + ηnr + η
+
+α
+
+× [conf( r)] β
+
+× [1 + log(max {1, lift( r)})] γ
+
+× [1 + log(1 + |E(r)|)] δ × [s(r)] ζ .
+
+(12) where nr is the number of objects activating rule 
+
+r, η > 0 is a smoothing constant, and s(r) denotes the stability of the rule across resamples. The exponents α, β, γ, δ, and ζ control the contri-butions of rarity, confidence, lift, rule complexity, and stability, respectively. The stability term 
+
+s(r) = 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+1[r ∈ R (b)] (13) measures the empirical rediscovery rate across subsamples. In the reported experiments, we use 
+
+B = 10 subsamples and set ζ = 1 . Consequently, stability enters the weight linearly: a rule rediscov-ered in k of the ten subsamples has s(r) = k/ 10 ,and its weight is multiplied by this empirical redis-covery rate. Rules with zero empirical stability have zero composite weight and are omitted from the profiles; hence all retained coordinates satisfy 
+
+w(r) > 0.A weighted coordinate embedding is 
+
+ΨR(xi) =  p w(r1)ϕr1 (xi), . . . , pw(rM )ϕrM (xi).
+
+(14) The square root is convenient because two active copies of the same coordinate contribute exactly 
+
+w(r) to their inner product. Figure 2 illustrates the RareSense space trans-formation. 
+
+## 4.3 Rare-rule weighted Similarity 
+
+For two profiles, 
+
+SR(xi, x j ) = 
+
+P 
+
+> r∈Pi∩Pj
+
+w(r)
+
+P 
+
+> r∈Pi∪Pj
+
+w(r) , Pi ∪ Pj̸ = ∅,
+
+1, Pi = Pj = ∅.
+
+(15) The numerator is shared rare evidence; the denominator is all rare evidence activated by either object. The value SR(∅, ∅) = 1 is required for the metric statement on profile equivalence classes. Operational retrieval uses a separate no-evidence policy: a query with Pq = ∅ is not treated as evidence of semantic similarity merely because another object also has an empty pro-file. In the benchmark, such queries are retained rather than removed; all candidates receive zero evidence-based similarity and ties are resolved by a fixed deterministic candidate order. This pre-vents optimistic filtering of hard queries while keeping the theoretical similarity definition intact. 
+
+## 4.4 Running Example: Rare Scoring vs. Rare Similarity 
+
+We illustrate the distinction with five net-work connections: Suppose the retained rare                   
+
+> Table 2 Illustrative transactional objects and their observed atoms.
+> Object Observed atoms
+> x1tcp ,http ,normal_port
+> x2tcp ,http ,normal_port
+> x3tcp ,unusual_port ,outbound ,
+> login_failure
+> x4tcp ,unusual_port ,outbound ,
+> login_failure ,privilege_esc
+> x5tcp ,ftp ,logged_in
+
+rules are r1 : {unusual_port } ⇒ {outbound }
+
+with w(r1) = 4, r2 : {login_failure } ⇒{privilege_esc } with w(r2) = 6, and r3 :
+
+{ftp } ⇒ {logged_in } with w(r3) = 2. Then 
+
+P3 = {r1}, P4 = {r1, r 2}, and P5 = {r3}:
+
+SR(x4, x 3) = 44 + 6 = 0 .4, SR(x4, x 5) = 0 .
+
+9Fig. 2 RareSense space transformation. Objects are mapped from the original transactional feature space, where similarity is driven by shared raw atoms, to a rare-rule activation space through ΦR. In the transformed space, each coordinate corresponds to a retained rare rule activated by the object, and weighted similarity compares objects according to shared rare behavioral evidence. 
+
+Thus x5 contains rare evidence but not the same rare evidence as x4. This is the distinction between pointwise rarity and pairwise rare similarity. 
+
+## 4.5 Formal properties 
+
+Proposition 1 (IDF-Jaccard as a singleton-coor-dinate special case) Consider the RareSense profile-similarity construction with a coordinate dictionary consisting only of singleton evidence coordinates 
+
+Rsing = {ra : E(ra) = {a}, a ∈ A} ,
+
+and assign 
+
+w(ra) = log n + ηna + η .
+
+These formal singleton coordinates are introduced only for the reduction and need not be generated by the rare-rule mining procedure. Then the RareSense similarity reduces exactly to IDF-weighted Jaccard. 
+
+Proposition 2 (Weighted-Jaccard pseudometric) Let the rare-rule dictionary R be fixed and let w(r) > 0
+
+for every r ∈ R . Then 
+
+DR(xi, x j ) = 1 − SR(xi, x j )
+
+is a pseudometric on the original object collection X.Moreover, it is a metric on the quotient space X/ ∼,where 
+
+xi ∼ xj ⇐⇒ Pi = Pj .
+
+Proof Let 
+
+W (A) = X
+
+> r∈A
+
+w(r).
+
+For Pi ∪ Pj̸ = ∅,
+
+DR(xi, x j ) = 1 − W (Pi ∩ Pj )
+
+W (Pi ∪ Pj ) = W (Pi△Pj )
+
+W (Pi ∪ Pj ) ,
+
+which is the weighted Jaccard distance. Non-negativity and symmetry follow immediately from the corresponding properties of set intersection and union. The triangle inequality follows from the metric property of weighted Jaccard distance for fixed non-negative coordinate weights [23, 24, 56]. If Pi = Pj = ∅, Eq. (15) defines SR(xi, x j ) = 1 ,and therefore DR(xi, x j ) = 0 , consistently extending the distance to the empty profile. For every object, DR(xi, x i) = 0 . However, two distinct original objects may activate exactly the same rare-rule profile, so 
+
+DR(xi, x j ) = 0 
+
+does not necessarily imply xi = xj . Hence DR is a pseudometric on X. Since DR depends only on the corresponding rare-rule profiles, it is well defined on equivalence classes induced by xi ∼ xj ⇔ Pi = Pj .On this quotient space, identity of indiscernibles is restored, and DR is therefore a metric on X/ ∼. □
+
+Proposition 3 (Higher-order tie breaking) There exist object pairs that are tied by an atom-level 
+
+10 weighted Jaccard similarity but strictly separated by RareSense. Proof Let all four atoms a, b, c, d have equal positive atom weight and define q = {a, b, c }, x+ = {a, b, d },and x− = {a, c, d }. Both candidates share two of four union atoms with q, hence atom-level weighted Jaccard gives the same value 1/2. Now suppose the retained rare-rule dictionary contains a coordinate r∗
+
+with E(r∗) = {a, b } and no other retained coordinate is active in these three objects. Then Pq = Px+ = {r∗}
+
+and Px− = ∅, so SR(q, x +) = 1 and SR(q, x −) = 0 .Thus a higher-order coordinate can resolve an atom-level tie. The proposition is existential; it does not claim that RareSense universally dominates atomic similarity. □
+
+Proposition 4 (Exact explanation decomposition) 
+
+For Pi ∪ Pj̸ = ∅, define the contribution of a shared rule r ∈ Pi ∩ Pj by 
+
+cr (xi, x j ) = w(r)
+
+P 
+
+> u∈Pi∪Pj
+
+w(u) . (16) 
+
+Then 
+
+SR(xi, x j ) = X
+
+> r∈Pi∩Pj
+
+cr (xi, x j ). (17) 
+
+Proof Immediate by distributing the denominator of Eq. (15) over the shared-rule numerator. □
+
+## 4.6 Compatibility with metric and inverted indexing 
+
+Proposition 2 makes exact metric indexing pos-sible on the profile space . VP-trees [28] and M-trees [27] can therefore use DR for exact pruning, with objects sharing the same profile occupying zero-distance equivalence classes. This compatibil-ity is a property of the similarity geometry; the present experiments use direct evaluation rather than a specialized metric index. Rare-rule profiles are also naturally sparse. An inverted index can store, for each rule r, the post-ing list of objects that activate it. For a query 
+
+q, the union of postings for r ∈ Pq forms an exact candidate set for all objects with non-zero RareSense similarity. Candidates outside that set have zero shared rare evidence and need not be scored unless zero-similarity ties must be materi-alized. This filtering is independent of the triangle inequality and can be combined with a metric index. For approximate search, weighted Min-Hash [26] provides sketches for weighted Jaccard, while LSH-style bucketing [29, 30] can be used to reduce candidate generation further. These mech-anisms suggest a two-stage deployment: inverted or sketch-based filtering followed by exact RareSense re-ranking and rule-level explanation. 
+
+## 4.7 Explanation of retrieved neighbors 
+
+Because the similarity is additive over shared rules, explanations are exact rather than post hoc. We define 
+
+Explain m(xi, x j ) = Top m {(r, c r (xi, x j )) : r ∈ Pi ∩ Pj } ,
+
+(18) where cr is given by Eq. (16). Each explana-tion reports the highest-contributing shared rules together with their normalized contributions. The fidelity of a truncated m-rule explanation is 
+
+Fm(xi, x j ) = 
+
+P  
+
+> r∈Explain m(xi,x j)
+
+w(r)
+
+P 
+
+> r∈Pi∩Pj
+
+w(r) , (19) with Fm = 1 when the displayed rules account for all shared evidence. In the running example, the pair (x4, x 3) has only one shared rule, so its one-rule explanation has fidelity 1 and contributes the full similarity 4/(4 + 6) = 0 .4.
+
+## 4.8 Secondary global anomaly score 
+
+For global ranking we use the total weighted rare evidence 
+
+AR(xi) = X
+
+> r∈Pi
+
+w(r). (20) This score answers a different question from SR:
+
+AR asks how much strong rare evidence an object contains, whereas SR asks whether two objects share the same evidence. The reported AUROC results use Eq. (20); no neighborhood-isolation term is included in the main experiments. 
+
+## 4.9 Adaptive rarity-scale selection 
+
+The support ceiling controls a fundamental rarity– coverage trade-off. Very small τ values retain 11 highly selective evidence but can make rule pro-files too sparse for query-conditioned retrieval; broader ceilings increase profile overlap but admit less exceptional patterns. Unless explicitly labeled RareSense-Fixed, RareSense therefore denotes the adaptive configuration below. First, a preliminary model is fitted using τ0 =0.01 , cmin = 0 .95 , and L0 = 4 . For each object we compute a lightweight preliminary rarity statistic 
+
+s(0)  
+
+> i
+
+= X 
+
+> r∈P(0)
+> i
+
+ 1 − supp( r), (21) where P (0)  
+
+> i
+
+is the preliminary rule profile. We use the empirical upper-tail mass as an unlabeled proxy for the amount of atypical structure: 
+
+ˆρ = clip 
+
+n
+
+i : s(0)  
+
+> i
+
+> ¯s(0) + 2 σ(0) 
+
+> s
+
+o
+
+n , 0.001 , 0.10 
+
+ ,
+
+(22) where ¯s(0) and σ(0)  
+
+> s
+
+are the mean and standard deviation of the preliminary statistics. The quan-tity ˆρ is used as an operational proxy rather than claimed to be an unbiased estimate of the true anomaly prevalence. The final support ceiling is 
+
+τ = clip( κˆρ, 0.001 , 0.10) , (23) with a fixed global coverage multiplier κ = 5 .To avoid confusion with the weight exponent α
+
+in Eq. (12), we denote this multiplier by κ. It is a heuristic calibration constant used unchanged for every workload and was not optimized using class labels, validation queries, or a held-out val-idation set. The workload-specific choice of τ
+
+therefore depends only on the unlabeled statis-tic ˆρ. The multiplier broadens the rarity ceiling relative to the estimated atypical tail, allowing patterns shared by several anomalous objects to remain eligible rather than forcing every retained pattern to be as rare as the estimated anomaly fraction itself. The maximum MRI length is adapted as 
+
+L =
+
+
+
+5, ˆρ ≥ 0.05 ,
+
+4, 0.01 ≤ ˆρ < 0.05 ,
+
+3, ˆρ < 0.01 .
+
+(24) The confidence threshold remains fixed at cmin =0.95 . The adaptive procedure therefore changes only the rarity scale and maximum MRI length. It requires one preliminary mining pass followed by the final fit; we treat this as explicit model-selection overhead rather than assuming it is negligible. 
+
+# 5 Algorithms 
+
+The complete RareSense workflow separates representation construction, adaptive rarity-scale selection, query-time retrieval, and global anomaly ranking. Algorithms 1–4 make this sep-aration explicit. The first two procedures are executed during model construction: Algorithm 2 determines the workload-specific rarity scale, while Algorithm 1 transforms the original trans-actional representation into the rare-rule profile space using the resulting parameters. Once the rule dictionary and object profiles have been con-structed, query-by-anomaly retrieval and global anomaly ranking operate directly on the resulting sparse profiles without repeating the mining stage. This separation is operationally useful because the comparatively expensive pattern-mining stage is performed offline, whereas subsequent simi-larity queries reuse the precomputed dictionary, weights, profiles, and posting lists. Algorithm 1 constructs the common represen-tation used by all subsequent RareSense opera-tions. Objects are first mapped to transactions, after which minimal rare itemsets are mined as intermediate seeds for partition and exact closure rules. Rules satisfying conf( r) ≥ cmin form the final dictionary, receive the weights in Eq. (12), and define each object’s sparse profile through complete-evidence activation. The resulting dic-tionary, weights, and profiles are reused for both query-conditioned retrieval and global anomaly ranking. Algorithm 2 addresses the fact that a single fixed rarity threshold does not generate equally useful profiles across workloads with different levels of sparsity and atypical structure. The pro-cedure begins with a preliminary RareSense fit using fixed reference parameters. From the result-ing preliminary profiles, each object receives a lightweight rarity statistic s(0)  
+
+> i
+
+based on the sup-ports of the rules it activates. The fraction of 12 Algorithm 1 Construct the RareSense rule space 
+
+Require: Objects X, transaction mapper φ, rar-ity threshold τ , maximum MRI length L,confidence threshold cmin 
+
+Ensure: Rule dictionary R, weights w, profiles 
+
+{Pi}ni=1  
+
+> 1:
+
+for all xi ∈ X do  
+
+> 2:
+
+Ti ← φ(xi) 
+
+> 3:
+
+end for  
+
+> 4:
+
+Mine minimal rare itemsets Iτ satisfying Eq. (6)  
+
+> 5:
+
+Generate partition rules and exact closure rules from Iτ 
+
+> 6:
+
+R ← { r : conf( r) ≥ cmin } 
+
+> 7:
+
+for all r ∈ R do  
+
+> 8:
+
+Compute w(r) using Eq. (12)  
+
+> 9:
+
+end for  
+
+> 10:
+
+for all xi ∈ X do  
+
+> 11:
+
+Pi ← { r ∈ R : E(r) ⊆ Ti} 
+
+> 12:
+
+end for  
+
+> 13:
+
+return R, w, {Pi}
+
+Algorithm 2 Adaptive rarity-scale selection for RareSense 
+
+Require: Transaction database T =
+
+{T1, . . . , T n}, global coverage multiplier κ
+
+Ensure: Adaptive parameters (τ, L, c min ) 
+
+> 1:
+
+Fit preliminary rule space with τ0 = 0.01 ,
+
+L0 = 4 , cmin = 0 .95  
+
+> 2:
+
+s(0)  
+
+> i
+
+← P 
+
+> r∈P(0)
+> i
+
+(1 − supp( r)) for all i 
+
+> 3:
+
+ˆρ ← clip 
+
+ |{ i:s(0)    
+
+> i>¯s(0) +2 σ(0)
+> s}|
+> n
+
+, 0.001 , 0.10 
+
+ 
+
+> 4:
+
+τ ← clip( κˆρ, 0.001 , 0.10)  
+
+> 5:
+
+L ← 5 if ˆρ ≥ 0.05 , else 4 if ˆρ ≥ 0.01 , else 3 
+
+> 6:
+
+cmin ← 0.95  
+
+> 7:
+
+return (τ, L, c min )
+
+objects whose statistic exceeds ¯s(0) + 2 σ(0)  
+
+> s
+
+defines 
+
+ˆρ, an unlabeled proxy for the amount of unusually rare structure present in the workload. The proxy ˆρ is then translated into the two parameters that most directly control the richness of the rare-rule space. The support ceiling is set according to τ = clip( κˆρ, 0.001 , 0.10) , where κ is a global coverage multiplier, while the maximum MRI length L is increased as the estimated atyp-ical mass grows. The intuition is that an exces-sively strict support ceiling may produce highly selective but nearly disjoint profiles, which is undesirable for retrieval because related anomalies must activate at least some common evidence. A broader rarity scale increases the opportunity for meaningful profile overlap, while the upper clip-ping bound prevents the dictionary from drifting too far toward common patterns. The confidence threshold remains fixed at 
+
+cmin = 0 .95 , so the adaptive procedure changes only the rarity scale and maximum MRI length. It requires two passes: a preliminary rule-space con-struction used to estimate ˆρ, followed by the final model built with the adapted (τ, L ). The global multiplier is fixed heuristically to κ = 5 and used unchanged for every workload. Only ˆρ, and hence the workload-specific values of τ and L, varies across workloads. No class labels are used in this adaptation. 
+
+Algorithm 3 Exact rarity-aware top-k retrieval 
+
+Require: Query q, precomputed profiles {Pi},weights w, k
+
+Ensure: Top-k neighbors with explanations  
+
+> 1:
+
+if Pq = ∅ then  
+
+> 2:
+
+Assign zero evidence-based similarity to every candidate  
+
+> 3:
+
+return deterministic zero-similarity rank-ing (benchmark policy)  
+
+> 4:
+
+end if  
+
+> 5:
+
+C(q) ← S 
+
+> r∈Pq
+
+Posting( r) 
+
+> 6:
+
+for all xj ∈ C(q) \ { q} do  
+
+> 7:
+
+Compute SR(q, x j ) 
+
+> 8:
+
+end for  
+
+> 9:
+
+Assign similarity 0 to candidates outside C(q) 
+
+> 10:
+
+Keep the k largest similarities, resolving zero-score ties deterministically  
+
+> 11:
+
+for all returned xj with SR(q, x j ) > 0 do  
+
+> 12:
+
+Compute Explain m(q, x j ) 
+
+> 13:
+
+end for  
+
+> 14:
+
+return ranked neighbors and explanations Algorithm 3 implements the primary query-conditioned retrieval task. Because rare-rule pro-files are sparse, an inverted index associates each rule r with the objects that activate it. For a query 
+
+q, only objects appearing in at least one post-ing list associated with Pq can obtain a positive 13 RareSense similarity. Consequently, 
+
+C(q) = [
+
+> r∈Pq
+
+Posting( r)
+
+forms an exact candidate set rather than an approximation: any object outside C(q) shares no retained rule with the query and therefore necessarily has similarity zero. Exact weighted-Jaccard similarity is computed only for candidates in C(q), after which the k
+
+highest-scoring objects are returned. This sepa-rates candidate generation from exact re-ranking and avoids unnecessary comparisons against objects that cannot share rare evidence with the query. Because the same shared rules that deter-mine the similarity are retained after ranking, the explanation of each positive-similarity neighbor requires no surrogate model. The largest rule-level contributions defined in Eq. (16) directly explain why that candidate was retrieved. The empty-profile case requires a separate operational policy. If Pq = ∅, the query con-tains no retained rare evidence from which arule-mediated relation to another object can be established. Although two empty profiles are mathematically assigned similarity one in Eq. (15) to preserve the metric construction, interpreting empty profiles as meaningful anomaly neighbors would be operationally misleading. The bench-mark therefore assigns zero evidence-based simi-larity to all candidates and resolves the resulting ties deterministically. These queries remain part of the evaluation rather than being discarded, avoid-ing optimistic performance estimates caused by excluding difficult queries. 
+
+Algorithm 4 Global anomaly ranking 
+
+Require: Profiles {Pi} and weights w
+
+Ensure: Ranked anomaly list  
+
+> 1:
+
+for all xi ∈ X do  
+
+> 2:
+
+AR(xi) ← P 
+
+> r∈Pi
+
+w(r) 
+
+> 3:
+
+end for  
+
+> 4:
+
+return objects sorted by decreasing AR(xi)
+
+Algorithm 4 uses the same rare-rule represen-tation for the secondary global anomaly-ranking task. Unlike Algorithm 3, which compares one profile against another and answers the ques-tion “which objects share rare evidence with this query?”, the global score aggregates the total weighted rare evidence activated by each object. Objects activating more strongly weighted rare rules therefore receive larger AR(xi) values and are ranked as more anomalous. This distinction is central to the dual use of the RareSense representation. The pairwise similarity SR is query-conditioned and changes according to the rare evidence present in the query, whereas AR is a query-independent scalar score. The two algorithms therefore answer com-plementary questions using the same underlying rule space: Algorithm 3 supports investigation after a suspicious or confirmed anomaly has been selected, while Algorithm 4 supports initial pri-oritization of suspicious objects before a query is available. This distinction also motivates the sep-arate evaluation protocols used later: nDCG@10 for query-conditioned retrieval and AUROC for global anomaly ranking. Taken together, the four algorithms define a two-stage operational workflow. Algorithm 2 first selects the workload-specific rarity scale, after which Algorithm 1 constructs the final dictio-nary and sparse profiles. The resulting represen-tation can then support repeated retrieval queries through Algorithm 3, while Algorithm 4 pro-vides a complementary global ranking from the same profiles. Thus the symbolic mining stage is amortized across subsequent searches, and both retrieval and explanation reuse the same precom-puted rare-rule evidence rather than requiring separate models. 
+
+# 6 Computational Analysis 
+
+Let ¯t be the mean transaction length, MI the number of mined MRIs, M = |R| the num-ber of retained rule coordinates, ¯e the mean rule evidence-set size, and ¯P the mean profile size. Mining rare itemsets is output- and data-dependent and is exponential in the worst case, as is frequent itemset mining. With a maximum MRI size L, a level-wise implementation that evaluates candidate family Cℓ has candidate-evaluation cost 
+
+O n
+
+> L
+
+X
+
+> ℓ=1
+
+|Cℓ|ℓ
+
+!
+
+.
+
+14 Rule generation from an MRI has at most 2|p| − 2
+
+non-trivial partitions, so partition-rule generation costs O(MI 2LL) before filtering. Closure-rule con-struction adds the cost of computing closures for the mined MRIs. Once the dictionary is fixed, profile construc-tion is O(nM ¯e) naively and can be reduced substantially with bitsets or inverted postings. A single weighted-Jaccard comparison is O(|Pq | +
+
+|Pj |) for sorted sparse profiles. A full exact scan costs O(n ¯P + n log k), whereas inverted filtering replaces n by the candidate count |C(q)| plus the cost of reading the posting lists. Global scoring with Eq. (20) is linear in the number of active object–rule incidences, O(n ¯P ).
+
+# 7 Experimental Evaluation 
+
+## 7.1 Datasets 
+
+We evaluate RareSense on 27 anomaly-detection workloads drawn from four benchmark fami-lies. The evaluation combines network-security, provenance-based, and general categorical bench-marks spanning text, web, scientific, marketing, image-derived, and bioassay data. Table 4 reports the processed workload statistics. 
+
+UWF-ZeekData24 (14 datasets). 
+
+UWF-ZeekData24 1 [57] is a recent and realistic network-flow benchmark collected from a con-trolled cyber-range environment. Each record is a Zeek-parsed connection log entry represented as a binary vector over 42–43 behavioral atoms (proto-col, service, duration bins, port-range indicators). Two representation variants are provided: Vari-ant 1 mixes benign and attack flows into a single transactional database across seven ATT&CK tactics (Credential Access, Defense Evasion, Exfil-tration, Initial Access, Persistence, Privilege Esca-lation, Reconnaissance), while Variant 2 adds host-side Windows event atoms to the Zeek fea-tures. This yields fourteen datasets of 16,530– 91,400 objects with anomaly ratios ranging from 0.05% to 47.59%. 
+
+> 1https://datasets.uwf.edu/
+
+NSL-KDD (2 datasets). 
+
+We use the two most challenging subsets of the NSL-KDD intrusion detection benchmark 2 [58, 59]: Probe (port scans; 6.43%; n = 64 ,759 ) and 
+
+U2R (user-to-root privilege escalation; 0.37%; 
+
+n = 60 ,821 ). Categorical connection features are converted to attribute–value atoms; numerical features are discretized into five quantile bins. 
+
+DARPA Transparent Computing (4 datasets). 
+
+We evaluate on four provenance-graph datasets from the DARPA TC 3 engagement [60, 61]: Android Clearscope ( n = 102 ; 8.82%), Windows 5-dir Events ( n = 17 ,569 ; 0.05%), Linux Trace (n = 272 ,376 ; 0.01%), and BSD Cadets ( n =76 ,903 ; 0.02%). Each object is a process node; atoms are event-type identifiers in the process’s execution trace. 
+
+General categorical benchmarks (7 datasets). 
+
+To evaluate whether the proposed similarity rep-resentation generalizes beyond cybersecurity, we include seven categorical anomaly-detection work-loads from ADRepository 4 [62, 63]. Reuters-Corn represents documents through binary lexi-cal indicators; W7A is a sparse web-classification workload; Solar Flare contains categorical solar-activity observations; Bank Marketing 
+
+contains nominalized direct-marketing records; 
+
+APascal uses image-derived semantic attributes; 
+
+AID362 contains nominalized molecular-bioassay descriptors; and Internet Ads is a high-dimensional web-advertisement workload. Sev-eral of these datasets are imbalanced classifica-tion problems converted into binary anomaly-detection tasks. Accordingly, their minority classes are treated as anomalies for evaluation rather than interpreted as naturally occurring anomalies in every domain. 
+
+> 2https://www.kaggle.com/datasets/hassan06/nslkdd
+> 3https://gitlab.com/adaptdata
+> 4https://www.dbs.ifi.lmu.de/research/outlier-evaluation/DAMI/
+
+15 Table 3 Complexity of the main post-mining operations. Mining itself is candidate-dependent and worst-case exponential in the atom vocabulary. 
+
+Operation Time Space Transaction construction O(n¯t) O(n¯t)
+
+Profile construction (naive) O(nM ¯e) O(n ¯P )
+
+Single similarity O(|Pq | + |Pj |) O(1) extra Exact full-scan top-k O(n ¯P + n log k) O(k)
+
+Inverted candidate retrieval O(P 
+
+> r∈Pq
+
+|Posting( r)| + |C(q)| ¯P ) postings Global anomaly score O(n ¯P ) O(n) scores  
+
+> Table 4 Processed workload statistics. AR denotes anomaly ratio.
+
+Family Workload n AR (%) UWF-V1 Credential Access 91,400 47.59 Defense Evasion 48,232 0.68 Exfiltration 47,929 0.05 Initial Access 48,467 1.16 Persistence 48,232 0.68 Privilege Escalation 48,232 0.68 Reconnaissance 50,815 5.72 UWF-V2 Credential Access 16,762 3.3 Defense Evasion 16,530 2.0 Exfiltration 16,554 2.2 Initial Access 16,762 3.3 Persistence 16,530 2.0 Privilege Escalation 16,530 2.0 Reconnaissance 18,128 10.6 NSL-KDD Probe 64,759 6.4 U2R 60,821 0.4 DARPA TC Android 102 8.8 Windows 17,569 0.05 Linux 272,376 0.01 BSD 76,903 0.02 Categorical Reuters-Corn 12898 1.83 W7A 49750 2.97 Solar Flare 1067 4.02 Bank Marketing 41189 11.26 APascal 12696 1.38 AID362 4280 1.38 Internet Ads 3280 14 
+
+## 7.2 Protocol and configurations 
+
+Transductive evaluation protocol. 
+
+The benchmark evaluation is transductive : for each workload, the rare-rule dictionary is con-structed from the complete unlabeled collection that is subsequently searched. No class labels are used during dictionary construction, sup-port estimation, rule mining, profile generation, or parameter adaptation. The protocol therefore does not introduce label leakage, although the learned representation reflects the empirical dis-tribution of the evaluated collection. In a prospec-tive deployment, the dictionary could instead be learned from a historical reference window and then frozen, incrementally maintained, or period-ically refreshed. We discuss this limitation and its deployment implications in Section 9. 
+
+Model configurations. 
+
+A fixed instantiation of RareSense involves nine numerical parameters: the upper rarity thresh-old τ , the maximum minimal-rare-itemset length 
+
+L, the minimum rule-confidence threshold cmin ,the five weighting exponents α, β, γ, δ, ζ , and the smoothing constant η. Stability estimation addi-tionally uses B = 10 subsamples. Rule weights are computed according to Eq. (12). Unless explic-itly varied, the shared confidence and weighting parameters are fixed to 
+
+cmin = 0 .95 , α = β = γ = ζ = 1 ,δ = 0 .5, η = 1 , B = 10 . (25) Unless explicitly labeled otherwise, 
+
+RareSense denotes the adaptive configuration defined in Section 4.9 and Algorithm 2. It first constructs a preliminary rule space using 
+
+τ0 = 0 .01 , L0 = 4 , cmin = 0 .95 , (26) and then adapts the final values of τ and L
+
+from the unlabeled rarity-score distribution of the workload. The global coverage multiplier is fixed heuristically to κ = 5 and used unchanged for every reported workload. It was not selected using class labels, validation queries, or a held-out val-idation set. The workload-specific adaptation of 
+
+τ and L therefore depends only on the unlabeled rarity-score distribution. 16 We retain RareSense-Fixed as a fixed-parameter reference: 
+
+τ = 0 .01 , L = 4 , cmin = 0 .95 . (27) This reference configuration is used only in explicitly identified secondary analyses. The main results do not use post-hoc oracle selection between the adaptive and fixed configurations. 
+
+Query-conditioned retrieval protocol. 
+
+For each workload, up to 200 labeled anoma-lies are sampled as queries using a fixed random seed. The same query set and candidate collection are used for every query-conditioned similarity method. Query labels are used only to define the evaluation queries and relevance judgments; they are not used to mine the RareSense dictionary, estimate rule weights, or adapt τ and L. The query object itself is removed from its candidate set. All methods are evaluated using identical binary relevance labels, under which a candi-date is relevant when it is labeled anomalous. Empty RareSense query profiles are retained rather than excluded. Such queries contain no retained rare evidence and therefore induce an all-zero evidence-based ranking under the benchmark policy. Zero-score ties are resolved deterministi-cally and consistently across workloads. Retaining these queries avoids optimistic nDCG@10 esti-mates that could arise from filtering out difficult or uncovered queries. 
+
+Sensitivity and reproducibility. 
+
+The sensitivity analyses in Section 8.5 are con-ducted on the UWF-V1 Privilege Escalation work-load. The structural parameters τ and L, together with the confidence and weighting parameters, are varied one factor at a time while all remaining settings are held fixed. These analyses character-ize local parameter behavior and are not used to select workload-specific test configurations. RareSense and the atomic similarity base-lines are deterministic once the data, parameters, query set, and tie-breaking policy are fixed; they are therefore reported without run-to-run stan-dard deviations. Stochastic baselines use the fixed seeds and implementation settings specified in the accompanying reproducibility material. 
+
+## 7.3 Baselines 
+
+Primary query-conditioned similarity baselines. 
+
+The primary retrieval comparison uses four atom-level similarities evaluated under exactly the same anomaly queries, candidate sets, binary rel-evance labels, and nDCG@10 computation as RareSense: Jaccard , IDF-Jaccard , cosine , and 
+
+TF–IDF cosine . Jaccard compares set over-lap directly; cosine operates on the binary inci-dence vectors. IDF-Jaccard assigns each atom an inverse-frequency weight before computing weighted set overlap, while TF–IDF cosine com-putes cosine similarity after the corresponding inverse-frequency reweighting. These are the like-for-like baselines for the paper’s central ques-tion: whether moving from atomic coordinates to rare-rule coordinates improves query-conditioned anomaly retrieval. 
+
+Secondary detector references. 
+
+Classical anomaly detectors are AVF [37], FPOF [36], HBOS [38], ECOD [39], COPOD [40], and OC-SVM [42]. Deep baselines are afeed-forward AutoEncoder [64], DIF [48], and LUNAR [49]. These methods natively output a scalar anomaly score. They are evaluated as sec-ondary references for the global anomaly-ranking task using AUROC; they are not treated as query-conditioned similarity baselines. This is a useful operational reference—it asks whether “show me the most anomalous objects” can substitute for query-conditioned search—but it is not a like-for-like similarity comparison. 
+
+Dual evaluation protocol. 
+
+RareSense supports both retrieval and global ranking from the same rare-rule representation, but the two tasks require different compar-isons. For retrieval, the primary baselines are the four query-conditioned similarities above. For global anomaly ranking, RareSense uses the scalar rare-evidence score AR(xi) and is compared with classical and deep anomaly detectors using AUROC. Pairwise similarities do not natively define a query-independent scalar anomaly score; constructing one would require an additional neighborhood-based outlier model and would therefore constitute a different experimental task. 17 We consequently keep the retrieval and global-ranking comparisons separate. 
+
+## 7.4 Metrics: nDCG first, AUROC second 
+
+Our primary metric is normalized discounted cumulative gain at rank 10: 
+
+DCG@ k =
+
+> k
+
+X
+
+> r=1
+
+2rel r − 1log 2(r + 1) , nDCG@ k = DCG@ k
+
+IDCG@ k ,
+
+(28) where rel r ∈ {0, 1} in the primary binary-relevance evaluation. nDCG rewards relevant anomalies more strongly when they occur near the top of the list and is therefore aligned with limited analyst inspection budgets. This is partic-ularly important in Security Operations Centers (SOCs), where analysts typically investigate only the highest-ranked alerts because examining an entire ranking is costly and time-critical: by the time all events have been reviewed, an attacker may already have completed data exfiltration or caused substantial damage. AUROC is reported as a secondary measure for the query-independent global score in Eq. (20). AUROC measures pairwise anomaly–normal sep-aration over the entire ranking; it does not directly measure whether relevant anomalies appear in the first few positions. We therefore do not assign AUROC values to the native pairwise similarity baselines in the main analysis: doing so would require adding a separate neighborhood anomaly-scoring procedure and would conflate two different tasks. 
+
+# 8 Results 
+
+## 8.1 Primary result: top-ranked anomaly retrieval 
+
+Tables 5 and 6 report the macro-average results over the 27 workloads. The central compari-son is between RareSense and the four query-conditioned atomic similarities, all evaluated with identical anomaly queries and binary relevance. Our primary interest is in whether truly anomalous objects are concentrated near the top of the ranking, rather than merely achieving a good ordering over the full candidate set. As illus-trated in Fig. 3, this reflects many operational                       
+
+> Table 5 Macro-average query-conditioned retrieval performance over 27 workloads.
+> Method nDCG@10 ↑
+> RareSense 0.696
+> TF–IDF cosine 0.645 Cosine 0.618 Jaccard 0.603 IDF-Jaccard 0.584
+> Table 6 Macro-average AUROC for global anomaly ranking over 27 workloads.
+> Method AUROC ↑
+> RareSense 0.850
+> AutoEncoder 0.841 HBOS 0.838 AVF 0.827 DIF 0.819 RareSense-Fixed 0.812 FPOF 0.769 OC-SVM 0.735 ECOD 0.722 COPOD 0.717 LUNAR 0.711
+
+anomaly-detection settings in which only a limited number of high-priority cases can be inspected. For example, a Security Operations Center (SOC) may investigate only the highest-ranked alerts before an attacker progresses further in the kill chain; in medical screening, clinicians may priori-tize the most suspicious patients or physiological signals; and in large-scale IoT monitoring, oper-ators may need to inspect only a small subset of devices or events among millions of observations. nDCG@10 is therefore well suited to this objec-tive because it rewards relevant anomalies more strongly when they appear near the top of the ranking and progressively discounts lower-ranked results. Across the 27 workloads, RareSense obtains the highest observed macro-average nDCG@10, reaching approximately 0.696 compared with 
+
+0.645 for TF–IDF cosine, the strongest atomic 18 Fig. 3 Illustration of query-conditioned anomaly retrieval and the role of top-ranked evaluation. An anomalous query is compared with a candidate database using the learned similarity representation, producing a ranked list of retrieved objects. Relevant anomalies appearing near the top of the ranking are more valuable in operational settings such as Security Operations Centers (SOCs), medical triage, and large-scale IoT monitoring, where only a limited number of high-priority cases can typically be inspected. nDCG@10 captures this requirement by assigning greater gain to relevant anomalies retrieved at higher ranks and progressively discounting lower-ranked results. 
+
+baseline on average. This corresponds to an abso-lute improvement of approximately 0.051 (5.1 per-centage points), or about 7.9% relative improve-ment. RareSense also exceeds the strongest atomic similarity selected independently for each work-load on 18 of the 27 workloads. For the secondary global anomaly-ranking task, RareSense obtains the highest observed macro-average AUROC across the 27 workloads. However, the corrected pairwise comparisons do not establish superiority over several strong ded-icated detectors. Thus, the main empirical con-tribution remains top-ranked, query-conditioned retrieval rather than universal dominance in global anomaly separation. 
+
+## 8.2 Query-conditioned similarity by benchmark family 
+
+Table 7 separates the four benchmark families for the like-for-like similarity comparison. The family-level pattern is informative. On UWF, RareSense reaches 0.904 , improving over the strongest atomic alternative, IDF-Jaccard (0.827 ). This is the regime most aligned with the method’s hypothesis: anomalies share repeatable higher-order rare conjunctions that are not fully captured by atom-wise overlap. On NSL-KDD, RareSense (0.826 ) is essen-tially tied with cosine ( 0.828 ), indicating that the rare-rule transformation preserves strong retrieval without providing a material advantage over the best atomic geometry. On DARPA TC, TF– IDF cosine remains slightly stronger ( 0.278 versus 
+
+0.262 ), consistent with the very small and behav-iorally heterogeneous attack populations in these provenance workloads. On the seven general categorical workloads, RareSense reaches a macro-average nDCG@10 of approximately 0.490 , compared with 0.476 for TF–IDF cosine, the strongest atomic baseline in this family. RareSense achieves the best result on six of the seven workloads, with AID362 providing the principal negative case. This extension indi-cates that the benefit of rare-rule coordinates is not confined to cybersecurity representations. Because 14 of the 27 workloads come from UWF, we additionally compute a family-balanced summary that gives UWF, NSL-KDD, DARPA TC, and the general categorical family equal weight. RareSense remains strongest at approxi-mately 0.620 , compared with 0.596 for TF–IDF cosine. Therefore, the overall advantage is not solely attributable to the larger number of UWF workloads. 19 Table 7 Family-level nDCG@10 for the primary query-conditioned similarity comparison. The Overall column is the macro-average over all 27 workloads, whereas the Family-balanced column gives the four benchmark families equal weight.                                     
+
+> Method UWF (14) NSL-KDD (2) DARPA TC (4) General (7) Overall Family-balanced RareSense 0.904 0.826 0.262 0.490 0.696 0.620
+> Jaccard 0.792 0.672 0.179 0.449 0.603 0.523 IDF-Jaccard 0.827 0.397 0.228 0.353 0.584 0.451 Cosine 0.803 0.828 0.167 0.444 0.618 0.561 TF–IDF cosine 0.808 0.820 0.278 0.476 0.645 0.596
+
+## 8.3 Per-workload results 
+
+Tables 8 and 9 provide a workload-level view of the two complementary capabilities evalu-ated in this study. nDCG@10 measures whether relevant anomalies are concentrated near the top of a query-conditioned retrieval ranking, whereas AUROC evaluates how well the query-independent score AR globally separates anoma-lous from normal objects. The distinction is important: a method may rank anomalies well globally without necessarily retrieving anomalies that share the same rare evidence as a partic-ular query, and conversely a highly informative query may retrieve closely related anomalies even when the corresponding global anomaly score is less discriminative. Table 8 shows that the retrieval advantage of RareSense is substantial on several workloads, but is not uniform. Across the 27 workloads, RareSense achieves the highest macro-average nDCG@10 of 0.696 , compared with 0.645 for TF–IDF cosine, the strongest atomic baseline on average. It exceeds the strongest atomic similarity selected independently for each workload on 18 of the 27 workloads. The strongest improvements occur in regimes where rare co-occurrences appear to provide more discriminative retrieval evidence than individual attributes. For example, on UWF-V2 Credential Access, RareSense reaches nDCG@10 = 0.978 ,whereas the strongest atomic comparator reaches only 0.451 . This means that relevant anomalies are placed very close to the top of the returned list under the rare-rule representation, even though similarity computed directly from individ-ual attributes provides a much weaker ordering. A similarly pronounced effect is observed on DARPA Android, where RareSense obtains 0.665 com-pared with 0.347 for the best atomic baseline, and on UWF-V1 Privilege Escalation, where the corresponding values are 0.973 and 0.825 .Several workloads also approach near-ideal top-ranked retrieval. For UWF-V1 Initial Access, Persistence, and Privilege Escalation, nDCG@10 reaches 0.976 , 0.978 , and 0.973 , respectively, while UWF-V2 Credential Access, Defense Evasion, and Initial Access obtain 0.978 , 0.957 , and 0.978 .Values this close to one indicate that relevant anomalies are concentrated very early in the rank-ing, which is the operational regime targeted by RareSense: an analyst inspecting only the first few returned objects is likely to encounter relevant anomalous examples quickly. The per-workload results also identify regimes in which rare-rule similarity is less appropri-ate. On DARPA Windows and Linux, RareSense obtains nDCG@10 values of only 0.128 and 
+
+0.018 , compared with 0.383 and 0.131 for TF– IDF cosine, respectively. Atomic similarities also remain competitive on high-overlap workloads such as UWF-V2 Exfiltration, Persistence, and Privilege Escalation. These negative cases are informative: when relevant objects are character-ized mainly by common individual attributes, or when the rare-rule profiles become too sparse to create sufficient overlap, the symbolic rarity rep-resentation may discard information that remains useful to atomic similarity. The results there-fore support a regime-dependent interpretation of RareSense rather than a claim of universal dominance. The global anomaly-ranking results in Table 9 reveal a complementary aspect of the representa-tion. Across the 27 workloads, RareSense achieves the highest observed macro-average AUROC of 
+
+0.850 , followed by the AutoEncoder (0.841 ), HBOS ( 0.838 ), AVF ( 0.827 ), and DIF ( 0.819 ). The rank-based analysis nevertheless shows that RareSense is not statistically distinguishable from several of these strong detectors. Thus, although 20 Table 8 Per-workload nDCG@10 for the primary query-conditioned retrieval comparison. All methods use the same anomaly queries, candidate sets, and binary relevance labels. 
+
+Family Workload RareSense Jaccard IDF-Jacc. Cosine TF–IDF Cos. UWF-V1 Cred. Access 0.785 0.660 0.770 0.520 0.530 Def. Evasion 0.803 0.741 0.675 0.741 0.668 Exfiltration 0.833 0.623 0.780 0.651 0.771 Initial Access 0.976 0.904 0.893 0.904 0.932 Persistence 0.978 0.963 0.969 0.963 0.910 Priv. Esc. 0.973 0.674 0.825 0.774 0.771 Recon. 0.799 0.832 0.802 0.832 0.811 UWF-V2 Cred. Access 0.978 0.361 0.441 0.401 0.451 Def. Evasion 0.957 0.905 0.906 0.905 0.906 Exfiltration 0.845 0.925 0.854 0.925 0.896 Initial Access 0.978 0.921 0.920 0.919 0.912 Persistence 0.957 0.961 0.971 0.960 0.966 Priv. Esc. 0.957 0.905 0.958 0.935 0.966 
+
+Recon. 0.840 0.713 0.819 0.818 0.826 NSL-KDD Probe 0.924 0.771 0.793 0.884 0.875 U2R 0.727 0.572 0.000 0.772 0.765 DARPA TC Android 0.665 0.154 0.247 0.062 0.347 Windows 0.128 0.271 0.283 0.264 0.383 
+
+Linux 0.018 0.014 0.131 0.066 0.131 
+
+BSD 0.235 0.277 0.252 0.277 0.252 General categorical Reuters-Corn 0.640 0.630 0.447 0.598 0.597 W7A 0.764 0.620 0.431 0.623 0.757 Solar Flare 0.199 0.165 0.181 0.165 0.170 Bank Marketing 0.261 0.156 0.258 0.156 0.256 APascal 0.671 0.654 0.411 0.657 0.642 AID362 0.113 0.137 0.090 0.137 0.137 
+
+Internet Ads 0.783 0.781 0.650 0.769 0.775 
+
+Macro-average 0.696 0.603 0.584 0.618 0.645 
+
+the same rare-rule evidence provides a competi-tive query-independent anomaly signal, the prin-cipal contribution of RareSense remains query-conditioned retrieval. Performance is particularly strong on several workloads. For UWF-V1 Exfiltration, RareSense reaches AUROC = 0 .999 , indicating almost per-fect global separation, while Persistence and Priv-ilege Escalation both reach 0.986 . On NSL-KDD U2R, AUROC is 0.984 , and on DARPA Android it reaches 0.898 . These results suggest that highly weighted rare-rule activations often capture struc-tures that are not only useful for retrieving related anomalies but are also globally characteristic of anomalous behavior. At the same time, the joint analysis of nDCG@10 and AUROC exposes an important difference between retrieval quality and global anomaly discrimination . DARPA Windows pro-vides a clear example: RareSense obtains AUROC 
+
+= 0.863 but nDCG@10 = 0.128 . The global score can therefore distinguish anomalous objects reasonably well from normal ones, yet the rare profiles of individual anomaly queries do not over-lap sufficiently to retrieve other anomalies near the top of the similarity ranking. DARPA Linux shows the same phenomenon more strongly, with AUROC = 0 .611 but nDCG@10 only 0.018 . This demonstrates that successful anomaly detection does not automatically imply successful anomaly-to-anomaly retrieval. The converse pattern is also visible. On UWF-V2 Credential Access, RareSense obtains an exceptionally high nDCG@10 of 0.978 while its AUROC is only 0.684 . In this case, once an anomalous query is available, its rare-rule pro-file provides an excellent basis for finding related anomalies, even though the scalar score AR alone is less effective at globally separating all anoma-lies from normal observations. This is precisely why the two evaluation tasks should not be conflated: nDCG@10 evaluates the local, query-conditioned organization of the similarity space, 21 Table 9 Per-workload AUROC for the secondary global anomaly-ranking task.                                                                                                                                                                                                                                                                                                                                  
+
+> Family Workload RareSense RS-Fixed AVF FPOF HBOS ECOD COPOD OCSVM AE DIF LUNAR UWF-V1 Cred. Access 0.945 0.935 0.937 0.902 0.938 0.626 0.630 0.909 0.920 0.860 0.660 Def. Evasion 0.957 0.986 0.947 0.965 0.940 0.650 0.662 0.184 0.982 0.936 0.674 Exfiltration 0.999 0.991 0.996 0.993 0.992 0.631 0.631 0.995 0.999 0.997 0.644 Initial Access 0.903 0.980 0.969 0.903 0.968 0.670 0.668 0.902 0.964 0.971 0.666 Persistence 0.986 0.972 0.941 0.977 0.944 0.675 0.665 0.754 0.969 0.968 0.680 Priv. Esc. 0.986 0.973 0.944 0.978 0.945 0.665 0.665 0.665 0.945 0.968 0.670 Recon. 0.929 0.749 0.906 0.908 0.906 0.667 0.667 0.442 0.878 0.770 0.667 UWF-V2 Cred. Access 0.684 0.664 0.678 0.792 0.697 0.640 0.641 0.962 0.622 0.200 0.669 Def. Evasion 0.800 0.714 0.770 0.910 0.740 0.660 0.668 0.714 0.954 0.830 0.670 Exfiltration 0.992 0.986 0.996 0.993 0.999 0.618 0.618 0.994 0.998 0.997 0.716 Initial Access 0.839 0.838 0.862 0.949 0.831 0.674 0.674 0.952 0.956 0.900 0.676 Persistence 0.800 0.714 0.780 0.912 0.784 0.669 0.676 0.710 0.958 0.840 0.673 Priv. Esc. 0.800 0.714 0.750 0.911 0.754 0.675 0.660 0.718 0.950 0.854 0.673 Recon. 0.824 0.740 0.633 0.809 0.692 0.705 0.705 0.570 0.788 0.747 0.708 NSL-KDD Probe 0.958 0.774 0.976 0.971 0.977 0.977 0.908 0.494 0.810 0.920 0.775 U2R 0.984 0.936 0.883 0.875 0.980 0.980 0.975 0.940 0.824 0.799 0.724 DARPA TC Android 0.898 0.661 0.879 0.401 0.867 0.594 0.594 0.308 0.815 0.780 0.786 Windows 0.863 0.985 0.969 0.685 0.984 0.984 0.984 0.994 0.997 0.990 0.946 Linux 0.611 0.887 0.823 0.435 0.829 0.829 0.828 0.908 0.859 0.900 0.847 BSD 0.916 0.915 0.876 0.662 0.889 0.889 0.886 0.896 0.972 0.967 0.966 General categorical Reuters-Corn 0.989 0.985 0.987 0.356 0.987 0.988 0.988 0.987 0.910 0.955 0.975 W7A 0.721 0.405 0.473 0.332 0.531 0.568 0.564 0.498 0.510 0.630 0.423 Solar Flare 0.725 0.762 0.845 0.849 0.844 0.844 0.846 0.797 0.718 0.796 0.745 Bank Marketing 0.687 0.586 0.558 0.578 0.599 0.605 0.592 0.588 0.548 0.573 0.620 APascal 0.719 0.658 0.620 0.718 0.655 0.655 0.624 0.616 0.540 0.688 0.635 AID362 0.643 0.667 0.630 0.472 0.648 0.650 0.645 0.650 0.601 0.601 0.582 Internet Ads 0.780 0.755 0.703 0.524 0.702 0.698 0.698 0.705 0.710 0.676 0.734
+> Macro-average 0.850 0.812 0.827 0.769 0.838 0.722 0.717 0.735 0.841 0.819 0.711
+
+whereas AUROC evaluates the global ordering induced by a single anomaly score. Taken together, the two metrics suggest that the main strength of RareSense lies in the 
+
+structure of the learned rare-rule space. Its strongest advantage appears when anomalous objects share distinctive higher-order evidence that allows them to be brought close together in a query-conditioned ranking. The same evidence frequently yields competitive global anomaly dis-crimination, but this is a secondary consequence rather than the sole objective of the representa-tion. The complementary nDCG@10 and AUROC results therefore support the intended dual use of RareSense: top-k retrieval for investigating anomalies similar to a given query, and global scoring for prioritizing suspicious objects when no query is yet available. The rank-based analysis in Fig. 4 complements the macro-average AUROC results. The Friedman test reveals significant overall differences among the eleven methods ( χ2 
+
+> F
+
+= 44 .00 , p = 3 .29 ×10 −6). RareSense obtains the best average rank of 3.63 ,followed by HBOS ( 4.93 ), the AutoEncoder ( 5.02 ), and DIF (5.31 ). Thus, in addition to obtain-ing the highest observed macro-average AUROC, RareSense exhibits the most favorable average rank across the 27 heterogeneous workloads. The Nemenyi critical difference is approxi-mately 2.91 at α = 0.05 . Under this crite-rion, RareSense is not statistically distinguishable from HBOS, the AutoEncoder, DIF, RareSense-Fixed, FPOF, or AVF. Its average-rank difference exceeds the critical difference relative to OC-SVM, ECOD, LUNAR, and COPOD. The results therefore support the conclusion that RareSense is competitive with the strongest dedicated anomaly detectors and significantly stronger than several lower-ranked alternatives, rather than establish-ing universal superiority over every detector. 
+
+## 8.4 Adaptive RareSense versus the fixed reference 
+
+The final proposed method is the adap-tive RareSense configuration of Section 4.9; RareSense-Fixed is retained only to quantify the value of workload-specific rarity-scale adaptation. On the original 20 cybersecurity workloads for which the fixed-reference retrieval comparison was conducted, RareSense-Fixed reaches a macro-average nDCG@10 of 0.498 , whereas adaptive RareSense reaches 0.768 . The gain is especially large on UWF-V2, where a strict fixed rarity 22 Fig. 4 Critical-difference diagram for global anomaly ranking based on AUROC across the 27 evaluation workloads. Methods are ordered by average rank, with lower ranks indicating better performance. The Friedman test indicates significant overall differences among the eleven methods ( χ2       
+
+> F= 44 .00 ,p= 3 .29 ×10 −6). Horizontal bars connect maximal groups of methods whose average-rank differences do not exceed the Nemenyi critical difference ( CD = 2 .91 ,α= 0 .05 ).
+
+threshold produces profiles that are too sparse for reliable pairwise overlap. This result is con-sistent with the support-sensitivity study: the rarity level that best separates anomalies glob-ally need not provide enough shared evidence for query-conditioned retrieval. The adaptation does not select among alter-native configurations using test performance. The global coverage multiplier is fixed heuristically to κ = 5 and used unchanged across work-loads; only the unlabeled workload statistic ˆρ
+
+changes. Thus RareSense-Fixed and RareSense are not competing oracle variants but, respec-tively, a fixed reference and the single reported adaptive procedure. 
+
+## 8.5 Sensitivity analysis 
+
+We conduct a one-factor-at-a-time sensitivity analysis on the same processed UWF-V1 Privilege Escalation workload used in the main evalua-tion. It contains 48,232 objects, including 326 anomalies (0.68% ). The analysis compares the fixed reference configuration, RareSense-Fixed, with the workload-specific configuration selected by the adaptive procedure. The fixed configura-tion uses τ = 0 .01 , L = 4 , and cmin = 0 .95 , and obtains AUROC = 0 .973 and nDCG@10 = 0 .883 .The adaptive configuration selects τ = 0 .034 and 
+
+L = 3 through Eqs. (23)–(24), without using test labels, and obtains AUROC = 0.986 and nDCG@10 = 0 .973 .Figure 5 examines the two parameters that directly determine which rare structures enter the representation. The τ sweep fixes L = 3 , while the 
+
+L sweep fixes τ = 0 .034 . All remaining parameters are held at cmin = 0 .95 , α = β = γ = 1 , δ = 0 .5,and η = 1 .
+
+Rarity-threshold sensitivity. 
+
+The support ceiling τ is the principal source of variation on this workload. With L = 3 , restrictive thresholds τ ≤ 0.01 yield AUROC values near 0.73 
+
+23 Fig. 5 Sensitivity of RareSense to its structural parameters on UWF-V1 Privilege Escalation. Left: AUROC and nDCG@10 as a function of the upper rarity threshold τ , with L = 3 . The dashed line marks the adaptive value τ = 0 .034 . The separate RS-Fixed markers at τ = 0 .01 use L = 4 and are therefore not part of the one-factor τ sweep. Right: sensitivity to the maximum MRI length L, with τ = 0 .034 . The dashed line marks the adaptive value L = 3 .
+
+and nDCG@10 values near 0.20 . Thus, although the retained evidence remains moderately infor-mative for global discrimination, the correspond-ing profiles provide insufficient shared structure for effective anomaly-to-anomaly retrieval. A sharp transition occurs at τ = 0.02 ,where AUROC increases from 0.734 to 0.986 
+
+and nDCG@10 from 0.203 to 0.973 . This indi-cates that the useful operating regime begins only after the support ceiling admits enough shared rare evidence to organize related anomalies into meaningful neighborhoods. The adaptive value 
+
+τ = 0 .034 lies within this high-performing regime and reproduces the principal RareSense result: AUROC = 0 .986 and nDCG@10 = 0 .973 .Increasing the threshold to τ = 0.05 pre-serves nDCG@10 at 0.973 and raises AUROC slightly to 0.994 . At τ = 0 .10 , AUROC remains 
+
+0.994 , but nDCG@10 decreases to 0.929 . Thus, the two objectives respond somewhat differently once the threshold becomes broad: additional patterns continue to support global anomaly sepa-ration, but begin to weaken the organization of the top-ranked retrieval neighborhood. Overall, the interval 0.02 ≤ τ ≤ 0.05 constitutes a favorable region for both tasks on this workload. The adaptive value is not presented as the post-hoc test optimum. In particular, τ = 0 .05 
+
+attains a slightly higher test AUROC. However, selecting that value after inspecting the test labels would constitute test-set tuning. In con-trast, τ = 0 .034 is obtained from the unlabeled rarity-score distribution and falls inside the broad high-performing region without using test labels. 
+
+Maximum-length sensitivity. 
+
+The maximum MRI length L is considerably less influential. Across L ∈ {2, 3, 4, 5}, nDCG@10 remains exactly 0.973 at the reported precision, while AUROC varies only between 0.970 and 
+
+0.988 . The highest observed AUROC occurs at 
+
+L = 2 , with 0.988 , but the adaptive value L = 3 
+
+is very close at 0.986 . Increasing L to four or five produces only a small AUROC decrease and does not alter the top-10 retrieval ordering. These results suggest that interactions of length at most three are sufficient to capture the relevant rare evidence on this workload. Allow-ing longer itemsets does not improve retrieval, indicating that the useful neighborhood struc-ture is already represented by relatively short higher-order co-occurrences. 
+
+Confidence and weighting parameters. 
+
+Once the adaptive structural configuration 
+
+(τ, L ) = (0 .034 , 3) is fixed, performance is highly stable with respect to the remaining parame-ters. Varying the confidence threshold cmin from 
+
+0.50 to 0.99 leaves both AUROC and nDCG@10 unchanged at 0.986 and 0.973 , respectively. This indicates that the rules relevant to the final rank-ing already satisfy comparatively high confidence levels. The rarity exponent α, confidence exponent 
+
+β, and smoothing constant η similarly produce no visible change at the reported precision. The lift exponent γ changes AUROC only from 0.985 
+
+to 0.988 , while the length exponent δ changes it 24 only from 0.986 to 0.987 . nDCG@10 remains 0.973 
+
+throughout all of these sweeps. The invariance of nDCG@10 does not imply that the numerical similarities are identical. Rather, moderate parameter changes preserve the ordering of the highest-ranked candidates, and nDCG@10 depends on that ordering rather than on the absolute similarity values. The results therefore indicate that performance is governed primarily by which rare structures are retained 
+
+through τ and L, whereas moderate reweighting of already retained coordinates has little effect on the resulting ranking. Because this analysis varies one parameter at a time on a single workload, it does not charac-terize interactions among parameters or establish universal optimality across all datasets. It should therefore be interpreted as a local diagnostic anal-ysis. Nevertheless, it provides two clear observa-tions: the adaptive procedure selects a structural configuration within a broad high-performing region, and the resulting similarity space is locally robust to its confidence and weighting parameters. 
+
+## 8.6 Ablation study 
+
+We ablate the main representational and weight-ing choices of RareSense on five representative workloads. An important distinction concerns the role of minimal rare itemsets (MRIs). MRIs are mined in all variants that construct rule coordi-nates, because they provide the rare higher-order structures from which candidate rules are gener-ated. The ablation therefore does not ask whether MRIs should be mined, but rather whether they should themselves be retained as coordinates in the final similarity space. In the rule-coordinate representation used by the final method, an object activates a coordinate associated with rule r when its complete evidence set satisfies E(r) ⊆ Ti. In the MRI-coordinate 
+
+variant, each mined minimal rare itemset p is instead used directly as a binary coordinate, activated whenever p ⊆ Ti. The combined repre-sentation retains both coordinate families. Thus, the comparison isolates the effect of the final rep-resentation while preserving the same underlying rare-pattern mining principle. The representational ablation supports a sep-aration between pattern discovery and simi-larity representation . Using MRIs directly as                          
+
+> Table 10 Ablation on five representative workloads.
+> Configuration nDCG@10 AUROC Rule coordinates 0.621 0.901
+> Rule + MRI coordinates 0.603 0.893 No confidence filtering 0.598 0.887 No lift contribution 0.587 0.881 No length contribution ( δ= 0 )0.564 0.884 No stability contribution ( ζ= 0 )0.550 0.801 Uniform weights 0.572 0.877 No inverse-support factor 0.561 0.869 MRI coordinates 0.441 0.812 IDF-Jaccard reference 0.547 0.836
+
+coordinates gives the weakest RareSense vari-ant, with nDCG@10 = 0.441 and AUROC =0.812 . Adding MRI coordinates to the rule rep-resentation also does not improve performance: nDCG@10 decreases from 0.621 to 0.603 and AUROC from 0.901 to 0.893 , while introduc-ing additional MRI-based coordinates into the final representation. The best result is therefore obtained when MRIs serve only as compact min-ing seeds and the final similarity space is formed from reliability-qualified rule evidence. This result should not be interpreted as evi-dence that rule directionality is directly exploited during object matching. Activation depends on the complete evidence set E(r) rather than on a directional antecedent–consequent traversal. The advantage of rules arises instead from the addi-tional statistical criteria attached to them. Start-ing from a rare co-occurrence, rule generation and filtering retain structures supported by measures such as confidence and lift, thereby providing a principled mechanism for selecting and weight-ing higher-order evidence before it enters the similarity space. The remaining ablations further support this interpretation. Removing the confidence crite-rion reduces nDCG@10 from 0.621 to 0.598 and AUROC from 0.901 to 0.887 , while suppressing the lift contribution reduces them to 0.587 and 
+
+0.881 . Removing the length contribution reduces nDCG@10 to 0.564 and AUROC to 0.884 , show-ing that structural complexity provides a modest but measurable contribution. The strongest degradation occurs when sta-bility weighting is removed: nDCG@10 decreases to 0.550 and AUROC to 0.801 . This indicates that rediscovery across subsamples is important for suppressing fragile rules that may arise from accidental low-support co-occurrences. Replacing 25 all learned weights by uniform weights yields nDCG@10 = 0 .572 and AUROC = 0 .877 , while removing the inverse-support factor gives 0.561 
+
+and 0.869 . Overall, the results support retaining all five components of the composite weight, with stability and inverse support providing the largest contributions. Overall, the ablation supports the final design of RareSense: minimal rare itemsets provide an efficient intermediate representation for discov-ering unusual higher-order co-occurrences, while confidence-qualified and weighted rule evidence provides a more selective final coordinate space. The fact that the rule-coordinate representation also exceeds the IDF-Jaccard reference ( 0.621 ver-sus 0.547 nDCG@10) further indicates that its advantage is not explained solely by assigning greater weight to individually rare attributes. 
+
+## 8.7 Adversarial robustness 
+
+We evaluate the robustness of RareSense under three black-box perturbation families applied to anomalous objects. Benign objects and the learned rule dictionary are held fixed through-out the experiment: the dictionary is mined once from the original unperturbed data and is not re-estimated after an attack. This setting models test-time behavioral modification by an adversary who can alter its own observable behavior but does not have direct access to, or control over, the learned rare-rule dictionary. To isolate the effect of the perturbations from adaptive reconfiguration, this diagnostic experiment uses the fixed reference configuration RareSense-Fixed with τ = 0.01 , L = 4, and 
+
+cmin = 0 .95 . For a metric M , we report 
+
+∆M = Mperturbed − Mclean ,
+
+so negative values indicate degradation and pos-itive values indicate improved performance after perturbation. Results are averaged over four rep-resentative workloads, comprising two UWF and two DARPA TC workloads. 
+
+Perturbation families. 
+
+Bit-flip noise (ε). Each binary atom of an anomalous transaction is independently flipped with probability ε ∈ { 0.01 , 0.05 , 0.10 , 0.20 }. This provides a generic stress test for random teleme-try corruption, measurement noise, or unsophisti-cated tampering. 
+
+Atom removal (r). For r ∈ {1, 2, 3, 5},
+
+r active atoms are removed uniformly at ran-dom from each anomalous transaction. This models partial behavioral suppression or miss-ing telemetry without assuming that the adver-sary knows which atoms participate in high-weight RareSense rules. It is therefore a black-box feature-suppression test rather than a dictionary-aware targeted attack. 
+
+Benign mimicry ( c). The c ∈ { 1, 3, 5, 10 }
+
+most frequent atoms in the benign population are added to each anomalous transaction. This mod-els an adversary that pads its observable behavior with common benign characteristics in an attempt to appear less exceptional. 
+
+Benign-feature injection has limited adverse effect. 
+
+Mimicry produces essentially no degradation in global anomaly discrimination: for c ≤ 3,
+
+∆AUROC is zero at the reported precision, and even for c ∈ {5, 10 } the mean change is only 
+
++0 .006 . Retrieval is similarly unchanged for c ≤ 5.This behavior is consistent with the frozen-dictionary construction. Injected benign atoms cannot create new coordinates in the learned rep-resentation because the rule dictionary is not re-mined after perturbation. They can only change which existing rules an object activates. Com-mon benign atoms therefore have limited influence unless, together with atoms already present in the anomalous transaction, they complete the evidence set E(r) of an existing retained rule. At c = 10 , nDCG@10 increases by 0.250 .This should not be interpreted as evidence that mimicry necessarily improves detection. Because anomalous objects participating in the retrieval evaluation are perturbed under the same attack mechanism, shared perturbations can increase overlap between anomalous query and candidate profiles. The result nevertheless shows that the tested benign-padding strategy does not provide an effective evasion mechanism against the frozen RareSense representation. 26 Table 11 Adversarial robustness of RareSense-Fixed under three black-box perturbation families. Values are mean changes relative to the clean baseline over four representative workloads (two UWF and two DARPA TC). Negative values indicate degradation; values close to zero indicate limited sensitivity to the tested perturbation.                            
+
+> Attack Intensity ∆AUROC ∆nDCG@10 Bit-flip noise ( ε)0.01 +0.027 +0.089 0.05 +0.027 +0.220 0.10 +0.056 +0.280 0.20 −0.026 +0.220 Atom removal ( r)1−0.062 0.000 2−0.211 +0.151 3−0.228 +0.059 5−0.246 −0.030 Benign mimicry ( c)10.000 0.000 30.000 0.000 5+0.006 0.000 10 +0.006 +0.250
+
+Random bit perturbations do not yield systematic evasion. 
+
+For ε ≤ 0.10 , both AUROC and nDCG@10 increase rather than decrease. Random flips may remove some activated evidence, but they can also introduce atoms that complete the evidence sets of existing rare rules. Consequently, indis-criminate perturbation does not consistently move anomalous objects toward a less suspicious repre-sentation. Only at the largest perturbation level, ε =0.20 , does global discrimination deteriorate, with 
+
+∆AUROC = −0.026 . Even then, nDCG@10 remains above the clean baseline. The divergence between the two metrics again highlights that global anomaly separation and query-conditioned neighborhood structure respond differently to per-turbations. 
+
+Evidence removal is the main global-ranking vulnerability. 
+
+Atom removal produces the clearest degradation in AUROC. Removing one active atom reduces AUROC by 0.062 , while removing two, three, and five atoms produces mean changes of −0.211 ,
+
+−0.228 , and −0.246 , respectively. This behav-ior follows naturally from the conjunction-based representation: a single atom can participate in the evidence sets of several activated rules, so removing it can simultaneously invalidate multiple coordinates. The effect on retrieval is more moderate. nDCG@10 is unchanged for r = 1 , increases for 
+
+r = 2 and r = 3 , and decreases only slightly (−0.030 ) for r = 5 . Thus, atom suppression is sub-stantially more damaging to the global anomaly score than to the top-ranked similarity structure under the tested protocol. Because the removals are random rather than dictionary-aware, these results do not represent a worst-case adaptive attack; an adversary that knew which atoms sup-port the highest-weight rules could potentially construct stronger perturbations. 
+
+Summary. 
+
+The perturbation study reveals an asymmetric robustness profile. Adding common benign atoms has little adverse effect under a frozen rule dictio-nary, and random bit perturbations do not provide a consistent evasion benefit. In contrast, suppress-ing active evidence is the strongest tested vulner-ability for global anomaly ranking because remov-ing a small number of atoms can break multi-ple conjunction-based coordinates simultaneously. These experiments are black-box robustness stress tests rather than worst-case adversarial guaran-tees. Dictionary-aware attacks, clean-query ver-sus perturbed-candidate evaluation, and adaptive adversaries that optimize perturbations against rule activation remain important directions for future work. 
+
+## 8.8 Statistical significance 
+
+We complement the aggregate performance results with non-parametric statistical tests across 27 the 27 evaluation workloads. Because the work-loads differ substantially in sample size, class imbalance, and feature space, we compare meth-ods using within-workload ranks rather than assuming normally distributed performance differ-ences. We distinguish two comparisons. First, the pri-mary retrieval analysis compares RareSense with the four query-conditioned atomic similarities: Jaccard, IDF-Jaccard, cosine, and TF–IDF cosine. Second, the broader comparison evaluates the deployable RareSense configurations and scalar anomaly detectors. The latter includes RareSense, RareSense-Fixed, AVF, FPOF, HBOS, ECOD, COPOD, OC-SVM, AE, DIF, and LUNAR. No post-hoc oracle configuration is included in the statistical analysis. 
+
+Primary query-conditioned comparison. 
+
+For the five query-conditioned methods evaluated across 27 workloads, the Friedman test rejects the null hypothesis of equal performance ( χ2 
+
+> F
+
+= 13 .27 ,
+
+p = 0 .010 ). RareSense obtains the best average rank. Paired Wilcoxon signed-rank comparisons between RareSense and each atomic baseline, cor-rected using Holm’s procedure, remain significant at the 0.05 level. These results support an over-all statistical advantage for RareSense while not implying that it dominates every baseline on every individual workload. 
+
+Global anomaly-ranking comparison. 
+
+For the eleven methods evaluated using AUROC across the 27 workloads, the Friedman test rejects the null hypothesis of equal performance (χ2 
+
+> F
+
+= 44 .00 , p = 3.29 × 10 −6). RareSense obtains the best average rank of 3.63 , followed by HBOS ( 4.93 ), the AutoEncoder ( 5.02 ), and DIF (5.31 ). Under the Nemenyi criterion, RareSense is not statistically distinguishable from HBOS, the AutoEncoder, DIF, RareSense-Fixed, FPOF, or AVF. Its average-rank difference exceeds the critical difference relative to OC-SVM, ECOD, LUNAR, and COPOD. These findings support competitiveness with the strongest dedicated detectors rather than universal superiority. 
+
+## 8.9 Runtime analysis 
+
+We evaluate computational cost using wall-clock runtime on a representative subset of workloads spanning different sample sizes and benchmark families. All methods are executed on the same machine and software environment. For adaptive RareSense, runtime includes the complete fitting procedure: the preliminary mining pass used to estimate ˆρ, adaptive parameter selection, the final rule-space construction, profile generation, and scoring. Runtime does not scale solely with the num-ber of objects. Rare-itemset and rule mining are output-sensitive: workloads of similar size can dif-fer in transaction density, support distributions, the number of candidate itemsets examined, the number of generated closure and partition rules, and the number of active object–rule incidences. Consequently, the difference between UWF-DefEva-V1 and UWF-Recon-V1, despite their similar numbers of objects, reflects differences in the mined search space rather than an inconsis-tency in the timing protocol. Because each value is a single wall-clock measurement, the table should be interpreted as an indicative computational comparison rather than an estimate of runtime variance. RareSense requires a mean wall-clock time of 2.6 s over the seven reported workloads. It is slower than very lightweight frequency-based methods: approximately 5× slower than AVF and 
+
+13 × slower than HBOS on average. This overhead reflects the additional cost of mining rare higher-order structures and constructing the rule-profile representation. Nevertheless, the absolute runtime remains modest and compares favorably with more com-putationally intensive baselines. On average, RareSense is approximately 8× faster than FPOF, 
+
+141 × faster than OC-SVM, 19 × faster than the autoencoder, and 295 × faster than DIF. The gap becomes particularly pronounced on the largest workload shown: on DARPA-Trace, RareSense completes in 4.8 s compared with 920.1 s for OC-SVM and 3622.4 s for DIF. The computational cost of RareSense is con-centrated in the offline minimal-rare-itemset and rule-mining stages. Once the dictionary and sparse profiles have been constructed, global scoring and query-time similarity evaluation are comparatively inexpensive; in our implementa-tion, post-mining scoring requires less than 0.1 s on the reported workloads. This separation is 28 Table 12 Friedman omnibus tests across the 27 evaluation workloads. 
+
+Comparison Metric Methods χ2 
+
+> F
+
+p
+
+Query-conditioned similarities nDCG@10 5 13.27 0.010 Global anomaly-ranking methods AUROC 11 44.00 3.29 × 10 −6 
+
+> Table 13 Wall-clock runtimes in seconds on representative workloads. Dataset sizes correspond to the canonical processed workloads in Table 4. RareSense runtime includes the preliminary adaptive pass, final dictionary construction, profile generation, and scoring; query-time retrieval is measured over at most 200 anomaly queries.
+
+Dataset RS AVF FPOF HBOS ECOD COPOD OCSVM AE DIF UWF-DefEva-V1 1.4 0.3 12.1 0.1 1.2 0.8 142.3 31.2 189.4 UWF-Recon-V1 2.1 0.4 14.3 0.2 1.5 0.9 163.2 38.7 221.3 UWF-CredAcc-V1 5.3 0.8 31.2 0.3 2.8 1.9 910.4 87.4 512.1 DARPA-5dir 0.1 0.1 0.8 0.0 0.2 0.1 6.2 6.1 38.4 DARPA-Trace 4.8 1.1 45.2 0.5 6.3 4.1 920.1 91.3 3622.4 DARPA-Cadets 1.8 0.5 18.4 0.2 2.1 1.3 243.7 42.1 483.2 NSL-KDD-Probe 2.8 0.4 22.1 0.1 1.8 1.1 185.4 42.3 298.7 Mean 2.6 0.5 20.6 0.2 2.3 1.4 367.3 48.4 766.5 
+
+operationally favorable for similarity-search appli-cations because the one-time symbolic mining cost can be amortized across many subsequent anomaly queries. Overall, the runtime analysis shows that RareSense occupies a useful middle ground: it is more expensive than simple marginal-frequency detectors, but substantially cheaper than sev-eral optimization- and learning-intensive baselines while additionally providing an explicit query-conditioned similarity space and rule-level expla-nations. 
+
+## 8.10 Faithful Explanation of a Representative Retrieved Pair 
+
+We illustrate the intrinsic explainability of RareSense using a representative retrieval from the UWF Reconnaissance V2 workload. The work-load contains n = 18 ,128 objects, of which 1,924 (10 .6% ) are labeled anomalous. The adaptive con-figuration selected τ = 0 .10 , L = 5 , and cmin =0.95 , producing a dictionary of 1,296 retained rare-rule coordinates. 
+
+Case-selection protocol. 
+
+To obtain an informative rather than degenerate explanation, we consider anomaly queries whose top-ranked candidate satisfies four conditions: (i) the query and candidate transactions are not iden-tical, (ii) their RareSense profiles are not identical, (iii) their similarity lies strictly between zero and one, and (iv) the top score is unique. Among the eligible queries, we select the query whose per-query nDCG@10 is closest to the median. Ground-truth labels are used only to define the evaluation-query set and assess retrieval rel-evance. Test-workload labels are not used in dic-tionary construction, test-time parameter adapta-tion, similarity computation, or candidate rank-ing. The calibration constant is fixed heuristically to κ = 5 and is used unchanged across all work-loads without label-guided selection. Candidate labels are inspected only after retrieval. The selected query is 5, with per-query nDCG@10 equal to 0.63 . After excluding the query itself, RareSense retrieves 13 at rank 1 with a unique score. Post-hoc inspection of the eval-uation ground truth identifies both objects as anomalous and associates them with the T1595 Active Scanning category. 
+
+Transactions and rare-rule profiles. 
+
+The query and retrieved candidate have differ-ent transactions and different RareSense profiles. Table 14 summarizes their shared and object-specific atoms. The query contains 13 atoms and activates six rare rules, whereas the candidate contains 12 atoms and also activates six rare rules. Five rules 29 Table 14 Atomic overlap between the representative query q and its top-ranked candidate x1. Numerical values denote the encoded bins or categories produced by preprocessing, rather than literal byte, packet, or port values. 
+
+Set Atoms 
+
+Tq ∩ Tx1 conn_state=2 , dest_ip=2 , duration=3 ,
+
+local_orig=2 , local_resp=2 ,
+
+orig_bytes=2 , orig_pkts=4 , proto=1 ,
+
+service=3 , src_ip=2 
+
+Tq \ Tx1 resp_bytes=3 , resp_pkts=4 , port_dst=7 
+
+Tx1 \ Tq resp_bytes=4 , resp_pkts=3 
+
+are shared: 
+
+|Pq | = |Px1 | = 6 , |Pq ∩ Px1 | = 5 .
+
+For every displayed shared rule r, activation was verified programmatically: 
+
+E(r) ⊆ Tq and E(r) ⊆ Tx1 .
+
+Exact score decomposition. 
+
+The weighted shared evidence is 
+
+W∩ = X 
+
+> r∈Pq∩Px1
+
+w(r) = 64 .2.
+
+The query-only and candidate-only evidence have respective weights 
+
+Wq\x = 15 .4, Wx\q = 11 .8.
+
+Consequently, 
+
+SR(q, x 1) = W∩
+
+W∩ + Wq\x + Wx\q
+
+= 64 .264 .2 + 15 .4 + 11 .8= 64 .291 .4 = 0 .7024 .
+
+(29) For each shared rule r, its exact contribution to the similarity is 
+
+Cr(q, x 1) = w(r)
+
+W∪
+
+, W∪ = 91 .4. 
+
+> Table 15 Summary of the representative RareSense retrieval. Test-workload labels are not used in dictionary construction, test-time parameter adaptation, similarity computation, or candidate ranking. Candidate labels are inspected only after retrieval.
+
+Quantity Value Workload UWF Reconnaissance V2 Objects 18,128 Anomalies 1,924 ( 10 .6% )Configuration τ = 0 .10 , L = 5 , cmin = 0 .95 
+
+Rule dictionary 1,296 rules Query 5
+
+Query nDCG@10 0.63 
+
+Query label Anomalous; T1595 
+
+|Tq | 13 atoms 
+
+|Pq | 6 rules Retrieved candidate 13 
+
+Candidate label Anomalous; T1595 
+
+|Tx1 | 12 atoms 
+
+|Px1 | 6 rules 
+
+|Tq ∩ Tx1 | 10 atoms 
+
+|Pq ∩ Px1 | 5 rules 
+
+W∩ 64.2 
+
+Wq\x 15.4 
+
+Wx\q 11.8 
+
+W∪ 91.4 
+
+SR(q, x 1) 0.7024 
+
+RareSense rank 1; unique score IDF-Jaccard rank 15; unique score IDF-Jaccard similarity 0.311 
+
+These contributions satisfy 
+
+X 
+
+> r∈Pq∩Px1
+
+Cr(q, x 1) = SR(q, x 1).
+
+The unmatched fractions 
+
+Wq\x
+
+W∪
+
+= 0 .1685 , Wx\q
+
+W∪
+
+= 0 .1291 
+
+are not positive contributions to the numerator. Instead, they represent evidence found in only one profile and therefore enlarge the denominator of the weighted Jaccard similarity. Table 15 reports the complete case metadata, while Table 16 lists the five shared rules and their exact score contributions. 30 Shared rare-rule explanation. 
+
+Table 16 reports the five shared rules that form the complete numerator of the RareSense similar-ity. Their observed supports range from approxi-mately 0.35% to 0.52% of the workload. A confi-dence of 1.000 means that every observed occur-rence of the antecedent in the unlabeled work-load was accompanied by the consequent. It does not imply a universal deterministic relationship beyond the observed data. 
+
+Interpretation. 
+
+The largest contribution comes from rule r1,which accounts for 0.2713 of the final similarity. The rule captures the observed co-occurrence of the encoded duration and origin-byte bins with a seven-atom conjunction involving destination and source classes, locality indicators, protocol, ser-vice category, and origin-packet bin. Its complete evidence set occurs in 64 of the 18,128 workload objects. Rules r2–r5 expose related but distinct higher-order conjunctions involving connection state, duration, service category, protocol, and encoded packet or byte bins. Their joint contribution shows that the retrieval is not explained by one iso-lated attribute; rather, it is driven by multiple overlapping rare conjunctions shared by the two objects. The query-only evidence is asso-ciated with the encoded combination 
+
+{resp_bytes=3 , resp_pkts=4 }, whereas the candidate-only evidence is associated with {resp_bytes=4 , resp_pkts=3 }. These unmatched rules explain why the similarity is high but remains below one. 
+
+Comparison with atomic similarity. 
+
+IDF-Jaccard assigns the pair a similarity of 0.311 and ranks x1 at position 15, whereas RareSense assigns a similarity of 0.702 and ranks it first. IDF-Jaccard represents the pair through weighted overlap between individual atoms. In contrast, RareSense assigns weight to the shared higher-order rare conjunctions reported in Table 16, which contribute directly to the pairwise score. The two methods therefore expose different forms of evidence: atomic overlap for IDF-Jaccard and statistically qualified rare conjunctions for RareSense. 
+
+Mechanistic faithfulness. 
+
+We assess explanation faithfulness using a profile-level intervention. The shared rules are removed from the query profile in decreasing order of exact contribution, after which the similarity to x1 and its candidate rank are recomputed. Removing r1 reduces the similarity from 0.702 to 0.431 and moves the candidate from rank 1 to rank 4. Removing the two largest contributors reduces the similarity to 0.242 and moves the can-didate to rank 18. After removing the three largest contributors, the similarity decreases to 0.112 and the candidate moves to rank 67. For comparison, random deletion is evaluated exactly over all  5
+
+> k
+
+ subsets of k shared rules. At k = 1 , ordered deletion gives a similarity of 0.431, compared with a random-deletion mean of 
+
+0.562 ± 0.083 . At k = 2 , the corresponding values are 0.242 and 0.421 ± 0.102 .When all five shared rules are removed, the modified query and x1 share no active rule, so their similarity becomes zero. The query-only rule remains active in the modified query profile; there-fore, other candidates may still receive nonzero similarity. The resulting ordinal position of x1
+
+is determined by the remaining candidate scores and the deterministic tie-breaking policy and is therefore not interpreted. The ordered intervention provides a mechanis-tic consistency check: removing rules in decreasing exact-contribution order reduces both the pair-wise score and the candidate rank more rapidly than random removal. This supports the faith-fulness of the reported decomposition to the RareSense retrieval mechanism. 
+
+# 9 Discussion 
+
+Why nDCG is the main story. 
+
+RareSense is designed for search under a lim-ited inspection budget. AUROC averages pairwise anomaly–normal ordering over the entire ranking and can be high even when the first relevant result is operationally too deep. nDCG@10 directly rewards concentrating relevant anomalies at the top. Under the like-for-like query-conditioned pro-tocol, RareSense reaches 0.696 versus 0.645 for TF–IDF cosine, the strongest atomic baseline on average. Its AUROC advantage is much less pronounced, confirming that the contribution is 31 Table 16 Shared rare rules for the representative query–candidate pair. Count is the number of workload transactions containing the complete evidence set. Contribution is Cr = w(r)/W ∪. The five contributions sum exactly to 
+
+> SR(q, x 1) = 0 .7024 .
+
+ID Antecedent ⇒ Consequent Count Supp. Conf. Lift Weight Contrib. 
+
+r1 {duration=3 , orig_bytes=2 } ⇒ {dest_ip=2 , local_orig=2 ,
+
+local_resp=2 , orig_pkts=4 , proto=1 , service=3 , src_ip=2 }64 0.0035 1.000 4,127 24.8 0.2713 
+
+r2 {conn_state=2 , orig_pkts=4 } ⇒ {dest_ip=2 , duration=3 ,
+
+local_orig=2 , local_resp=2 , service=3 , src_ip=2 } 75 0.0041 1.000 3,592 17.3 0.1893 
+
+r3 {duration=3 , service=3 } ⇒ {conn_state=2 , dest_ip=2 ,
+
+local_orig=2 , src_ip=2 }95 0.0052 1.000 2,874 11.9 0.1302 
+
+r4 {conn_state=2 , duration=3 , orig_pkts=4 } ⇒
+
+{local_orig=2 , local_resp=2 , src_ip=2 } 75 0.0041 1.000 1,348 6.4 0.0700 
+
+r5 {orig_bytes=2 , orig_pkts=4 , proto=1 } ⇒ {duration=3 ,
+
+service=3 }95 0.0052 1.000 782 3.8 0.0416 
+
+Sum of shared-rule contributions 0.7024       
+
+> Table 17 Profile-level intervention under ordered and exhaustive random deletion of shared rules. Random results report the exact mean and population standard deviation over all  5
+> k
+> subsets. The candidate rank at k= 4 is not reported because only the pairwise similarity was retained for that intervention level.
+
+k Ordered SR Candidate rank Random SR
+
+0 0.702 1 0.702 ± 0.000 
+
+1 0.431 4 0.562 ± 0.083 
+
+2 0.242 18 0.421 ± 0.102 
+
+3 0.112 67 0.281 ± 0.102 
+
+4 0.042 not reported 0.141 ± 0.083 
+
+5 0.000 not interpreted 0.000 ± 0.000 
+
+primarily a retrieval geometry rather than a uni-versally superior detector. 
+
+Fair comparison across task types. 
+
+The retrieval and detection tables intentionally use different primary competitors. Atomic simi-larities are the correct baselines for the central query-conditioned search task because their rank-ing changes with the query. Scalar anomaly detec-tors are the correct baselines for the secondary global ranking task because they natively pro-duce query-independent anomaly scores. Scalar anomaly detectors are evaluated only in the sec-ondary global ranking task and are therefore not interpreted as query-conditioned similarity base-lines. 
+
+What the method actually captures. 
+
+RareSense does not simply assign larger weights to rare atomic features. It changes the coordinate system from atoms to reliability-qualified rare conjunctions. This makes it possible to distinguish objects that look equally similar at the atomic level but differ in higher-order co-occurrence evi-dence (Proposition 3). 
+
+What the method does not necessarily capture. 
+
+RareSense retrieves objects that share rare-rule evidence, which is not necessarily equivalent to sharing a broad semantic label such as an attack tactic. In settings where relevance is primarily encoded by common atomic features, suppressing those features may be counterproductive. Evalu-ating same-tactic or same-attack-family retrieval remains an important direction for future work. 
+
+DARPA failure mode. 
+
+RareSense is less effective on several DARPA TC workloads. At the family level, TF–IDF cosine slightly exceeds RareSense in nDCG@10 ( 0.278 
+
+versus 0.262 ), although RareSense performs sub-stantially better on Android ( 0.665 versus 0.347 ). The weakest RareSense results occur on Windows and Linux, where nDCG@10 reaches only 0.128 
+
+and 0.018 , respectively. A plausible explanation is that the attack populations in these provenance workloads are extremely small and behaviorally heterogeneous. When anomaly processes activate different rare-rule subsets, they share insufficient evidence for reliable query-conditioned retrieval. However, the present experiments do not directly isolate profile sparsity or heterogeneity as the causal source of the observed performance. A dedicated 32 Fig. 6 Faithful explanation of a representative RareSense retrieval on UWF Reconnaissance V2. (a) Exact weighted-union decomposition. The five blue bars show the normalized shared-rule contributions Cr = w(r)/W ∪ and sum to 
+
+SR(q, x 1) = 0 .7024 . The orange and red bars show the query-only and candidate-only fractions of the weighted union. These unmatched components enlarge the denominator but do not contribute to the similarity numerator. All seven weighted-union fractions sum to one. (b) Aggregate decomposition of the weighted union into shared ( 70 .2% ), query-only ( 16 .8% ), and candidate-only ( 12 .9% ) evidence. (c) Profile-level intervention under ordered and exhaustive random deletion of shared rules. Removing rules in decreasing exact contribution order reduces the pairwise similarity and candidate rank more rapidly than random deletion, supporting the mechanistic faithfulness of the explanation. At k = 5 , the similarity to x1 is zero; its resulting ordinal position is not interpreted. 
+
+profile-coverage and shared-rule analysis is there-fore left for future work. These results motivate hybrid atomic–rare representations and multi-query retrieval rather than a claim of universal rare-rule superiority. 
+
+Heuristic adaptive calibration without label selection. 
+
+The adaptive rarity scale is driven by an unlabeled upper-tail statistic of a preliminary RareSense fit. The global coverage multiplier is fixed heuris-tically to κ = 5 and used unchanged for all workloads; it was not selected using class labels, validation queries, or held-out validation data. Consequently, only the unlabeled statistic ˆρ deter-mines the workload-specific values of τ and L. The preliminary fit adds an explicit extra mining pass, which is included in the reported runtime. 
+
+Transductive evaluation. 
+
+The reported dictionaries are mined unsupervised from the evaluation collection. No labels are used, but the setup is transductive. In deployment, the 33 dictionary should be learned from historical ref-erence data and then frozen or updated on a schedule. A future inductive evaluation should explicitly separate mining and retrieval periods. 
+
+High-contamination workloads. 
+
+One UWF workload has an anomaly ratio close to 48%. Such a setting violates the everyday intu-ition that anomalies are globally rare. We retain it as a stress test because RareSense mines rare com-binations , not rare class labels, but results on this workload should not be interpreted as a realistic contamination scenario. 
+
+Indexing and scale. 
+
+The present contribution is the similarity model, not a new index structure. Metric and inverted-index compatibility provide a path to scalable exact or approximate retrieval, but the current experiments do not claim a new state-of-the-art indexing algorithm. 
+
+Explainability. 
+
+The explanation is faithful by construction: shared-rule contributions sum exactly to the sim-ilarity. This is stronger than a post-hoc feature attribution for the specific question “why was this neighbor retrieved?” It does not, however, prove causal meaning of the rules; domain interpretation remains the responsibility of the analyst. 
+
+# 10 Reproducibility 
+
+Unless otherwise stated, the reported method is adaptive RareSense. Its preliminary fit uses τ0 =0.01 , cmin = 0 .95 , and L0 = 4 ; ˆρ is computed by Eq. (22), the final support ceiling by Eq. (23), and 
+
+L by Eq. (24). The adaptive support ceiling uses the fixed heuristic multiplier κ = 5 , corresponding in the implementation to τ = clip(5ˆ ρ, 0.001 , 0.10) .The multiplier was not selected using class labels, validation queries, or a held-out validation set, and the same value is used for every workload. The fixed reference RareSense-Fixed uses τ = 0 .01 ,
+
+L = 4 , and cmin = 0 .95 . Rule weights use η = 1 ,
+
+α = β = γ = ζ = 1 , and δ = 0 .5 in Eq. (12). Sta-bility is estimated from B = 10 subsamples; note that the weight exponent α is distinct from the adaptive coverage multiplier κ.Both partition rules and exact closure rules are generated in the reported implementation. Query sets are fixed and reused across all retrieval methods; Jaccard, IDF-Jaccard, cosine, TF–IDF cosine, and RareSense therefore see iden-tical queries, candidate sets, and binary rele-vance labels in the primary comparison. Empty RareSense query profiles are retained and evalu-ated under the fixed all-zero-similarity tie policy rather than discarded. RareSense and the atomic similarity baselines are deterministic once the data, parameters, query set, and tie-breaking policy are fixed. A common fixed random seed of 42 is used whenever stochas-tic initialization or subsampling applies, including for the AutoEncoder, DIF, LUNAR, and the sub-sampled OC-SVM configuration. The standard deviations reported in Table 17 are exact popu-lation standard deviations over the corresponding deletion subsets, not measures of run-to-run vari-ability. Labels and attack-category fields are excluded from transaction construction and from all test-time parameter adaptation. The preprocessing scripts, experiment configu-rations, processed transaction matrices, canonical result files, and scripts used to regenerate the reported tables, figures, macro-averages, and sta-tistical tests are available from the corresponding author upon reasonable request. 
+
+# 11 Conclusion 
+
+We introduced RareSense, a rarity-aware sim-ilarity model for sparse transactional anomaly search. Minimal rare itemsets serve as an interme-diate mining substrate; reliable association-rule evidence defines the final coordinates. Objects are compared through weighted Jaccard overlap in the rare-rule space, and the same shared rules provide an exact additive explanation of every retrieved neighbor. The empirical conclusion is deliberately nDCG-first. Across 27 workloads from four bench-mark families, the label-free adaptive RareSense configuration reaches a macro-average nDCG@10 of approximately 0.696 , compared with 0.645 for TF–IDF cosine, the strongest atomic baseline on average. RareSense exceeds the strongest atomic similarity on 18 of the 27 workloads. The omnibus 34 comparison is statistically significant, and cor-rected paired comparisons favor RareSense over each atomic baseline. The gain is strongest on UWF, remains pos-itive across the general categorical benchmarks, is effectively tied with the strongest atomic sim-ilarity on NSL-KDD, and is weaker on several DARPA workloads. For the secondary global-ranking task, RareSense obtains the highest observed macro-average AUROC while remaining statistically comparable to several strong dedi-cated anomaly detectors. The results therefore support a precise rather than universal claim: rare-rule coordinates pro-vide a useful complementary similarity geom-etry when related anomalies share repeatable rare combinatorial evidence. When relevance is encoded by common atomic features, or when rare-rule overlap is too sparse, atomic similarity can be preferable. Future work will combine atomic and rare-rule coordinates in a dual-granularity space, evalu-ate inductive historical-to-future retrieval, and implement specialized inverted/metric indexes for sub-second search at larger scale. 
+
+# Statements and Declarations 
+
+## Competing Interests 
+
+The authors have no relevant financial or non-financial interests to disclose. 
+
+## Data and Code Availability 
+
+All datasets used in this study are pub-licly available. The DARPA Transparent Com-puting/ADAPT data are available at https: //gitlab.com/adaptdata. The UWF datasets are available at https://datasets.uwf.edu/. The NSL-KDD dataset is available at https:// www.kaggle.com/datasets/hassan06/nslkdd. The general categorical benchmarks are available through ADRepository at https://www.dbs.ifi. lmu.de/research/outlier-evaluation/DAMI/. The code and reproducibility materials used to pro-duce the reported results are available from the corresponding author upon reasonable request. 
+
+## Author Contributions 
+
+SB, TR contributed to conceptualization, methodology, software, formal analysis, investiga-tion, visualization, and preparation of the original manuscript. Both authors read and approved the final manuscript. 
+
+## Funding 
+
+No funds, grants, or other support were received for conducting this study. 
+
+## Ethics Approval 
+
+Not applicable. This study uses publicly available benchmark datasets and does not involve human participants or animals. 
+
+# References 
+
+[1] P. Zezula, G. Amato, V. Dohnal, and M. Batko, Similarity Search: The Metric Space Approach . Springer, 2006. [2] E. Chávez, G. Navarro, R. Baeza-Yates, and J. L. Marroquín, “Searching in metric spaces,” ACM Computing Surveys , vol. 33, no. 3, pp. 273–321, 2001. [3] T. Şakar and H. Emekci, “Maximizing RAG efficiency: A comparative analysis of RAG methods,” Natural Language Process-ing , vol. 31, no. 1, pp. 1–25, 2025. [4] W. Xu, C. Huang, S. Gao, and S. Shang, “LLM-based agents for tool learning: A sur-vey,” Data Science and Engineering , vol. 10, no. 4, pp. 533–563, 2025. [5] M. Abo El-Enen, S. Saad, and T. Nazmy, “A survey on retrieval-augmentation generation (RAG) models for healthcare applications,” 
+
+Neural Computing and Applications , vol. 37, no. 33, pp. 28191–28267, 2025. [6] S. Cheng, J. Li, H. Wang, and Y. Ma, “RAG-Trace: Understanding and refining retrieval-generation dynamics in retrieval-augmented generation,” in Proceedings of the 38th Annual ACM Symposium on User Interface Software and Technology , pp. 1–20, 2025. [7] H. Qiao, H. Tong, B. An, I. King, C. C. Aggarwal, and G. Pang, “Deep graph 35 anomaly detection: A survey and new per-spectives,” IEEE Transactions on Knowl-edge and Data Engineering , vol. 37, no. 9, pp. 5106–5126, 2025. [8] H. Huang, P. Wang, J. Pei, J. Wang, S. Alexanian, and D. Niyato, “Deep learning advancements in anomaly detection: A com-prehensive survey,” IEEE Internet of Things Journal , vol. 12, no. 21, pp. 44318–44342, 2025. [9] M. B. Ammar, A. Mendoza, N. Belkhir, A. Manzanera, and G. Franchi, “Founda-tion models and transformers for anomaly detection: A survey,” Information Fusion ,p. 103517, 2025. [10] Z. A. Haider, A. Zeb, T. Rahman, S. K. Singh, R. Akram, A. Arishi, and I. Ullah, “A survey on anomaly detection in iot: Tech-niques, challenges, and opportunities with the integration of 6g,” Computer Networks ,vol. 270, p. 111484, 2025. [11] D. Samariya and A. Thakkar, “A compre-hensive survey of anomaly detection algo-rithms,” Annals of Data Science , vol. 10, no. 3, pp. 829–850, 2023. [12] H. Qiao, H. Tong, B. An, I. King, C. Aggar-wal, and G. Pang, “Deep graph anomaly detection: A survey and new perspectives,” 
+
+IEEE Transactions on Knowledge and Data Engineering , 2025. [13] P. Jaccard, “The distribution of the flora in the alpine zone,” New Phytologist , vol. 11, no. 2, pp. 37–50, 1912. [14] L. R. Dice, “Measures of the amount of eco-logic association between species,” Ecology ,vol. 26, no. 3, pp. 297–302, 1945. [15] S.-H. Cha, “Comprehensive survey on dis-tance/similarity measures between probabil-ity density functions,” City , vol. 1, no. 2, p. 1, 2007. [16] S. Santini and R. Jain, “Similarity measures,” 
+
+IEEE Transactions on pattern analysis and machine Intelligence , vol. 21, no. 9, pp. 871– 883, 2002. [17] F. Lan, “Research on text similarity measure-ment hybrid algorithm with term semantic information and tf-idf method,” Advances in Multimedia , vol. 2022, no. 1, p. 7923262, 2022. [18] K. Järvelin, S. L. Price, L. M. Delcambre, and M. L. Nielsen, “Discounted cumulated gain based evaluation of multiple-query ir sessions,” in European Conference on Infor-mation Retrieval , pp. 4–15, Springer, 2008. [19] A. A. Amer and H. I. Abdalla, “A set theory based similarity measure for text cluster-ing and classification,” Journal of Big Data ,vol. 7, no. 1, p. 74, 2020. [20] M. Norouzi, D. J. Fleet, and R. R. Salakhut-dinov, “Hamming distance metric learning,” 
+
+Advances in neural information processing systems , vol. 25, 2012. [21] G. Salton and C. Buckley, “Term-weighting approaches in automatic text retrieval,” 
+
+Information Processing & Management ,vol. 24, no. 5, pp. 513–523, 1988. [22] X. Li and P. Li, “Rejection sampling for weighted jaccard similarity revisited,” in Pro-ceedings of the AAAI Conference on Arti-ficial Intelligence , vol. 35, pp. 4197–4205, 2021. [23] E. Marczewski and H. Steinhaus, “On a cer-tain distance of sets and the corresponding distance of functions,” Colloquium Mathe-maticum , vol. 6, pp. 319–327, 1958. [24] M. Levandowsky and D. Winter, “Distance between sets,” Nature , vol. 234, no. 5323, pp. 34–35, 1971. [25] P. Willett, J. M. Barnard, and G. M. Downs, “Chemical similarity searching,” Journal of Chemical Information and Computer Sci-ences , vol. 38, no. 6, pp. 983–996, 1998. [26] S. Ioffe, “Improved consistent sampling, weighted minhash and L1 sketching,” in Pro-ceedings of the 2010 IEEE International Con-ference on Data Mining , pp. 246–255, 2010. [27] P. Ciaccia, M. Patella, and P. Zezula, “M-tree: An efficient access method for similarity search in metric spaces,” in Proceedings of the 23rd International Conference on Very Large Data Bases (VLDB) , pp. 426–435, 1997. [28] P. N. Yianilos, “Data structures and algo-rithms for nearest neighbor search in general metric spaces,” in Proceedings of the Fourth Annual ACM-SIAM Symposium on Discrete Algorithms (SODA) , pp. 311–321, 1993. [29] A. Z. Broder, “On the resemblance and con-tainment of documents,” in Proceedings of Compression and Complexity of Sequences ,pp. 21–29, 1997. [30] P. Indyk and R. Motwani, “Approximate nearest neighbors: Towards removing the 36 curse of dimensionality,” in Proceedings of the Thirtieth Annual ACM Symposium on Theory of Computing (STOC) , pp. 604–613, 1998. [31] R. Agrawal, T. Imielinski, and A. Swami, “Mining association rules between sets of items in large databases,” in Proceedings of the 1993 ACM SIGMOD International Con-ference on Management of Data , pp. 207– 216, 1993. [32] J. Han, J. Pei, and Y. Yin, “Mining frequent patterns without candidate generation,” in 
+
+Proceedings of the 2000 ACM SIGMOD International Conference on Management of Data , pp. 1–12, 2000. [33] L. Szathmary, A. Napoli, and P. Valtchev, “Towards rare itemset mining,” in Proceed-ings of the 19th IEEE International Con-ference on Tools with Artificial Intelligence (ICTAI) , pp. 305–312, 2007. [34] Y. S. Koh and N. Rountree, “Finding spo-radic rules using apriori-inverse,” in Advances in Knowledge Discovery and Data Mining: PAKDD 2005 , pp. 97–106, 2005. [35] L. Troiano, G. Scibelli, and C. Birtolo, “A fast algorithm for mining rare itemsets,” in 
+
+Proceedings of IDAACS 2009 , pp. 187–192, 2009. [36] Z. He, X. Xu, J. Z. Huang, and S. Deng, “FP-Outlier: Frequent pattern based outlier detection,” Computer Science and Informa-tion Systems , vol. 2, no. 1, pp. 103–118, 2005. [37] A. Koufakou, E. G. Ortiz, M. Georgiopoulos, G. C. Anagnostopoulos, and K. M. Reynolds, “A scalable and efficient outlier detection strategy for categorical data,” in Proceedings of the 19th IEEE International Conference on Tools with Artificial Intelligence (ICTAI) ,pp. 210–217, 2007. [38] M. Goldstein and A. Dengel, “Histogram-based outlier score (HBOS): A fast unsu-pervised anomaly detection algorithm,” in 
+
+KI-2012 Poster and Demo Track , pp. 59–63, 2012. [39] Z. Li, Y. Zhao, X. Hu, N. Botta, C. Ionescu, and G. H. Chen, “ECOD: Unsupervised out-lier detection using empirical cumulative dis-tribution functions,” IEEE Transactions on Knowledge and Data Engineering , vol. 35, no. 12, pp. 12181–12193, 2023. [40] Z. Li, Y. Zhao, X. Hu, N. Botta, C. Ionescu, and G. H. Chen, “COPOD: Copula-based outlier detection,” in Proceedings of the 2020 IEEE International Conference on Data Mining (ICDM) , pp. 1118–1123, 2020. [41] M. M. Breunig, H.-P. Kriegel, R. T. Ng, and J. Sander, “LOF: Identifying density-based local outliers,” in Proceedings of the 2000 ACM SIGMOD International Conference on Management of Data , pp. 93–104, 2000. [42] B. Schölkopf, J. C. Platt, J. Shawe-Taylor, A. J. Smola, and R. C. Williamson, “Esti-mating the support of a high-dimensional distribution,” Neural Computation , vol. 13, no. 7, pp. 1443–1471, 2001. [43] F. T. Liu, K. M. Ting, and Z.-H. Zhou, “Isola-tion forest,” in Proceedings of the 2008 IEEE International Conference on Data Mining (ICDM) , pp. 413–422, 2008. [44] S. Ramaswamy, R. Rastogi, and K. Shim, “Efficient algorithms for mining outliers from large data sets,” in Proceedings of the 2000 ACM SIGMOD International Conference on Management of Data , pp. 427–438, 2000. [45] C. C. Aggarwal and P. S. Yu, “Outlier detec-tion for high dimensional data,” in Proceed-ings of the 2001 ACM SIGMOD Interna-tional Conference on Management of Data ,pp. 37–46, 2001. [46] P. Mozharovskyi and R. Valla, “Anomaly detection using data depth: Multivariate case,” International Journal of Data Science and Analytics , vol. 20, no. 6, pp. 5171–5196, 2025. [47] M. A. Bashar and R. Nayak, “ALGAN: Time series anomaly detection with adjusted-LSTM GAN,” International Journal of Data Science and Analytics , vol. 20, no. 6, pp. 5719–5737, 2025. [48] H. Xu, G. Pang, Y. Wang, and Y. Wang, “Deep isolation forest for anomaly detection,” 
+
+IEEE Transactions on Knowledge and Data Engineering , vol. 35, no. 12, pp. 12591–12604, 2023. [49] A. Goodge, B. Hooi, S. K. Ng, and W. S. Ng, “LUNAR: Unifying local outlier methods via graph neural networks,” in Proceedings of the AAAI Conference on Artificial Intelligence ,pp. 6737–6745, 2022. [50] V. Chandola, A. Banerjee, and V. Kumar, 37 “Anomaly detection: A survey,” ACM Com-puting Surveys , vol. 41, no. 3, pp. 15:1–15:58, 2009. [51] G. Pang, C. Shen, L. Cao, and A. van den Hengel, “Deep learning for anomaly detec-tion: A review,” ACM Computing Surveys ,vol. 54, no. 2, pp. 38:1–38:38, 2021. [52] A. Emmott, S. Das, T. Dietterich, A. Fern, and W. K. Wong, “A meta-analysis of the anomaly detection problem,” 2015. [53] S. M. Lundberg and S.-I. Lee, “A unified approach to interpreting model predictions,” in Advances in Neural Information Process-ing Systems (NeurIPS) , pp. 4765–4774, 2017. [54] M. T. Ribeiro, S. Singh, and C. Guestrin, “Why should i trust you?: Explaining the pre-dictions of any classifier,” in Proceedings of the 22nd ACM SIGKDD International Con-ference on Knowledge Discovery and Data Mining , pp. 1135–1144, 2016. [55] S. Wachter, B. Mittelstadt, and C. Russell, “Counterfactual explanations without open-ing the black box: Automated decisions and the GDPR,” Harvard Journal of Law & Tech-nology , vol. 31, no. 2, pp. 841–887, 2017. [56] A. H. Lipkus, “A proof of the triangle inequal-ity for the tanimoto distance,” Journal of Mathematical Chemistry , vol. 26, no. 1–3, pp. 263–265, 1999. [57] M. Elam, D. Mink, S. S. Bagui, R. Plenkers, and S. C. Bagui, “Introducing UWF-ZeekData24: An enterprise MITRE ATT&CK labeled network attack traffic dataset for machine learning/AI,” Data ,vol. 10, no. 5, p. 59, 2025. [58] M. Tavallaee, E. Bagheri, W. Lu, and A. A. Ghorbani, “A detailed analysis of the kdd cup 99 data set,” in Proceedings of the Second IEEE International Conference on Computational Intelligence for Security and Defense Applications , CISDA’09, p. 53–58, IEEE Press, 2009. [59] N. Mishra and S. Mishra, “Nsl-kdd dataset analysis: A machine learning implementa-tion to detect intrusions in the computer network,” in 2024 2nd International Confer-ence on Signal Processing, Communication, Power and Embedded System (SCOPES) ,pp. 1–6, 2024. [60] DARPA Transparent Computing Program / ADAPT, “Public engagement data release.” [61] S. Benabderrahmane and T. Rahwan, “From one attack domain to another: Contrastive transfer learning with siamese networks for apt detection,” Knowledge-Based Systems ,vol. 332, p. 114877, 2026. [62] G. O. Campos, A. Zimek, J. Sander, R. J. Campello, B. Micenková, E. Schubert, I. Assent, and M. E. Houle, “On the evalua-tion of unsupervised outlier detection: mea-sures, datasets, and an empirical study,” Data Min. Knowl. Discov. , vol. 30, p. 891–927, July 2016. [63] G. Pang, L. Cao, and L. Chen, “Outlier detec-tion in complex categorical data by modelling the feature value couplings,” in Proceedings of the Twenty-Fifth International Joint Con-ference on Artificial Intelligence , IJCAI’16, p. 1902–1908, AAAI Press, 2016. [64] C. Zhou and R. C. Paffenroth, “Anomaly detection with robust deep autoencoders,” in 
+
+Proceedings of the 23rd ACM SIGKDD inter-national conference on knowledge discovery and data mining , pp. 665–674, 2017. 38
